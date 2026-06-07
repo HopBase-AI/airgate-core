@@ -26,7 +26,6 @@ import {
   preloadRoutePage,
   ProfilePage,
   ProxiesPage,
-  PublicHomePage,
   SettingsPage,
   SetupPage,
   SubscriptionsPage,
@@ -125,18 +124,15 @@ const setupRoute = createRoute({
   ),
 });
 
-// 公共首页（无需认证，懒加载）
+// 旧公共首页路由：HopBase 使用独立落地页，API 侧不再展示内置 /home。
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/home',
   beforeLoad: () => withSetupCheck((needs) => {
     if (needs) throw redirect({ to: '/setup' });
+    throw redirect({ to: getToken() ? '/' : '/login' });
   }),
-  component: () => (
-    <Suspense fallback={<FullPageLoading />}>
-      <PublicHomePage />
-    </Suspense>
-  ),
+  component: () => null,
 });
 
 // 注意：/status 不再注册客户端路由，整个公开状态页交给 airgate-health 插件维护。
@@ -175,7 +171,7 @@ const authLayout = createRoute({
   id: 'auth',
   beforeLoad: () => withSetupCheck((needs) => {
     if (needs) throw redirect({ to: '/setup' });
-    if (!getToken()) throw redirect({ to: '/home' });
+    if (!getToken()) throw redirect({ to: '/login' });
   }),
   component: () => (
     <Suspense fallback={<FullPageLoading />}>
@@ -235,7 +231,7 @@ const userUsageRoute = createRoute({ getParentRoute: () => authLayout, path: '/u
 // 仍要求登录 + 安装完成；走 PluginShell 通用插件顶栏。
 const chatBeforeLoad = () => withSetupCheck((needs) => {
   if (needs) throw redirect({ to: '/setup' });
-  if (!getToken()) throw redirect({ to: '/home' });
+  if (!getToken()) throw redirect({ to: '/login' });
   if (getTokenRole() === 'api_key') throw redirect({ to: '/' });
 });
 const chatRoute = createRoute({

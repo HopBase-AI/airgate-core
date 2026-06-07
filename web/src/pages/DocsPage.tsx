@@ -163,7 +163,7 @@ export default function DocsPage() {
       {/* 顶栏：拉到 7xl，和正文同宽，避免顶栏窄、正文宽的撕裂感 */}
       <nav className="sticky top-0 z-20 bg-bg-deep/80 backdrop-blur border-b border-border/50">
         <div className="flex items-center justify-between px-6 md:px-12 py-4 max-w-7xl mx-auto">
-          <Link to="/home" className="flex items-center gap-2.5">
+          <Link to="/" className="flex items-center gap-2.5">
             <img src={site.site_logo || defaultLogoUrl} alt="" className="w-8 h-8 rounded-sm object-cover" />
             <span className="text-base font-bold">{siteName}</span>
           </Link>

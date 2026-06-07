@@ -29,7 +29,6 @@ export function lazyWithPreload<TProps>(
 export const SetupPage = lazyWithPreload(() => import('../pages/SetupPage'));
 export const LoginPage = lazyWithPreload(() => import('../pages/LoginPage'));
 export const PluginPage = lazyWithPreload(() => import('../pages/PluginPage'));
-export const PublicHomePage = lazyWithPreload(() => import('../pages/HomePage'));
 export const DocsPage = lazyWithPreload(() => import('../pages/DocsPage'));
 export const DashboardPage = lazyWithPreload(() => import('../pages/DashboardPage'));
 export const UserOverviewPage = lazyWithPreload(() => import('../pages/user/UserOverviewPage'));
@@ -57,7 +56,6 @@ export const USER_IDLE_PRELOADS = [
 
 const ROUTE_PRELOADS = new Map<string, AnyPreloadableLazyComponent[]>([
   ['/', [DashboardPage, UserOverviewPage]],
-  ['/home', [PublicHomePage]],
   ['/login', [LoginPage]],
   ['/setup', [SetupPage]],
   ['/docs', [DocsPage]],
