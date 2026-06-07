@@ -4,8 +4,12 @@
 #   docker build -f airgate-core/deploy/Dockerfile -t airgate-core ..
 # ============================================================
 
+ARG NODE_IMAGE=node:22-alpine
+ARG GO_IMAGE=golang:1.25-alpine
+ARG RUNTIME_IMAGE=alpine:3.21
+
 # ---- 阶段 1: 构建前端 ----
-FROM node:22-alpine AS frontend
+FROM ${NODE_IMAGE} AS frontend
 WORKDIR /build
 RUN corepack enable && corepack prepare pnpm@11.1.1 --activate
 
@@ -16,12 +20,16 @@ COPY airgate-core/web ./airgate-core/web
 RUN cd airgate-core/web && pnpm build
 
 # ---- 阶段 2: 构建后端 ----
-FROM golang:1.25-alpine AS backend
+FROM ${GO_IMAGE} AS backend
 RUN apk add --no-cache git
 WORKDIR /build
+ARG GOPROXY=https://proxy.golang.org,direct
+ARG GOSUMDB=sum.golang.org
 ENV GOPRIVATE=github.com/DouDOU-start/airgate-sdk \
     GONOPROXY=github.com/DouDOU-start/airgate-sdk \
-    GONOSUMDB=github.com/DouDOU-start/airgate-sdk
+    GONOSUMDB=github.com/DouDOU-start/airgate-sdk \
+    GOPROXY=${GOPROXY} \
+    GOSUMDB=${GOSUMDB}
 
 COPY airgate-core/backend/go.mod airgate-core/backend/go.sum ./airgate-core/backend/
 RUN cd airgate-core/backend && go mod download -x
@@ -40,7 +48,7 @@ RUN cd airgate-core/backend && CGO_ENABLED=0 go build -buildvcs=false -trimpath 
     -o /server ./cmd/server
 
 # ---- 阶段 3: 运行时 ----
-FROM alpine:3.21
+FROM ${RUNTIME_IMAGE}
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 
