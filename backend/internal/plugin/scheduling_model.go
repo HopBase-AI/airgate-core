@@ -8,15 +8,59 @@ import (
 
 // schedulingModelsForRequest 返回调度层使用的模型候选列表。
 //
-// OpenAI 插件的 /v1/messages 是 Anthropic Messages 协议翻译入口：客户端会传
-// claude-*，插件实际会先映射到 GPT 模型再调用 OpenAI Responses。因此 core 选号
-// 不能直接拿 claude-* 去套 OpenAI 分组的 model_routing，否则还没进插件就会报
-// "无可用账户"。
-func schedulingModelsForRequest(platform, path, requestedModel string) []string {
+// 查询顺序（声明优先，兜底保持向后兼容）：
+//  1. 插件模型目录的 Metadata["scheduling_model"]：目录内模型的精确 ID 映射。
+//  2. 插件路由声明的 Metadata["scheduling_model_map"]：前缀映射表，覆盖不在目录中的
+//     协议翻译入口模型（如 openai 插件 /v1/messages 收到的 claude-*，由客户端传入）。
+//  3. 历史硬编码映射：仅当插件未声明时生效（老版本插件兼容），勿再扩展。
+func schedulingModelsForRequest(mgr *Manager, platform, pluginName, path, requestedModel string) []string {
+	// 1. 插件模型目录的调度模型元数据（精确 ID）
+	if mgr != nil {
+		if sm := mgr.SchedulingModel(requestedModel); sm != "" {
+			return compactUniqueModels(sm)
+		}
+		// 2. 插件路由声明的前缀映射表
+		if pluginName != "" {
+			if mapped := schedulingModelsFromDeclaredMap(mgr.SchedulingModelMap(pluginName, path), requestedModel); len(mapped) > 0 {
+				return mapped
+			}
+		}
+	}
+
+	// 3. 兜底：硬编码映射（仅 OpenAI 插件 /v1/messages Anthropic 协议翻译入口）
 	if !strings.EqualFold(strings.TrimSpace(platform), "openai") || !isAnthropicMessagesForwardPath(path) {
 		return compactUniqueModels(requestedModel)
 	}
 	return openAIAnthropicSchedulingModels(requestedModel)
+}
+
+// schedulingModelsFromDeclaredMap 在插件声明的前缀映射表中查找请求模型。
+// 键为模型 ID 前缀（允许尾部 "*"，匹配时忽略），大小写不敏感，最长前缀优先。
+func schedulingModelsFromDeclaredMap(prefixMap map[string][]string, requestedModel string) []string {
+	model := strings.ToLower(strings.TrimSpace(requestedModel))
+	if model == "" || len(prefixMap) == 0 {
+		return nil
+	}
+	bestLen := -1
+	var bestModels []string
+	for key, models := range prefixMap {
+		prefix := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(key), "*"))
+		if prefix == "" || !strings.HasPrefix(model, prefix) {
+			continue
+		}
+		if len(prefix) > bestLen {
+			bestLen = len(prefix)
+			bestModels = models
+		}
+	}
+	if bestLen < 0 {
+		return nil
+	}
+	normalized := make([]string, 0, len(bestModels))
+	for _, m := range bestModels {
+		normalized = append(normalized, normalizeMappedModelID(m, ""))
+	}
+	return compactUniqueModels(normalized...)
 }
 
 func isAnthropicMessagesForwardPath(path string) bool {

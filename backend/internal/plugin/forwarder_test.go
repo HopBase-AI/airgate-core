@@ -323,7 +323,7 @@ func TestRoutesForAPIKeyAllowsChatWithDeclaredImageToolWhenBoundGroupDisabled(t 
 	}
 
 	requirements := routing.Requirements{
-		NeedsImage: requestNeedsImage("/v1/responses", "gpt-5.4", state.body),
+		NeedsImage: requestNeedsImage(nil, "/v1/responses", "gpt-5.4", state.body),
 	}
 	routes := routesForAPIKey(state, requirements)
 	if len(routes) != 1 {
@@ -403,8 +403,8 @@ func TestSelectAllRoutesFailureResponse(t *testing.T) {
 				localCapacitySeen:   true,
 				upstreamFailureSeen: true,
 			},
-			wantStatus: http.StatusTooManyRequests,
-			wantCode:   "all_routes_capacity_exhausted",
+			wantStatus: http.StatusServiceUnavailable,
+			wantCode:   "all_routes_failed",
 		},
 		{
 			name: "upstream timeout",

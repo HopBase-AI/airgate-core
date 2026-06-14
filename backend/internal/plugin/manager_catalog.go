@@ -2,7 +2,9 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,6 +69,47 @@ func (m *Manager) GetModels(platform string) []sdk.ModelInfo {
 	return cloneModels(m.modelCache[platform])
 }
 
+// SchedulingModel 查询模型目录中指定模型的 scheduling_model 元数据。
+// 插件可在 ModelInfo.Metadata["scheduling_model"] 中声明调度时应使用的替代模型，
+// 使 Core 无需硬编码跨协议的模型映射。未找到时返回空字符串。
+func (m *Manager) SchedulingModel(modelID string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, models := range m.modelCache {
+		for i := range models {
+			if models[i].ID == modelID {
+				if models[i].Metadata != nil {
+					return models[i].Metadata["scheduling_model"]
+				}
+				return ""
+			}
+		}
+	}
+	return ""
+}
+
+// ModelFamily 从已加载的模型目录中查询模型的家族标识（Metadata["family"]）。
+// 插件通过 Models() 声明 Metadata["family"] 表达"哪些模型共享同一个限流池"，
+// Core 据此做 (account, family) 维度的冷却隔离。
+// 返回空字符串表示该模型未声明家族，调用方应回退到 scheduler.ModelFamily 的兜底规则。
+func (m *Manager) ModelFamily(modelID string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, models := range m.modelCache {
+		for i := range models {
+			if models[i].ID == modelID {
+				if models[i].Metadata != nil {
+					if f := models[i].Metadata["family"]; f != "" {
+						return f
+					}
+				}
+				return ""
+			}
+		}
+	}
+	return ""
+}
+
 // FindPlatformByModel 根据模型 ID 反查所属平台。
 func (m *Manager) FindPlatformByModel(modelID string) string {
 	m.mu.RLock()
@@ -81,11 +124,97 @@ func (m *Manager) FindPlatformByModel(modelID string) string {
 	return ""
 }
 
+// ModelHasCapability 判断已注册的模型是否具备指定能力（如 sdk.ModelCapImageGeneration）。
+// 遍历所有平台的模型目录；若模型未注册则返回 false。
+func (m *Manager) ModelHasCapability(modelID, capability string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, models := range m.modelCache {
+		for i := range models {
+			if models[i].ID == modelID {
+				return models[i].HasCapability(capability)
+			}
+		}
+	}
+	return false
+}
+
 // GetRoutes 获取指定插件的路由声明。
 func (m *Manager) GetRoutes(pluginName string) []sdk.RouteDefinition {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return cloneRoutes(m.routeCache[m.resolveNameLocked(pluginName)])
+}
+
+// ErrorFormat 返回插件在指定路径下声明的对外错误格式（tech-debt #1 治理）。
+// 优先级：路由级 Metadata["error_format"]（精确路径命中优先于前缀命中）→
+// 插件级 PluginInfo.Metadata["error_format"]；均未声明返回空串，调用方回退
+// OpenAI 兼容格式。
+func (m *Manager) ErrorFormat(pluginName, path string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	name := m.resolveNameLocked(pluginName)
+	prefixFormat := ""
+	for _, route := range m.routeCache[name] {
+		format := route.Metadata["error_format"]
+		if format == "" {
+			continue
+		}
+		if route.Path == path {
+			return format
+		}
+		if prefixFormat == "" && matchRoutePath(route.Path, path) {
+			prefixFormat = format
+		}
+	}
+	if prefixFormat != "" {
+		return prefixFormat
+	}
+	if inst, ok := m.instances[name]; ok {
+		return inst.Metadata["error_format"]
+	}
+	return ""
+}
+
+// SchedulingModelMap 查询插件路由声明的 Metadata["scheduling_model_map"]（tech-debt #5 治理）。
+// 值为 JSON 对象：键是模型 ID 前缀（大小写不敏感、最长前缀优先），值是调度候选模型列表（按优先级）。
+// 用于协议翻译路由（如 openai 插件的 /v1/messages）声明"请求模型 → 调度模型"映射，
+// 取代 Core 的平台/路径硬编码特判。精确路径命中优先于前缀命中；未声明返回 nil，
+// 调用方回退到历史默认行为。
+func (m *Manager) SchedulingModelMap(pluginName, path string) map[string][]string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	name := m.resolveNameLocked(pluginName)
+	prefixRaw := ""
+	for _, route := range m.routeCache[name] {
+		raw := route.Metadata["scheduling_model_map"]
+		if raw == "" {
+			continue
+		}
+		if route.Path == path {
+			return parseSchedulingModelMap(raw)
+		}
+		if prefixRaw == "" && matchRoutePath(route.Path, path) {
+			prefixRaw = raw
+		}
+	}
+	return parseSchedulingModelMap(prefixRaw)
+}
+
+// parseSchedulingModelMap 解析 scheduling_model_map 的 JSON 声明；解析失败按未声明处理。
+func parseSchedulingModelMap(raw string) map[string][]string {
+	if raw == "" {
+		return nil
+	}
+	out := make(map[string][]string)
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		slog.Warn("scheduling_model_map_invalid", "error", err)
+		return nil
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // GetAllRoutes 获取所有运行中插件的路由。
@@ -98,6 +227,29 @@ func (m *Manager) GetAllRoutes() map[string][]sdk.RouteDefinition {
 		result[key] = cloneRoutes(routes)
 	}
 	return result
+}
+
+// IsMetadataOnlyRoute 判断给定路径是否由插件声明为 metadata_only。
+// 插件在 RouteDefinition.Metadata 中设置 "metadata_only"="true" 表示该路径仅返回元信息，
+// 不需要账号调度、计费。
+func (m *Manager) IsMetadataOnlyRoute(path string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.metadataOnlyPaths[path]
+}
+
+// rebuildMetadataOnlyPathsLocked 从 routeCache 汇总所有声明了 metadata_only 的路径。
+// 调用方须持有 m.mu 写锁。
+func (m *Manager) rebuildMetadataOnlyPathsLocked() {
+	paths := make(map[string]bool)
+	for _, routes := range m.routeCache {
+		for _, route := range routes {
+			if route.Metadata["metadata_only"] == "true" {
+				paths[route.Path] = true
+			}
+		}
+	}
+	m.metadataOnlyPaths = paths
 }
 
 // MatchPluginByRoute 根据请求方法和路径匹配插件。

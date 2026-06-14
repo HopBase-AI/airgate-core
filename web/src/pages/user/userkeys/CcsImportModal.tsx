@@ -61,6 +61,14 @@ function executeCcsImport(
     usageScript: btoa(usageScript),
     usageAutoInterval: '30',
   });
+  if (app === 'codex') {
+    params.set('model', 'gpt-5.5');
+    params.set('reviewModel', 'gpt-5.5');
+    params.set('modelReasoningEffort', 'xhigh');
+    params.set('disableResponseStorage', 'true');
+    params.set('networkAccess', 'enabled');
+    params.set('goals', 'true');
+  }
 
   const deeplink = `ccswitch://v1/import?${params.toString()}`;
 
@@ -171,11 +179,8 @@ export function CcsImportModal({
       {ccsKeyValue ? (
         ccsPlatform ? (
           <div className="space-y-3">
-            <p className="text-sm text-text-secondary">
-              {t('user_keys.ccs_select_desc')}
-            </p>
             <div className="grid grid-cols-2 gap-3">
-              {/* 始终显示 Claude Code */}
+              {/* Claude Code */}
               <Button
                 variant="secondary"
                 className="h-auto flex-col gap-2 p-4"

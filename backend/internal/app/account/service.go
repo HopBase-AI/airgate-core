@@ -17,6 +17,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/DouDOU-start/airgate-core/internal/pkg/pagination"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 
 	"github.com/DouDOU-start/airgate-core/internal/pkg/timezone"
@@ -173,7 +174,7 @@ func shouldAutoRefreshQuota(item Account) bool {
 
 // List 查询账号列表。
 func (s *Service) List(ctx context.Context, filter ListFilter) (ListResult, error) {
-	page, pageSize := NormalizePage(filter.Page, filter.PageSize)
+	page, pageSize := pagination.Normalize(filter.Page, filter.PageSize)
 	filter.Page = page
 	filter.PageSize = pageSize
 	filter = s.normalizeListFilter(filter)
@@ -355,6 +356,23 @@ func (s *Service) BulkDelete(ctx context.Context, ids []int) BulkResult {
 	}
 	if result.Success > 0 {
 		s.InvalidateUsageCache("")
+	}
+	return result
+}
+
+// BulkClearFamilyCooldowns 批量清除账号上的临时限流标记。
+// stateWriter 为 nil 时所有账号标记为失败。
+func (s *Service) BulkClearFamilyCooldowns(ctx context.Context, input BulkClearCooldownsInput) BulkResult {
+	result := BulkResult{Results: make([]BulkResultItem, 0, len(input.AccountIDs))}
+	if s.stateWriter == nil {
+		for _, id := range input.AccountIDs {
+			result.appendFailure(id, ErrSchedulerUnavailable)
+		}
+		return result
+	}
+	for _, id := range input.AccountIDs {
+		s.stateWriter.ClearRateLimitMarkers(ctx, id)
+		result.appendSuccess(id)
 	}
 	return result
 }

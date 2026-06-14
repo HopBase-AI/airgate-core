@@ -16,7 +16,9 @@ import (
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/ent/account"
+	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/user"
+	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
 	"github.com/DouDOU-start/airgate-core/internal/routing"
 	"github.com/DouDOU-start/airgate-core/internal/scheduler"
@@ -43,6 +45,7 @@ type HostService struct {
 	concurrency *scheduler.ConcurrencyManager
 	calculator  *billing.Calculator
 	recorder    *billing.Recorder
+	users       *appuser.Service
 }
 
 // NewHostService 构造 HostService 工厂。
@@ -57,6 +60,7 @@ func NewHostService(
 	concurrency *scheduler.ConcurrencyManager,
 	calculator *billing.Calculator,
 	recorder *billing.Recorder,
+	users *appuser.Service,
 ) *HostService {
 	return &HostService{
 		db:          db,
@@ -65,6 +69,9 @@ func NewHostService(
 		concurrency: concurrency,
 		calculator:  calculator,
 		recorder:    recorder,
+		// users.update_balance 复用 app/user 的业务逻辑（流水落库 + 幂等键），
+		// 不在 host 层手写余额 SQL；实例由 server 注入（plugin 包不能 import store，会成环）
+		users: users,
 	}
 }
 
@@ -175,6 +182,7 @@ const (
 	hostMethodPlatformsList          = "platforms.list"
 	hostMethodModelsList             = "models.list"
 	hostMethodUsersGet               = "users.get"
+	hostMethodUsersUpdateBalance     = "users.update_balance"
 	hostMethodAssetsStore            = "assets.store"
 	hostMethodAssetsStoreURL         = "assets.store_url"
 	hostMethodAssetsGetURL           = "assets.get_url"
@@ -215,7 +223,11 @@ func (h *HostService) invoke(
 		}
 		return h.probeForward(ctx, req)
 	case hostMethodGroupsList:
-		return h.listGroups(ctx)
+		var req hostListGroupsRequest
+		if err := decodeHostPayload(payload, &req); err != nil {
+			return nil, err
+		}
+		return h.listGroups(ctx, req)
 	case hostMethodGatewayForward:
 		var req hostForwardRequest
 		if err := decodeHostPayload(payload, &req); err != nil {
@@ -236,6 +248,15 @@ func (h *HostService) invoke(
 			return nil, err
 		}
 		return h.getUserInfo(ctx, req)
+	case hostMethodUsersUpdateBalance:
+		var req hostUpdateBalanceRequest
+		if err := decodeHostPayload(payload, &req); err != nil {
+			return nil, err
+		}
+		if idempotencyKey != "" && req.IdempotencyKey == "" {
+			req.IdempotencyKey = idempotencyKey
+		}
+		return h.updateUserBalance(ctx, pluginID, req)
 	case hostMethodAssetsStore:
 		var req hostStoreAssetRequest
 		if err := decodeHostPayload(payload, &req); err != nil {
@@ -614,7 +635,7 @@ func (h *HostService) probeForward(ctx context.Context, req hostProbeForwardRequ
 			Kind:     outcome.Kind,
 			Duration: latency,
 			IsPool:   accFull.UpstreamIsPool,
-			Family:   scheduler.ModelFamily(accFull.Platform, model),
+			Family:   h.resolveModelFamily(accFull.Platform, model),
 		})
 	}
 
@@ -645,10 +666,32 @@ func (h *HostService) probeForward(ctx context.Context, req hostProbeForwardRequ
 	return resp, nil
 }
 
-// listGroups 列出所有分组。
-func (h *HostService) listGroups(ctx context.Context) (map[string]interface{}, error) {
-	slog.Debug("host_service_list_groups", "module", "host")
-	groups, err := h.db.Group.Query().All(ctx)
+// hostListGroupsRequest groups.list 的可选过滤参数。
+// 空 payload（旧调用方）等价于"列出全部分组"，保持向后兼容。
+type hostListGroupsRequest struct {
+	// PublicOnly=true 时按状态页可见性过滤：仅返回 status_visible=true 的分组；
+	// 若同时传 UserID>0，追加该用户在 user_allowed_groups 里被授权的专属分组。
+	// 可见性/授权判断留在 core——插件不应自行查 core 表实现这类过滤。
+	PublicOnly bool  `json:"public_only"`
+	UserID     int64 `json:"user_id"`
+}
+
+// listGroups 列出分组（默认全部；支持状态页可见性过滤）。
+func (h *HostService) listGroups(ctx context.Context, req hostListGroupsRequest) (map[string]interface{}, error) {
+	slog.Debug("host_service_list_groups", "module", "host",
+		"public_only", req.PublicOnly, "user_id", req.UserID)
+	q := h.db.Group.Query()
+	if req.PublicOnly {
+		if req.UserID > 0 {
+			q = q.Where(group.Or(
+				group.StatusVisible(true),
+				group.HasAllowedUsersWith(user.ID(int(req.UserID))),
+			))
+		} else {
+			q = q.Where(group.StatusVisible(true))
+		}
+	}
+	groups, err := q.All(ctx)
 	if err != nil {
 		if cerr := hostContextError(err); cerr != nil {
 			return nil, cerr
@@ -663,6 +706,8 @@ func (h *HostService) listGroups(ctx context.Context) (map[string]interface{}, e
 			"platform":        g.Platform,
 			"is_exclusive":    g.IsExclusive,
 			"rate_multiplier": g.RateMultiplier,
+			"note":            g.Note,
+			"status_visible":  g.StatusVisible,
 		})
 	}
 	return map[string]interface{}{"groups": items}, nil
@@ -704,7 +749,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 	if err != nil {
 		return nil, err
 	}
-	fwdCtx, cancel := context.WithTimeout(ctx, hostForwardTimeout(req))
+	fwdCtx, cancel := context.WithTimeout(ctx, hostForwardTimeout(h.manager, req))
 	defer cancel()
 
 	hardExclude := make([]int, 0, maxHostForwardAttempts*len(routes))
@@ -725,7 +770,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 		}
 
 		for attempt := 0; attempt < maxHostForwardAttempts; attempt++ {
-			acc, err := h.scheduler.SelectAccountWithRequirements(ctx, route.Platform, model, 0, route.GroupID, "", hostAccountRequirements(req), hardExclude...)
+			acc, err := h.scheduler.SelectAccountWithRequirements(ctx, route.Platform, model, 0, route.GroupID, "", hostAccountRequirements(h.manager, req), hardExclude...)
 			if err != nil {
 				if cerr := hostContextError(err); cerr != nil {
 					return nil, cerr
@@ -872,7 +917,7 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 		}
 
 		for attempt := 0; attempt < maxHostForwardAttempts; attempt++ {
-			acc, err := h.scheduler.SelectAccountWithRequirements(ctx, route.Platform, model, 0, route.GroupID, "", hostAccountRequirements(req), hardExclude...)
+			acc, err := h.scheduler.SelectAccountWithRequirements(ctx, route.Platform, model, 0, route.GroupID, "", hostAccountRequirements(h.manager, req), hardExclude...)
 			if err != nil {
 				if cerr := hostContextError(err); cerr != nil {
 					return cerr
@@ -1000,8 +1045,8 @@ const (
 	imageHostForwardTimeout   = 300 * time.Second
 )
 
-func hostForwardTimeout(req hostForwardRequest) time.Duration {
-	if requestHasImageWorkload(req.Path, req.Model, hostForwardBody(req.Body)) {
+func hostForwardTimeout(mgr *Manager, req hostForwardRequest) time.Duration {
+	if requestHasImageWorkload(mgr, req.Path, req.Model, hostForwardBody(req.Body)) {
 		return imageHostForwardTimeout
 	}
 	return defaultHostForwardTimeout
@@ -1287,6 +1332,66 @@ func (h *HostService) getUserInfo(ctx context.Context, req hostGetUserInfoReques
 	}, nil
 }
 
+// hostUpdateBalanceRequest users.update_balance 请求体。
+type hostUpdateBalanceRequest struct {
+	UserID int64   `json:"user_id"`
+	Action string  `json:"action"` // add / subtract（set 不对插件开放）
+	Amount float64 `json:"amount"`
+	Remark string  `json:"remark"`
+	// IdempotencyKey 必填。同一键的变更只入账一次（balance_logs 唯一索引保证），
+	// 支付回调等场景重试不会重复加扣款。建议格式 "<plugin>:<业务单号>"。
+	IdempotencyKey string `json:"idempotency_key"`
+}
+
+// updateUserBalance 调整用户余额并写 balance_logs 流水。
+// 复用 app/user.Service.AdjustBalance——余额规则、流水、幂等均在 service 层闭环，
+// 插件不应也无需直写 core 的 users / balance_logs 表。
+func (h *HostService) updateUserBalance(ctx context.Context, pluginID string, req hostUpdateBalanceRequest) (map[string]interface{}, error) {
+	if req.UserID <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "user_id 必须 > 0")
+	}
+	if req.Action != "add" && req.Action != "subtract" {
+		return nil, status.Errorf(codes.InvalidArgument, "action 仅支持 add/subtract，收到 %q", req.Action)
+	}
+	if req.Amount <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "amount 必须 > 0")
+	}
+	if req.IdempotencyKey == "" {
+		return nil, status.Error(codes.InvalidArgument, "idempotency_key 必填（防止重试导致重复入账）")
+	}
+	slog.Info("host_service_update_balance",
+		"module", "host",
+		sdk.LogFieldPluginID, pluginID,
+		sdk.LogFieldUserID, req.UserID,
+		"action", req.Action,
+		"amount", req.Amount,
+		"idempotency_key", req.IdempotencyKey,
+	)
+	u, err := h.users.AdjustBalance(ctx, int(req.UserID), appuser.BalanceChange{
+		Action:         req.Action,
+		Amount:         req.Amount,
+		Remark:         req.Remark,
+		IdempotencyKey: req.IdempotencyKey,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, appuser.ErrUserNotFound):
+			return nil, status.Error(codes.NotFound, "用户不存在")
+		case errors.Is(err, appuser.ErrInsufficientBalance):
+			return nil, status.Error(codes.FailedPrecondition, "余额不足")
+		default:
+			if cerr := hostContextError(err); cerr != nil {
+				return nil, cerr
+			}
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
+	return map[string]interface{}{
+		"user_id": int64(u.ID),
+		"balance": u.Balance,
+	}, nil
+}
+
 func (h *HostService) storeAsset(ctx context.Context, req hostStoreAssetRequest) (map[string]interface{}, error) {
 	if req.UserID <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "user_id 必须 > 0")
@@ -1406,7 +1511,7 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 				sdk.LogFieldGroupID, req.GroupID, sdk.LogFieldError, err)
 			return nil, "", hostForwardGenericError()
 		}
-		if !routing.GroupMatchesRequirements(g, hostForwardRequirements(req)) {
+		if !routing.GroupMatchesRequirements(g, hostForwardRequirements(h.manager, req)) {
 			slog.Warn("host_forward_group_requirement_unmet",
 				sdk.LogFieldGroupID, req.GroupID,
 				sdk.LogFieldModel, req.Model,
@@ -1443,7 +1548,7 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 			sdk.LogFieldUserID, req.UserID, sdk.LogFieldError, err)
 		return nil, "", hostForwardGenericError()
 	}
-	routes, err := routing.ListEligibleGroups(ctx, h.db, int(req.UserID), platform, u.GroupRates, u.GroupPluginSettings, hostForwardRequirements(req))
+	routes, err := routing.ListEligibleGroups(ctx, h.db, int(req.UserID), platform, u.GroupRates, u.GroupPluginSettings, hostForwardRequirements(h.manager, req))
 	if err != nil {
 		if cerr := hostContextError(err); cerr != nil {
 			return nil, "", cerr
@@ -1465,12 +1570,12 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 	return routes, u.Email, nil
 }
 
-func hostForwardRequirements(req hostForwardRequest) routing.Requirements {
-	return routing.Requirements{NeedsImage: requestNeedsImage(req.Path, req.Model, hostForwardBody(req.Body))}
+func hostForwardRequirements(mgr *Manager, req hostForwardRequest) routing.Requirements {
+	return routing.Requirements{NeedsImage: requestNeedsImage(mgr, req.Path, req.Model, hostForwardBody(req.Body))}
 }
 
-func hostAccountRequirements(req hostForwardRequest) scheduler.AccountRequirements {
-	return accountRequirementsForRequest(req.Path, req.Model, hostForwardBody(req.Body))
+func hostAccountRequirements(mgr *Manager, req hostForwardRequest) scheduler.AccountRequirements {
+	return accountRequirementsForRequest(mgr, req.Path, req.Model, hostForwardBody(req.Body))
 }
 
 func hostForwardReasoningEffort(req hostForwardRequest) string {
@@ -1542,8 +1647,18 @@ func (h *HostService) applyHostOutcome(ctx context.Context, accountID int, accFu
 		Duration:       duration,
 		IsPool:         accFull.UpstreamIsPool,
 		UpstreamStatus: outcome.Upstream.StatusCode,
-		Family:         scheduler.ModelFamily(accFull.Platform, model),
+		Family:         h.resolveModelFamily(accFull.Platform, model),
 	})
+}
+
+// resolveModelFamily 从插件目录优先获取家族键，未命中时回退到硬编码规则。
+func (h *HostService) resolveModelFamily(platform, model string) string {
+	if h.manager != nil {
+		if family := h.manager.ModelFamily(model); family != "" {
+			return family
+		}
+	}
+	return scheduler.ModelFamily(platform, model)
 }
 
 func (h *HostService) checkHostForwardBalance(ctx context.Context, userID int64) error {
@@ -1675,9 +1790,10 @@ func errProbeResp(kind, msg string, start time.Time) map[string]interface{} {
 
 // pickProbeModel 从模型列表中选一个非图片模型用于探测。
 // 图片模型探测需要实际生图（成本高），跳过；如果全是图片模型则返回空。
+// 直接使用 ModelInfo.HasCapability 判断，无需经过 Manager 全局查找。
 func pickProbeModel(models []sdk.ModelInfo) string {
 	for _, m := range models {
-		if !isImageModel(m.ID) {
+		if !m.HasCapability(sdk.ModelCapImageGeneration) {
 			return m.ID
 		}
 	}

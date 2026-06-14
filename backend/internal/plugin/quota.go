@@ -20,24 +20,25 @@ import (
 // 限流 / 并发闸门不在此处——它们分别在 acquireClientQuota（用户/API Key 级）
 // 和 acquireAccountSlot（账号级）中，各自带 release 回调。
 func (f *Forwarder) checkBalance(c *gin.Context, state *forwardState) bool {
-	if isMetadataOnlyPath(state.requestPath) {
+	if f.isMetadataOnlyPath(state.requestPath) {
 		return true
 	}
 	if state.keyInfo.UserBalance <= 0 {
-		c.JSON(http.StatusPaymentRequired, gin.H{
-			"error": gin.H{
-				"message": "余额不足",
-				"type":    "insufficient_quota",
-				"code":    "insufficient_quota",
-			},
-		})
+		protocolError(c, http.StatusPaymentRequired, "insufficient_quota", "insufficient_quota", "余额不足")
 		return false
 	}
 	return true
 }
 
-// isMetadataOnlyPath 只读元信息（/v1/models、任务查询等）不打上游、不计费、不需要账号调度。
-func isMetadataOnlyPath(path string) bool {
+// isMetadataOnlyPath 判断路径是否为只读元信息（不打上游、不计费、不需要账号调度）。
+// 优先查询插件通过 RouteDefinition.Metadata["metadata_only"]="true" 声明的索引；
+// 若插件尚未声明，回退到硬编码列表以保持向后兼容。
+func (f *Forwarder) isMetadataOnlyPath(path string) bool {
+	if f.manager.IsMetadataOnlyRoute(path) {
+		return true
+	}
+	// 向后兼容：插件尚未在 RouteDefinition.Metadata 中声明 metadata_only 时，
+	// 保留硬编码列表兜底。待所有插件迁移完成后可移除。
 	switch path {
 	case "/v1/models", "/models",
 		"/v1/images/tasks", "/images/tasks",
@@ -61,7 +62,7 @@ func (f *Forwarder) acquireClientQuota(c *gin.Context, state *forwardState) func
 	userHeld := false
 	if max := state.keyInfo.UserMaxConcurrency; max > 0 {
 		if err := f.concurrency.AcquireUserSlot(ctx, userID, slotID, max, 0); err != nil {
-			openAIError(c, http.StatusTooManyRequests, "rate_limit_error", "user_concurrency_limit", "用户并发已达上限，请稍后重试")
+			protocolError(c, http.StatusTooManyRequests, "rate_limit_error", "user_concurrency_limit", "用户并发已达上限，请稍后重试")
 			return nil
 		}
 		userHeld = true
@@ -73,7 +74,7 @@ func (f *Forwarder) acquireClientQuota(c *gin.Context, state *forwardState) func
 			if userHeld {
 				f.concurrency.ReleaseUserSlot(ctx, userID, slotID)
 			}
-			openAIError(c, http.StatusTooManyRequests, "rate_limit_error", "apikey_concurrency_limit", "API Key 并发已达上限，请稍后重试")
+			protocolError(c, http.StatusTooManyRequests, "rate_limit_error", "apikey_concurrency_limit", "API Key 并发已达上限，请稍后重试")
 			return nil
 		}
 		keyHeld = true
@@ -121,12 +122,12 @@ func (f *Forwarder) pickAccount(c *gin.Context, state *forwardState, excludeIDs 
 	return scheduler.ErrNoAvailableAccount
 }
 
-// acquireAccountSlot 获取账号级闸门：RPM 配额 + 真实用户消息串行锁 + 账号并发槽。
+// acquireAccountSlot 获取账号级闸门：RPM 配额 + 账号并发槽。
 // 返回 release func 与 ok 标记。ok=false 表示当前账号暂不可用（RPM 已满 / 并发已满），
 // 调用方应把本账号加入 excludeIDs 并 failover 到下一个账号。失败时不写客户端响应——
 // 由主循环在 failover 全部用尽时兜底写 503。
 //
-// 每次 failover attempt 都要重新 acquire。release 顺序和 acquire 顺序相反。
+// 每次 failover attempt 都要重新 acquire。账号实际并发只由 MaxConcurrency 控制。
 func (f *Forwarder) acquireAccountSlot(c *gin.Context, state *forwardState) (func(), bool) {
 	ctx := c.Request.Context()
 	releaseCtx := context.Background()
@@ -140,35 +141,7 @@ func (f *Forwarder) acquireAccountSlot(c *gin.Context, state *forwardState) (fun
 		return nil, false
 	}
 
-	// 2. 消息锁 + 均摊延迟（仅真实用户消息）
-	releaseMsgLock := func() {}
-	if scheduler.IsRealUserMessage(state.body) {
-		acquired, err := f.scheduler.AcquireMessageLock(ctx, state.account.ID, state.requestID, state.account.Extra)
-		if err != nil {
-			releaseMsgLock()
-			f.scheduler.DecrementRPM(ctx, state.account.ID)
-			slog.Info("账号消息锁获取失败，尝试 failover",
-				"account_id", state.account.ID,
-				"error", err,
-			)
-			return nil, false
-		}
-		if !acquired {
-			releaseMsgLock()
-			f.scheduler.DecrementRPM(ctx, state.account.ID)
-			slog.Info("账号消息锁排队已满，尝试 failover",
-				"account_id", state.account.ID,
-				"max_waiters", scheduler.ExtraInt(state.account.Extra, "msg_lock_max_waiters"),
-			)
-			return nil, false
-		}
-		releaseMsgLock = func() {
-			f.scheduler.ReleaseMessageLock(releaseCtx, state.account.ID, state.requestID)
-		}
-		f.scheduler.EnforceMessageDelay(ctx, state.account.ID, state.account.Extra)
-	}
-
-	// 3. 账号并发槽
+	// 2. 账号并发槽
 	maxConc := state.account.MaxConcurrency
 	if maxConc <= 0 {
 		maxConc = scheduler.DefaultAccountMaxConcurrency
@@ -176,18 +149,16 @@ func (f *Forwarder) acquireAccountSlot(c *gin.Context, state *forwardState) (fun
 	slotTTL := time.Duration(scheduler.ExtraInt(state.account.Extra, "slot_ttl_seconds")) * time.Second
 
 	if err := f.concurrency.AcquireSlot(ctx, state.account.ID, state.requestID, maxConc, slotTTL); err != nil {
-		releaseMsgLock()
 		f.scheduler.DecrementRPM(ctx, state.account.ID)
 		slog.Info("账号并发已满，尝试 failover",
 			"account_id", state.account.ID, "max_concurrency", maxConc)
 		return nil, false
 	}
 
-	// 反向释放：slot → msg lock。RPM 不在 release 里回退——正常完成流程会通过
-	// scheduler.Apply 决定是否 DecrementRPM（非 Success 判决都会回退）。
+	// RPM 不在 release 里回退——正常完成流程会通过 scheduler.Apply 决定是否 DecrementRPM
+	//（非 Success 判决都会回退）。
 	return func() {
 		f.concurrency.ReleaseSlot(releaseCtx, state.account.ID, state.requestID)
-		releaseMsgLock()
 	}, true
 }
 
@@ -211,11 +182,11 @@ func (f *Forwarder) forwardMetadataOnly(c *gin.Context, state *forwardState) {
 	outcome, err := state.plugin.Gateway.Forward(c.Request.Context(), req)
 	if err != nil {
 		slog.Error("metadata 请求插件失败", "plugin", state.plugin.Name, "path", state.requestPath, "error", err)
-		openAIError(c, http.StatusBadGateway, "server_error", "upstream_error", "metadata 请求插件失败")
+		protocolError(c, http.StatusBadGateway, "server_error", "upstream_error", "metadata 请求插件失败")
 		return
 	}
 	if len(outcome.Upstream.Body) == 0 {
-		openAIError(c, http.StatusBadGateway, "server_error", "upstream_error", "metadata 请求插件返回空响应")
+		protocolError(c, http.StatusBadGateway, "server_error", "upstream_error", "metadata 请求插件返回空响应")
 		return
 	}
 	writeUpstream(c, outcome.Upstream)

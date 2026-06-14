@@ -18,6 +18,7 @@ import (
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
+	"github.com/DouDOU-start/airgate-core/internal/pkg/usagemodel"
 	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 	"github.com/DouDOU-start/airgate-core/internal/server/middleware"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
@@ -33,6 +34,8 @@ func (f *Forwarder) parseRequest(c *gin.Context) (*forwardState, bool) {
 		return nil, false
 	}
 
+	// 限制请求体大小，防止恶意大请求导致 OOM
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxExtensionBodySize)
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		slog.Error("request_body_read_failed",
@@ -40,7 +43,7 @@ func (f *Forwarder) parseRequest(c *gin.Context) (*forwardState, bool) {
 			sdk.LogFieldAPIKeyID, keyInfo.KeyID,
 			sdk.LogFieldError, err,
 		)
-		openAIError(c, http.StatusBadRequest, "invalid_request_error", "invalid_request", "读取请求体失败")
+		protocolError(c, http.StatusBadRequest, "invalid_request_error", "invalid_request", "读取请求体失败")
 		return nil, false
 	}
 
@@ -51,7 +54,7 @@ func (f *Forwarder) parseRequest(c *gin.Context) (*forwardState, bool) {
 	if inst == nil {
 		return nil, false
 	}
-	schedulingModels := schedulingModelsForRequest(requestedPlatform, path, parsed.Model)
+	schedulingModels := schedulingModelsForRequest(f.manager, requestedPlatform, inst.Name, path, parsed.Model)
 	schedulingModel := ""
 	if len(schedulingModels) > 0 {
 		schedulingModel = schedulingModels[0]
@@ -68,7 +71,7 @@ func (f *Forwarder) parseRequest(c *gin.Context) (*forwardState, bool) {
 		realtime:          parsed.Stream,
 		sessionID:         parsed.SessionID,
 		reasoningEffort:   parsed.ReasoningEffort,
-		accountReq:        accountRequirementsForRequest(path, parsed.Model, body),
+		accountReq:        accountRequirementsForRequest(f.manager, path, parsed.Model, body),
 		requestedPlatform: requestedPlatform,
 		keyInfo:           keyInfo,
 		plugin:            inst,
@@ -175,18 +178,18 @@ func normalizeReasoningEffort(effort string) string {
 // 显式强制 image_generation tool 需要 group.plugin_settings.openai.image_enabled=true。
 // 普通 tools 声明不在这里拦截；未开启图片时由 OpenAI 插件过滤掉默认
 // image_generation 工具，避免普通对话被误判成生图请求。
-func requestNeedsImage(path, model string, body []byte) bool {
-	return isImageAPIPath(path) || isImageModel(model) || hasForcedImageGenerationTool(body)
+func requestNeedsImage(mgr *Manager, path, model string, body []byte) bool {
+	return isImageAPIPath(path) || isImageModel(mgr, model) || hasForcedImageGenerationTool(body)
 }
 
 // requestHasImageWorkload 判断请求是否需要更长的图片工作超时。
 // 这里也保留 Responses API 的 image_generation tool 识别，用于放宽生成链路等待时间。
-func requestHasImageWorkload(path, model string, body []byte) bool {
-	return isImageAPIPath(path) || isImageModel(model) || hasImageGenerationTool(body)
+func requestHasImageWorkload(mgr *Manager, path, model string, body []byte) bool {
+	return isImageAPIPath(path) || isImageModel(mgr, model) || hasImageGenerationTool(body)
 }
 
-func accountRequirementsForRequest(path, model string, body []byte) scheduler.AccountRequirements {
-	if isImageAPIPath(path) || isImageModel(model) {
+func accountRequirementsForRequest(mgr *Manager, path, model string, body []byte) scheduler.AccountRequirements {
+	if isImageAPIPath(path) || isImageModel(mgr, model) {
 		return scheduler.AccountRequirements{
 			Workload: scheduler.WorkloadImage,
 			ImageProtocols: []scheduler.ImageProtocol{
@@ -219,8 +222,19 @@ func isImageAPIPath(path string) bool {
 		strings.HasSuffix(path, "/images/tasks/list")
 }
 
-func isImageModel(model string) bool {
-	return strings.Contains(strings.ToLower(strings.TrimSpace(model)), "image")
+// isImageModel 判断模型是否为图像生成模型。
+// 优先查询插件模型目录的 image_generation 能力声明；
+// 若 mgr 为 nil 或模型未注册则回退到 usagemodel.IsImageGen 前缀匹配（兼容历史数据）。
+func isImageModel(mgr *Manager, model string) bool {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return false
+	}
+	if mgr != nil && mgr.ModelHasCapability(model, sdk.ModelCapImageGeneration) {
+		return true
+	}
+	// 回退：模型未注册时仍按已知前缀匹配，避免插件未加载完就拒绝合法请求。
+	return usagemodel.IsImageGen(model)
 }
 
 func hasImageGenerationTool(body []byte) bool {
@@ -338,7 +352,7 @@ func (f *Forwarder) matchPlugin(c *gin.Context, keyInfo *auth.APIKeyInfo, platfo
 		if inst != nil {
 			return inst
 		}
-		if f.manager.GetPluginByPlatform(platform) == nil {
+		if platformInst := f.manager.GetPluginByPlatform(platform); platformInst == nil {
 			slog.Error("plugin_not_loaded_for_platform",
 				sdk.LogFieldPlatform, platform,
 				"available", availablePlatforms(f.manager),
@@ -346,7 +360,7 @@ func (f *Forwarder) matchPlugin(c *gin.Context, keyInfo *auth.APIKeyInfo, platfo
 				sdk.LogFieldGroupID, keyInfo.GroupID,
 				sdk.LogFieldPath, path,
 			)
-			openAIError(c, http.StatusServiceUnavailable, "server_error", "plugin_unavailable", "插件不可用，请联系管理员")
+			protocolError(c, http.StatusServiceUnavailable, "server_error", "plugin_unavailable", "插件不可用，请联系管理员")
 		} else {
 			slog.Warn("plugin_route_not_found",
 				sdk.LogFieldPlatform, platform,
@@ -354,7 +368,9 @@ func (f *Forwarder) matchPlugin(c *gin.Context, keyInfo *auth.APIKeyInfo, platfo
 				sdk.LogFieldGroupID, keyInfo.GroupID,
 				sdk.LogFieldUserID, keyInfo.UserID,
 			)
-			openAIError(c, http.StatusNotFound, "invalid_request_error", "route_not_found", "当前平台不支持该 API 路径")
+			// 平台插件已知但路径未命中：404 也按该插件声明的协议格式写出
+			setRequestErrorFormat(c, f.manager.ErrorFormat(platformInst.Name, path))
+			protocolError(c, http.StatusNotFound, "invalid_request_error", "route_not_found", "当前平台不支持该 API 路径")
 		}
 		return nil
 	}
@@ -365,7 +381,7 @@ func (f *Forwarder) matchPlugin(c *gin.Context, keyInfo *auth.APIKeyInfo, platfo
 			sdk.LogFieldPath, path,
 			sdk.LogFieldUserID, keyInfo.UserID,
 		)
-		openAIError(c, http.StatusNotFound, "invalid_request_error", "route_not_found", "未找到匹配的插件")
+		protocolError(c, http.StatusNotFound, "invalid_request_error", "route_not_found", "未找到匹配的插件")
 	}
 	return inst
 }

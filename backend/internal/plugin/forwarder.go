@@ -55,6 +55,16 @@ func NewForwarder(
 	}
 }
 
+// resolveModelFamily 从插件目录优先获取家族键，未命中时回退到硬编码规则。
+func (f *Forwarder) resolveModelFamily(platform, model string) string {
+	if f.manager != nil {
+		if family := f.manager.ModelFamily(model); family != "" {
+			return family
+		}
+	}
+	return scheduler.ModelFamily(platform, model)
+}
+
 // maxFailoverAttempts 最大 failover 次数（账号级失败后切换新账号上游调用的上限）。
 const maxFailoverAttempts = 3
 
@@ -70,9 +80,8 @@ const queueMaxPollInterval = 2 * time.Second
 // 499 是 nginx 风格的 Client Closed Request，仅用于本地日志和状态归类。
 const statusClientClosedRequest = 499
 
-// allRoutesFailedDefaultRetryAfter 客户端最终被拒时，若没有任何上游 RetryAfter 可参考
-// （比如 max_concurrency 打满、所有账号都在冷却但 state_until 没回填到这一层），
-// 给客户端一个保守的退避建议。1s 既能避免雪崩，又比 60s 更贴合"瞬时打满"的真实恢复节奏。
+// allRoutesFailedDefaultRetryAfter 客户端最终因真实上游限流被拒时，若没有任何上游 RetryAfter 可参考，
+// 给客户端一个保守的退避建议。1s 既能避免雪崩，又比 60s 更贴合"瞬时限流"的真实恢复节奏。
 const allRoutesFailedDefaultRetryAfter = time.Second
 
 // Forward 入口。失败时自动 failover 到其它账号，最多 maxFailoverAttempts 次。
@@ -84,6 +93,9 @@ func (f *Forwarder) Forward(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// 对外错误格式跟随目标插件/路由声明（Metadata["error_format"]），
+	// 此后本请求所有 protocolError 按该格式写出；未声明回退 OpenAI 兼容格式
+	setRequestErrorFormat(c, f.manager.ErrorFormat(state.plugin.Name, state.requestPath))
 	if !f.checkBalance(c, state) {
 		return
 	}
@@ -105,7 +117,7 @@ func (f *Forwarder) Forward(c *gin.Context) {
 	)
 
 	// 只读元信息快车道：插件本地合成响应，跳过整条账号 / 闸门 / failover 链路。
-	if isMetadataOnlyPath(state.requestPath) {
+	if f.isMetadataOnlyPath(state.requestPath) {
 		f.forwardMetadataOnly(c, state)
 		return
 	}
@@ -117,7 +129,7 @@ func (f *Forwarder) Forward(c *gin.Context) {
 	defer releaseClientQuota()
 
 	requirements := routing.Requirements{
-		NeedsImage: requestNeedsImage(state.requestPath, state.model, state.body),
+		NeedsImage: requestNeedsImage(f.manager, state.requestPath, state.model, state.body),
 	}
 	routes := routesForAPIKey(state, requirements)
 	if len(routes) == 0 {
@@ -125,10 +137,10 @@ func (f *Forwarder) Forward(c *gin.Context) {
 			sdk.LogFieldUserID, state.keyInfo.UserID,
 		)
 		if errResp, ok := apiKeyGroupRequirementError(state.keyInfo, requirements); ok {
-			openAIError(c, errResp.status, errResp.errType, errResp.code, errResp.message)
+			protocolError(c, errResp.status, errResp.errType, errResp.code, errResp.message)
 			return
 		}
-		openAIError(c, http.StatusServiceUnavailable, "server_error", "no_available_route", "请求暂时无法完成，请稍后重试")
+		protocolError(c, http.StatusServiceUnavailable, "server_error", "no_available_route", "请求暂时无法完成，请稍后重试")
 		return
 	}
 
@@ -432,10 +444,10 @@ type allRoutesFailureResponse struct {
 func writeAllRoutesFailed(c *gin.Context, summary allRoutesFailureSummary) {
 	response := selectAllRoutesFailureResponse(summary)
 	if response.status == http.StatusTooManyRequests {
-		openAIRateLimitError(c, response.status, response.code, response.message, response.retryAfter)
+		protocolRateLimitError(c, response.status, response.code, response.message, response.retryAfter)
 		return
 	}
-	openAIError(c, response.status, response.errType, response.code, response.message)
+	protocolError(c, response.status, response.errType, response.code, response.message)
 }
 
 func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFailureResponse {
@@ -454,11 +466,10 @@ func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFa
 	}
 	if summary.localCapacitySeen {
 		return allRoutesFailureResponse{
-			status:     http.StatusTooManyRequests,
-			errType:    "rate_limit_error",
-			code:       "all_routes_capacity_exhausted",
-			message:    "上游容量暂时不足，请稍后重试",
-			retryAfter: allRoutesFailedDefaultRetryAfter,
+			status:  http.StatusServiceUnavailable,
+			errType: "server_error",
+			code:    "all_routes_failed",
+			message: "请求暂时无法完成，请稍后重试",
 		}
 	}
 	if summary.upstreamTimeoutSeen {
@@ -522,15 +533,12 @@ func routesForAPIKey(state *forwardState, requirements routing.Requirements) []r
 	return []routing.Candidate{keyInfoRoute(state.keyInfo)}
 }
 
+// apiKeyGroupMatchesRequirements 使用 routing 包的统一判定逻辑。
 func apiKeyGroupMatchesRequirements(keyInfo *auth.APIKeyInfo, requirements routing.Requirements) bool {
 	if keyInfo == nil {
 		return false
 	}
-	if strings.EqualFold(keyInfo.GroupPlatform, "openai") {
-		return !requirements.NeedsImage ||
-			pluginSettingEnabledForKey(keyInfo.GroupPluginSettings, "openai", "image_enabled")
-	}
-	return true
+	return routing.GroupSupportsImageRequirement(keyInfo.GroupPlatform, keyInfo.GroupPluginSettings, requirements)
 }
 
 type groupRequirementError struct {
@@ -540,12 +548,16 @@ type groupRequirementError struct {
 	message string
 }
 
+// apiKeyGroupRequirementError 基于 routing 包统一判定逻辑返回结构化错误。
 func apiKeyGroupRequirementError(keyInfo *auth.APIKeyInfo, requirements routing.Requirements) (groupRequirementError, bool) {
-	if keyInfo == nil || !strings.EqualFold(keyInfo.GroupPlatform, "openai") {
+	if keyInfo == nil {
 		return groupRequirementError{}, false
 	}
-	imageEnabled := pluginSettingEnabledForKey(keyInfo.GroupPluginSettings, "openai", "image_enabled")
-	if requirements.NeedsImage && !imageEnabled {
+	if routing.GroupSupportsImageRequirement(keyInfo.GroupPlatform, keyInfo.GroupPluginSettings, requirements) {
+		return groupRequirementError{}, false
+	}
+	// 当前唯一的不满足场景：图片生成未开启
+	if requirements.NeedsImage {
 		return groupRequirementError{
 			status:  http.StatusForbidden,
 			errType: "invalid_request_error",
@@ -554,20 +566,6 @@ func apiKeyGroupRequirementError(keyInfo *auth.APIKeyInfo, requirements routing.
 		}, true
 	}
 	return groupRequirementError{}, false
-}
-
-func pluginSettingEnabledForKey(settings map[string]map[string]string, plugin, key string) bool {
-	for pluginName, kv := range settings {
-		if !strings.EqualFold(pluginName, plugin) {
-			continue
-		}
-		for k, v := range kv {
-			if strings.EqualFold(k, key) {
-				return strings.EqualFold(strings.TrimSpace(v), "true")
-			}
-		}
-	}
-	return false
 }
 
 func keyInfoRoute(keyInfo *auth.APIKeyInfo) routing.Candidate {
