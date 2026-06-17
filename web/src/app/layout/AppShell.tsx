@@ -236,12 +236,12 @@ export function AppShell({ children }: AppShellProps) {
     setStoredLanguage(nextLang);
   };
 
-  const displayName = user?.username || user?.email?.split('@')[0] || site.site_name || 'AirGate';
+  const displayName = user?.username || user?.email?.split('@')[0] || site.site_name || 'HopBase';
   const roleLabel = user?.role === 'api_key'
     ? 'API Key'
     : isAdmin ? t('users.role_admin', 'Admin') : t('users.role_user', 'User');
   useEffect(() => {
-    document.title = site.site_name || 'AirGate';
+    document.title = site.site_name || 'HopBase';
   }, [site.site_name]);
 
   // On mobile, sidebar is always expanded inside the drawer

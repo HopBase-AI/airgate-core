@@ -30,6 +30,8 @@ export const SetupPage = lazyWithPreload(() => import('../pages/SetupPage'));
 export const LoginPage = lazyWithPreload(() => import('../pages/LoginPage'));
 export const PluginPage = lazyWithPreload(() => import('../pages/PluginPage'));
 export const DocsPage = lazyWithPreload(() => import('../pages/DocsPage'));
+export const LegalTermsPage = lazyWithPreload(() => import('../pages/LegalTermsPage'));
+export const PrivacyPolicyPage = lazyWithPreload(() => import('../pages/PrivacyPolicyPage'));
 export const DashboardPage = lazyWithPreload(() => import('../pages/DashboardPage'));
 export const UserOverviewPage = lazyWithPreload(() => import('../pages/user/UserOverviewPage'));
 export const UsersPage = lazyWithPreload(() => import('../pages/admin/UsersPage'));
@@ -59,6 +61,10 @@ const ROUTE_PRELOADS = new Map<string, AnyPreloadableLazyComponent[]>([
   ['/login', [LoginPage]],
   ['/setup', [SetupPage]],
   ['/docs', [DocsPage]],
+  ['/legal/terms', [LegalTermsPage]],
+  ['/user-agreement', [LegalTermsPage]],
+  ['/legal/privacy', [PrivacyPolicyPage]],
+  ['/privacy-policy', [PrivacyPolicyPage]],
   ['/profile', [ProfilePage]],
   ['/keys', [UserKeysPage]],
   ['/usage', [UserUsagePage]],

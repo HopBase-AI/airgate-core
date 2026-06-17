@@ -1,7 +1,7 @@
 {
-  "app_name": "AirGate",
+  "app_name": "HopBase",
   "app_subtitle": "API Gateway Management",
-  "powered_by": "Powered by AirGate",
+  "powered_by": "Powered by HopBase",
 
   "home": {
     "badge": "Unified AI API Gateway",
@@ -169,6 +169,11 @@
     "email_required": "Please enter your email",
     "code_required": "Please enter the verification code",
     "email_verification_required": "Please verify your email before continuing",
+    "agreement_prefix": "I have read and agree to the",
+    "terms_link": "Terms of Service",
+    "agreement_middle": "and the",
+    "privacy_link": "Privacy Policy",
+    "agreement_required": "Please read and agree to the Terms of Service and Privacy Policy",
     "next_step": "Next",
     "change_email": "Change",
     "apikey_login_hint": "Login with API Key to view usage records for this key only.",

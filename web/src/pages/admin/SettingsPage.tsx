@@ -359,7 +359,7 @@ export default function SettingsPage() {
             <Card.Content>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <Field label={t('settings.site_name')} hint={t('settings.site_name_hint')}>
-                  <Input value={val('site_name')} onChange={(e) => set('site_name', e.target.value)} placeholder="AirGate" />
+                  <Input value={val('site_name')} onChange={(e) => set('site_name', e.target.value)} placeholder="HopBase" />
                 </Field>
                 <Field label={t('settings.site_subtitle')}>
                   <Input value={val('site_subtitle')} onChange={(e) => set('site_subtitle', e.target.value)} placeholder="AI API Gateway" />
@@ -498,7 +498,7 @@ export default function SettingsPage() {
                         <Input value={val('smtp_from_email')} onChange={(e) => set('smtp_from_email', e.target.value)} placeholder="noreply@example.com" />
                       </Field>
                       <Field label={t('settings.smtp_from_name')}>
-                        <Input value={val('smtp_from_name')} onChange={(e) => set('smtp_from_name', e.target.value)} placeholder="AirGate" />
+                        <Input value={val('smtp_from_name')} onChange={(e) => set('smtp_from_name', e.target.value)} placeholder="HopBase" />
                       </Field>
                     </div>
                     <NativeSwitch
@@ -542,9 +542,9 @@ export default function SettingsPage() {
                       body={val('email_template_body') || DEFAULT_EMAIL_BODY}
                       onSubjectChange={(v) => set('email_template_subject', v)}
                       onBodyChange={(v) => set('email_template_body', v)}
-                      siteName={val('site_name') || 'AirGate'}
+                      siteName={val('site_name') || 'HopBase'}
                       variables={[
-                        { name: 'site_name', sample: val('site_name') || 'AirGate' },
+                        { name: 'site_name', sample: val('site_name') || 'HopBase' },
                         { name: 'code', sample: '888888' },
                         { name: 'email', sample: 'user@example.com' },
                       ]}
@@ -557,9 +557,9 @@ export default function SettingsPage() {
                       body={val('balance_alert_email_body') || DEFAULT_BALANCE_ALERT_BODY}
                       onSubjectChange={(v) => set('balance_alert_email_subject', v)}
                       onBodyChange={(v) => set('balance_alert_email_body', v)}
-                      siteName={val('site_name') || 'AirGate'}
+                      siteName={val('site_name') || 'HopBase'}
                       variables={[
-                        { name: 'site_name', sample: val('site_name') || 'AirGate' },
+                        { name: 'site_name', sample: val('site_name') || 'HopBase' },
                         { name: 'balance', sample: '$1.2345' },
                         { name: 'threshold', sample: '$5.00' },
                       ]}

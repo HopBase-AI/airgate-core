@@ -77,7 +77,7 @@ function getUseKeyConfig(
       const configDir = shell === 'unix' ? '~/.codex' : '%USERPROFILE%\\.codex';
       const configPath = shell === 'unix' ? `${configDir}/config.toml` : `${configDir}\\config.toml`;
       const authPath = shell === 'unix' ? `${configDir}/auth.json` : `${configDir}\\auth.json`;
-      const providerName = siteName || 'AirGate';
+      const providerName = siteName || 'HopBase';
       const configToml = `model_provider = "${providerName}"
 model = "gpt-5.5"
 review_model = "gpt-5.5"
@@ -316,7 +316,7 @@ export function UseKeyModal({
             </div>}
 
             {/* 配置代码块 */}
-            {getUseKeyConfig(baseUrl, useKeyPlatform, useKeyTab, useKeyShell, useKeyValue, site.site_name || document.title || 'AirGate', t).files.map(
+            {getUseKeyConfig(baseUrl, useKeyPlatform, useKeyTab, useKeyShell, useKeyValue, site.site_name || document.title || 'HopBase', t).files.map(
               (file, idx) => (
                 <div key={idx}>
                   {file.hint && (

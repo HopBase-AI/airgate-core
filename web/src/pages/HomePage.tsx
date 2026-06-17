@@ -36,7 +36,7 @@ export default function HomePage() {
       <nav className="relative z-10 flex items-center justify-between px-6 md:px-12 py-4 max-w-6xl mx-auto">
         <div className="flex items-center gap-2.5">
           <img src={site.site_logo || defaultLogoUrl} alt="" className="w-8 h-8 rounded-sm object-cover" />
-          <span className="text-base font-bold">{site.site_name || 'AirGate'}</span>
+          <span className="text-base font-bold">{site.site_name || 'HopBase'}</span>
         </div>
         <div className="flex items-center gap-2">
           {showStatusEntry && (
@@ -82,7 +82,7 @@ export default function HomePage() {
           <span className="text-text-secondary">{t('home.badge')}</span>
         </div>
         <h1 className="text-4xl md:text-5xl font-bold leading-tight mb-4">
-          {site.site_name || 'AirGate'}
+          {site.site_name || 'HopBase'}
         </h1>
         <p className="text-base md:text-lg text-text-tertiary max-w-xl mx-auto mb-8 leading-relaxed">
           {site.site_subtitle || t('home.subtitle')}
@@ -144,7 +144,7 @@ export default function HomePage() {
       {/* 联系方式 & 底部 */}
       <footer className="relative z-10 border-t border-[var(--ag-glass-border)] py-8 text-center">
         <div className="flex items-center justify-center gap-4 text-xs text-text-tertiary">
-          <span>© {new Date().getFullYear()} {site.site_name || 'AirGate'} · {t('home.copyright')}</span>
+          <span>© {new Date().getFullYear()} {site.site_name || 'HopBase'} · {t('home.copyright')}</span>
           {site.contact_info && (
             <>
               <span className="w-px h-3 bg-[var(--ag-border)]" />

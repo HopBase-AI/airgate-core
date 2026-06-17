@@ -376,7 +376,7 @@ const defaultVerifyEmailBody = `<div style="font-family: -apple-system, BlinkMac
 
 // loadEmailTemplate 读取站点名称和邮件模板。
 func (s *Service) loadEmailTemplate(ctx context.Context) (siteName, subjectTpl, bodyTpl string) {
-	siteName = "AirGate"
+	siteName = "HopBase"
 
 	if s.settings == nil {
 		return siteName, defaultVerifyEmailSubject, defaultVerifyEmailBody

@@ -49,7 +49,7 @@ func (s *Service) Load(ctx context.Context) (Config, error) {
 		ModelsPresetJSON:    DefaultModelsPresetJSON,
 		MemorySearchEnabled: false,
 		MemorySearchModel:   DefaultMemorySearchModel,
-		SiteName:            "AirGate",
+		SiteName:            "HopBase",
 		GatewayMode:         DefaultGatewayMode,
 	}
 

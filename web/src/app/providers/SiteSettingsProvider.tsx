@@ -21,7 +21,7 @@ interface SiteSettings {
 }
 
 const defaults: SiteSettings = {
-  site_name: 'AirGate',
+  site_name: 'HopBase',
   site_subtitle: 'Control Panel',
   site_logo: '',
   api_base_url: '',

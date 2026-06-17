@@ -240,7 +240,7 @@ func balanceAlertSendEmail(settingsService *appsettings.Service, email string, b
 	}
 
 	// 读取站点名称及余额预警邮件模板
-	siteName := "AirGate"
+	siteName := "HopBase"
 	var tplSubject, tplBody string
 	siteSettings, _ := settingsService.List(ctx, "site")
 	for _, s := range siteSettings {

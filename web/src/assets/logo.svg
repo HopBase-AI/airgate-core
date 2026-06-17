@@ -1,32 +1,26 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" role="img" aria-label="HopBase">
   <defs>
-    <linearGradient id="g1" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#06b6d4"/>
-      <stop offset="100%" stop-color="#6366f1"/>
+    <linearGradient id="hb-bg" x1="40" y1="20" x2="472" y2="492" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#d35800"/>
+      <stop offset="52%" stop-color="#c45100"/>
+      <stop offset="100%" stop-color="#9c3f00"/>
     </linearGradient>
-    <linearGradient id="g2" x1="128" y1="128" x2="384" y2="420" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#22d3ee"/>
-      <stop offset="100%" stop-color="#818cf8"/>
-    </linearGradient>
-    <linearGradient id="g3" x1="180" y1="260" x2="332" y2="380" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#67e8f9"/>
-      <stop offset="100%" stop-color="#a5b4fc"/>
-    </linearGradient>
+    <radialGradient id="hb-sheen" cx="0.76" cy="0.18" r="0.95">
+      <stop offset="0%" stop-color="#ffd0b3" stop-opacity="0.55"/>
+      <stop offset="42%" stop-color="#ffb594" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#ffb594" stop-opacity="0"/>
+    </radialGradient>
   </defs>
-  <!-- 背景圆角方块 -->
-  <rect width="512" height="512" rx="112" fill="url(#g1)"/>
-  <!-- 拱门（Gate）-->
-  <path d="M136 400 V240 C136 156 196 96 256 96 C316 96 376 156 376 240 V400"
-        stroke="white" stroke-width="44" stroke-linecap="round" fill="none" opacity="0.95"/>
-  <!-- 中间门柱底部连接 -->
-  <rect x="136" y="368" width="240" height="44" rx="22" fill="white" opacity="0.3"/>
-  <!-- 气流线 1（上）-->
-  <path d="M200 210 C230 190, 270 230, 312 210"
-        stroke="url(#g3)" stroke-width="14" stroke-linecap="round" fill="none" opacity="0.9"/>
-  <!-- 气流线 2（中）-->
-  <path d="M190 260 C225 240, 275 280, 322 260"
-        stroke="white" stroke-width="14" stroke-linecap="round" fill="none" opacity="0.7"/>
-  <!-- 气流线 3（下）-->
-  <path d="M200 310 C235 290, 275 330, 312 310"
-        stroke="url(#g3)" stroke-width="14" stroke-linecap="round" fill="none" opacity="0.5"/>
+
+  <!-- 圆角方块底 -->
+  <rect width="512" height="512" rx="116" fill="url(#hb-bg)"/>
+  <!-- 右上角高光 -->
+  <rect width="512" height="512" rx="116" fill="url(#hb-sheen)"/>
+
+  <!-- H 拱门字母标：两竖柱 + 上拱横梁（Gate / Hop） -->
+  <g stroke="#ffffff" stroke-width="46" stroke-linecap="round" fill="none">
+    <path d="M174 150 V362"/>
+    <path d="M338 150 V362"/>
+    <path d="M174 258 Q256 168 338 258"/>
+  </g>
 </svg>

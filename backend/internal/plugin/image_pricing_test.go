@@ -70,6 +70,53 @@ func TestImageOutputBillingOverride_ImageModelReplacesTotal(t *testing.T) {
 	}
 }
 
+func TestImageOutputBillingOverride_CurrentImage2Prices(t *testing.T) {
+	settings := map[string]map[string]string{
+		"openai": {
+			"image_price_1k": "0.08",
+			"image_price_2k": "0.12",
+			"image_price_4k": "0.15",
+		},
+	}
+	tests := []struct {
+		name string
+		size string
+		want float64
+	}{
+		{name: "1k", size: "1024x1024", want: 0.08},
+		{name: "2k", size: "2048x1152", want: 0.12},
+		{name: "4k", size: "3840x2160", want: 0.15},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			usage := &sdk.Usage{
+				Model: "gpt-image-2",
+				Attributes: []sdk.UsageAttribute{
+					{Key: "image_size", Value: tt.size},
+				},
+				Metrics: []sdk.UsageMetric{
+					{Key: "images", Kind: "image", Value: 1},
+				},
+				CostDetails: []sdk.UsageCostDetail{
+					{Key: "images", AccountCost: 0.40},
+				},
+			}
+
+			got, ok := imageOutputBillingOverride(usage, nil, settings)
+			if !ok {
+				t.Fatal("expected override")
+			}
+			if math.Abs(got.cost-tt.want) > 1e-9 {
+				t.Fatalf("override = %v, want %v", got.cost, tt.want)
+			}
+			if !got.replacesTotal {
+				t.Fatal("image model fixed image price should replace the whole request")
+			}
+		})
+	}
+}
+
 func TestImageOutputBillingOverride_FallsBackWhenTierUnset(t *testing.T) {
 	usage := &sdk.Usage{
 		Attributes: []sdk.UsageAttribute{

@@ -48,7 +48,7 @@ function executeCcsImport(
     }
   })`;
 
-  const siteName = document.title || 'AirGate';
+  const siteName = document.title || 'HopBase';
   const params = new URLSearchParams({
     resource: 'provider',
     app,

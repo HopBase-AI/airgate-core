@@ -18,12 +18,14 @@ import {
   ADMIN_IDLE_PRELOADS,
   DashboardPage,
   DocsPage,
+  LegalTermsPage,
   GroupsPage,
   lazyWithPreload,
   LoginPage,
   PluginPage,
   PluginsPage,
   preloadRoutePage,
+  PrivacyPolicyPage,
   ProfilePage,
   ProxiesPage,
   SettingsPage,
@@ -149,6 +151,44 @@ const docsRoute = createRoute({
       <DocsPage />
     </Suspense>
   ),
+});
+
+const legalTermsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/legal/terms',
+  component: () => (
+    <Suspense fallback={<FullPageLoading />}>
+      <LegalTermsPage />
+    </Suspense>
+  ),
+});
+
+const userAgreementLegacyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/user-agreement',
+  beforeLoad: () => {
+    throw redirect({ to: '/legal/terms' });
+  },
+  component: () => null,
+});
+
+const privacyPolicyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/legal/privacy',
+  component: () => (
+    <Suspense fallback={<FullPageLoading />}>
+      <PrivacyPolicyPage />
+    </Suspense>
+  ),
+});
+
+const privacyPolicyLegacyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/privacy-policy',
+  beforeLoad: () => {
+    throw redirect({ to: '/legal/privacy' });
+  },
+  component: () => null,
 });
 
 // 登录页（无需认证，懒加载）
@@ -296,6 +336,10 @@ const routeTree = rootRoute.addChildren([
   homeRoute,
   loginRoute,
   docsRoute,
+  legalTermsRoute,
+  userAgreementLegacyRoute,
+  privacyPolicyRoute,
+  privacyPolicyLegacyRoute,
   studioRoute,
   chatRoute,
   playgroundLegacyRoute,

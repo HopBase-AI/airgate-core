@@ -19,6 +19,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	entsetting "github.com/DouDOU-start/airgate-core/ent/setting"
+	entuser "github.com/DouDOU-start/airgate-core/ent/user"
 )
 
 // API Key 缓存。
@@ -51,6 +52,7 @@ var (
 	ErrAPIKeyExpired      = errors.New("API Key 已过期")
 	ErrAPIKeyQuota        = errors.New("API Key 配额已用尽")
 	ErrAPIKeyGroupUnbound = errors.New("API Key 未绑定分组，请联系管理员重新绑定")
+	ErrUserDisabled       = errors.New("账户已被禁用")
 )
 
 const apiKeyPrefix = "sk-"
@@ -253,6 +255,12 @@ func ValidateAPIKey(ctx context.Context, db *ent.Client, key string) (*APIKeyInf
 		cacheAPIKeyResult(hash, nil, ErrInvalidAPIKey)
 		return nil, ErrInvalidAPIKey
 	}
+	// 用户被禁用：即便 API Key 本身仍是 active，也拒绝转发。
+	// 缓存负结果，运维禁用用户后最多 apiKeyCacheTTL(5s) 生效。
+	if u.Status != entuser.StatusActive {
+		cacheAPIKeyResult(hash, nil, ErrUserDisabled)
+		return nil, ErrUserDisabled
+	}
 	g := ak.Edges.Group
 	if g == nil {
 		cacheAPIKeyResult(hash, nil, ErrAPIKeyGroupUnbound)
@@ -360,6 +368,8 @@ func apiKeyCacheErrorCode(err error) string {
 		return "quota"
 	case ErrAPIKeyGroupUnbound:
 		return "group_unbound"
+	case ErrUserDisabled:
+		return "user_disabled"
 	default:
 		return ""
 	}
@@ -375,6 +385,8 @@ func apiKeyCacheErrorFromCode(code string) error {
 		return ErrAPIKeyQuota
 	case "group_unbound":
 		return ErrAPIKeyGroupUnbound
+	case "user_disabled":
+		return ErrUserDisabled
 	default:
 		return nil
 	}

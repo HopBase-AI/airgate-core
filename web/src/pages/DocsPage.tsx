@@ -37,7 +37,7 @@ export default function DocsPage() {
   const showStatusEntry = useStatusPageEnabled();
   const isLoggedIn = !!getToken();
 
-  const siteName = site.site_name || 'AirGate';
+  const siteName = site.site_name || 'HopBase';
   // 与后端 openclaw handler 的 BaseURL 推导逻辑保持一致：优先 api_base_url，再回退到 origin。
   const baseUrl = (
     site.api_base_url || (typeof window !== 'undefined' ? window.location.origin : '')

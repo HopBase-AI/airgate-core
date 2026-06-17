@@ -189,7 +189,7 @@ export default function SetupPage() {
             <Zap className="w-6 h-6 text-primary" />
           </div>
           <h1 className="text-xl font-semibold text-text">
-            AirGate
+            HopBase
           </h1>
           <p className="text-xs text-text-tertiary mt-1.5 font-mono uppercase">
             {t('setup.title')}
@@ -237,7 +237,7 @@ export default function SetupPage() {
 
         {/* 底部 */}
         <p className="text-center text-[10px] text-text-tertiary mt-8 font-mono uppercase">
-          Powered by AirGate
+          Powered by HopBase
         </p>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
-import { Alert, Button, Card, FieldError, Form, Input, Label, Link as HeroLink, Tabs, TextField as HeroTextField } from '@heroui/react';
+import { Alert, Button, Card, Checkbox, FieldError, Form, Input, Label, Link as HeroLink, Tabs, TextField as HeroTextField } from '@heroui/react';
 import { useAuth } from '../app/providers/AuthProvider';
 import { useSiteSettings, defaultLogoUrl } from '../app/providers/SiteSettingsProvider';
 import { authApi } from '../shared/api/auth';
@@ -11,6 +11,47 @@ import { ApiError, setSessionAPIKey } from '../shared/api/client';
 import { Mail, Lock, User, ArrowRight, Sun, Moon, ShieldCheck, Key, Activity } from 'lucide-react';
 
 type TabKey = 'login' | 'register' | 'apikey';
+
+function AgreementCheckbox({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (selected: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Checkbox className="items-start" isSelected={checked} onChange={onChange}>
+      <Checkbox.Control>
+        <Checkbox.Indicator />
+      </Checkbox.Control>
+      <Checkbox.Content>
+        <span className="text-xs leading-relaxed text-text-secondary">
+          {t('auth.agreement_prefix')}
+          <HeroLink
+            href="/legal/terms"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mx-1 text-primary hover:underline"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {t('auth.terms_link')}
+          </HeroLink>
+          {t('auth.agreement_middle')}
+          <HeroLink
+            href="/legal/privacy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mx-1 text-primary hover:underline"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {t('auth.privacy_link')}
+          </HeroLink>
+        </span>
+      </Checkbox.Content>
+    </Checkbox>
+  );
+}
 
 /* ==================== 登录表单 ==================== */
 
@@ -22,10 +63,12 @@ function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [acceptedAgreement, setAcceptedAgreement] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!acceptedAgreement) { setError(t('auth.agreement_required')); return; }
     setLoading(true);
     setError('');
 
@@ -86,7 +129,14 @@ function LoginForm() {
           </Alert.Content>
         </Alert>
       )}
-      <Button type="submit" isDisabled={loading} className="w-full h-11" variant="primary" aria-busy={loading}>
+      <AgreementCheckbox
+        checked={acceptedAgreement}
+        onChange={(selected) => {
+          setAcceptedAgreement(selected);
+          if (selected && error === t('auth.agreement_required')) setError('');
+        }}
+      />
+      <Button type="submit" isDisabled={loading || !acceptedAgreement} className="w-full h-11" variant="primary" aria-busy={loading}>
         <ArrowRight className="w-4 h-4" />
         {t('common.login')}
       </Button>
@@ -114,6 +164,7 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
   const [sendingCode, setSendingCode] = useState(false);
   const [codeSent, setCodeSent] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  const [acceptedAgreement, setAcceptedAgreement] = useState(false);
   const [error, setError] = useState('');
 
   const passwordMismatch = confirmPassword !== '' && password !== confirmPassword;
@@ -166,6 +217,7 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
     const normalizedEmail = email.trim();
     const normalizedCode = verifyCode.trim();
     if (!normalizedEmail) { setError(t('auth.email_required')); return; }
+    if (!acceptedAgreement) { setError(t('auth.agreement_required')); return; }
 
     if (!needVerify) {
       setEmail(normalizedEmail);
@@ -290,6 +342,13 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
             </Button>
           </div>
         )}
+        <AgreementCheckbox
+          checked={acceptedAgreement}
+          onChange={(selected) => {
+            setAcceptedAgreement(selected);
+            if (selected && error === t('auth.agreement_required')) setError('');
+          }}
+        />
         {error && (
           <Alert status="danger">
             <Alert.Content>
@@ -297,7 +356,7 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
             </Alert.Content>
           </Alert>
         )}
-        <Button type="submit" isDisabled={loading || !settingsReady} className="w-full h-11" variant="primary" aria-busy={loading}>
+        <Button type="submit" isDisabled={loading || !settingsReady || !acceptedAgreement} className="w-full h-11" variant="primary" aria-busy={loading}>
           <ArrowRight className="w-4 h-4" />
           {t('auth.next_step')}
         </Button>
@@ -393,10 +452,12 @@ function APIKeyLoginForm() {
 
   const [apiKey, setApiKey] = useState('');
   const [loading, setLoading] = useState(false);
+  const [acceptedAgreement, setAcceptedAgreement] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!acceptedAgreement) { setError(t('auth.agreement_required')); return; }
     setLoading(true);
     setError('');
 
@@ -444,7 +505,14 @@ function APIKeyLoginForm() {
           </Alert.Content>
         </Alert>
       )}
-      <Button type="submit" isDisabled={loading} className="w-full h-11" variant="primary" aria-busy={loading}>
+      <AgreementCheckbox
+        checked={acceptedAgreement}
+        onChange={(selected) => {
+          setAcceptedAgreement(selected);
+          if (selected && error === t('auth.agreement_required')) setError('');
+        }}
+      />
+      <Button type="submit" isDisabled={loading || !acceptedAgreement} className="w-full h-11" variant="primary" aria-busy={loading}>
         <ArrowRight className="w-4 h-4" />
         {t('common.login')}
       </Button>
@@ -491,7 +559,7 @@ export default function LoginPage() {
         <div className="relative z-10 px-12 max-w-md">
           <div className="flex items-center gap-3 mb-8">
             <img src={site.site_logo || defaultLogoUrl} alt="" className="w-10 h-10 rounded-sm object-cover" />
-            <span className="text-xl font-bold">{site.site_name || 'AirGate'}</span>
+            <span className="text-xl font-bold">{site.site_name || 'HopBase'}</span>
           </div>
           <h2 className="text-3xl font-bold leading-snug mb-4">
             {t('auth.welcome_title')}
@@ -590,7 +658,7 @@ export default function LoginPage() {
               </HeroLink>
             )}
             <p className="text-center text-[10px] text-text-tertiary font-mono uppercase">
-              Powered by {site.site_name || 'AirGate'}
+              Powered by {site.site_name || 'HopBase'}
             </p>
           </div>
         </div>
