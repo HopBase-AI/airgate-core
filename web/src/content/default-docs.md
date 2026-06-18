@@ -1,20 +1,20 @@
-# 使用 AirGate
+# 使用 HopBase
 
-AirGate 是一个统一的 AI API 网关：把 OpenAI API Key 与 ChatGPT OAuth 等上游账号统一调度、计费、限流，并对外暴露 OpenAI 兼容协议（Chat Completions / Responses）以及 Anthropic Messages 协议翻译。
+HopBase 是一个统一的 AI API 网关：把 OpenAI API Key 与 ChatGPT OAuth 等上游账号统一调度、计费、限流，并对外暴露 OpenAI 兼容协议（Chat Completions / Responses）以及 Anthropic Messages 协议翻译。
 
-你可以把现有的 OpenAI SDK、Anthropic SDK、Codex CLI、Claude Code、openclaw 等客户端工具直接指向 AirGate，无需改代码。
+你可以把现有的 OpenAI SDK、Anthropic SDK、Codex CLI、Claude Code、openclaw 等客户端工具直接指向 HopBase，无需改代码。
 
 > Roadmap：即将支持 Claude（Anthropic）原生上游账号接入，届时 `/v1/messages` 路由会自动优先走原生上游而非协议翻译。
 
 ## 快速开始
 
 1. **创建 API Key**：进入 **API 密钥** 页，点击「创建」即可。复制返回的 `sk-...`；如果之后忘了，在该页面随时点「查看」也能再次取出。
-2. **API 基础地址**：`https://your-airgate.example.com/v1`
+2. **API 基础地址**：`https://api.hop-base.com/v1`
 3. **发请求**：把客户端的 `base_url` 指向上面的地址，`Authorization` 头设为 `Bearer sk-你的key`。
 
 ## API 概览
 
-AirGate 对外暴露 OpenAI 兼容协议，并通过协议翻译同时兼容 Anthropic Messages，常用路由：
+HopBase 对外暴露 OpenAI 兼容协议，并通过协议翻译同时兼容 Anthropic Messages，常用路由：
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
@@ -31,7 +31,7 @@ AirGate 对外暴露 OpenAI 兼容协议，并通过协议翻译同时兼容 Ant
 ### curl 示例
 
 ```bash
-curl https://your-airgate.example.com/v1/chat/completions \
+curl https://api.hop-base.com/v1/chat/completions \
   -H "Authorization: Bearer sk-你的key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -50,7 +50,7 @@ curl https://your-airgate.example.com/v1/chat/completions \
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://your-airgate.example.com/v1",
+    base_url="https://api.hop-base.com/v1",
     api_key="sk-你的key",
 )
 
@@ -68,7 +68,7 @@ import base64
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://your-airgate.example.com/v1",
+    base_url="https://api.hop-base.com/v1",
     api_key="sk-你的key",
 )
 
@@ -80,7 +80,7 @@ resp = client.images.generate(
     background="opaque",            # opaque | transparent
     output_format="png",            # png | jpeg | webp
     n=1,
-    extra_body={"stream": True},    # 可选：上游耗时较长时，AirGate 会在等待期间通过 SSE 发送 keepalive ping 防止客户端/网关超时；响应体仍是标准 ImagesResponse
+    extra_body={"stream": True},    # 可选：上游耗时较长时，HopBase 会在等待期间通过 SSE 发送 keepalive ping 防止客户端/网关超时；响应体仍是标准 ImagesResponse
 )
 
 img = resp.data[0]
@@ -127,7 +127,7 @@ Python（用 `httpx` 直发）：
 import time
 import httpx
 
-BASE = "https://your-airgate.example.com/v1"
+BASE = "https://api.hop-base.com/v1"
 AUTH = {"Authorization": "Bearer sk-你的key"}
 
 # 1. 提交任务，立即拿到 task_id
@@ -142,7 +142,7 @@ resp = httpx.post(
     timeout=30,
 )
 resp.raise_for_status()                          # 期望 202 Accepted
-task_id = resp.json()["task_id"]                 # AirGate task id
+task_id = resp.json()["task_id"]                 # HopBase task id
 
 # 2. 轮询任务状态
 while True:
@@ -168,7 +168,7 @@ curl 等价示例：
 
 ```bash
 # 提交任务
-curl -i https://your-airgate.example.com/v1/images/generations \
+curl -i https://api.hop-base.com/v1/images/generations \
   -H "Authorization: Bearer sk-你的key" \
   -H "Content-Type: application/json" \
   -H "Prefer: respond-async" \
@@ -188,7 +188,7 @@ curl -i https://your-airgate.example.com/v1/images/generations \
 #   }
 
 # 轮询任务
-curl "https://your-airgate.example.com/v1/images/tasks?task_id=01933e4f-89a0-7c1e-8b3f-d4a92a1f00aa" \
+curl "https://api.hop-base.com/v1/images/tasks?task_id=01933e4f-89a0-7c1e-8b3f-d4a92a1f00aa" \
   -H "Authorization: Bearer sk-你的key"
 # → {
 #     "task_id": "01933e4f-89a0-7c1e-8b3f-d4a92a1f00aa",
@@ -212,7 +212,7 @@ curl "https://your-airgate.example.com/v1/images/tasks?task_id=01933e4f-89a0-7c1
 from anthropic import Anthropic
 
 client = Anthropic(
-    base_url="https://your-airgate.example.com",
+    base_url="https://api.hop-base.com",
     api_key="sk-你的key",
 )
 
@@ -227,23 +227,23 @@ print(resp.content[0].text)
 ## 一键接入 openclaw
 
 [openclaw](https://github.com/openclaw/openclaw) 是一款可以运行在本机的个人 AI 助理，可同时桥接 WhatsApp、Telegram、Slack、Discord 等十几种聊天平台。
-AirGate 已经兼容 openclaw 所需的全部协议，只需运行一行命令即可完成接入。
+HopBase 已经兼容 openclaw 所需的全部协议，只需运行一行命令即可完成接入。
 
 **Linux / macOS**（终端）：
 
 ```bash
-curl -fsSL https://your-airgate.example.com/openclaw/install.sh -o openclaw-install.sh && bash openclaw-install.sh
+curl -fsSL https://api.hop-base.com/openclaw/install.sh -o openclaw-install.sh && bash openclaw-install.sh
 ```
 
 **Windows**（PowerShell 5 或更高版本）：
 
 ```powershell
-iwr -useb https://your-airgate.example.com/openclaw/install.ps1 | iex
+iwr -useb https://api.hop-base.com/openclaw/install.ps1 | iex
 ```
 
 脚本会：
 
-1. 提示你粘贴一把 AirGate 的 API Key
+1. 提示你粘贴一把 HopBase 的 API Key
 2. 拉取管理员预设的可选模型列表让你勾选
 3. 自动生成 `~/.openclaw/openclaw.json`（Windows 为 `%USERPROFILE%\.openclaw\openclaw.json`，旧配置会被备份）
 
@@ -261,11 +261,11 @@ openclaw gateway
 
 ### Q: 想用 Codex CLI / Claude Code / Cline 等工具？
 
-它们通常允许自定义 `base_url` 和 `api_key`。把 base URL 指向 `https://<airgate>` 或 `https://<airgate>/v1`，密钥填 AirGate 的 API Key 即可。
+它们通常允许自定义 `base_url` 和 `api_key`。把 base URL 指向 `https://<hopbase>` 或 `https://<hopbase>/v1`，密钥填 HopBase 的 API Key 即可。
 
 ### Q: 如何切换模型？
 
-直接在请求体的 `model` 字段里写 AirGate 当前支持的模型 ID。可调用 `GET /v1/models` 拿到完整清单。
+直接在请求体的 `model` 字段里写 HopBase 当前支持的模型 ID。可调用 `GET /v1/models` 拿到完整清单。
 
 ### Q: 生图接口支持哪些模型和参数？
 

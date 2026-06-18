@@ -105,8 +105,8 @@ func (s *Service) TestSMTP(ctx context.Context, input TestSMTPInput) error {
 	addr := fmt.Sprintf("%s:%d", input.Host, input.Port)
 
 	// 构造邮件内容
-	subject := "AirGate SMTP Test"
-	body := "This is a test email from AirGate to verify your SMTP configuration."
+	subject := "HopBase SMTP Test"
+	body := "This is a test email from HopBase to verify your SMTP configuration."
 	msg := strings.Join([]string{
 		"From: " + input.From,
 		"To: " + input.To,

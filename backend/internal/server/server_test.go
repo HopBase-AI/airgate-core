@@ -39,7 +39,7 @@ func TestConvertMarketEntries(t *testing.T) {
 	got := convertMarketEntries([]config.MarketEntry{{
 		Name:        "gateway-openai",
 		Description: "OpenAI 网关",
-		Author:      "AirGate",
+		Author:      "HopBase",
 		Type:        "gateway",
 		GithubRepo:  "owner/repo",
 	}})
