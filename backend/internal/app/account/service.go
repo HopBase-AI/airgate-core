@@ -110,12 +110,18 @@ func (s *Service) SetUsageCacheRedis(rdb *redis.Client) {
 }
 
 // StartQuotaRefreshLoop periodically refreshes OAuth account plan metadata written into credentials.
-func (s *Service) StartQuotaRefreshLoop(ctx context.Context) {
-	go s.runQuotaRefreshLoop(ctx)
+func (s *Service) StartQuotaRefreshLoop(ctx context.Context, isLeader func() bool) {
+	go s.runQuotaRefreshLoop(ctx, isLeader)
 }
 
-func (s *Service) runQuotaRefreshLoop(ctx context.Context) {
-	s.refreshAllOAuthQuotas(ctx)
+func (s *Service) runQuotaRefreshLoop(ctx context.Context, isLeader func() bool) {
+	runIfLeader := func() {
+		// 仅 leader 实例刷新配额，避免多实例重复打上游。
+		if isLeader == nil || isLeader() {
+			s.refreshAllOAuthQuotas(ctx)
+		}
+	}
+	runIfLeader()
 
 	ticker := time.NewTicker(autoQuotaRefreshInterval)
 	defer ticker.Stop()
@@ -124,7 +130,7 @@ func (s *Service) runQuotaRefreshLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.refreshAllOAuthQuotas(ctx)
+			runIfLeader()
 		}
 	}
 }

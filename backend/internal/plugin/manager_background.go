@@ -70,6 +70,11 @@ func (m *Manager) runBackgroundTaskOnce(parent context.Context, pluginName strin
 	if err := parent.Err(); err != nil {
 		return
 	}
+	// 非 leader 实例跳过：插件后台任务（用量轮询/结算等）必须全局单例，
+	// 否则蓝绿/多实例期间会重复执行导致重复计费。
+	if m.isLeaderFunc != nil && !m.isLeaderFunc() {
+		return
+	}
 	ctx, cancel := context.WithTimeout(parent, taskRunTimeout)
 	defer cancel()
 	if err := ext.RunBackgroundTask(ctx, taskName); err != nil {

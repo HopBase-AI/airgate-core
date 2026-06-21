@@ -67,11 +67,16 @@ func loadAssetRetentionPolicy(ctx context.Context, db *ent.Client) (AssetRetenti
 // StartAssetCleanupLoop 启动 Core 侧资产清理循环。
 //
 // 清理策略每轮从 settings.storage 重新读取，因此管理员改保留天数后无需重启。
-func StartAssetCleanupLoop(ctx context.Context, db *ent.Client) {
+func StartAssetCleanupLoop(ctx context.Context, db *ent.Client, isLeader func() bool) {
 	if db == nil {
 		return
 	}
-	runAssetCleanupOnce(ctx, db)
+	runIfLeader := func() {
+		if isLeader == nil || isLeader() {
+			runAssetCleanupOnce(ctx, db)
+		}
+	}
+	runIfLeader()
 
 	ticker := time.NewTicker(assetCleanupInterval)
 	defer ticker.Stop()
@@ -80,7 +85,7 @@ func StartAssetCleanupLoop(ctx context.Context, db *ent.Client) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			runAssetCleanupOnce(ctx, db)
+			runIfLeader()
 		}
 	}
 }

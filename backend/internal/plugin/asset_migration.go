@@ -27,11 +27,16 @@ type AssetMigrationResult struct {
 // StartAssetMigrationLoop 持续把本地 data/assets 中还没有进入 S3/R2 的对象补传到远端。
 //
 // 这个循环只在 S3/R2 配置完整时工作；它不会删除本地文件，避免迁移期丢失回退能力。
-func StartAssetMigrationLoop(ctx context.Context, db *ent.Client) {
+func StartAssetMigrationLoop(ctx context.Context, db *ent.Client, isLeader func() bool) {
 	if db == nil {
 		return
 	}
-	runAssetMigrationOnce(ctx, db)
+	runIfLeader := func() {
+		if isLeader == nil || isLeader() {
+			runAssetMigrationOnce(ctx, db)
+		}
+	}
+	runIfLeader()
 
 	ticker := time.NewTicker(assetMigrationInterval)
 	defer ticker.Stop()
@@ -40,7 +45,7 @@ func StartAssetMigrationLoop(ctx context.Context, db *ent.Client) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			runAssetMigrationOnce(ctx, db)
+			runIfLeader()
 		}
 	}
 }

@@ -59,6 +59,11 @@ func (m *Manager) StartTaskDispatcher(ctx context.Context) {
 // resetProcessingTasks 将服务重启前残留的 processing 任务重置为 retrying/failed，
 // 使 dispatch 循环能立即重新接管。
 func (m *Manager) resetProcessingTasks(ctx context.Context) {
+	// 仅 leader 执行：无条件重置所有 processing 任务会把其它实例在途任务打回 retrying
+	// 导致重复执行，多实例（蓝绿）下只能由 leader 做。
+	if m.isLeaderFunc != nil && !m.isLeaderFunc() {
+		return
+	}
 	if m.hostFactory == nil || m.hostFactory.db == nil {
 		return
 	}
@@ -119,6 +124,11 @@ func (m *Manager) taskDispatchLoop(ctx context.Context) {
 var ttCache = &taskTypesCache{}
 
 func (m *Manager) dispatchPendingTasks(ctx context.Context) {
+	// 仅 leader 分发：任务队列集群共享。原子领取（dispatchPluginTasks 的条件更新）已能防
+	// 重复执行，这里再 gate 一层避免多实例重复查询/抢占的无谓开销。
+	if m.isLeaderFunc != nil && !m.isLeaderFunc() {
+		return
+	}
 	if m.hostFactory == nil || m.hostFactory.db == nil {
 		return
 	}
@@ -320,6 +330,10 @@ func (m *Manager) taskRecoverLoop(ctx context.Context) {
 }
 
 func (m *Manager) recoverStaleTasks(ctx context.Context) {
+	// 仅 leader 恢复僵尸任务，避免多实例重复扫描/重置。
+	if m.isLeaderFunc != nil && !m.isLeaderFunc() {
+		return
+	}
 	if m.hostFactory == nil || m.hostFactory.db == nil {
 		return
 	}

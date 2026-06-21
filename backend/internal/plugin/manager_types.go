@@ -80,6 +80,10 @@ type Manager struct {
 	// metadataOnlyPaths 汇总所有插件声明了 Metadata["metadata_only"]="true" 的路由路径。
 	// 由 rebuildMetadataOnlyPathsLocked 在路由缓存变更后重建。
 	metadataOnlyPaths map[string]bool
+
+	// isLeaderFunc 由 server 注入的领导选举判定。非 nil 且返回 false 时，本实例不执行
+	// 插件后台任务（避免蓝绿/多实例期间重复轮询、重复计费）。nil = 不限制（单实例旧行为）。
+	isLeaderFunc func() bool
 }
 
 // SetHostService 注入 Core 实现的 HostService 工厂。
@@ -88,6 +92,11 @@ type Manager struct {
 // 会拿到 host_broker_id=0，需要重启才能恢复 host 通路。
 func (m *Manager) SetHostService(factory *HostService) {
 	m.hostFactory = factory
+}
+
+// SetLeaderFunc 注入领导选举判定；插件后台任务仅在本实例为 leader 时执行。
+func (m *Manager) SetLeaderFunc(fn func() bool) {
+	m.isLeaderFunc = fn
 }
 
 // PluginMeta 插件运行时元信息。

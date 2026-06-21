@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -15,6 +16,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
 	"github.com/DouDOU-start/airgate-core/internal/bootstrap"
+	"github.com/DouDOU-start/airgate-core/internal/cluster"
 	"github.com/DouDOU-start/airgate-core/internal/config"
 	"github.com/DouDOU-start/airgate-core/internal/infra/store"
 	"github.com/DouDOU-start/airgate-core/internal/plugin"
@@ -49,6 +51,10 @@ type Server struct {
 	ipRateLimiter *middleware.IPRateLimiter
 
 	pluginStartCancel context.CancelFunc
+
+	// leader 跨实例领导选举：仅 leader 实例运行全局单例后台循环
+	// （插件后台任务、资产迁移/清理、配额刷新），蓝绿/多实例部署时不重复执行。
+	leader *cluster.Leader
 }
 
 // NewServer 创建 HTTP 服务器
@@ -109,6 +115,7 @@ func NewServer(cfg *config.Config, db *ent.Client, rdb *redis.Client) *Server {
 		concurrency:    concurrency,
 		calculator:     calculator,
 		recorder:       recorder,
+		leader:         cluster.New(rdb, 30*time.Second),
 	}
 
 	s.handlers = bootstrap.NewHTTPHandlers(bootstrap.HTTPDependencies{
@@ -169,8 +176,13 @@ func (s *Server) StartPlugins(ctx context.Context) {
 	pluginCtx, cancel := context.WithCancel(ctx)
 	s.pluginStartCancel = cancel
 
-	go plugin.StartAssetMigrationLoop(pluginCtx, s.db)
-	go plugin.StartAssetCleanupLoop(pluginCtx, s.db)
+	// 先建立领导选举，再启动单例后台循环：仅 leader 实例真正执行，
+	// 蓝绿/多实例期间不会重复轮询上游或重复计费。
+	s.leader.Start(pluginCtx)
+	s.pluginMgr.SetLeaderFunc(s.leader.IsLeader)
+
+	go plugin.StartAssetMigrationLoop(pluginCtx, s.db, s.leader.IsLeader)
+	go plugin.StartAssetCleanupLoop(pluginCtx, s.db, s.leader.IsLeader)
 
 	go func() {
 		// 加载已编译的插件。后台执行，避免坏插件阻塞 core 监听端口。
@@ -197,7 +209,7 @@ func (s *Server) StartPlugins(ctx context.Context) {
 		}
 
 		if s.handlers != nil && s.handlers.AccountService != nil && pluginCtx.Err() == nil {
-			s.handlers.AccountService.StartQuotaRefreshLoop(pluginCtx)
+			s.handlers.AccountService.StartQuotaRefreshLoop(pluginCtx, s.leader.IsLeader)
 		}
 
 		// 启动插件市场后台同步（默认开启，配置 plugins.marketplace.disabled=true 可关闭）
@@ -214,6 +226,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.pluginStartCancel != nil {
 		s.pluginStartCancel()
 	}
+
+	// 主动释放领导租约，让接班实例尽快接管单例后台循环。
+	s.leader.Resign(ctx)
 
 	// 停止 IP 限流器后台清理
 	if s.ipRateLimiter != nil {
