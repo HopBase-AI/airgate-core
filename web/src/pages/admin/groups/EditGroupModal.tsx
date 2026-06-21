@@ -136,9 +136,19 @@ export function GroupFormModal({
   // 支持模型：编辑 model_routing（模型ID → 账号ID[]）。一个分组支持哪些模型 = 该 map 的 key 集合。
   // 始终从原值出发、只按勾选增删 key，保证候选加载失败时提交的仍是原值，不会误清。
   const [modelRouting, setModelRouting] = useState<Record<string, number[]>>(group?.model_routing ?? {});
+  // 候选模型取自分组「已绑定的账号」，而非 model_routing —— 后者只有本选择器自己会写入，
+  // 新分组恒为空，会导致候选永远加载不出来、选择器永远显示占位（鸡生蛋）。
+  // 改为按 group_id 拉该分组的绑定账号，用代表账号查其模型目录。
+  const { data: groupAccountsData, isLoading: groupAccountsLoading } = useQuery({
+    queryKey: queryKeys.accounts('group-models', group?.id),
+    queryFn: () => accountsApi.list({ page: 1, page_size: 100, group_id: group?.id }),
+    enabled: open && isEdit && group?.id != null,
+  });
+  const groupAccountIds = (groupAccountsData?.list ?? []).map((a) => a.id);
   const routedAccountIds = Array.from(new Set(Object.values(modelRouting).flat()));
-  const primaryAccountId = routedAccountIds[0];
-  // 候选模型取自分组现有账号（从 model_routing 的账号ID里取代表账号查其模型目录）。
+  // 新勾选模型时分配的账号：优先沿用 model_routing 既有账号，否则用分组全部已绑定账号。
+  const defaultModelAccountIds = routedAccountIds.length > 0 ? routedAccountIds : groupAccountIds;
+  const primaryAccountId = groupAccountIds[0] ?? routedAccountIds[0];
   const { data: candidateModels = [] } = useQuery({
     queryKey: queryKeys.accountModels(primaryAccountId),
     queryFn: () => accountsApi.models(primaryAccountId as number),
@@ -152,7 +162,7 @@ export function GroupFormModal({
     setModelRouting((prev) => {
       const next = { ...prev };
       if (checked) {
-        if (!next[modelId]) next[modelId] = routedAccountIds;
+        if (!next[modelId]) next[modelId] = defaultModelAccountIds;
       } else {
         delete next[modelId];
       }
@@ -317,32 +327,38 @@ export function GroupFormModal({
         {isEdit ? (
           <div>
             <p className="mb-1.5 text-xs font-medium uppercaser text-text-secondary">支持模型</p>
-            {routedAccountIds.length === 0 ? (
+            {groupAccountsLoading ? (
+              <p className="text-[11px] text-text-tertiary">加载分组账号中…</p>
+            ) : groupAccountIds.length === 0 ? (
               <p className="text-[11px] text-text-tertiary">请先为该分组分配账号后再配置支持模型。</p>
             ) : (
               <>
                 <p className="mb-2 text-[11px] text-text-tertiary">
-                  仅勾选的模型会对本分组开放；取消勾选即从本分组下架该模型。
+                  仅勾选的模型会对本分组开放；取消勾选即从本分组下架该模型。不勾任何模型＝不限制（该平台模型全部开放）。
                 </p>
-                <div className="flex flex-col gap-2">
-                  {supportedModelIds.map((modelId) => (
-                    <Checkbox
-                      key={modelId}
-                      isSelected={!!modelRouting[modelId]}
-                      onChange={(selected) => toggleModel(modelId, selected)}
-                    >
-                      <Checkbox.Control>
-                        <Checkbox.Indicator />
-                      </Checkbox.Control>
-                      <span className="text-sm text-text">
-                        {modelNameById.get(modelId) ?? modelId}
-                        {modelNameById.get(modelId) ? (
-                          <span className="ml-1 text-[11px] text-text-tertiary">{modelId}</span>
-                        ) : null}
-                      </span>
-                    </Checkbox>
-                  ))}
-                </div>
+                {supportedModelIds.length === 0 ? (
+                  <p className="text-[11px] text-text-tertiary">正在加载账号的模型目录…若长时间为空，请确认账号已同步模型。</p>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {supportedModelIds.map((modelId) => (
+                      <Checkbox
+                        key={modelId}
+                        isSelected={!!modelRouting[modelId]}
+                        onChange={(selected) => toggleModel(modelId, selected)}
+                      >
+                        <Checkbox.Control>
+                          <Checkbox.Indicator />
+                        </Checkbox.Control>
+                        <span className="text-sm text-text">
+                          {modelNameById.get(modelId) ?? modelId}
+                          {modelNameById.get(modelId) ? (
+                            <span className="ml-1 text-[11px] text-text-tertiary">{modelId}</span>
+                          ) : null}
+                        </span>
+                      </Checkbox>
+                    ))}
+                  </div>
+                )}
               </>
             )}
           </div>
