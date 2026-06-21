@@ -326,7 +326,7 @@ export default function AccountsPageContent() {
       const pick = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
       const ts = `${pick('year')}${pick('month')}${pick('day')}${pick('hour')}${pick('minute')}${pick('second')}`;
       a.href = url;
-      a.download = `airgate-accounts-${ts}.json`;
+      a.download = `hopbase-accounts-${ts}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

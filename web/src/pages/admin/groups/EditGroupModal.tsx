@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '../../../shared/queryKeys';
-import { Button, Chip, Description, Input, Label, ListBox, Modal, Select, Spinner, TextArea, TextField as HeroTextField, useOverlayState } from '@heroui/react';
+import { Button, Checkbox, Chip, Description, Input, Label, ListBox, Modal, Select, Spinner, TextArea, TextField as HeroTextField, useOverlayState } from '@heroui/react';
 import { DialogTriggerShim } from '../../../shared/components/DialogTriggerShim';
 import { ArrowUpDown, Layers, X } from 'lucide-react';
 import { groupsApi } from '../../../shared/api/groups';
+import { accountsApi } from '../../../shared/api/accounts';
 import { NativeSwitch } from '../../../shared/components/NativeSwitch';
 import type { GroupResp, CreateGroupReq, UpdateGroupReq } from '../../../shared/types';
 
@@ -114,6 +115,33 @@ export function GroupFormModal({
   const [imagePrices, setImagePrices] = useState<ImagePrices>(() => parseImagePrices(group?.plugin_settings));
   const [copyFromGroupIds, setCopyFromGroupIds] = useState<number[]>([]);
 
+  // 支持模型：编辑 model_routing（模型ID → 账号ID[]）。一个分组支持哪些模型 = 该 map 的 key 集合。
+  // 始终从原值出发、只按勾选增删 key，保证候选加载失败时提交的仍是原值，不会误清。
+  const [modelRouting, setModelRouting] = useState<Record<string, number[]>>(group?.model_routing ?? {});
+  const routedAccountIds = Array.from(new Set(Object.values(modelRouting).flat()));
+  const primaryAccountId = routedAccountIds[0];
+  // 候选模型取自分组现有账号（从 model_routing 的账号ID里取代表账号查其模型目录）。
+  const { data: candidateModels = [] } = useQuery({
+    queryKey: queryKeys.accountModels(primaryAccountId),
+    queryFn: () => accountsApi.models(primaryAccountId as number),
+    enabled: open && isEdit && primaryAccountId != null,
+  });
+  const modelNameById = new Map(candidateModels.map((m) => [m.id, m.name]));
+  const supportedModelIds = Array.from(
+    new Set([...candidateModels.map((m) => m.id), ...Object.keys(modelRouting)]),
+  ).sort();
+  const toggleModel = (modelId: string, checked: boolean) => {
+    setModelRouting((prev) => {
+      const next = { ...prev };
+      if (checked) {
+        if (!next[modelId]) next[modelId] = routedAccountIds;
+      } else {
+        delete next[modelId];
+      }
+      return next;
+    });
+  };
+
   const { data: copySourceData } = useQuery({
     queryKey: queryKeys.groupsForCopy(form.platform),
     queryFn: () => groupsApi.list({ page: 1, page_size: 100, platform: form.platform }),
@@ -169,6 +197,7 @@ export function GroupFormModal({
       plugin_settings: Object.keys(pluginSettings).length > 0 ? pluginSettings : undefined,
       quotas: form.subscription_type === 'subscription' ? buildQuotas(quotas) : undefined,
       subscription_type: form.subscription_type as 'standard' | 'subscription',
+      ...(isEdit ? { model_routing: modelRouting } : {}),
       ...(!isEdit && copyFromGroupIds.length > 0
         ? { copy_accounts_from_group_ids: copyFromGroupIds }
         : {}),
@@ -242,6 +271,40 @@ export function GroupFormModal({
             </Select.Popover>
           </Select>
         )}
+
+        {isEdit ? (
+          <div>
+            <p className="mb-1.5 text-xs font-medium uppercaser text-text-secondary">支持模型</p>
+            {routedAccountIds.length === 0 ? (
+              <p className="text-[11px] text-text-tertiary">请先为该分组分配账号后再配置支持模型。</p>
+            ) : (
+              <>
+                <p className="mb-2 text-[11px] text-text-tertiary">
+                  仅勾选的模型会对本分组开放；取消勾选即从本分组下架该模型。
+                </p>
+                <div className="flex flex-col gap-2">
+                  {supportedModelIds.map((modelId) => (
+                    <Checkbox
+                      key={modelId}
+                      isSelected={!!modelRouting[modelId]}
+                      onChange={(selected) => toggleModel(modelId, selected)}
+                    >
+                      <Checkbox.Control>
+                        <Checkbox.Indicator />
+                      </Checkbox.Control>
+                      <span className="text-sm text-text">
+                        {modelNameById.get(modelId) ?? modelId}
+                        {modelNameById.get(modelId) ? (
+                          <span className="ml-1 text-[11px] text-text-tertiary">{modelId}</span>
+                        ) : null}
+                      </span>
+                    </Checkbox>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        ) : null}
 
         {!isEdit ? (
           <div>

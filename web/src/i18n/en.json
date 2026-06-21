@@ -899,7 +899,7 @@
     "s3_presign_ttl_minutes": "Presigned URL TTL (minutes)",
     "s3_presign_ttl_minutes_hint": "Used when Public Base URL is empty. Defaults to 360 minutes.",
     "s3_path_prefix": "Storage path prefix",
-    "s3_path_prefix_hint": "Shared object key prefix for MinIO and local storage, such as airgate.",
+    "s3_path_prefix_hint": "Shared object key prefix for MinIO and local storage, such as hopbase.",
     "local_storage_dir": "Local storage directory",
     "local_storage_dir_hint": "Used when MinIO/S3/R2 is not fully configured. Defaults to data/assets.",
     "asset_retention_section": "Task asset retention",

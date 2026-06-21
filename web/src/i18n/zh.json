@@ -902,7 +902,7 @@
     "s3_presign_ttl_minutes": "预签名 URL 有效期（分钟）",
     "s3_presign_ttl_minutes_hint": "公开访问 Base URL 为空时生效，默认 360 分钟。",
     "s3_path_prefix": "存储路径前缀",
-    "s3_path_prefix_hint": "MinIO 和本地存储共用的对象 key 前缀，例如 airgate。",
+    "s3_path_prefix_hint": "MinIO 和本地存储共用的对象 key 前缀，例如 hopbase。",
     "local_storage_dir": "本地存储目录",
     "local_storage_dir_hint": "未完整配置 MinIO/S3/R2 时使用，默认 data/assets。",
     "asset_retention_section": "任务资源保留策略",
