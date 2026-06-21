@@ -34,6 +34,7 @@ func (s *GroupStore) List(ctx context.Context, filter appgroup.ListFilter) ([]ap
 	}
 
 	list, err := query.
+		WithAllowedUsers().
 		Offset((filter.Page-1)*filter.PageSize).
 		Limit(filter.PageSize).
 		Order(ent.Desc(entgroup.FieldSortWeight), ent.Desc(entgroup.FieldCreatedAt)).
@@ -75,9 +76,12 @@ func (s *GroupStore) ListAvailable(ctx context.Context, filter appgroup.Availabl
 	return mapGroups(list), int64(total), nil
 }
 
-// FindByID 按 ID 查询分组。
+// FindByID 按 ID 查询分组（含授权用户边，供管理员详情/编辑回填）。
 func (s *GroupStore) FindByID(ctx context.Context, id int) (appgroup.Group, error) {
-	item, err := s.db.Group.Get(ctx, id)
+	item, err := s.db.Group.Query().
+		Where(entgroup.IDEQ(id)).
+		WithAllowedUsers().
+		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			return appgroup.Group{}, appgroup.ErrGroupNotFound
@@ -112,12 +116,15 @@ func (s *GroupStore) Create(ctx context.Context, input appgroup.CreateInput) (ap
 		if input.PluginSettings != nil {
 			builder = builder.SetPluginSettings(appgroupClonePluginSettings(input.PluginSettings))
 		}
+		if len(input.AllowedUserIDs) > 0 {
+			builder = builder.AddAllowedUserIDs(toIntIDs(input.AllowedUserIDs)...)
+		}
 
 		item, err := builder.Save(ctx)
 		if err != nil {
 			return appgroup.Group{}, err
 		}
-		return mapGroup(item), nil
+		return s.FindByID(ctx, item.ID)
 	}
 
 	// 需要复制账号：在事务内校验源分组平台、收集去重的账号 ID，随后一次性绑定。
@@ -188,6 +195,9 @@ func (s *GroupStore) Create(ctx context.Context, input appgroup.CreateInput) (ap
 	if len(accountIDs) > 0 {
 		builder = builder.AddAccountIDs(accountIDs...)
 	}
+	if len(input.AllowedUserIDs) > 0 {
+		builder = builder.AddAllowedUserIDs(toIntIDs(input.AllowedUserIDs)...)
+	}
 
 	item, err := builder.Save(ctx)
 	if err != nil {
@@ -198,7 +208,7 @@ func (s *GroupStore) Create(ctx context.Context, input appgroup.CreateInput) (ap
 		return appgroup.Group{}, err
 	}
 
-	return mapGroup(item), nil
+	return s.FindByID(ctx, item.ID)
 }
 
 // Update 更新分组。
@@ -241,16 +251,22 @@ func (s *GroupStore) Update(ctx context.Context, id int, input appgroup.UpdateIn
 	if input.SortWeight != nil {
 		builder = builder.SetSortWeight(*input.SortWeight)
 	}
+	// HasAllowedUserIDs 为 true 时覆盖授权用户：先清空再按列表重建（空列表=仅管理员可见）。
+	if input.HasAllowedUserIDs {
+		builder = builder.ClearAllowedUsers()
+		if len(input.AllowedUserIDs) > 0 {
+			builder = builder.AddAllowedUserIDs(toIntIDs(input.AllowedUserIDs)...)
+		}
+	}
 
-	item, err := builder.Save(ctx)
-	if err != nil {
+	if _, err := builder.Save(ctx); err != nil {
 		if ent.IsNotFound(err) {
 			return appgroup.Group{}, appgroup.ErrGroupNotFound
 		}
 		return appgroup.Group{}, err
 	}
 
-	return mapGroup(item), nil
+	return s.FindByID(ctx, id)
 }
 
 // Delete 删除分组。
@@ -427,6 +443,7 @@ func mapGroup(item *ent.Group) appgroup.Group {
 		RateMultiplier:    item.RateMultiplier,
 		IsExclusive:       item.IsExclusive,
 		StatusVisible:     item.StatusVisible,
+		AllowedUsers:      mapAllowedUsers(item.Edges.AllowedUsers),
 		SubscriptionType:  string(item.SubscriptionType),
 		Quotas:            appgroupCloneQuotas(item.Quotas),
 		ModelRouting:      appgroupCloneModelRouting(item.ModelRouting),
@@ -438,6 +455,31 @@ func mapGroup(item *ent.Group) appgroup.Group {
 		CreatedAt:         item.CreatedAt,
 		UpdatedAt:         item.UpdatedAt,
 	}
+}
+
+// mapAllowedUsers 将已加载的 allowed_users 边映射为领域摘要；未加载时 edges 为 nil，返回 nil。
+func mapAllowedUsers(users []*ent.User) []appgroup.GroupAllowedUser {
+	if len(users) == 0 {
+		return nil
+	}
+	result := make([]appgroup.GroupAllowedUser, 0, len(users))
+	for _, u := range users {
+		result = append(result, appgroup.GroupAllowedUser{
+			ID:       int64(u.ID),
+			Email:    u.Email,
+			Username: u.Username,
+		})
+	}
+	return result
+}
+
+// toIntIDs 将 int64 ID 列表转换为 ent 所需的 int 列表。
+func toIntIDs(ids []int64) []int {
+	out := make([]int, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, int(id))
+	}
+	return out
 }
 
 func appgroupCloneQuotas(input map[string]any) map[string]any {

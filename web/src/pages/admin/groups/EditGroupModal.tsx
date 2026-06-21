@@ -1,14 +1,28 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '../../../shared/queryKeys';
-import { Button, Checkbox, Chip, Description, Input, Label, ListBox, Modal, Select, Spinner, TextArea, TextField as HeroTextField, useOverlayState } from '@heroui/react';
+import { Button, Checkbox, Chip, ComboBox, Description, Input, Label, ListBox, Modal, Select, Spinner, TextArea, TextField as HeroTextField, useOverlayState } from '@heroui/react';
 import { DialogTriggerShim } from '../../../shared/components/DialogTriggerShim';
-import { ArrowUpDown, Layers, X } from 'lucide-react';
+import { ArrowUpDown, Layers, Search, X } from 'lucide-react';
 import { groupsApi } from '../../../shared/api/groups';
 import { accountsApi } from '../../../shared/api/accounts';
+import { usersApi } from '../../../shared/api/users';
+import { useDebouncedValue } from '../../../shared/hooks/useDebouncedValue';
 import { NativeSwitch } from '../../../shared/components/NativeSwitch';
-import type { GroupResp, CreateGroupReq, UpdateGroupReq } from '../../../shared/types';
+import type { GroupResp, GroupAllowedUser, CreateGroupReq, UpdateGroupReq } from '../../../shared/types';
+
+// 分组可见性：公开（所有用户）/ 指定用户可见 / 仅管理员可见。
+// 后端实际只有 is_exclusive + allowed_users 两个原语，这里在 UI 层归并成三态：
+//   public   → is_exclusive=false
+//   specific → is_exclusive=true 且 allowed_user_ids 非空
+//   admin    → is_exclusive=true 且 allowed_user_ids 为空
+type Visibility = 'public' | 'specific' | 'admin';
+
+function initialVisibility(group?: GroupResp): Visibility {
+  if (!group?.is_exclusive) return 'public';
+  return (group.allowed_users?.length ?? 0) > 0 ? 'specific' : 'admin';
+}
 
 function parseQuotas(quotas?: Record<string, unknown>): { daily: string; weekly: string; monthly: string } {
   return {
@@ -100,7 +114,6 @@ export function GroupFormModal({
 
   const [form, setForm] = useState({
     force_instructions: group?.force_instructions ?? '',
-    is_exclusive: group?.is_exclusive ?? false,
     name: group?.name ?? '',
     note: group?.note ?? '',
     platform: group?.platform ?? '',
@@ -109,6 +122,11 @@ export function GroupFormModal({
     status_visible: group?.status_visible ?? true,
     subscription_type: group?.subscription_type ?? 'standard' as const,
   });
+  // 可见性三态 + 指定用户清单（提交时映射为 is_exclusive / allowed_user_ids）。
+  const [visibility, setVisibility] = useState<Visibility>(() => initialVisibility(group));
+  const [allowedUsers, setAllowedUsers] = useState<GroupAllowedUser[]>(() => group?.allowed_users ?? []);
+  const [userQuery, setUserQuery] = useState('');
+  const debouncedUserQuery = useDebouncedValue(userQuery.trim(), 250);
   const [quotas, setQuotas] = useState(parseQuotas(group?.quotas as Record<string, unknown> | undefined));
   const [claudeCodeOnly, setClaudeCodeOnly] = useState(group?.plugin_settings?.claude?.claude_code_only === 'true');
   const [imageEnabled, setImageEnabled] = useState(group?.plugin_settings?.openai?.image_enabled === 'true');
@@ -148,6 +166,28 @@ export function GroupFormModal({
     enabled: !isEdit && !!form.platform && open,
   });
   const copySourceGroups: GroupResp[] = copySourceData?.list ?? [];
+
+  // 指定用户可见：按邮箱/用户名服务端搜索；已选用户存于 allowedUsers，从候选里剔除。
+  const { data: userSearchData } = useQuery({
+    queryKey: queryKeys.users('group-allowed-users-search', debouncedUserQuery),
+    queryFn: () => usersApi.list({ page: 1, page_size: 20, keyword: debouncedUserQuery || undefined }),
+    enabled: open && visibility === 'specific',
+  });
+  const allowedUserIdSet = useMemo(() => new Set(allowedUsers.map((u) => u.user_id)), [allowedUsers]);
+  const userSearchOptions = useMemo(
+    () => (userSearchData?.list ?? [])
+      .filter((u) => !allowedUserIdSet.has(u.id))
+      .map((u) => ({ id: String(u.id), label: u.email, description: u.username, textValue: `${u.email} ${u.username ?? ''}` })),
+    [userSearchData?.list, allowedUserIdSet],
+  );
+  const visibilityOptions = [
+    { id: 'public', label: t('groups.visibility_public') },
+    { id: 'specific', label: t('groups.visibility_specific') },
+    { id: 'admin', label: t('groups.visibility_admin') },
+  ];
+  const visibilityLabel = visibilityOptions.find((o) => o.id === visibility)?.label ?? '';
+  const visibilityHint = t(`groups.visibility_${visibility}_hint`);
+
   const platformOptions = [
     { id: '', label: t('groups.select_platform') },
     ...platforms.map((platform) => ({ id: platform, label: platform })),
@@ -194,6 +234,8 @@ export function GroupFormModal({
       ...form,
       force_instructions: form.force_instructions ?? '',
       note: form.note,
+      is_exclusive: visibility !== 'public',
+      allowed_user_ids: visibility === 'specific' ? allowedUsers.map((u) => u.user_id) : [],
       plugin_settings: Object.keys(pluginSettings).length > 0 ? pluginSettings : undefined,
       quotas: form.subscription_type === 'subscription' ? buildQuotas(quotas) : undefined,
       subscription_type: form.subscription_type as 'standard' | 'subscription',
@@ -371,12 +413,103 @@ export function GroupFormModal({
           />
         </HeroTextField>
 
-        <div className="grid grid-cols-2 gap-3">
-          <NativeSwitch
-            isSelected={form.is_exclusive}
-            label={<span className="text-sm text-text">{t('groups.exclusive_hint')}</span>}
-            onChange={(selected) => setForm({ ...form, is_exclusive: selected })}
-          />
+        <div className="space-y-3 rounded-lg border border-glass-border p-3">
+          <Select
+            fullWidth
+            selectedKey={visibility}
+            onSelectionChange={(key) => setVisibility((key ?? 'public') as Visibility)}
+          >
+            <Label>{t('groups.visibility')}</Label>
+            <Select.Trigger>
+              <Select.Value>{visibilityLabel}</Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox items={visibilityOptions}>
+                {(item) => (
+                  <ListBox.Item id={item.id} textValue={item.label}>
+                    {item.label}
+                  </ListBox.Item>
+                )}
+              </ListBox>
+            </Select.Popover>
+          </Select>
+          <p className="text-[11px] text-text-tertiary">{visibilityHint}</p>
+
+          {visibility === 'specific' ? (
+            <div>
+              {allowedUsers.length > 0 ? (
+                <div className="mb-2 flex flex-wrap gap-1.5">
+                  {allowedUsers.map((u) => (
+                    <Chip key={u.user_id} color="accent" size="sm" variant="soft">
+                      {u.email}
+                      <Button
+                        isIconOnly
+                        aria-label="remove"
+                        size="sm"
+                        variant="ghost"
+                        onPress={() => setAllowedUsers((cur) => cur.filter((x) => x.user_id !== u.user_id))}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </Chip>
+                  ))}
+                </div>
+              ) : (
+                <p className="mb-2 text-[11px] text-warning">{t('groups.visibility_specific_empty')}</p>
+              )}
+              <ComboBox
+                aria-label={t('groups.visibility_search_placeholder')}
+                allowsEmptyCollection
+                fullWidth
+                inputValue={userQuery}
+                items={userSearchOptions}
+                menuTrigger="focus"
+                selectedKey={null}
+                onInputChange={setUserQuery}
+                onSelectionChange={(key) => {
+                  const value = key == null ? '' : String(key);
+                  if (!value) return;
+                  const picked = (userSearchData?.list ?? []).find((item) => String(item.id) === value);
+                  if (picked) {
+                    setAllowedUsers((cur) =>
+                      cur.some((x) => x.user_id === picked.id)
+                        ? cur
+                        : [...cur, { user_id: picked.id, email: picked.email, username: picked.username }],
+                    );
+                  }
+                  setUserQuery('');
+                }}
+              >
+                <ComboBox.InputGroup className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
+                  <Input className="pl-9 pr-10" placeholder={t('groups.visibility_search_placeholder') ?? ''} />
+                  <ComboBox.Trigger className="ag-combobox-preview-trigger absolute right-1 top-1/2 z-10 h-7 w-7 min-w-0 -translate-y-1/2 p-0 text-text-tertiary hover:text-text" />
+                </ComboBox.InputGroup>
+                <ComboBox.Popover>
+                  <ListBox
+                    items={userSearchOptions}
+                    renderEmptyState={() => (
+                      <div className="px-3 py-6 text-center text-xs text-text-tertiary">
+                        {debouncedUserQuery ? t('common.no_data') : t('users.search_placeholder')}
+                      </div>
+                    )}
+                  >
+                    {(item) => (
+                      <ListBox.Item id={item.id} textValue={item.textValue}>
+                        <div className="min-w-0">
+                          <div className="truncate text-sm text-text">{item.label}</div>
+                          {item.description ? (
+                            <div className="truncate text-xs text-text-tertiary">{item.description}</div>
+                          ) : null}
+                        </div>
+                      </ListBox.Item>
+                    )}
+                  </ListBox>
+                </ComboBox.Popover>
+              </ComboBox>
+            </div>
+          ) : null}
 
           <NativeSwitch
             isSelected={form.status_visible}

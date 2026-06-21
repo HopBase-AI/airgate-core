@@ -129,6 +129,7 @@ func (h *GroupHandler) CreateGroup(c *gin.Context) {
 		RateMultiplier:           req.RateMultiplier,
 		IsExclusive:              req.IsExclusive,
 		StatusVisible:            statusVisible,
+		AllowedUserIDs:           req.AllowedUserIDs,
 		SubscriptionType:         req.SubscriptionType,
 		Quotas:                   req.Quotas,
 		ModelRouting:             req.ModelRouting,
@@ -162,11 +163,18 @@ func (h *GroupHandler) UpdateGroup(c *gin.Context) {
 		return
 	}
 
+	var allowedUserIDs []int64
+	if req.AllowedUserIDs != nil {
+		allowedUserIDs = *req.AllowedUserIDs
+	}
+
 	item, err := h.service.Update(c.Request.Context(), id, appgroup.UpdateInput{
 		Name:              req.Name,
 		RateMultiplier:    req.RateMultiplier,
 		IsExclusive:       req.IsExclusive,
 		StatusVisible:     req.StatusVisible,
+		AllowedUserIDs:    allowedUserIDs,
+		HasAllowedUserIDs: req.AllowedUserIDs != nil,
 		SubscriptionType:  req.SubscriptionType,
 		Quotas:            req.Quotas,
 		ModelRouting:      req.ModelRouting,

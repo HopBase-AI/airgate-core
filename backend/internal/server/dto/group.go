@@ -17,6 +17,9 @@ type GroupResp struct {
 	Note              string                       `json:"note,omitempty"`
 	SortWeight        int                          `json:"sort_weight"`
 
+	// AllowedUsers 专属分组的授权用户摘要（仅管理员列表/详情返回；用户可用列表不含）。
+	AllowedUsers []GroupAllowedUserResp `json:"allowed_users,omitempty"`
+
 	// 统计字段（仅管理员列表返回）
 	AccountActive   int     `json:"account_active"`
 	AccountError    int     `json:"account_error"`
@@ -37,7 +40,9 @@ type CreateGroupReq struct {
 	RateMultiplier float64 `json:"rate_multiplier"`
 	IsExclusive    bool    `json:"is_exclusive"`
 	// StatusVisible 用指针区分"字段未提交"和"显式置 false"，缺省视为 true（在公开状态页可见）。
-	StatusVisible     *bool                        `json:"status_visible"`
+	StatusVisible *bool `json:"status_visible"`
+	// AllowedUserIDs 专属分组的授权用户 ID（仅 is_exclusive 时有意义；空=仅管理员可见）。
+	AllowedUserIDs    []int64                      `json:"allowed_user_ids"`
 	SubscriptionType  string                       `json:"subscription_type" binding:"oneof=standard subscription"`
 	Quotas            map[string]interface{}       `json:"quotas"`
 	ModelRouting      map[string][]int64           `json:"model_routing"`
@@ -52,10 +57,12 @@ type CreateGroupReq struct {
 
 // UpdateGroupReq 更新分组请求
 type UpdateGroupReq struct {
-	Name              *string                      `json:"name"`
-	RateMultiplier    *float64                     `json:"rate_multiplier"`
-	IsExclusive       *bool                        `json:"is_exclusive"`
-	StatusVisible     *bool                        `json:"status_visible"`
+	Name           *string  `json:"name"`
+	RateMultiplier *float64 `json:"rate_multiplier"`
+	IsExclusive    *bool    `json:"is_exclusive"`
+	StatusVisible  *bool    `json:"status_visible"`
+	// AllowedUserIDs nil=不修改授权用户，[]=清空（仅管理员可见），[1,2]=设置。
+	AllowedUserIDs    *[]int64                     `json:"allowed_user_ids"`
 	SubscriptionType  *string                      `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`
 	Quotas            map[string]interface{}       `json:"quotas"`
 	ModelRouting      map[string][]int64           `json:"model_routing"`
@@ -64,4 +71,11 @@ type UpdateGroupReq struct {
 	ForceInstructions *string                      `json:"force_instructions"`
 	Note              *string                      `json:"note"`
 	SortWeight        *int                         `json:"sort_weight"`
+}
+
+// GroupAllowedUserResp 专属分组授权用户摘要。
+type GroupAllowedUserResp struct {
+	UserID   int64  `json:"user_id"`
+	Email    string `json:"email"`
+	Username string `json:"username"`
 }

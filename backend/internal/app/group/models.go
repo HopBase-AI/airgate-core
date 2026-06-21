@@ -39,14 +39,24 @@ type AccountCapacity struct {
 	MaxConcurrency int
 }
 
+// GroupAllowedUser 描述被授权访问某专属分组的用户摘要（仅含展示所需字段）。
+type GroupAllowedUser struct {
+	ID       int64
+	Email    string
+	Username string
+}
+
 // Group 描述分组领域对象。
 type Group struct {
-	ID                int
-	Name              string
-	Platform          string
-	RateMultiplier    float64
-	IsExclusive       bool
-	StatusVisible     bool
+	ID             int
+	Name           string
+	Platform       string
+	RateMultiplier float64
+	IsExclusive    bool
+	StatusVisible  bool
+	// AllowedUsers 仅在加载了 allowed_users 边时填充（管理员列表/详情）；
+	// 用户可用分组列表不填充，避免泄漏其他用户。
+	AllowedUsers      []GroupAllowedUser
 	SubscriptionType  string
 	Quotas            map[string]any
 	ModelRouting      map[string][]int64
@@ -87,11 +97,13 @@ type ListResult struct {
 
 // CreateInput 描述创建分组输入。
 type CreateInput struct {
-	Name              string
-	Platform          string
-	RateMultiplier    float64
-	IsExclusive       bool
-	StatusVisible     bool
+	Name           string
+	Platform       string
+	RateMultiplier float64
+	IsExclusive    bool
+	StatusVisible  bool
+	// AllowedUserIDs 专属分组的授权用户 ID 列表（仅 IsExclusive 时有意义；空=仅管理员可见）。
+	AllowedUserIDs    []int64
 	SubscriptionType  string
 	Quotas            map[string]any
 	ModelRouting      map[string][]int64
@@ -106,10 +118,14 @@ type CreateInput struct {
 
 // UpdateInput 描述更新分组输入。
 type UpdateInput struct {
-	Name              *string
-	RateMultiplier    *float64
-	IsExclusive       *bool
-	StatusVisible     *bool
+	Name           *string
+	RateMultiplier *float64
+	IsExclusive    *bool
+	StatusVisible  *bool
+	// AllowedUserIDs / HasAllowedUserIDs：HasAllowedUserIDs=false 时不改动授权用户；
+	// 为 true 时按 AllowedUserIDs 覆盖（空切片=清空，即仅管理员可见）。
+	AllowedUserIDs    []int64
+	HasAllowedUserIDs bool
 	SubscriptionType  *string
 	Quotas            map[string]any
 	ModelRouting      map[string][]int64

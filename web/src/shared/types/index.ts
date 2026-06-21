@@ -281,6 +281,12 @@ export interface CredentialSchemaResp {
 
 // ==================== Group ====================
 
+export interface GroupAllowedUser {
+  user_id: number;
+  email: string;
+  username: string;
+}
+
 export interface GroupResp {
   id: number;
   name: string;
@@ -296,6 +302,8 @@ export interface GroupResp {
   force_instructions?: string;
   note?: string;
   sort_weight: number;
+  // 专属分组的授权用户摘要（仅管理员列表/详情返回）
+  allowed_users?: GroupAllowedUser[];
   account_active: number;
   account_error: number;
   account_disabled: number;
@@ -314,6 +322,8 @@ export interface CreateGroupReq {
   rate_multiplier?: number;
   is_exclusive?: boolean;
   status_visible?: boolean;
+  // 专属分组授权用户 ID（is_exclusive 时有意义；空数组=仅管理员可见）
+  allowed_user_ids?: number[];
   subscription_type: 'standard' | 'subscription';
   quotas?: Record<string, unknown>;
   model_routing?: Record<string, number[]>;
@@ -338,6 +348,8 @@ export interface UpdateGroupReq {
   rate_multiplier?: number;
   is_exclusive?: boolean;
   status_visible?: boolean;
+  // 省略=不修改授权用户；空数组=清空（仅管理员可见）；[1,2]=设置
+  allowed_user_ids?: number[];
   subscription_type?: 'standard' | 'subscription';
   quotas?: Record<string, unknown>;
   model_routing?: Record<string, number[]>;

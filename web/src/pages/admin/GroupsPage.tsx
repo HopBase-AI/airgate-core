@@ -228,10 +228,14 @@ export default function GroupsPage() {
                       </div>
                     </CommonTable.Cell>
                     <CommonTable.Cell>
-                      {row.is_exclusive ? (
-                        <Chip color="warning" size="sm" variant="soft">{t('groups.type_exclusive')}</Chip>
-                      ) : (
+                      {!row.is_exclusive ? (
                         <Chip color="default" size="sm" variant="soft">{t('groups.type_public')}</Chip>
+                      ) : (row.allowed_users?.length ?? 0) > 0 ? (
+                        <Chip color="warning" size="sm" variant="soft">
+                          {t('groups.type_exclusive')}·{row.allowed_users!.length}
+                        </Chip>
+                      ) : (
+                        <Chip color="danger" size="sm" variant="soft">{t('groups.type_admin_only')}</Chip>
                       )}
                     </CommonTable.Cell>
                     <CommonTable.Cell className="ag-groups-metric-cell">
