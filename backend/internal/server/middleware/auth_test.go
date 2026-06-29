@@ -24,9 +24,10 @@ func TestExtractBearerTokenAndHasAPIKey(t *testing.T) {
 		wantToken     string
 		wantHasKey    bool
 	}{
-		{"authorization_bearer", "Bearer sk-test", "", "sk-test", true},
-		{"authorization_case_insensitive", "bearer token-123", "", "token-123", true},
-		{"authorization_trim_space", "Bearer   token-123  ", "", "token-123", true},
+		{"authorization_bearer_api_key", "Bearer sk-test", "", "sk-test", true},
+		{"authorization_admin_api_key", "Bearer admin-test", "", "admin-test", true},
+		{"authorization_jwt_not_api_key", "bearer token-123", "", "token-123", false},
+		{"authorization_trim_space_jwt_not_api_key", "Bearer   token-123  ", "", "token-123", false},
 		{"x_api_key_fallback", "", "sk-from-header", "sk-from-header", true},
 		{"x_api_key_when_auth_not_bearer", "Basic abc", "sk-from-header", "sk-from-header", true},
 		{"missing", "", "", "", false},

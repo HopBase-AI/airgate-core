@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link, useMatchRoute, useRouterState } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { useIsFetching, useQuery } from '@tanstack/react-query';
-import { Button, Link as HeroLink, Tooltip } from '@heroui/react';
+import { Button, Dropdown, Link as HeroLink, Tooltip } from '@heroui/react';
 import { useAuth } from '../providers/AuthProvider';
 import { getTokenRole } from '../../shared/api/client';
 import { setStoredLanguage } from '../../i18n';
@@ -39,6 +39,7 @@ import {
   Github,
   Activity,
   HelpCircle,
+  Radar,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -62,6 +63,7 @@ const adminMenuItems: MenuItem[] = [
   { path: '/admin/subscriptions', labelKey: 'nav.subscriptions', icon: <CreditCard className="h-5 w-5" /> },
   { path: '/admin/proxies', labelKey: 'nav.proxies', icon: <Globe className="h-5 w-5" /> },
   { path: '/admin/usage', labelKey: 'nav.usage', icon: <ChartNoAxesCombined className="h-5 w-5" /> },
+  { path: '/admin/relay-detection', labelKey: 'nav.relay_detection', icon: <Radar className="h-5 w-5" /> },
   { path: '/admin/plugins', labelKey: 'nav.plugins', icon: <Puzzle className="h-5 w-5" />, sectionKey: 'nav.system' },
   { path: '/admin/settings', labelKey: 'nav.settings', icon: <Settings className="h-5 w-5" /> },
 ];
@@ -79,6 +81,19 @@ const apiKeyMenuItems: MenuItem[] = [
 ];
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'airgate:sidebar:collapsed';
+
+const LANGUAGE_OPTIONS = [
+  { key: 'zh', label: '简体中文', shortLabel: '简' },
+  { key: 'zh-HK', label: '繁體中文（香港）', shortLabel: '繁' },
+  { key: 'en', label: 'English', shortLabel: 'EN' },
+] as const;
+
+function normalizeAppLanguage(lang: string | undefined) {
+  const baseLang = lang?.split('-')[0];
+  return LANGUAGE_OPTIONS.find((item) => item.key === lang)?.key
+    ?? LANGUAGE_OPTIONS.find((item) => item.key === baseLang)?.key
+    ?? 'zh';
+}
 
 /**
  * 拉取插件菜单：所有登录用户均可调用 /plugins/menu，再按 page.audience 过滤显示。
@@ -230,11 +245,12 @@ export function AppShell({ children }: AppShellProps) {
     return nextSections;
   }, [isAPIKeySession, isAdmin, pluginAdminItems, pluginUserItems]);
 
-  const toggleLanguage = () => {
-    const nextLang = i18n.language === 'zh' ? 'en' : 'zh';
+  const changeLanguage = (nextLang: string) => {
     i18n.changeLanguage(nextLang);
     setStoredLanguage(nextLang);
   };
+  const currentLanguage = normalizeAppLanguage(i18n.resolvedLanguage || i18n.language);
+  const currentLanguageOption = LANGUAGE_OPTIONS.find((item) => item.key === currentLanguage) ?? LANGUAGE_OPTIONS[0];
 
   const displayName = user?.username || user?.email?.split('@')[0] || site.site_name || 'HopBase';
   const roleLabel = user?.role === 'api_key'
@@ -469,17 +485,35 @@ export function AppShell({ children }: AppShellProps) {
                 <span className="text-sm">{site.contact_info}</span>
               </div>
             )}
-            {/* Language toggle */}
-            <Button
-              aria-label={i18n.language === 'zh' ? 'Switch to English' : '切换为中文'}
-              className="h-10 px-3"
-              size="sm"
-              variant="ghost"
-              onPress={toggleLanguage}
-            >
-              <Languages className="h-5 w-5" />
-              <span className="hidden w-8 text-center font-mono text-xs uppercase sm:inline-block">{i18n.language === 'zh' ? 'EN' : '中文'}</span>
-            </Button>
+            {/* Language selector */}
+            <Dropdown>
+              <Dropdown.Trigger
+                aria-label="选择语言"
+                className="button button--sm button--ghost h-10 px-3"
+              >
+                <Languages className="h-5 w-5" />
+                <span className="hidden min-w-8 text-center font-mono text-xs uppercase sm:inline-block">
+                  {currentLanguageOption.shortLabel}
+                </span>
+              </Dropdown.Trigger>
+              <Dropdown.Popover placement="bottom end">
+                <Dropdown.Menu
+                  aria-label="选择语言"
+                  selectedKeys={[currentLanguage]}
+                  selectionMode="single"
+                  onAction={(key) => changeLanguage(String(key))}
+                >
+                  {LANGUAGE_OPTIONS.map((item) => (
+                    <Dropdown.Item key={item.key} id={item.key} textValue={item.label}>
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="w-6 shrink-0 font-mono text-xs text-text-tertiary">{item.shortLabel}</span>
+                        <span className="truncate">{item.label}</span>
+                      </span>
+                    </Dropdown.Item>
+                  ))}
+                </Dropdown.Menu>
+              </Dropdown.Popover>
+            </Dropdown>
             {/* Theme toggle */}
             <Button
               aria-label={theme === 'dark' ? '切换亮色模式' : '切换暗色模式'}

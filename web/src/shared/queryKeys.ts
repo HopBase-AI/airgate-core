@@ -37,6 +37,7 @@ export const queryKeys = {
   siteSettings: () => ['site-settings'] as const,
   upgradeInfo: () => ['upgrade-info'] as const,
   upgradeStatus: () => ['upgrade-status'] as const,
+  relayDetections: (...args: unknown[]) => ['relay-detections', ...args] as const,
   userApiKeys: (...args: unknown[]) => ['user-api-keys', ...args] as const,
   userBalanceHistory: (...args: unknown[]) => ['user-balance-history', ...args] as const,
   userTrend: (...args: unknown[]) => ['user-trend', ...args] as const,

@@ -634,6 +634,13 @@ export interface AccountStats {
   total_cost: number;
   actual_cost: number;
   billed_cost?: number;
+  // 缓存健康度：原始 sum，前端据此算命中率/1h 占比/重建浪费
+  input_tokens?: number;
+  cached_input_tokens?: number;
+  cache_creation_tokens?: number;
+  cache_creation_5m_tokens?: number;
+  cache_creation_1h_tokens?: number;
+  cache_creation_cost?: number;
 }
 
 export interface GroupStats {

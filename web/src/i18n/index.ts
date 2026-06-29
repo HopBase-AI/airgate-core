@@ -1,9 +1,10 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import zh from './zh.json';
+import zhHK from './zh-HK.json';
 import en from './en.json';
 
-const SUPPORTED_LANGUAGES = new Set(['zh', 'en']);
+const SUPPORTED_LANGUAGES = new Set(['zh', 'zh-HK', 'en']);
 
 function normalizeLanguage(lang: string | null | undefined) {
   return lang && SUPPORTED_LANGUAGES.has(lang) ? lang : null;
@@ -62,6 +63,7 @@ export function setStoredLanguage(lang: string) {
 i18n.use(initReactI18next).init({
   resources: {
     zh: { translation: zh },
+    'zh-HK': { translation: zhHK },
     en: { translation: en },
   },
   lng: getStoredLanguage(),

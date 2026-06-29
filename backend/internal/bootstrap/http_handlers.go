@@ -20,6 +20,7 @@ import (
 	appopenclaw "github.com/DouDOU-start/airgate-core/internal/app/openclaw"
 	apppluginadmin "github.com/DouDOU-start/airgate-core/internal/app/pluginadmin"
 	appproxy "github.com/DouDOU-start/airgate-core/internal/app/proxy"
+	apprelaydetect "github.com/DouDOU-start/airgate-core/internal/app/relaydetect"
 	appsettings "github.com/DouDOU-start/airgate-core/internal/app/settings"
 	appsubscription "github.com/DouDOU-start/airgate-core/internal/app/subscription"
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
@@ -48,20 +49,21 @@ type HTTPDependencies struct {
 
 // HTTPHandlers 聚合所有 HTTP 处理器。
 type HTTPHandlers struct {
-	Auth         *handler.AuthHandler
-	User         *handler.UserHandler
-	Account      *handler.AccountHandler
-	Group        *handler.GroupHandler
-	APIKey       *handler.APIKeyHandler
-	Subscription *handler.SubscriptionHandler
-	Usage        *handler.UsageHandler
-	Proxy        *handler.ProxyHandler
-	Settings     *handler.SettingsHandler
-	Dashboard    *handler.DashboardHandler
-	Plugin       *handler.PluginHandler
-	OpenClaw     *handler.OpenClawHandler
-	Version      *handler.VersionHandler
-	Upgrade      *handler.UpgradeHandler
+	Auth           *handler.AuthHandler
+	User           *handler.UserHandler
+	Account        *handler.AccountHandler
+	Group          *handler.GroupHandler
+	APIKey         *handler.APIKeyHandler
+	Subscription   *handler.SubscriptionHandler
+	Usage          *handler.UsageHandler
+	Proxy          *handler.ProxyHandler
+	Settings       *handler.SettingsHandler
+	Dashboard      *handler.DashboardHandler
+	Plugin         *handler.PluginHandler
+	OpenClaw       *handler.OpenClawHandler
+	Version        *handler.VersionHandler
+	Upgrade        *handler.UpgradeHandler
+	RelayDetection *handler.RelayDetectionHandler
 
 	AccountService *appaccount.Service
 }
@@ -90,6 +92,7 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 	settingsStore := store.NewSettingsStore(dep.DB)
 	settingsService := appsettings.NewService(settingsStore, dep.Config.APIKeySecret())
 	openclawService := appopenclaw.NewService(settingsService)
+	relayDetectionService := apprelaydetect.NewService(dep.DB)
 
 	// 注入 auth 服务的设置/验证码/邮件依赖
 	authService.SetSettingsLister(&settingsAdapter{settingsService})
@@ -123,6 +126,7 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 		OpenClaw:       handler.NewOpenClawHandler(openclawService),
 		Version:        handler.NewVersionHandler(),
 		Upgrade:        handler.NewUpgradeHandler(upgradeService),
+		RelayDetection: handler.NewRelayDetectionHandler(relayDetectionService),
 		AccountService: accountService,
 	}
 }

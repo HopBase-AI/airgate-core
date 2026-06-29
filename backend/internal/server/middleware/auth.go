@@ -218,11 +218,17 @@ func extractBearerToken(c *gin.Context) string {
 	return ""
 }
 
-// HasAPIKey 检查请求是否携带 API Key（Authorization: Bearer 或 x-api-key）
+// HasAPIKey 检查请求是否携带模型调用 API Key。
+// JWT 登录 token 也使用 Authorization: Bearer，但不能在 NoRoute 中被误判为
+// 模型 API Key，否则后台未命中路由会被转发到模型网关并把用户踢回登录页。
 func HasAPIKey(c *gin.Context) bool {
-	auth := c.GetHeader("Authorization")
-	if len(auth) > 7 && strings.EqualFold(auth[:7], "Bearer ") {
+	if strings.TrimSpace(c.GetHeader("x-api-key")) != "" {
 		return true
 	}
-	return c.GetHeader("x-api-key") != ""
+	header := c.GetHeader("Authorization")
+	if len(header) > 7 && strings.EqualFold(header[:7], "Bearer ") {
+		token := strings.TrimSpace(header[7:])
+		return strings.HasPrefix(token, "sk-") || auth.IsAdminAPIKey(token)
+	}
+	return false
 }
