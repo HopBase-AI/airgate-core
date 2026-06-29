@@ -9,7 +9,7 @@ import { usePagination } from '../../shared/hooks/usePagination';
 import { usePlatforms } from '../../shared/hooks/usePlatforms';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { useToast } from '../../shared/ui';
-import { Activity, Hash, DollarSign, Coins, Clock, Gauge, Percent, Upload } from 'lucide-react';
+import { Activity, Hash, Coins, Clock, Gauge, Percent, Upload } from 'lucide-react';
 import type { UsageQuery } from '../../shared/types';
 import { useUsageColumns, fmtNum, type UsageColumnConfig, type UsageRow } from '../../shared/columns/usageColumns';
 import { getSessionAPIKey } from '../../shared/api/client';
@@ -331,7 +331,7 @@ export default function UserUsageContent() {
       <APIKeyInfoBar />
 
       {/* 概览统计 */}
-      <div className={`mb-6 grid grid-cols-1 gap-3 ${customerScope ? 'md:grid-cols-3 xl:grid-cols-3' : 'md:grid-cols-2 xl:grid-cols-4'} 2xl:gap-4`}>
+      <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-3 2xl:gap-4">
         <StatCard
           title={t('usage.total_requests')}
           value={(stats?.total_requests ?? 0).toLocaleString()}
@@ -350,14 +350,6 @@ export default function UserUsageContent() {
           icon={<Coins className="w-5 h-5" />}
           accentColor="var(--ag-warning)"
         />
-        {!customerScope && (
-          <StatCard
-            title={t('usage.total_cost')}
-            value={<CostValue value={stats?.total_cost ?? 0} decimals={4} tone="standard" />}
-            icon={<DollarSign className="w-5 h-5" />}
-            accentColor="var(--ag-success)"
-          />
-        )}
       </div>
 
       {/* 筛选栏 */}
