@@ -67,7 +67,11 @@ var registerSessionScript = redis.NewScript(`
 	return 1
 `)
 
-// refreshSessionScript Lua 脚本：刷新会话时间戳
+// refreshSessionScript Lua 脚本：刷新会话时间戳（仅当会话已存在时续期）。
+//
+// 不做 upsert：会话已被空闲清理后不在此重新登记，以免绕过 max_sessions。
+// sticky 命中但并发槽已过期的续聊场景，由 selection.go 在复用前调 RegisterSession
+// 重新登记（账号已满则放弃 sticky 走正常调度），既补回并发计数又尊重上限。
 var refreshSessionScript = redis.NewScript(`
 	local key = KEYS[1]
 	local sessionUUID = ARGV[1]

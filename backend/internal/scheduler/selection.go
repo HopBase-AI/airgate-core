@@ -71,8 +71,16 @@ func (s *Scheduler) SelectAccountWithRequirements(ctx context.Context, platform,
 		if accountID, found := s.sticky.Get(ctx, userID, platform, sessionID); found {
 			for _, acc := range stickyCandidates {
 				if acc.ID == accountID {
-					s.sticky.Set(ctx, userID, platform, sessionID, accountID)
-					return acc, nil
+					// 复用前重新登记并发槽：
+					// - 槽仍在/重新登记成功/账号未设 max_sessions（RegisterSession 直接放行且不写 Redis）
+					//   → 续期 sticky 并复用，既补回因 sticky TTL 长于 session idle 而过期的并发计数，
+					//     又不绕过上限；
+					// - 账号已满 → 放弃此 sticky，break 落正常负载均衡（满账号会被 maybeRegisterSession 排除）。
+					if s.RegisterSession(ctx, acc.ID, sessionID, acc.Extra) {
+						s.sticky.Set(ctx, userID, platform, sessionID, accountID, s.sticky.stickyTTLFromExtra(acc.Extra))
+						return acc, nil
+					}
+					break
 				}
 			}
 		}
@@ -126,7 +134,7 @@ func (s *Scheduler) maybeRegisterSession(ctx context.Context, selected *ent.Acco
 		return selected, nil
 	}
 	if s.RegisterSession(ctx, selected.ID, sessionID, selected.Extra) {
-		s.sticky.Set(ctx, userID, platform, sessionID, selected.ID)
+		s.sticky.Set(ctx, userID, platform, sessionID, selected.ID, s.sticky.stickyTTLFromExtra(selected.Extra))
 		return selected, nil
 	}
 	retry := pool[:0]
@@ -142,7 +150,7 @@ func (s *Scheduler) maybeRegisterSession(ctx context.Context, selected *ent.Acco
 	if selected == nil || !s.RegisterSession(ctx, selected.ID, sessionID, selected.Extra) {
 		return nil, ErrNoAvailableAccount
 	}
-	s.sticky.Set(ctx, userID, platform, sessionID, selected.ID)
+	s.sticky.Set(ctx, userID, platform, sessionID, selected.ID, s.sticky.stickyTTLFromExtra(selected.Extra))
 	return selected, nil
 }
 

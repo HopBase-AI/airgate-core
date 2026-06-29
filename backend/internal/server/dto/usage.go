@@ -153,6 +153,13 @@ type AccountStats struct {
 	TotalCost  float64 `json:"total_cost"`
 	ActualCost float64 `json:"actual_cost"`
 	BilledCost float64 `json:"billed_cost,omitempty"`
+	// 缓存健康度：原始 sum，前端据此算命中率/1h 占比/重建浪费。
+	InputTokens           int64   `json:"input_tokens"`
+	CachedInputTokens     int64   `json:"cached_input_tokens"`
+	CacheCreationTokens   int64   `json:"cache_creation_tokens"`
+	CacheCreation5mTokens int64   `json:"cache_creation_5m_tokens"`
+	CacheCreation1hTokens int64   `json:"cache_creation_1h_tokens"`
+	CacheCreationCost     float64 `json:"cache_creation_cost"`
 }
 
 // GroupStats 按分组统计

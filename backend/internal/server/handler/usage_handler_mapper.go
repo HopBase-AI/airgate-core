@@ -125,13 +125,19 @@ func toUsageStatsResp(result appusage.StatsResult) dto.UsageStatsResp {
 	}
 	for _, item := range result.ByAccount {
 		resp.ByAccount = append(resp.ByAccount, dto.AccountStats{
-			AccountID:  item.AccountID,
-			Name:       item.Name,
-			Requests:   item.Requests,
-			Tokens:     item.Tokens,
-			TotalCost:  item.TotalCost,
-			ActualCost: item.ActualCost,
-			BilledCost: item.BilledCost,
+			AccountID:             item.AccountID,
+			Name:                  item.Name,
+			Requests:              item.Requests,
+			Tokens:                item.Tokens,
+			TotalCost:             item.TotalCost,
+			ActualCost:            item.ActualCost,
+			BilledCost:            item.BilledCost,
+			InputTokens:           item.InputTokens,
+			CachedInputTokens:     item.CachedInputTokens,
+			CacheCreationTokens:   item.CacheCreationTokens,
+			CacheCreation5mTokens: item.CacheCreation5mTokens,
+			CacheCreation1hTokens: item.CacheCreation1hTokens,
+			CacheCreationCost:     item.CacheCreationCost,
 		})
 	}
 	for _, item := range result.ByGroup {

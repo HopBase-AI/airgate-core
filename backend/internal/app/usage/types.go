@@ -149,6 +149,13 @@ type AccountStats struct {
 	TotalCost  float64
 	ActualCost float64
 	BilledCost float64
+	// 缓存健康度（按上游账号）：仅透出原始 sum，命中率/1h 占比等派生指标由前端计算。
+	InputTokens           int64
+	CachedInputTokens     int64
+	CacheCreationTokens   int64
+	CacheCreation5mTokens int64
+	CacheCreation1hTokens int64
+	CacheCreationCost     float64
 }
 
 // GroupStats 按分组统计。

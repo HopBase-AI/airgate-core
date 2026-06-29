@@ -244,13 +244,18 @@ func (s *UsageStore) StatsByAccount(ctx context.Context, filter appusage.StatsFi
 	query = applyUsageStatsFilter(query, filter)
 
 	var rows []struct {
-		AccountID    int     `json:"account_usage_logs"`
-		Count        int     `json:"count"`
-		InputTokens  int64   `json:"input_tokens"`
-		OutputTokens int64   `json:"output_tokens"`
-		TotalCost    float64 `json:"total_cost"`
-		ActualCost   float64 `json:"actual_cost"`
-		BilledCost   float64 `json:"billed_cost"`
+		AccountID             int     `json:"account_usage_logs"`
+		Count                 int     `json:"count"`
+		InputTokens           int64   `json:"input_tokens"`
+		OutputTokens          int64   `json:"output_tokens"`
+		TotalCost             float64 `json:"total_cost"`
+		ActualCost            float64 `json:"actual_cost"`
+		BilledCost            float64 `json:"billed_cost"`
+		CachedInputTokens     int64   `json:"cached_input_tokens"`
+		CacheCreationTokens   int64   `json:"cache_creation_tokens"`
+		CacheCreation5mTokens int64   `json:"cache_creation_5m_tokens"`
+		CacheCreation1hTokens int64   `json:"cache_creation_1h_tokens"`
+		CacheCreationCost     float64 `json:"cache_creation_cost"`
 	}
 	err := query.GroupBy("account_usage_logs").
 		Aggregate(
@@ -260,6 +265,11 @@ func (s *UsageStore) StatsByAccount(ctx context.Context, filter appusage.StatsFi
 			ent.As(ent.Sum(entusagelog.FieldTotalCost), "total_cost"),
 			ent.As(ent.Sum(entusagelog.FieldActualCost), "actual_cost"),
 			ent.As(ent.Sum(entusagelog.FieldBilledCost), "billed_cost"),
+			ent.As(ent.Sum(entusagelog.FieldCachedInputTokens), "cached_input_tokens"),
+			ent.As(ent.Sum(entusagelog.FieldCacheCreationTokens), "cache_creation_tokens"),
+			ent.As(ent.Sum(entusagelog.FieldCacheCreation5mTokens), "cache_creation_5m_tokens"),
+			ent.As(ent.Sum(entusagelog.FieldCacheCreation1hTokens), "cache_creation_1h_tokens"),
+			ent.As(ent.Sum(entusagelog.FieldCacheCreationCost), "cache_creation_cost"),
 		).
 		Scan(ctx, &rows)
 	if err != nil {
@@ -286,13 +296,19 @@ func (s *UsageStore) StatsByAccount(ctx context.Context, filter appusage.StatsFi
 	result := make([]appusage.AccountStats, 0, len(rows))
 	for _, row := range rows {
 		result = append(result, appusage.AccountStats{
-			AccountID:  int64(row.AccountID),
-			Name:       nameMap[row.AccountID],
-			Requests:   int64(row.Count),
-			Tokens:     row.InputTokens + row.OutputTokens,
-			TotalCost:  row.TotalCost,
-			ActualCost: row.ActualCost,
-			BilledCost: row.BilledCost,
+			AccountID:             int64(row.AccountID),
+			Name:                  nameMap[row.AccountID],
+			Requests:              int64(row.Count),
+			Tokens:                row.InputTokens + row.OutputTokens,
+			TotalCost:             row.TotalCost,
+			ActualCost:            row.ActualCost,
+			BilledCost:            row.BilledCost,
+			InputTokens:           row.InputTokens,
+			CachedInputTokens:     row.CachedInputTokens,
+			CacheCreationTokens:   row.CacheCreationTokens,
+			CacheCreation5mTokens: row.CacheCreation5mTokens,
+			CacheCreation1hTokens: row.CacheCreation1hTokens,
+			CacheCreationCost:     row.CacheCreationCost,
 		})
 	}
 	sort.Slice(result, func(i, j int) bool {
