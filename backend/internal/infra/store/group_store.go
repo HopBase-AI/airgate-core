@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"github.com/DouDOU-start/airgate-core/ent"
@@ -187,7 +188,7 @@ func (s *GroupStore) Create(ctx context.Context, input appgroup.CreateInput) (ap
 		builder = builder.SetQuotas(appgroupCloneQuotas(input.Quotas))
 	}
 	if input.ModelRouting != nil {
-		builder = builder.SetModelRouting(appgroupCloneModelRouting(input.ModelRouting))
+		builder = builder.SetModelRouting(sanitizeModelRouting(input.ModelRouting, accountIDsByAvailability(accountIDs, nil)))
 	}
 	if input.PluginSettings != nil {
 		builder = builder.SetPluginSettings(appgroupClonePluginSettings(input.PluginSettings))
@@ -234,7 +235,11 @@ func (s *GroupStore) Update(ctx context.Context, id int, input appgroup.UpdateIn
 		builder = builder.SetQuotas(appgroupCloneQuotas(input.Quotas))
 	}
 	if input.ModelRouting != nil {
-		builder = builder.SetModelRouting(appgroupCloneModelRouting(input.ModelRouting))
+		availableAccountIDs, err := s.availableAccountIDsForGroup(ctx, id)
+		if err != nil {
+			return appgroup.Group{}, err
+		}
+		builder = builder.SetModelRouting(sanitizeModelRouting(input.ModelRouting, availableAccountIDs))
 	}
 	if input.PluginSettings != nil {
 		builder = builder.SetPluginSettings(appgroupClonePluginSettings(input.PluginSettings))
@@ -325,6 +330,126 @@ func (s *GroupStore) Delete(ctx context.Context, id int) error {
 	}
 
 	return nil
+}
+
+func (s *GroupStore) availableAccountIDsForGroup(ctx context.Context, groupID int) (map[int64]struct{}, error) {
+	accounts, err := s.db.Account.Query().
+		Where(
+			entaccount.HasGroupsWith(entgroup.IDEQ(groupID)),
+			entaccount.StateNEQ(entaccount.StateDisabled),
+		).
+		IDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return accountIDsByAvailability(accounts, nil), nil
+}
+
+func (s *GroupStore) sanitizeModelRoutingForGroups(ctx context.Context, groupIDs ...int) error {
+	seen := make(map[int]struct{}, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if groupID <= 0 {
+			continue
+		}
+		if _, ok := seen[groupID]; ok {
+			continue
+		}
+		seen[groupID] = struct{}{}
+
+		item, err := s.db.Group.Get(ctx, groupID)
+		if err != nil {
+			if ent.IsNotFound(err) {
+				continue
+			}
+			return err
+		}
+		if item.ModelRouting == nil {
+			continue
+		}
+		availableAccountIDs, err := s.availableAccountIDsForGroup(ctx, groupID)
+		if err != nil {
+			return err
+		}
+		cleaned := sanitizeModelRouting(item.ModelRouting, availableAccountIDs)
+		if modelRoutingEqual(item.ModelRouting, cleaned) {
+			continue
+		}
+		if err := s.db.Group.UpdateOneID(groupID).SetModelRouting(cleaned).Exec(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func accountIDsByAvailability(ids []int, excluded map[int]struct{}) map[int64]struct{} {
+	result := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		if excluded != nil {
+			if _, ok := excluded[id]; ok {
+				continue
+			}
+		}
+		result[int64(id)] = struct{}{}
+	}
+	return result
+}
+
+func sanitizeModelRouting(input map[string][]int64, availableAccountIDs map[int64]struct{}) map[string][]int64 {
+	if input == nil {
+		return nil
+	}
+	cleaned := make(map[string][]int64, len(input))
+	fallback := sortedAccountIDs(availableAccountIDs)
+	for model, ids := range input {
+		if len(ids) == 0 {
+			cleaned[model] = []int64{}
+			continue
+		}
+		kept := make([]int64, 0, len(ids))
+		seen := make(map[int64]struct{}, len(ids))
+		for _, id := range ids {
+			if _, ok := availableAccountIDs[id]; !ok {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			kept = append(kept, id)
+		}
+		if len(kept) == 0 && len(fallback) > 0 {
+			kept = append([]int64(nil), fallback...)
+		}
+		cleaned[model] = kept
+	}
+	return cleaned
+}
+
+func sortedAccountIDs(ids map[int64]struct{}) []int64 {
+	result := make([]int64, 0, len(ids))
+	for id := range ids {
+		result = append(result, id)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
+}
+
+func modelRoutingEqual(a, b map[string][]int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for key, av := range a {
+		bv, ok := b[key]
+		if !ok || len(av) != len(bv) {
+			return false
+		}
+		for i := range av {
+			if av[i] != bv[i] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // StatsForGroups 批量查询分组统计信息（账号数、容量、用量）。

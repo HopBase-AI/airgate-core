@@ -177,6 +177,23 @@ func (s *AccountStore) Create(ctx context.Context, input appaccount.CreateInput)
 
 // Update 更新账号。
 func (s *AccountStore) Update(ctx context.Context, id int, input appaccount.UpdateInput) (appaccount.Account, error) {
+	var previousGroupIDs []int
+	if input.HasGroupIDs {
+		existing, err := s.db.Account.Query().
+			Where(entaccount.IDEQ(id)).
+			WithGroups().
+			Only(ctx)
+		if err != nil {
+			if ent.IsNotFound(err) {
+				return appaccount.Account{}, appaccount.ErrAccountNotFound
+			}
+			return appaccount.Account{}, err
+		}
+		for _, group := range existing.Edges.Groups {
+			previousGroupIDs = append(previousGroupIDs, group.ID)
+		}
+	}
+
 	builder := s.db.Account.UpdateOneID(id)
 
 	if input.Name != nil {
@@ -230,16 +247,39 @@ func (s *AccountStore) Update(ctx context.Context, id int, input appaccount.Upda
 		}
 		return appaccount.Account{}, err
 	}
+	if input.HasGroupIDs {
+		affectedGroupIDs := append(previousGroupIDs, toIntSlice(input.GroupIDs)...)
+		if err := NewGroupStore(s.db).sanitizeModelRoutingForGroups(ctx, affectedGroupIDs...); err != nil {
+			return appaccount.Account{}, err
+		}
+	}
 
 	return s.FindByID(ctx, id, appaccount.LoadOptions{WithGroups: true, WithProxy: true})
 }
 
 // Delete 删除账号。
 func (s *AccountStore) Delete(ctx context.Context, id int) error {
+	existing, err := s.db.Account.Query().
+		Where(entaccount.IDEQ(id)).
+		WithGroups().
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return appaccount.ErrAccountNotFound
+		}
+		return err
+	}
+	groupIDs := make([]int, 0, len(existing.Edges.Groups))
+	for _, group := range existing.Edges.Groups {
+		groupIDs = append(groupIDs, group.ID)
+	}
 	if err := s.db.Account.DeleteOneID(id).Exec(ctx); err != nil {
 		if ent.IsNotFound(err) {
 			return appaccount.ErrAccountNotFound
 		}
+		return err
+	}
+	if err := NewGroupStore(s.db).sanitizeModelRoutingForGroups(ctx, groupIDs...); err != nil {
 		return err
 	}
 	return nil

@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	entaccount "github.com/DouDOU-start/airgate-core/ent/account"
+	appaccount "github.com/DouDOU-start/airgate-core/internal/app/account"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 )
 
@@ -156,6 +158,129 @@ func TestGroupStoreUpdateAllowedUsers(t *testing.T) {
 	}
 	if len(noTouch.AllowedUsers) != 1 || noTouch.AllowedUsers[0].Email != alice.Email {
 		t.Fatalf("rename should keep allowed users, got %+v", noTouch.AllowedUsers)
+	}
+}
+
+func TestGroupStoreUpdateSanitizesModelRoutingToAvailableGroupAccounts(t *testing.T) {
+	db := enttestOpen(t)
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close db: %v", err)
+		}
+	}()
+	ctx := context.Background()
+	store := NewGroupStore(db)
+
+	g := mustCreateGroup(t, store, appgroup.CreateInput{
+		Name: "codex-pro", Platform: "openai", RateMultiplier: 1, StatusVisible: true, SubscriptionType: "standard",
+	})
+	activeA, err := db.Account.Create().
+		SetName("active-a").
+		SetPlatform("openai").
+		SetType("apikey").
+		SetCredentials(map[string]string{"api_key": "sk-a"}).
+		AddGroupIDs(g.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create active account a: %v", err)
+	}
+	activeB, err := db.Account.Create().
+		SetName("active-b").
+		SetPlatform("openai").
+		SetType("apikey").
+		SetCredentials(map[string]string{"api_key": "sk-b"}).
+		AddGroupIDs(g.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create active account b: %v", err)
+	}
+	disabled, err := db.Account.Create().
+		SetName("disabled").
+		SetPlatform("openai").
+		SetType("apikey").
+		SetState(entaccount.StateDisabled).
+		SetCredentials(map[string]string{"api_key": "sk-disabled"}).
+		AddGroupIDs(g.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create disabled account: %v", err)
+	}
+
+	updated, err := store.Update(ctx, g.ID, appgroup.UpdateInput{
+		ModelRouting: map[string][]int64{
+			"gpt-5.5":       {int64(disabled.ID), 999999},
+			"gpt-5.4":       {int64(activeB.ID), int64(activeA.ID), int64(activeB.ID), 999999},
+			"disabled-only": {},
+		},
+	})
+	if err != nil {
+		t.Fatalf("update model routing: %v", err)
+	}
+
+	if got := updated.ModelRouting["gpt-5.5"]; len(got) != 2 || got[0] != int64(activeA.ID) || got[1] != int64(activeB.ID) {
+		t.Fatalf("stale route fallback = %v, want active group accounts [%d %d]", got, activeA.ID, activeB.ID)
+	}
+	if got := updated.ModelRouting["gpt-5.4"]; len(got) != 2 || got[0] != int64(activeB.ID) || got[1] != int64(activeA.ID) {
+		t.Fatalf("mixed route cleanup = %v, want submitted active order without duplicates [%d %d]", got, activeB.ID, activeA.ID)
+	}
+	if got := updated.ModelRouting["disabled-only"]; len(got) != 0 {
+		t.Fatalf("explicit empty route = %v, want empty", got)
+	}
+}
+
+func TestAccountStoreUpdateGroupsSanitizesAffectedModelRouting(t *testing.T) {
+	db := enttestOpen(t)
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close db: %v", err)
+		}
+	}()
+	ctx := context.Background()
+	groupStore := NewGroupStore(db)
+	accountStore := NewAccountStore(db)
+
+	g := mustCreateGroup(t, groupStore, appgroup.CreateInput{
+		Name: "codex-plus", Platform: "openai", RateMultiplier: 1, StatusVisible: true, SubscriptionType: "standard",
+	})
+	accA, err := db.Account.Create().
+		SetName("a").
+		SetPlatform("openai").
+		SetType("apikey").
+		SetCredentials(map[string]string{"api_key": "sk-a"}).
+		AddGroupIDs(g.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create account a: %v", err)
+	}
+	accB, err := db.Account.Create().
+		SetName("b").
+		SetPlatform("openai").
+		SetType("apikey").
+		SetCredentials(map[string]string{"api_key": "sk-b"}).
+		AddGroupIDs(g.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create account b: %v", err)
+	}
+	if _, err := groupStore.Update(ctx, g.ID, appgroup.UpdateInput{
+		ModelRouting: map[string][]int64{"gpt-5.5": {int64(accA.ID), int64(accB.ID)}},
+	}); err != nil {
+		t.Fatalf("seed model routing: %v", err)
+	}
+
+	if _, err := accountStore.Update(ctx, accA.ID, appaccount.UpdateInput{
+		HasGroupIDs: true,
+		GroupIDs:    nil,
+	}); err != nil {
+		t.Fatalf("remove account from group: %v", err)
+	}
+
+	after, err := groupStore.FindByID(ctx, g.ID)
+	if err != nil {
+		t.Fatalf("find group: %v", err)
+	}
+	if got := after.ModelRouting["gpt-5.5"]; len(got) != 1 || got[0] != int64(accB.ID) {
+		t.Fatalf("routing after account unbind = %v, want [%d]", got, accB.ID)
 	}
 }
 

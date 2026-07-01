@@ -2,9 +2,11 @@ package scheduler
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"github.com/DouDOU-start/airgate-core/ent/account"
+	entgroup "github.com/DouDOU-start/airgate-core/ent/group"
 )
 
 // 管理员 / 配额巡检的状态写入口。这些调用不经过 Apply —— 它们是"外部已知事实"
@@ -20,6 +22,7 @@ func (s *Scheduler) ManualRecover(ctx context.Context, accountID int) error {
 		SetErrorMsg("").
 		Exec(dbCtx)
 	if err == nil {
+		_ = s.sanitizeModelRoutingForAccount(ctx, accountID)
 		s.routeCache.InvalidateAll()
 	}
 	return err
@@ -35,6 +38,7 @@ func (s *Scheduler) ManualDisable(ctx context.Context, accountID int, reason str
 		SetErrorMsg(truncateReason(reason)).
 		Exec(dbCtx)
 	if err == nil {
+		_ = s.sanitizeModelRoutingForAccount(ctx, accountID)
 		s.routeCache.InvalidateAll()
 	}
 	return err
@@ -69,4 +73,102 @@ func (s *Scheduler) ClearRateLimitMarkers(ctx context.Context, accountID int) in
 // MarkDisabled 把账号标记为 disabled（凭证失效等确定性错误）。
 func (s *Scheduler) MarkDisabled(ctx context.Context, accountID int, reason string) {
 	s.state.transition(ctx, accountID, account.StateDisabled, nil, reason)
+	_ = s.sanitizeModelRoutingForAccount(ctx, accountID)
+	s.routeCache.InvalidateAll()
+}
+
+func (s *Scheduler) sanitizeModelRoutingForAccount(ctx context.Context, accountID int) error {
+	dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
+	groups, err := s.db.Group.Query().
+		Where(entgroup.HasAccountsWith(account.IDEQ(accountID))).
+		All(dbCtx)
+	if err != nil {
+		return err
+	}
+	for _, group := range groups {
+		if len(group.ModelRouting) == 0 {
+			continue
+		}
+		accountIDs, err := s.db.Account.Query().
+			Where(
+				account.HasGroupsWith(entgroup.IDEQ(group.ID)),
+				account.StateNEQ(account.StateDisabled),
+			).
+			IDs(dbCtx)
+		if err != nil {
+			return err
+		}
+		available := make(map[int64]struct{}, len(accountIDs))
+		for _, id := range accountIDs {
+			available[int64(id)] = struct{}{}
+		}
+		cleaned := sanitizeModelRouting(group.ModelRouting, available)
+		if modelRoutingEqual(group.ModelRouting, cleaned) {
+			continue
+		}
+		if err := s.db.Group.UpdateOneID(group.ID).SetModelRouting(cleaned).Exec(dbCtx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func sanitizeModelRouting(input map[string][]int64, availableAccountIDs map[int64]struct{}) map[string][]int64 {
+	if input == nil {
+		return nil
+	}
+	cleaned := make(map[string][]int64, len(input))
+	fallback := sortedAccountIDs(availableAccountIDs)
+	for model, ids := range input {
+		if len(ids) == 0 {
+			cleaned[model] = []int64{}
+			continue
+		}
+		kept := make([]int64, 0, len(ids))
+		seen := make(map[int64]struct{}, len(ids))
+		for _, id := range ids {
+			if _, ok := availableAccountIDs[id]; !ok {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			kept = append(kept, id)
+		}
+		if len(kept) == 0 && len(fallback) > 0 {
+			kept = append([]int64(nil), fallback...)
+		}
+		cleaned[model] = kept
+	}
+	return cleaned
+}
+
+func sortedAccountIDs(ids map[int64]struct{}) []int64 {
+	result := make([]int64, 0, len(ids))
+	for id := range ids {
+		result = append(result, id)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
+}
+
+func modelRoutingEqual(a, b map[string][]int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for key, av := range a {
+		bv, ok := b[key]
+		if !ok || len(av) != len(bv) {
+			return false
+		}
+		for i := range av {
+			if av[i] != bv[i] {
+				return false
+			}
+		}
+	}
+	return true
 }
