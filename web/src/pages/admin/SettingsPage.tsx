@@ -23,7 +23,7 @@ import { CommonModal } from '../../shared/components/CommonModal';
 
 const SITE_KEYS = [
   'site_name', 'site_subtitle', 'site_logo', 'api_base_url',
-  'contact_info', 'doc_url',
+  'contact_info', 'doc_url', 'landing_pricing_json',
 ] as const;
 
 const REG_KEYS = [
@@ -86,6 +86,48 @@ const DEFAULT_OPENCLAW_MODELS_PRESET = `[
     "input": ["text", "image"]
   }
 ]`;
+
+// 官网价格表默认模板：与 landing/index.html 2026-07-03 的硬编码表同构。
+// 单元格词汇见 landing/assets/pricing-render.js 注释；留空 = 官网使用页面内置硬编码表。
+const DEFAULT_LANDING_PRICING_JSON = `{
+  "tables": {
+    "claude-max": [
+      {"hl":true,"cells":[{"model":"claude-fable-5","tag":"旗舰","tagStyle":"pri"},{"strike":"¥68 / ¥340","note":"官方 $10 / $50"},{"deal":true,"strong":"¥21.30 / ¥106.50","note":"读 ¥2.13 · 写 ¥26.63 / ¥42.60"},{"pill":"省约 69%"},{"text":"最新高推理模型"}]},
+      {"cells":[{"model":"claude-opus-4-8","tag":"主推","tagStyle":"pri"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥10.65 / ¥53.25","note":"读 ¥1.065 · 写 ¥13.31 / ¥21.30"},{"pill":"省约 69%"},{"text":"最高推理，Claude Code 重任务"}]},
+      {"cells":[{"model":"claude-opus-4-7"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥10.65 / ¥53.25","note":"读 ¥1.065 · 写 ¥13.31 / ¥21.30"},{"pill":"省约 69%"},{"text":"1M 上下文 Opus"}]},
+      {"cells":[{"model":"claude-opus-4-6"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥10.65 / ¥53.25","note":"读 ¥1.065 · 写 ¥13.31 / ¥21.30"},{"pill":"省约 69%"},{"text":"1M 上下文 Opus"}]},
+      {"cells":[{"model":"claude-opus-4-5-20251101"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥10.65 / ¥53.25","note":"读 ¥1.065 · 写 ¥13.31 / ¥21.30"},{"pill":"省约 69%"},{"text":"兼容短名 claude-opus-4-5"}]},
+      {"hl":true,"cells":[{"model":"claude-sonnet-5","tag":"新增","tagStyle":"key"},{"strike":"¥20.4 / ¥102","note":"官方 $3 / $15"},{"deal":true,"strong":"¥6.39 / ¥31.95","note":"读 ¥0.639 · 写 ¥7.99 / ¥12.78"},{"pill":"省约 69%"},{"text":"新一代 Sonnet 主力；官方引导价至 2026-08-31"}]},
+      {"cells":[{"model":"claude-sonnet-4-6","tag":"均衡","tagStyle":"key"},{"strike":"¥20.4 / ¥102","note":"官方 $3 / $15"},{"deal":true,"strong":"¥6.39 / ¥31.95","note":"读 ¥0.639 · 写 ¥7.99 / ¥12.78"},{"pill":"省约 69%"},{"text":"均衡主力，适合长上下文"}]},
+      {"cells":[{"model":"claude-sonnet-4-5-20250929"},{"strike":"¥20.4 / ¥102","note":"官方 $3 / $15"},{"deal":true,"strong":"¥6.39 / ¥31.95","note":"读 ¥0.639 · 写 ¥7.99 / ¥12.78"},{"pill":"省约 69%"},{"text":"兼容短名 claude-sonnet-4-5"}]},
+      {"cells":[{"model":"claude-sonnet-4-20250514","tag":"已停用 / 自动转 4.6","tagStyle":"warn"},{"strike":"¥20.4 / ¥102","note":"官方 $3 / $15"},{"deal":true,"strong":"¥6.39 / ¥31.95","note":"读 ¥0.639 · 写 ¥7.99 / ¥12.78"},{"pill":"省约 69%"},{"text":"旧 ID 自动转 claude-sonnet-4-6"}]},
+      {"cells":[{"model":"claude-haiku-4-5-20251001"},{"strike":"¥6.8 / ¥34","note":"官方 $1 / $5"},{"deal":true,"strong":"¥2.13 / ¥10.65","note":"读 ¥0.213 · 写 ¥2.66 / ¥4.26"},{"pill":"省约 69%"},{"text":"轻量低价模型"}]}
+    ],
+    "claude-aws": [
+      {"cells":[{"model":"claude-opus-4-8","tag":"主推","tagStyle":"pri"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥17.50 / ¥87.50","save":"约 5.1 折 · 省约 49%"},{"strong":"读 ¥1.75","note":"写 5m ¥21.88 / 1h ¥35.00"},{"text":"最高推理，适合 Claude Code 重任务"}]},
+      {"cells":[{"model":"claude-opus-4-7 / 4-6"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥17.50 / ¥87.50","save":"约 5.1 折 · 省约 49%"},{"strong":"读 ¥1.75","note":"写 5m ¥21.88 / 1h ¥35.00"},{"text":"Opus 系列，复杂规划与长任务"}]},
+      {"cells":[{"model":"claude-opus-4-5-20251101"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥17.50 / ¥87.50","save":"约 5.1 折 · 省约 49%"},{"strong":"读 ¥1.75","note":"写 5m ¥21.88 / 1h ¥35.00"},{"text":"兼容短名 claude-opus-4-5"}]}
+    ],
+    "claude-kiro": [
+      {"hl":true,"cells":[{"model":"claude-fable-5","tag":"旗舰","tagStyle":"pri"},{"strike":"¥68 / ¥340","note":"官方 $10 / $50"},{"deal":true,"strong":"¥25.00 / ¥125.00","note":"读 ¥2.50 · 写 ¥31.25 / ¥50.00"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"最新高推理模型"}]},
+      {"cells":[{"model":"claude-opus-4-8","tag":"主推","tagStyle":"pri"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥12.50 / ¥62.50","note":"读 ¥1.25 · 写 ¥15.63 / ¥25.00"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"最高推理，Claude Code 重任务"}]},
+      {"cells":[{"model":"claude-opus-4-7 / 4-6"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥12.50 / ¥62.50","note":"读 ¥1.25 · 写 ¥15.63 / ¥25.00"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"1M 上下文 Opus"}]},
+      {"cells":[{"model":"claude-opus-4-5-20251101"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥12.50 / ¥62.50","note":"读 ¥1.25 · 写 ¥15.63 / ¥25.00"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"兼容短名 claude-opus-4-5"}]},
+      {"hl":true,"cells":[{"model":"claude-sonnet-5","tag":"新增","tagStyle":"key"},{"strike":"¥20.4 / ¥102","note":"官方 $3 / $15"},{"deal":true,"strong":"¥7.50 / ¥37.50","note":"读 ¥0.75 · 写 ¥9.38 / ¥15.00"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"新一代 Sonnet 主力；官方引导价至 2026-08-31"}]},
+      {"cells":[{"model":"claude-sonnet-4-6","tag":"均衡","tagStyle":"key"},{"strike":"¥20.4 / ¥102","note":"官方 $3 / $15"},{"deal":true,"strong":"¥7.50 / ¥37.50","note":"读 ¥0.75 · 写 ¥9.38 / ¥15.00"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"均衡主力，适合长上下文"}]},
+      {"cells":[{"model":"claude-sonnet-4-5-20250929"},{"strike":"¥20.4 / ¥102","note":"官方 $3 / $15"},{"deal":true,"strong":"¥7.50 / ¥37.50","note":"读 ¥0.75 · 写 ¥9.38 / ¥15.00"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"兼容短名 claude-sonnet-4-5"}]},
+      {"cells":[{"model":"claude-sonnet-4-20250514","tag":"已停用 / 自动转 4.6","tagStyle":"warn"},{"strike":"¥20.4 / ¥102","note":"官方 $3 / $15"},{"deal":true,"strong":"¥7.50 / ¥37.50","note":"读 ¥0.75 · 写 ¥9.38 / ¥15.00"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"旧 ID 自动转 claude-sonnet-4-6"}]},
+      {"cells":[{"model":"claude-haiku-4-5-20251001"},{"strike":"¥6.8 / ¥34","note":"官方 $1 / $5"},{"deal":true,"strong":"¥2.50 / ¥12.50","note":"读 ¥0.25 · 写 ¥3.13 / ¥5.00"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"轻量低价模型"}]}
+    ],
+    "openai": [
+      {"hl":true,"cells":[{"model":"gpt-5.5","tag":"主力","tagStyle":"key"},{"strike":"¥34 / ¥204","note":"官方 $5 / $30 · 缓存 $0.5"},{"deal":true,"strong":"¥2.25 / ¥13.50","save":"约 0.66 折 · 缓存 ¥0.225"},{"strong":"¥3.00 / ¥18.00","note":"约 0.88 折 · 缓存 ¥0.30"},{"text":"复杂推理与 Codex 主力模型"}]},
+      {"cells":[{"model":"gpt-5.4"},{"strike":"¥17 / ¥102","note":"官方 $2.5 / $15 · 缓存 $0.25"},{"deal":true,"strong":"¥1.125 / ¥6.75","save":"约 0.66 折 · 缓存 ¥0.113"},{"strong":"¥1.50 / ¥9.00","note":"约 0.88 折 · 缓存 ¥0.15"},{"text":"272K 以上长上下文有阶梯倍率"}]},
+      {"cells":[{"model":"gpt-5.4-mini"},{"strike":"¥5.1 / ¥30.6","note":"官方 $0.75 / $4.5 · 缓存 $0.075"},{"deal":true,"strong":"¥0.338 / ¥2.025","save":"约 0.66 折 · 缓存 ¥0.034"},{"strong":"¥0.45 / ¥2.70","note":"约 0.88 折 · 缓存 ¥0.045"},{"text":"低延迟低成本"}]},
+      {"cells":[{"model":"gpt-5.3-codex-spark"},{"strike":"¥11.9 / ¥95.2","note":"官方 $1.75 / $14 · 缓存 $0.175"},{"deal":true,"strong":"¥0.787 / ¥6.30","save":"约 0.66 折 · 缓存 ¥0.079"},{"strong":"¥1.05 / ¥8.40","note":"约 0.88 折 · 缓存 ¥0.105"},{"text":"Codex 轻量任务"}]},
+      {"cells":[{"model":"gpt-image-1 / 1.5 / 2","tag":"图像","tagStyle":"img"},{"strike":"¥34 / ¥204","note":"官方 $5 / $30 · 缓存 $0.5"},{"deal":true,"strong":"¥2.25 / ¥13.50","save":"约 0.66 折 · 缓存 ¥0.225"},{"strong":"¥3.00 / ¥18.00","note":"约 0.88 折 · 缓存 ¥0.30"},{"text":"图像接口 Token 计费；固定图价见「图像生成」"}]}
+    ]
+  }
+}`;
 
 const DEFAULT_EMAIL_SUBJECT = '{{site_name}} - 邮箱验证码';
 const DEFAULT_EMAIL_BODY = `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 420px; margin: 0 auto; background: #ffffff; border-radius: 8px; border: 1px solid #e5e7eb;">
@@ -325,6 +367,23 @@ export default function SettingsPage() {
     </>,
   );
 
+  // 官网价格表 JSON 的客户端校验：只提示不阻塞保存（留空 = 官网使用内置硬编码表）。
+  const landingPricingRaw = values['landing_pricing_json'] ?? '';
+  let landingPricingError = '';
+  if (landingPricingRaw.trim() !== '') {
+    try {
+      const parsed = JSON.parse(landingPricingRaw);
+      // 注意：typeof null === 'object'，不能只用 typeof 判断，否则 {"tables": null}
+      // 会被判定为合法（保存后 pricing-render.js 静默保留旧的硬编码表，管理员毫无提示）。
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
+        !parsed.tables || typeof parsed.tables !== 'object' || Array.isArray(parsed.tables)) {
+        landingPricingError = t('settings.landing_pricing_invalid');
+      }
+    } catch (e) {
+      landingPricingError = (e as Error).message;
+    }
+  }
+
   return (
     <div className="max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 md:py-8 flex flex-col gap-6 min-h-screen">
       <div className="mx-auto w-full max-w-full overflow-x-auto hide-scrollbar pb-1">
@@ -376,6 +435,33 @@ export default function SettingsPage() {
                 <Field className="col-span-1 md:col-span-2" label={t('settings.site_logo')} hint={t('settings.site_logo_hint')}>
                   <LogoUpload value={val('site_logo')} onChange={(url) => set('site_logo', url)} />
                 </Field>
+              </div>
+              <div className="ag-settings-section-stack mt-6">
+                <SettingsSection
+                  action={(
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onPress={() => set('landing_pricing_json', DEFAULT_LANDING_PRICING_JSON)}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      {t('settings.template_reset')}
+                    </Button>
+                  )}
+                  description={t('settings.landing_pricing_desc')}
+                  title={t('settings.landing_pricing')}
+                >
+                  <TextArea
+                    aria-label={t('settings.landing_pricing')}
+                    value={landingPricingRaw}
+                    onChange={(e) => set('landing_pricing_json', e.target.value)}
+                    className="h-80 w-full font-mono text-xs leading-5"
+                    placeholder={DEFAULT_LANDING_PRICING_JSON}
+                  />
+                  {landingPricingError && (
+                    <p className="text-[11px] text-danger mt-1.5">{landingPricingError}</p>
+                  )}
+                </SettingsSection>
               </div>
               {saveAction}
             </Card.Content>

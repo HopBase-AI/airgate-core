@@ -93,6 +93,8 @@ func (f *Forwarder) Forward(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// TTFT 埋点：包装 writer 记录首字节写出客户端的时刻（recordUsage 汇总 ttft_breakdown）
+	installTTFTWriter(c)
 	// 对外错误格式跟随目标插件/路由声明（Metadata["error_format"]），
 	// 此后本请求所有 protocolError 按该格式写出；未声明回退 OpenAI 兼容格式
 	setRequestErrorFormat(c, f.manager.ErrorFormat(state.plugin.Name, state.requestPath))
@@ -628,6 +630,7 @@ func (f *Forwarder) canFailover(c *gin.Context, state *forwardState, execution f
 
 // callPlugin 把请求发给插件。
 func (f *Forwarder) callPlugin(c *gin.Context, state *forwardState) forwardExecution {
+	state.grpcCallAt = time.Now()
 	outcome, err := state.plugin.Gateway.Forward(c.Request.Context(), buildPluginRequest(c, state))
 	return forwardExecution{
 		outcome:  outcome,

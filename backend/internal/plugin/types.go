@@ -17,6 +17,10 @@ type forwardState struct {
 	requestPath string
 	requestID   string
 
+	// grpcCallAt 最后一次（成功的）gRPC 调插件的时刻。与 startedAt 之差即
+	// core 前置耗时（鉴权/余额/调度/闸门，含 failover 排队），用于 TTFT 分段。
+	grpcCallAt time.Time
+
 	body  []byte
 	model string
 	// schedulingModels 是调度层使用的模型候选。协议翻译入口里，客户端传入的

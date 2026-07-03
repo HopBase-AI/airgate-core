@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -321,6 +322,61 @@ func (f *Forwarder) recordUsage(c *gin.Context, state *forwardState, execution f
 		UsageCostDetails:             usage.CostDetails,
 		UsageMetadata:                usage.Metadata,
 	})
+
+	if state.stream {
+		f.logTTFTBreakdown(ctx, c, state, usage, actualModel)
+	}
+}
+
+// logTTFTBreakdown 输出一次流式请求的 TTFT 分段耗时，用于定位网关相对上游的附加延迟。
+//
+// 分段（时间轴自左向右）：
+//
+//	core_pre_ms       进入 Forward → gRPC 调插件（鉴权/余额/调度/闸门，含 failover 排队）
+//	plugin_pre_ms     插件收到请求 → 发起上游（token 刷新/body 预处理），插件经 Usage.Metadata 回传
+//	upstream_ttfb_ms  发起上游 → 上游响应头到达（网络 + 上游排队），插件回传
+//	first_token_ms    插件收到请求 → 首个内容增量事件（现有埋点，含 plugin_pre + ttfb + 首事件等待）
+//	client_ttft_ms    进入 Forward → 首字节写出客户端（客户端感知）
+//	overhead_ms       client_ttft - core_pre - first_token ≈ gRPC 往返 + core 写出路径（网关自身开销）
+func (f *Forwarder) logTTFTBreakdown(ctx context.Context, c *gin.Context, state *forwardState, usage *sdk.Usage, model string) {
+	var clientTTFTMs int64 = -1
+	if tw, ok := c.Writer.(*ttftWriter); ok && !tw.firstWriteAt.IsZero() {
+		clientTTFTMs = tw.firstWriteAt.Sub(state.startedAt).Milliseconds()
+	}
+	var corePreMs int64 = -1
+	if !state.grpcCallAt.IsZero() {
+		corePreMs = state.grpcCallAt.Sub(state.startedAt).Milliseconds()
+	}
+	pluginPreMs := usageMetadataMs(usage, "plugin_pre_ms")
+	upstreamTTFBMs := usageMetadataMs(usage, "upstream_ttfb_ms")
+
+	var overheadMs int64 = -1
+	if clientTTFTMs >= 0 && corePreMs >= 0 && usage.FirstTokenMs > 0 {
+		overheadMs = clientTTFTMs - corePreMs - usage.FirstTokenMs
+	}
+
+	sdk.LoggerFromContext(ctx).Info("ttft_breakdown",
+		sdk.LogFieldModel, model,
+		sdk.LogFieldAccountID, state.account.ID,
+		"core_pre_ms", corePreMs,
+		"plugin_pre_ms", pluginPreMs,
+		"upstream_ttfb_ms", upstreamTTFBMs,
+		"first_token_ms", usage.FirstTokenMs,
+		"client_ttft_ms", clientTTFTMs,
+		"overhead_ms", overheadMs,
+	)
+}
+
+// usageMetadataMs 解析插件经 Usage.Metadata 回传的毫秒值；缺失/非法返回 -1。
+func usageMetadataMs(usage *sdk.Usage, key string) int64 {
+	if usage == nil || usage.Metadata == nil {
+		return -1
+	}
+	v, err := strconv.ParseInt(usage.Metadata[key], 10, 64)
+	if err != nil {
+		return -1
+	}
+	return v
 }
 
 func resolveReasoningEffort(fromRequest string, usage *sdk.Usage) string {
