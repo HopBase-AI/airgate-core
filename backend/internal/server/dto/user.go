@@ -5,6 +5,7 @@ type UserResp struct {
 	ID                    int64                                  `json:"id"`
 	Email                 string                                 `json:"email"`
 	Username              string                                 `json:"username"`
+	DisplayBadge          string                                 `json:"display_badge"`
 	Balance               float64                                `json:"balance"`
 	Role                  string                                 `json:"role"` // admin / user / api_key
 	MaxConcurrency        int                                    `json:"max_concurrency"`
@@ -42,6 +43,7 @@ type CreateUserReq struct {
 	Email               string                                 `json:"email" binding:"required,email"`
 	Password            string                                 `json:"password" binding:"required,min=6"`
 	Username            string                                 `json:"username"`
+	DisplayBadge        string                                 `json:"display_badge" binding:"omitempty,max=128"`
 	Role                string                                 `json:"role" binding:"oneof=admin user"`
 	MaxConcurrency      *int                                   `json:"max_concurrency" binding:"omitempty,gte=0"`
 	GroupRates          map[int64]float64                      `json:"group_rates"`
@@ -51,6 +53,7 @@ type CreateUserReq struct {
 // UpdateUserReq 管理员更新用户请求
 type UpdateUserReq struct {
 	Username            *string                                `json:"username"`
+	DisplayBadge        *string                                `json:"display_badge" binding:"omitempty,max=128"`
 	Password            *string                                `json:"password" binding:"omitempty,min=6"`
 	Role                *string                                `json:"role" binding:"omitempty,oneof=admin user"`
 	MaxConcurrency      *int                                   `json:"max_concurrency"`

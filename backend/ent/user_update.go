@@ -75,6 +75,20 @@ func (uu *UserUpdate) SetNillableUsername(s *string) *UserUpdate {
 	return uu
 }
 
+// SetDisplayBadge sets the "display_badge" field.
+func (uu *UserUpdate) SetDisplayBadge(s string) *UserUpdate {
+	uu.mutation.SetDisplayBadge(s)
+	return uu
+}
+
+// SetNillableDisplayBadge sets the "display_badge" field if the given value is not nil.
+func (uu *UserUpdate) SetNillableDisplayBadge(s *string) *UserUpdate {
+	if s != nil {
+		uu.SetDisplayBadge(*s)
+	}
+	return uu
+}
+
 // SetBalance sets the "balance" field.
 func (uu *UserUpdate) SetBalance(f float64) *UserUpdate {
 	uu.mutation.ResetBalance()
@@ -463,6 +477,11 @@ func (uu *UserUpdate) check() error {
 			return &ValidationError{Name: "password_hash", err: fmt.Errorf(`ent: validator failed for field "User.password_hash": %w`, err)}
 		}
 	}
+	if v, ok := uu.mutation.DisplayBadge(); ok {
+		if err := user.DisplayBadgeValidator(v); err != nil {
+			return &ValidationError{Name: "display_badge", err: fmt.Errorf(`ent: validator failed for field "User.display_badge": %w`, err)}
+		}
+	}
 	if v, ok := uu.mutation.Role(); ok {
 		if err := user.RoleValidator(v); err != nil {
 			return &ValidationError{Name: "role", err: fmt.Errorf(`ent: validator failed for field "User.role": %w`, err)}
@@ -501,6 +520,9 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := uu.mutation.Username(); ok {
 		_spec.SetField(user.FieldUsername, field.TypeString, value)
+	}
+	if value, ok := uu.mutation.DisplayBadge(); ok {
+		_spec.SetField(user.FieldDisplayBadge, field.TypeString, value)
 	}
 	if value, ok := uu.mutation.Balance(); ok {
 		_spec.SetField(user.FieldBalance, field.TypeFloat64, value)
@@ -833,6 +855,20 @@ func (uuo *UserUpdateOne) SetUsername(s string) *UserUpdateOne {
 func (uuo *UserUpdateOne) SetNillableUsername(s *string) *UserUpdateOne {
 	if s != nil {
 		uuo.SetUsername(*s)
+	}
+	return uuo
+}
+
+// SetDisplayBadge sets the "display_badge" field.
+func (uuo *UserUpdateOne) SetDisplayBadge(s string) *UserUpdateOne {
+	uuo.mutation.SetDisplayBadge(s)
+	return uuo
+}
+
+// SetNillableDisplayBadge sets the "display_badge" field if the given value is not nil.
+func (uuo *UserUpdateOne) SetNillableDisplayBadge(s *string) *UserUpdateOne {
+	if s != nil {
+		uuo.SetDisplayBadge(*s)
 	}
 	return uuo
 }
@@ -1238,6 +1274,11 @@ func (uuo *UserUpdateOne) check() error {
 			return &ValidationError{Name: "password_hash", err: fmt.Errorf(`ent: validator failed for field "User.password_hash": %w`, err)}
 		}
 	}
+	if v, ok := uuo.mutation.DisplayBadge(); ok {
+		if err := user.DisplayBadgeValidator(v); err != nil {
+			return &ValidationError{Name: "display_badge", err: fmt.Errorf(`ent: validator failed for field "User.display_badge": %w`, err)}
+		}
+	}
 	if v, ok := uuo.mutation.Role(); ok {
 		if err := user.RoleValidator(v); err != nil {
 			return &ValidationError{Name: "role", err: fmt.Errorf(`ent: validator failed for field "User.role": %w`, err)}
@@ -1293,6 +1334,9 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 	}
 	if value, ok := uuo.mutation.Username(); ok {
 		_spec.SetField(user.FieldUsername, field.TypeString, value)
+	}
+	if value, ok := uuo.mutation.DisplayBadge(); ok {
+		_spec.SetField(user.FieldDisplayBadge, field.TypeString, value)
 	}
 	if value, ok := uuo.mutation.Balance(); ok {
 		_spec.SetField(user.FieldBalance, field.TypeFloat64, value)

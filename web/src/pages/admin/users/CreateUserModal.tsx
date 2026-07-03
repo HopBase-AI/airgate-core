@@ -17,6 +17,7 @@ interface CreateUserModalProps {
 function createDefaultForm(defaultMaxConcurrency: number): CreateUserReq {
   return {
     email: '',
+    display_badge: '',
     max_concurrency: defaultMaxConcurrency,
     password: '',
     role: 'user',
@@ -129,6 +130,16 @@ export function CreateUserModal({ open, onClose, onSubmit, loading, defaultMaxCo
                     value={form.username}
                     onChange={(e) => setForm({ ...form, username: e.target.value })}
                     autoComplete="username"
+                  />
+                </HeroTextField>
+                <HeroTextField fullWidth>
+                  <Label>{t('users.display_badge')}</Label>
+                  <Input
+                    name="display_badge"
+                    value={form.display_badge ?? ''}
+                    maxLength={32}
+                    placeholder={t('users.display_badge_placeholder')}
+                    onChange={(e) => setForm({ ...form, display_badge: e.target.value })}
                   />
                 </HeroTextField>
                 <HeroTextField fullWidth>

@@ -14401,6 +14401,7 @@ type UserMutation struct {
 	email                      *string
 	password_hash              *string
 	username                   *string
+	display_badge              *string
 	balance                    *float64
 	addbalance                 *float64
 	role                       *user.Role
@@ -14640,6 +14641,42 @@ func (m *UserMutation) OldUsername(ctx context.Context) (v string, err error) {
 // ResetUsername resets all changes to the "username" field.
 func (m *UserMutation) ResetUsername() {
 	m.username = nil
+}
+
+// SetDisplayBadge sets the "display_badge" field.
+func (m *UserMutation) SetDisplayBadge(s string) {
+	m.display_badge = &s
+}
+
+// DisplayBadge returns the value of the "display_badge" field in the mutation.
+func (m *UserMutation) DisplayBadge() (r string, exists bool) {
+	v := m.display_badge
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDisplayBadge returns the old "display_badge" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldDisplayBadge(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDisplayBadge is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDisplayBadge requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDisplayBadge: %w", err)
+	}
+	return oldValue.DisplayBadge, nil
+}
+
+// ResetDisplayBadge resets all changes to the "display_badge" field.
+func (m *UserMutation) ResetDisplayBadge() {
+	m.display_badge = nil
 }
 
 // SetBalance sets the "balance" field.
@@ -15441,7 +15478,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 14)
+	fields := make([]string, 0, 15)
 	if m.email != nil {
 		fields = append(fields, user.FieldEmail)
 	}
@@ -15450,6 +15487,9 @@ func (m *UserMutation) Fields() []string {
 	}
 	if m.username != nil {
 		fields = append(fields, user.FieldUsername)
+	}
+	if m.display_badge != nil {
+		fields = append(fields, user.FieldDisplayBadge)
 	}
 	if m.balance != nil {
 		fields = append(fields, user.FieldBalance)
@@ -15498,6 +15538,8 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.PasswordHash()
 	case user.FieldUsername:
 		return m.Username()
+	case user.FieldDisplayBadge:
+		return m.DisplayBadge()
 	case user.FieldBalance:
 		return m.Balance()
 	case user.FieldRole:
@@ -15535,6 +15577,8 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldPasswordHash(ctx)
 	case user.FieldUsername:
 		return m.OldUsername(ctx)
+	case user.FieldDisplayBadge:
+		return m.OldDisplayBadge(ctx)
 	case user.FieldBalance:
 		return m.OldBalance(ctx)
 	case user.FieldRole:
@@ -15586,6 +15630,13 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUsername(v)
+		return nil
+	case user.FieldDisplayBadge:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDisplayBadge(v)
 		return nil
 	case user.FieldBalance:
 		v, ok := value.(float64)
@@ -15781,6 +15832,9 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldUsername:
 		m.ResetUsername()
+		return nil
+	case user.FieldDisplayBadge:
+		m.ResetDisplayBadge()
 		return nil
 	case user.FieldBalance:
 		m.ResetBalance()

@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -138,6 +139,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (User, error) {
 		Email:                  &input.Email,
 		PasswordHash:           stringPtr(string(hash)),
 		Username:               &input.Username,
+		DisplayBadge:           stringPtr(normalizeDisplayBadge(input.DisplayBadge)),
 		Role:                   &input.Role,
 		MaxConcurrency:         intPtrIfPositive(input.MaxConcurrency),
 		GroupRates:             cloneGroupRates(input.GroupRates),
@@ -172,6 +174,7 @@ func (s *Service) Update(ctx context.Context, id int, input UpdateInput) (User, 
 	}
 	mutation := Mutation{
 		Username:               input.Username,
+		DisplayBadge:           normalizeDisplayBadgePtr(input.DisplayBadge),
 		Role:                   input.Role,
 		MaxConcurrency:         input.MaxConcurrency,
 		GroupRates:             cloneGroupRates(input.GroupRates),
@@ -534,6 +537,18 @@ func cloneOneGroupPluginSettings(input map[string]map[string]string) map[string]
 
 func stringPtr(value string) *string {
 	return &value
+}
+
+func normalizeDisplayBadge(value string) string {
+	return strings.TrimSpace(value)
+}
+
+func normalizeDisplayBadgePtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	normalized := normalizeDisplayBadge(*value)
+	return &normalized
 }
 
 func intPtrIfPositive(value int) *int {

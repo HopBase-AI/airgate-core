@@ -21,6 +21,8 @@ const (
 	FieldPasswordHash = "password_hash"
 	// FieldUsername holds the string denoting the username field in the database.
 	FieldUsername = "username"
+	// FieldDisplayBadge holds the string denoting the display_badge field in the database.
+	FieldDisplayBadge = "display_badge"
 	// FieldBalance holds the string denoting the balance field in the database.
 	FieldBalance = "balance"
 	// FieldRole holds the string denoting the role field in the database.
@@ -96,6 +98,7 @@ var Columns = []string{
 	FieldEmail,
 	FieldPasswordHash,
 	FieldUsername,
+	FieldDisplayBadge,
 	FieldBalance,
 	FieldRole,
 	FieldMaxConcurrency,
@@ -132,6 +135,10 @@ var (
 	PasswordHashValidator func(string) error
 	// DefaultUsername holds the default value on creation for the "username" field.
 	DefaultUsername string
+	// DefaultDisplayBadge holds the default value on creation for the "display_badge" field.
+	DefaultDisplayBadge string
+	// DisplayBadgeValidator is a validator for the "display_badge" field. It is called by the builders before save.
+	DisplayBadgeValidator func(string) error
 	// DefaultBalance holds the default value on creation for the "balance" field.
 	DefaultBalance float64
 	// DefaultMaxConcurrency holds the default value on creation for the "max_concurrency" field.
@@ -223,6 +230,11 @@ func ByPasswordHash(opts ...sql.OrderTermOption) OrderOption {
 // ByUsername orders the results by the username field.
 func ByUsername(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUsername, opts...).ToFunc()
+}
+
+// ByDisplayBadge orders the results by the display_badge field.
+func ByDisplayBadge(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDisplayBadge, opts...).ToFunc()
 }
 
 // ByBalance orders the results by the balance field.

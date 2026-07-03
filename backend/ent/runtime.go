@@ -566,30 +566,36 @@ func init() {
 	userDescUsername := userFields[2].Descriptor()
 	// user.DefaultUsername holds the default value on creation for the username field.
 	user.DefaultUsername = userDescUsername.Default.(string)
+	// userDescDisplayBadge is the schema descriptor for display_badge field.
+	userDescDisplayBadge := userFields[3].Descriptor()
+	// user.DefaultDisplayBadge holds the default value on creation for the display_badge field.
+	user.DefaultDisplayBadge = userDescDisplayBadge.Default.(string)
+	// user.DisplayBadgeValidator is a validator for the "display_badge" field. It is called by the builders before save.
+	user.DisplayBadgeValidator = userDescDisplayBadge.Validators[0].(func(string) error)
 	// userDescBalance is the schema descriptor for balance field.
-	userDescBalance := userFields[3].Descriptor()
+	userDescBalance := userFields[4].Descriptor()
 	// user.DefaultBalance holds the default value on creation for the balance field.
 	user.DefaultBalance = userDescBalance.Default.(float64)
 	// userDescMaxConcurrency is the schema descriptor for max_concurrency field.
-	userDescMaxConcurrency := userFields[5].Descriptor()
+	userDescMaxConcurrency := userFields[6].Descriptor()
 	// user.DefaultMaxConcurrency holds the default value on creation for the max_concurrency field.
 	user.DefaultMaxConcurrency = userDescMaxConcurrency.Default.(int)
 	// user.MaxConcurrencyValidator is a validator for the "max_concurrency" field. It is called by the builders before save.
 	user.MaxConcurrencyValidator = userDescMaxConcurrency.Validators[0].(func(int) error)
 	// userDescBalanceAlertThreshold is the schema descriptor for balance_alert_threshold field.
-	userDescBalanceAlertThreshold := userFields[9].Descriptor()
+	userDescBalanceAlertThreshold := userFields[10].Descriptor()
 	// user.DefaultBalanceAlertThreshold holds the default value on creation for the balance_alert_threshold field.
 	user.DefaultBalanceAlertThreshold = userDescBalanceAlertThreshold.Default.(float64)
 	// userDescBalanceAlertNotified is the schema descriptor for balance_alert_notified field.
-	userDescBalanceAlertNotified := userFields[10].Descriptor()
+	userDescBalanceAlertNotified := userFields[11].Descriptor()
 	// user.DefaultBalanceAlertNotified holds the default value on creation for the balance_alert_notified field.
 	user.DefaultBalanceAlertNotified = userDescBalanceAlertNotified.Default.(bool)
 	// userDescCreatedAt is the schema descriptor for created_at field.
-	userDescCreatedAt := userFields[12].Descriptor()
+	userDescCreatedAt := userFields[13].Descriptor()
 	// user.DefaultCreatedAt holds the default value on creation for the created_at field.
 	user.DefaultCreatedAt = userDescCreatedAt.Default.(func() time.Time)
 	// userDescUpdatedAt is the schema descriptor for updated_at field.
-	userDescUpdatedAt := userFields[13].Descriptor()
+	userDescUpdatedAt := userFields[14].Descriptor()
 	// user.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	user.DefaultUpdatedAt = userDescUpdatedAt.Default.(func() time.Time)
 	// user.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

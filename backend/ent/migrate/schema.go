@@ -428,6 +428,7 @@ var (
 		{Name: "email", Type: field.TypeString, Unique: true},
 		{Name: "password_hash", Type: field.TypeString},
 		{Name: "username", Type: field.TypeString, Default: ""},
+		{Name: "display_badge", Type: field.TypeString, Size: 128, Default: ""},
 		{Name: "balance", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "role", Type: field.TypeEnum, Enums: []string{"admin", "user"}, Default: "user"},
 		{Name: "max_concurrency", Type: field.TypeInt, Default: 0},

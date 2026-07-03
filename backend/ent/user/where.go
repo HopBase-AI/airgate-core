@@ -70,6 +70,11 @@ func Username(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldUsername, v))
 }
 
+// DisplayBadge applies equality check predicate on the "display_badge" field. It's identical to DisplayBadgeEQ.
+func DisplayBadge(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldDisplayBadge, v))
+}
+
 // Balance applies equality check predicate on the "balance" field. It's identical to BalanceEQ.
 func Balance(v float64) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldBalance, v))
@@ -298,6 +303,71 @@ func UsernameEqualFold(v string) predicate.User {
 // UsernameContainsFold applies the ContainsFold predicate on the "username" field.
 func UsernameContainsFold(v string) predicate.User {
 	return predicate.User(sql.FieldContainsFold(FieldUsername, v))
+}
+
+// DisplayBadgeEQ applies the EQ predicate on the "display_badge" field.
+func DisplayBadgeEQ(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldDisplayBadge, v))
+}
+
+// DisplayBadgeNEQ applies the NEQ predicate on the "display_badge" field.
+func DisplayBadgeNEQ(v string) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldDisplayBadge, v))
+}
+
+// DisplayBadgeIn applies the In predicate on the "display_badge" field.
+func DisplayBadgeIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldIn(FieldDisplayBadge, vs...))
+}
+
+// DisplayBadgeNotIn applies the NotIn predicate on the "display_badge" field.
+func DisplayBadgeNotIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldDisplayBadge, vs...))
+}
+
+// DisplayBadgeGT applies the GT predicate on the "display_badge" field.
+func DisplayBadgeGT(v string) predicate.User {
+	return predicate.User(sql.FieldGT(FieldDisplayBadge, v))
+}
+
+// DisplayBadgeGTE applies the GTE predicate on the "display_badge" field.
+func DisplayBadgeGTE(v string) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldDisplayBadge, v))
+}
+
+// DisplayBadgeLT applies the LT predicate on the "display_badge" field.
+func DisplayBadgeLT(v string) predicate.User {
+	return predicate.User(sql.FieldLT(FieldDisplayBadge, v))
+}
+
+// DisplayBadgeLTE applies the LTE predicate on the "display_badge" field.
+func DisplayBadgeLTE(v string) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldDisplayBadge, v))
+}
+
+// DisplayBadgeContains applies the Contains predicate on the "display_badge" field.
+func DisplayBadgeContains(v string) predicate.User {
+	return predicate.User(sql.FieldContains(FieldDisplayBadge, v))
+}
+
+// DisplayBadgeHasPrefix applies the HasPrefix predicate on the "display_badge" field.
+func DisplayBadgeHasPrefix(v string) predicate.User {
+	return predicate.User(sql.FieldHasPrefix(FieldDisplayBadge, v))
+}
+
+// DisplayBadgeHasSuffix applies the HasSuffix predicate on the "display_badge" field.
+func DisplayBadgeHasSuffix(v string) predicate.User {
+	return predicate.User(sql.FieldHasSuffix(FieldDisplayBadge, v))
+}
+
+// DisplayBadgeEqualFold applies the EqualFold predicate on the "display_badge" field.
+func DisplayBadgeEqualFold(v string) predicate.User {
+	return predicate.User(sql.FieldEqualFold(FieldDisplayBadge, v))
+}
+
+// DisplayBadgeContainsFold applies the ContainsFold predicate on the "display_badge" field.
+func DisplayBadgeContainsFold(v string) predicate.User {
+	return predicate.User(sql.FieldContainsFold(FieldDisplayBadge, v))
 }
 
 // BalanceEQ applies the EQ predicate on the "balance" field.

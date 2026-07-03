@@ -10,6 +10,7 @@ type User struct {
 	ID              int
 	Email           string
 	Username        string
+	DisplayBadge    string
 	PasswordHash    string
 	Balance         float64
 	Role            string

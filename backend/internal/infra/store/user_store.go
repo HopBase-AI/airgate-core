@@ -384,6 +384,9 @@ func applyUserMutationCreate(builder *ent.UserCreate, mutation appuser.Mutation)
 	if mutation.Username != nil {
 		builder.SetUsername(*mutation.Username)
 	}
+	if mutation.DisplayBadge != nil {
+		builder.SetDisplayBadge(*mutation.DisplayBadge)
+	}
 	if mutation.PasswordHash != nil {
 		builder.SetPasswordHash(*mutation.PasswordHash)
 	}
@@ -404,6 +407,9 @@ func applyUserMutationCreate(builder *ent.UserCreate, mutation appuser.Mutation)
 func applyUserMutationUpdate(builder *ent.UserUpdateOne, mutation appuser.Mutation) {
 	if mutation.Username != nil {
 		builder.SetUsername(*mutation.Username)
+	}
+	if mutation.DisplayBadge != nil {
+		builder.SetDisplayBadge(*mutation.DisplayBadge)
 	}
 	if mutation.PasswordHash != nil {
 		builder.SetPasswordHash(*mutation.PasswordHash)
@@ -455,6 +461,7 @@ func mapUser(item *ent.User) appuser.User {
 		ID:                    item.ID,
 		Email:                 item.Email,
 		Username:              item.Username,
+		DisplayBadge:          item.DisplayBadge,
 		PasswordHash:          item.PasswordHash,
 		Balance:               item.Balance,
 		Role:                  item.Role.String(),

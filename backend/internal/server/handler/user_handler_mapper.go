@@ -11,6 +11,7 @@ func toUserRespFromDomain(item appuser.User) dto.UserResp {
 		ID:                    int64(item.ID),
 		Email:                 item.Email,
 		Username:              item.Username,
+		DisplayBadge:          item.DisplayBadge,
 		Balance:               item.Balance,
 		Role:                  item.Role,
 		MaxConcurrency:        item.MaxConcurrency,

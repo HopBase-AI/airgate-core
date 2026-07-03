@@ -17,6 +17,8 @@ func (User) Fields() []ent.Field {
 		field.String("email").Unique().NotEmpty(),
 		field.String("password_hash").NotEmpty().Sensitive(),
 		field.String("username").Default(""),
+		field.String("display_badge").Default("").MaxLen(128).
+			Comment("用户侧展示标签，仅用于控制台身份文案展示，不参与权限判断。"),
 		field.Float("balance").Default(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 		field.Enum("role").Values("admin", "user").Default("user"),

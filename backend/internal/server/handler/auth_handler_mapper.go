@@ -11,6 +11,7 @@ func userToResp(user appauth.User) dto.UserResp {
 		ID:             int64(user.ID),
 		Email:          user.Email,
 		Username:       user.Username,
+		DisplayBadge:   user.DisplayBadge,
 		Balance:        user.Balance,
 		Role:           user.Role,
 		MaxConcurrency: user.MaxConcurrency,

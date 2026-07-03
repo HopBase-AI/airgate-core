@@ -18,6 +18,7 @@ export function EditUserModal({ open, user, onClose, onSubmit, loading }: EditUs
   const { t } = useTranslation();
   const editableRole = user.role === 'admin' ? 'admin' : 'user';
   const [form, setForm] = useState<UpdateUserReq>({
+    display_badge: user.display_badge ?? '',
     max_concurrency: user.max_concurrency,
     role: editableRole,
     status: user.status as 'active' | 'disabled',
@@ -54,6 +55,16 @@ export function EditUserModal({ open, user, onClose, onSubmit, loading }: EditUs
                     value={form.username ?? ''}
                     onChange={(e) => setForm({ ...form, username: e.target.value })}
                     autoComplete="username"
+                  />
+                </HeroTextField>
+                <HeroTextField fullWidth>
+                  <Label>{t('users.display_badge')}</Label>
+                  <Input
+                    name="display_badge"
+                    value={form.display_badge ?? ''}
+                    maxLength={32}
+                    placeholder={t('users.display_badge_placeholder')}
+                    onChange={(e) => setForm({ ...form, display_badge: e.target.value })}
                   />
                 </HeroTextField>
                 <HeroTextField fullWidth>

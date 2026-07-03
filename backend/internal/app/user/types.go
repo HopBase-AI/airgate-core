@@ -10,6 +10,7 @@ type User struct {
 	ID                    int
 	Email                 string
 	Username              string
+	DisplayBadge          string
 	PasswordHash          string
 	Balance               float64
 	Role                  string
@@ -46,6 +47,7 @@ type CreateInput struct {
 	Email               string
 	Password            string
 	Username            string
+	DisplayBadge        string
 	Role                string
 	MaxConcurrency      int
 	GroupRates          map[int64]float64
@@ -55,6 +57,7 @@ type CreateInput struct {
 // UpdateInput 更新用户输入。
 type UpdateInput struct {
 	Username               *string
+	DisplayBadge           *string
 	Password               *string
 	Role                   *string
 	MaxConcurrency         *int
@@ -148,6 +151,7 @@ type APIKeyList struct {
 type Mutation struct {
 	Email                  *string
 	Username               *string
+	DisplayBadge           *string
 	PasswordHash           *string
 	Role                   *string
 	MaxConcurrency         *int

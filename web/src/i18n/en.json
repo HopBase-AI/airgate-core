@@ -270,6 +270,8 @@
     "all_roles": "All Roles",
     "role_admin": "Admin",
     "role_user": "User",
+    "display_badge": "Display Badge",
+    "display_badge_placeholder": "e.g. Authorized User",
     "email": "Email",
     "username": "Username",
     "role": "Role",
@@ -943,7 +945,10 @@
     "openclaw_memory_search_model_hint": "Embedding model name openclaw uses for memory search. Must match a model id served by this site's /v1/models.",
     "openclaw_models_preset": "Model preset list",
     "openclaw_models_preset_desc": "JSON array. Fields match openclaw.json provider.models[] exactly; the extra 'label' field is shown to users by the install script.",
-    "openclaw_models_not_array": "Preset must be a JSON array"
+    "openclaw_models_not_array": "Preset must be a JSON array",
+    "landing_pricing": "Landing pricing tables",
+    "landing_pricing_desc": "JSON object that drives the 4 model pricing tables on the landing page (tables.claude-max / claude-aws / claude-kiro / openai). Each row's cells are: model (model/tag/tagStyle), official strike price (strike/note), deal price (strong/note/save; deal:true highlights the column), savings pill (pill), description (text). Leave empty to keep the built-in tables; changes apply on landing refresh without a redeploy.",
+    "landing_pricing_invalid": "Must be a JSON object containing a tables object"
   },
 
   "docs": {

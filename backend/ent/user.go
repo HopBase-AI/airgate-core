@@ -24,6 +24,8 @@ type User struct {
 	PasswordHash string `json:"-"`
 	// Username holds the value of the "username" field.
 	Username string `json:"username,omitempty"`
+	// 用户侧展示标签，仅用于控制台身份文案展示，不参与权限判断。
+	DisplayBadge string `json:"display_badge,omitempty"`
 	// Balance holds the value of the "balance" field.
 	Balance float64 `json:"balance,omitempty"`
 	// Role holds the value of the "role" field.
@@ -127,7 +129,7 @@ func (*User) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case user.FieldID, user.FieldMaxConcurrency:
 			values[i] = new(sql.NullInt64)
-		case user.FieldEmail, user.FieldPasswordHash, user.FieldUsername, user.FieldRole, user.FieldTotpSecret, user.FieldStatus:
+		case user.FieldEmail, user.FieldPasswordHash, user.FieldUsername, user.FieldDisplayBadge, user.FieldRole, user.FieldTotpSecret, user.FieldStatus:
 			values[i] = new(sql.NullString)
 		case user.FieldCreatedAt, user.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -169,6 +171,12 @@ func (u *User) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field username", values[i])
 			} else if value.Valid {
 				u.Username = value.String
+			}
+		case user.FieldDisplayBadge:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field display_badge", values[i])
+			} else if value.Valid {
+				u.DisplayBadge = value.String
 			}
 		case user.FieldBalance:
 			if value, ok := values[i].(*sql.NullFloat64); !ok {
@@ -309,6 +317,9 @@ func (u *User) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("username=")
 	builder.WriteString(u.Username)
+	builder.WriteString(", ")
+	builder.WriteString("display_badge=")
+	builder.WriteString(u.DisplayBadge)
 	builder.WriteString(", ")
 	builder.WriteString("balance=")
 	builder.WriteString(fmt.Sprintf("%v", u.Balance))

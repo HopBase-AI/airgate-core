@@ -270,6 +270,8 @@
     "all_roles": "全部角色",
     "role_admin": "管理员",
     "role_user": "普通用户",
+    "display_badge": "身份标签",
+    "display_badge_placeholder": "如：高级授权用户",
     "email": "邮箱",
     "username": "用户名",
     "role": "角色",
@@ -946,7 +948,10 @@
     "openclaw_memory_search_model_hint": "openclaw 用于记忆检索的 embedding 模型名。须与本站 /v1/models 中的一个模型 id 一致。",
     "openclaw_models_preset": "模型预设清单",
     "openclaw_models_preset_desc": "JSON 数组，管理员预设的可选模型。字段与 openclaw.json 里 provider.models[] 完全一致，额外带一个 label 供一键脚本展示给用户勾选。",
-    "openclaw_models_not_array": "预设必须是一个 JSON 数组"
+    "openclaw_models_not_array": "预设必须是一个 JSON 数组",
+    "landing_pricing": "官网价格表配置",
+    "landing_pricing_desc": "JSON 对象，驱动官网首页 4 张模型价格表（tables.claude-max / claude-aws / claude-kiro / openai）。每行 cells 依次为：模型（model/tag/tagStyle）、官方划线价（strike/note）、售价（strong/note/save，deal:true 高亮列）、省幅胶囊（pill）、说明（text）。留空则官网使用页面内置表；保存后官网刷新即生效，无需发版。",
+    "landing_pricing_invalid": "需为包含 tables 对象的 JSON"
   },
 
   "docs": {

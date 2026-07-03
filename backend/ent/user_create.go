@@ -51,6 +51,20 @@ func (uc *UserCreate) SetNillableUsername(s *string) *UserCreate {
 	return uc
 }
 
+// SetDisplayBadge sets the "display_badge" field.
+func (uc *UserCreate) SetDisplayBadge(s string) *UserCreate {
+	uc.mutation.SetDisplayBadge(s)
+	return uc
+}
+
+// SetNillableDisplayBadge sets the "display_badge" field if the given value is not nil.
+func (uc *UserCreate) SetNillableDisplayBadge(s *string) *UserCreate {
+	if s != nil {
+		uc.SetDisplayBadge(*s)
+	}
+	return uc
+}
+
 // SetBalance sets the "balance" field.
 func (uc *UserCreate) SetBalance(f float64) *UserCreate {
 	uc.mutation.SetBalance(f)
@@ -303,6 +317,10 @@ func (uc *UserCreate) defaults() {
 		v := user.DefaultUsername
 		uc.mutation.SetUsername(v)
 	}
+	if _, ok := uc.mutation.DisplayBadge(); !ok {
+		v := user.DefaultDisplayBadge
+		uc.mutation.SetDisplayBadge(v)
+	}
 	if _, ok := uc.mutation.Balance(); !ok {
 		v := user.DefaultBalance
 		uc.mutation.SetBalance(v)
@@ -357,6 +375,14 @@ func (uc *UserCreate) check() error {
 	}
 	if _, ok := uc.mutation.Username(); !ok {
 		return &ValidationError{Name: "username", err: errors.New(`ent: missing required field "User.username"`)}
+	}
+	if _, ok := uc.mutation.DisplayBadge(); !ok {
+		return &ValidationError{Name: "display_badge", err: errors.New(`ent: missing required field "User.display_badge"`)}
+	}
+	if v, ok := uc.mutation.DisplayBadge(); ok {
+		if err := user.DisplayBadgeValidator(v); err != nil {
+			return &ValidationError{Name: "display_badge", err: fmt.Errorf(`ent: validator failed for field "User.display_badge": %w`, err)}
+		}
 	}
 	if _, ok := uc.mutation.Balance(); !ok {
 		return &ValidationError{Name: "balance", err: errors.New(`ent: missing required field "User.balance"`)}
@@ -434,6 +460,10 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := uc.mutation.Username(); ok {
 		_spec.SetField(user.FieldUsername, field.TypeString, value)
 		_node.Username = value
+	}
+	if value, ok := uc.mutation.DisplayBadge(); ok {
+		_spec.SetField(user.FieldDisplayBadge, field.TypeString, value)
+		_node.DisplayBadge = value
 	}
 	if value, ok := uc.mutation.Balance(); ok {
 		_spec.SetField(user.FieldBalance, field.TypeFloat64, value)

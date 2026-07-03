@@ -194,6 +194,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		Email:               req.Email,
 		Password:            req.Password,
 		Username:            req.Username,
+		DisplayBadge:        req.DisplayBadge,
 		Role:                req.Role,
 		MaxConcurrency:      maxConcurrency,
 		GroupRates:          req.GroupRates,
@@ -223,6 +224,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 
 	item, err := h.service.Update(c.Request.Context(), id, appuser.UpdateInput{
 		Username:               req.Username,
+		DisplayBadge:           req.DisplayBadge,
 		Password:               req.Password,
 		Role:                   req.Role,
 		MaxConcurrency:         req.MaxConcurrency,

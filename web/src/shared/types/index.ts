@@ -60,6 +60,7 @@ export interface UserResp {
   id: number;
   email: string;
   username: string;
+  display_badge: string;
   balance: number;
   role: SessionRole;
   max_concurrency: number;
@@ -93,6 +94,7 @@ export interface CreateUserReq {
   email: string;
   password: string;
   username?: string;
+  display_badge?: string;
   role: UserRole;
   max_concurrency?: number;
   group_rates?: Record<number, number>;
@@ -101,6 +103,7 @@ export interface CreateUserReq {
 
 export interface UpdateUserReq {
   username?: string;
+  display_badge?: string;
   password?: string;
   role?: UserRole;
   max_concurrency?: number;

@@ -170,6 +170,7 @@ func mapAuthUser(item *ent.User) appauth.User {
 		ID:             item.ID,
 		Email:          item.Email,
 		Username:       item.Username,
+		DisplayBadge:   item.DisplayBadge,
 		PasswordHash:   item.PasswordHash,
 		Balance:        item.Balance,
 		Role:           string(item.Role),

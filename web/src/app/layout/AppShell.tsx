@@ -253,9 +253,10 @@ export function AppShell({ children }: AppShellProps) {
   const currentLanguageOption = LANGUAGE_OPTIONS.find((item) => item.key === currentLanguage) ?? LANGUAGE_OPTIONS[0];
 
   const displayName = user?.username || user?.email?.split('@')[0] || site.site_name || 'HopBase';
-  const roleLabel = user?.role === 'api_key'
+  const customRoleLabel = user?.display_badge?.trim();
+  const roleLabel = customRoleLabel || (user?.role === 'api_key'
     ? 'API Key'
-    : isAdmin ? t('users.role_admin', 'Admin') : t('users.role_user', 'User');
+    : isAdmin ? t('users.role_admin', 'Admin') : t('users.role_user', 'User'));
   useEffect(() => {
     document.title = site.site_name || 'HopBase';
   }, [site.site_name]);
