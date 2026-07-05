@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/DouDOU-start/airgate-core/ent/enttest"
+	"github.com/DouDOU-start/airgate-core/ent/group"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
 
@@ -378,5 +379,146 @@ func TestCheckHostForwardBalance(t *testing.T) {
 	}
 	if err := host.checkHostForwardBalance(ctx, int64(positiveBalanceUser.ID)); err != nil {
 		t.Fatalf("expected positive balance user to pass, got %v", err)
+	}
+}
+
+func TestListGroupsEligibleOnly(t *testing.T) {
+	ctx := context.Background()
+	db := enttest.Open(t, "sqlite3", "file:list_groups_eligible?mode=memory&cache=shared&_fk=1", enttest.WithMigrateOptions(schema.WithGlobalUniqueID(false)))
+	t.Cleanup(func() { _ = db.Close() })
+
+	u := db.User.Create().SetEmail("u@example.com").SetPasswordHash("hash").SetBalance(1).SaveX(ctx)
+	cheap := db.Group.Create().SetName("标准").SetPlatform("gemini").SetRateMultiplier(1.0).SaveX(ctx)
+	pricey := db.Group.Create().SetName("高清").SetPlatform("gemini").SetRateMultiplier(2.0).SaveX(ctx)
+	db.Group.Create().SetName("专属未授权").SetPlatform("gemini").SetRateMultiplier(0.5).SetIsExclusive(true).SaveX(ctx)
+	db.Group.Create().SetName("别的平台").SetPlatform("openai").SetRateMultiplier(1.0).SaveX(ctx)
+
+	host := &HostService{db: db}
+
+	// 缺 user_id / platform 应拒绝
+	if _, err := host.listGroups(ctx, hostListGroupsRequest{EligibleOnly: true, Platform: "gemini"}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("missing user_id: err = %v", err)
+	}
+	if _, err := host.listGroups(ctx, hostListGroupsRequest{EligibleOnly: true, UserID: int64(u.ID)}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("missing platform: err = %v", err)
+	}
+
+	resp, err := host.listGroups(ctx, hostListGroupsRequest{EligibleOnly: true, UserID: int64(u.ID), Platform: "gemini"})
+	if err != nil {
+		t.Fatalf("listGroups eligible: %v", err)
+	}
+	items := resp["groups"].([]map[string]interface{})
+	// 专属未授权与非本平台分组不应出现；便宜的排前面
+	if len(items) != 2 {
+		t.Fatalf("groups len = %d, want 2 (%v)", len(items), items)
+	}
+	if items[0]["id"].(int64) != int64(cheap.ID) || items[1]["id"].(int64) != int64(pricey.ID) {
+		t.Fatalf("groups order = %v,%v; want cheap(%d) first", items[0]["id"], items[1]["id"], cheap.ID)
+	}
+	if items[0]["effective_rate"].(float64) != 1.0 || items[1]["effective_rate"].(float64) != 2.0 {
+		t.Fatalf("effective_rate = %v,%v", items[0]["effective_rate"], items[1]["effective_rate"])
+	}
+
+	// 授权专属分组后应出现且按 0.5 倍率排最前
+	exclusive := db.Group.Query().Where(group.NameEQ("专属未授权")).OnlyX(ctx)
+	db.Group.UpdateOneID(exclusive.ID).AddAllowedUsers(u).ExecX(ctx)
+	resp, err = host.listGroups(ctx, hostListGroupsRequest{EligibleOnly: true, UserID: int64(u.ID), Platform: "gemini"})
+	if err != nil {
+		t.Fatalf("listGroups eligible after grant: %v", err)
+	}
+	items = resp["groups"].([]map[string]interface{})
+	if len(items) != 3 || items[0]["id"].(int64) != int64(exclusive.ID) {
+		t.Fatalf("after grant groups = %v", items)
+	}
+}
+
+func TestHostForwardRoutesExclusiveGroupAuthorization(t *testing.T) {
+	ctx := context.Background()
+	db := enttest.Open(t, "sqlite3", "file:host_forward_exclusive?mode=memory&cache=shared&_fk=1", enttest.WithMigrateOptions(schema.WithGlobalUniqueID(false)))
+	t.Cleanup(func() { _ = db.Close() })
+
+	u := db.User.Create().SetEmail("u@example.com").SetPasswordHash("hash").SetBalance(1).SaveX(ctx)
+	exclusive := db.Group.Create().SetName("专属").SetPlatform("gemini").SetIsExclusive(true).SaveX(ctx)
+
+	host := &HostService{db: db}
+	req := hostForwardRequest{UserID: int64(u.ID), GroupID: int64(exclusive.ID), Model: "gemini-3-pro-image"}
+
+	// 未授权：拒绝
+	if routes, _, err := host.hostForwardRoutes(ctx, req); err == nil || len(routes) != 0 {
+		t.Fatalf("expected denial for unauthorized exclusive group, got routes=%v err=%v", routes, err)
+	}
+
+	// 授权后：放行
+	db.Group.UpdateOneID(exclusive.ID).AddAllowedUsers(u).ExecX(ctx)
+	routes, _, err := host.hostForwardRoutes(ctx, req)
+	if err != nil {
+		t.Fatalf("expected authorized exclusive group to pass, got %v", err)
+	}
+	if len(routes) != 1 || routes[0].GroupID != exclusive.ID {
+		t.Fatalf("routes = %v", routes)
+	}
+}
+
+func TestHostForwardRoutesGroupPlatformMismatch(t *testing.T) {
+	ctx := context.Background()
+	db := enttest.Open(t, "sqlite3", "file:host_forward_platform_mismatch?mode=memory&cache=shared&_fk=1", enttest.WithMigrateOptions(schema.WithGlobalUniqueID(false)))
+	t.Cleanup(func() { _ = db.Close() })
+
+	u := db.User.Create().SetEmail("u@example.com").SetPasswordHash("hash").SetBalance(1).SaveX(ctx)
+	geminiGroup := db.Group.Create().SetName("gemini组").SetPlatform("gemini").SaveX(ctx)
+
+	host := &HostService{db: db}
+
+	// 请求声明 openai 平台却指定 gemini 分组：拒绝
+	mismatch := hostForwardRequest{
+		UserID:  int64(u.ID),
+		GroupID: int64(geminiGroup.ID),
+		Model:   "gpt-image-2",
+		Headers: map[string]interface{}{"X-Airgate-Platform": []string{"openai"}},
+	}
+	if routes, _, err := host.hostForwardRoutes(ctx, mismatch); err == nil || len(routes) != 0 {
+		t.Fatalf("expected platform mismatch denial, got routes=%v err=%v", routes, err)
+	}
+
+	// 平台一致：放行（大小写不敏感）
+	match := hostForwardRequest{
+		UserID:  int64(u.ID),
+		GroupID: int64(geminiGroup.ID),
+		Model:   "gemini-3-pro-image",
+		Headers: map[string]interface{}{"X-Airgate-Platform": []string{"Gemini"}},
+	}
+	routes, _, err := host.hostForwardRoutes(ctx, match)
+	if err != nil {
+		t.Fatalf("expected matching platform to pass, got %v", err)
+	}
+	if len(routes) != 1 || routes[0].GroupID != geminiGroup.ID {
+		t.Fatalf("routes = %v", routes)
+	}
+}
+
+func TestListTasksPluginIDsFilter(t *testing.T) {
+	ctx := context.Background()
+	db := enttest.Open(t, "sqlite3", "file:list_tasks_plugin_ids?mode=memory&cache=shared&_fk=1", enttest.WithMigrateOptions(schema.WithGlobalUniqueID(false)))
+	t.Cleanup(func() { _ = db.Close() })
+
+	for _, pid := range []string{"gateway-openai", "gateway-gemini", "other-plugin"} {
+		db.Task.Create().SetPluginID(pid).SetTaskType("image.generate").SetUserID(7).SaveX(ctx)
+	}
+
+	host := &HostService{db: db}
+	resp, err := host.listTasks(ctx, "", hostListTasksRequest{
+		UserID:    7,
+		PluginIDs: []string{"gateway-openai", "gateway-gemini"},
+	})
+	if err != nil {
+		t.Fatalf("listTasks: %v", err)
+	}
+	if total := resp["total"].(int); total != 2 {
+		t.Fatalf("total = %d, want 2", total)
+	}
+	for _, item := range resp["tasks"].([]map[string]interface{}) {
+		if pid := item["plugin_id"].(string); pid == "other-plugin" {
+			t.Fatalf("leaked task from %q", pid)
+		}
 	}
 }

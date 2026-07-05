@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/ent/account"
 	"github.com/DouDOU-start/airgate-core/ent/group"
+	"github.com/DouDOU-start/airgate-core/ent/setting"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
@@ -181,6 +183,7 @@ const (
 	hostMethodGatewayForward         = "gateway.forward"
 	hostMethodPlatformsList          = "platforms.list"
 	hostMethodModelsList             = "models.list"
+	hostMethodModelsCatalog          = "models.catalog"
 	hostMethodUsersGet               = "users.get"
 	hostMethodUsersUpdateBalance     = "users.update_balance"
 	hostMethodAssetsStore            = "assets.store"
@@ -242,6 +245,12 @@ func (h *HostService) invoke(
 			return nil, err
 		}
 		return h.listModels(ctx, req)
+	case hostMethodModelsCatalog:
+		var req hostModelsCatalogRequest
+		if err := decodeHostPayload(payload, &req); err != nil {
+			return nil, err
+		}
+		return h.getModelsCatalog(ctx, req)
 	case hostMethodUsersGet:
 		var req hostGetUserInfoRequest
 		if err := decodeHostPayload(payload, &req); err != nil {
@@ -389,6 +398,10 @@ type hostListModelsRequest struct {
 	Platform string `json:"platform"`
 }
 
+type hostModelsCatalogRequest struct {
+	Platform string `json:"platform"`
+}
+
 type hostGetUserInfoRequest struct {
 	UserID int64 `json:"user_id"`
 }
@@ -455,11 +468,15 @@ type hostGetTaskRequest struct {
 
 type hostListTasksRequest struct {
 	PluginID string `json:"plugin_id"`
-	UserID   int64  `json:"user_id"`
-	TaskType string `json:"task_type"`
-	Status   string `json:"status"`
-	Limit    int    `json:"limit"`
-	Offset   int    `json:"offset"`
+	// PluginIDs 非空时按 IN 过滤（与 PluginID 二选一，PluginIDs 优先）。
+	// 供聚合型插件（如 studio 同时消费 gateway-openai/gateway-gemini 的任务）
+	// 在保持分页正确的前提下限定可见范围，避免捞到其他插件的任务。
+	PluginIDs []string `json:"plugin_ids"`
+	UserID    int64    `json:"user_id"`
+	TaskType  string   `json:"task_type"`
+	Status    string   `json:"status"`
+	Limit     int      `json:"limit"`
+	Offset    int      `json:"offset"`
 }
 
 type hostDeleteTaskRequest struct {
@@ -674,12 +691,24 @@ type hostListGroupsRequest struct {
 	// 可见性/授权判断留在 core——插件不应自行查 core 表实现这类过滤。
 	PublicOnly bool  `json:"public_only"`
 	UserID     int64 `json:"user_id"`
+	// EligibleOnly=true 时按转发资格过滤（需同时传 UserID>0 与 Platform）：
+	// 复用 routing.ListEligibleGroups 的语义（专属分组授权、image_enabled 等
+	// 能力门禁），返回项附带该用户的 effective_rate，按最便宜优先排序——
+	// 与 gateway.forward 未显式指定 group_id 时的自动选组顺序一致。
+	// 供插件向终端用户展示"本次调用可选哪些分组"。
+	EligibleOnly bool   `json:"eligible_only"`
+	Platform     string `json:"platform"`
+	NeedsImage   bool   `json:"needs_image"`
 }
 
-// listGroups 列出分组（默认全部；支持状态页可见性过滤）。
+// listGroups 列出分组（默认全部；支持状态页可见性 / 用户转发资格过滤）。
 func (h *HostService) listGroups(ctx context.Context, req hostListGroupsRequest) (map[string]interface{}, error) {
 	slog.Debug("host_service_list_groups", "module", "host",
-		"public_only", req.PublicOnly, "user_id", req.UserID)
+		"public_only", req.PublicOnly, "user_id", req.UserID,
+		"eligible_only", req.EligibleOnly, sdk.LogFieldPlatform, req.Platform)
+	if req.EligibleOnly {
+		return h.listEligibleGroups(ctx, req)
+	}
 	q := h.db.Group.Query()
 	if req.PublicOnly {
 		if req.UserID > 0 {
@@ -706,6 +735,72 @@ func (h *HostService) listGroups(ctx context.Context, req hostListGroupsRequest)
 			"platform":        g.Platform,
 			"is_exclusive":    g.IsExclusive,
 			"rate_multiplier": g.RateMultiplier,
+			"note":            g.Note,
+			"status_visible":  g.StatusVisible,
+		})
+	}
+	return map[string]interface{}{"groups": items}, nil
+}
+
+// listEligibleGroups 按转发资格列出某用户在某平台下可用的分组（groups.list 的
+// eligible_only 分支）。资格判定与排序完全复用 routing.ListEligibleGroups，
+// 保证展示给用户的候选与自动选组行为一致。
+func (h *HostService) listEligibleGroups(ctx context.Context, req hostListGroupsRequest) (map[string]interface{}, error) {
+	if req.UserID <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "eligible_only 需要 user_id > 0")
+	}
+	platform := strings.TrimSpace(req.Platform)
+	if platform == "" {
+		return nil, status.Error(codes.InvalidArgument, "eligible_only 需要 platform")
+	}
+	u, err := h.db.User.Query().Where(user.IDEQ(int(req.UserID))).Only(ctx)
+	if err != nil {
+		if cerr := hostContextError(err); cerr != nil {
+			return nil, cerr
+		}
+		if ent.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, "用户不存在")
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	candidates, err := routing.ListEligibleGroups(ctx, h.db, int(req.UserID), platform,
+		u.GroupRates, u.GroupPluginSettings, routing.Requirements{NeedsImage: req.NeedsImage})
+	if err != nil {
+		if cerr := hostContextError(err); cerr != nil {
+			return nil, cerr
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	ids := make([]int, 0, len(candidates))
+	for _, c := range candidates {
+		ids = append(ids, c.GroupID)
+	}
+	byID := make(map[int]*ent.Group, len(ids))
+	if len(ids) > 0 {
+		groups, err := h.db.Group.Query().Where(group.IDIn(ids...)).All(ctx)
+		if err != nil {
+			if cerr := hostContextError(err); cerr != nil {
+				return nil, cerr
+			}
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		for _, g := range groups {
+			byID[g.ID] = g
+		}
+	}
+	items := make([]map[string]interface{}, 0, len(candidates))
+	for _, c := range candidates {
+		g, ok := byID[c.GroupID]
+		if !ok {
+			continue
+		}
+		items = append(items, map[string]interface{}{
+			"id":              int64(g.ID),
+			"name":            g.Name,
+			"platform":        g.Platform,
+			"is_exclusive":    g.IsExclusive,
+			"rate_multiplier": g.RateMultiplier,
+			"effective_rate":  c.EffectiveRate,
 			"note":            g.Note,
 			"status_visible":  g.StatusVisible,
 		})
@@ -1310,6 +1405,29 @@ func (h *HostService) listModels(_ context.Context, req hostListModelsRequest) (
 	return map[string]interface{}{"models": items}, nil
 }
 
+// modelCatalogSettingKey 模型目录覆盖层的 settings key 约定：models.catalog.<platform>。
+// core 后台编辑 UI（写入）与本 host method（读取）+ 各网关插件（消费）三方共用此约定。
+func modelCatalogSettingKey(platform string) string {
+	return "models.catalog." + platform
+}
+
+// getModelsCatalog 返回某平台的「模型目录覆盖层」原始 JSON 字符串（存于 settings 的
+// models.catalog.<platform>）。core 仅做哑存储透传，不解析各平台各异的价格 schema——
+// 由调用方插件自行解析、并与其硬编码默认目录合并。未配置时返回空字符串，插件据此纯用硬编码默认。
+func (h *HostService) getModelsCatalog(ctx context.Context, req hostModelsCatalogRequest) (map[string]interface{}, error) {
+	if req.Platform == "" {
+		return nil, status.Error(codes.InvalidArgument, "platform 不能为空")
+	}
+	row, err := h.db.Setting.Query().Where(setting.KeyEQ(modelCatalogSettingKey(req.Platform))).Only(ctx)
+	if ent.IsNotFound(err) {
+		return map[string]interface{}{"catalog_json": ""}, nil
+	}
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "查询模型目录配置失败: %v", err)
+	}
+	return map[string]interface{}{"catalog_json": row.Value}, nil
+}
+
 // getUserInfo 获取用户基本信息。
 func (h *HostService) getUserInfo(ctx context.Context, req hostGetUserInfoRequest) (map[string]interface{}, error) {
 	if req.UserID <= 0 {
@@ -1511,6 +1629,18 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 				sdk.LogFieldGroupID, req.GroupID, sdk.LogFieldError, err)
 			return nil, "", hostForwardGenericError()
 		}
+		// 显式指定的分组平台必须与请求声明/推断的平台一致——否则调用方可以
+		// 用便宜平台的分组给另一个平台的模型计费（group_id 可能来自终端用户输入）。
+		// 请求侧推不出平台时（无 header 也不认识模型）放行，交给后续调度失败兜底。
+		if reqPlatform := h.hostForwardRequestPlatform(req); reqPlatform != "" && !strings.EqualFold(reqPlatform, g.Platform) {
+			slog.Warn("host_forward_group_platform_mismatch",
+				sdk.LogFieldGroupID, req.GroupID,
+				"group_platform", g.Platform,
+				"request_platform", reqPlatform,
+				sdk.LogFieldModel, req.Model,
+			)
+			return nil, "", hostForwardGenericError()
+		}
 		if !routing.GroupMatchesRequirements(g, hostForwardRequirements(h.manager, req)) {
 			slog.Warn("host_forward_group_requirement_unmet",
 				sdk.LogFieldGroupID, req.GroupID,
@@ -1518,6 +1648,28 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 				sdk.LogFieldPath, req.Path,
 			)
 			return nil, "", hostForwardGenericError()
+		}
+		// 显式指定 group_id 的调用同样要过专属分组授权——group_id 可能来自
+		// 终端用户输入（如 studio 的分组选择器），不能默认可信。
+		if g.IsExclusive {
+			allowed, err := g.QueryAllowedUsers().Where(user.IDEQ(int(req.UserID))).Exist(ctx)
+			if err != nil {
+				if cerr := hostContextError(err); cerr != nil {
+					return nil, "", cerr
+				}
+				slog.Error("host_forward_exclusive_check_failed",
+					sdk.LogFieldGroupID, req.GroupID,
+					sdk.LogFieldUserID, req.UserID,
+					sdk.LogFieldError, err)
+				return nil, "", hostForwardGenericError()
+			}
+			if !allowed {
+				slog.Warn("host_forward_group_not_authorized",
+					sdk.LogFieldGroupID, req.GroupID,
+					sdk.LogFieldUserID, req.UserID,
+				)
+				return nil, "", hostForwardGenericError()
+			}
 		}
 		return []routing.Candidate{{
 			GroupID:                g.ID,
@@ -1532,10 +1684,7 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 		}}, u.Email, nil
 	}
 
-	platform := protoHeadersToHTTPHost(req.Headers).Get("X-Airgate-Platform")
-	if platform == "" && req.Model != "" {
-		platform = h.manager.FindPlatformByModel(req.Model)
-	}
+	platform := h.hostForwardRequestPlatform(req)
 	if platform == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "platform 不能为空")
 	}
@@ -1572,6 +1721,16 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 
 func hostForwardRequirements(mgr *Manager, req hostForwardRequest) routing.Requirements {
 	return routing.Requirements{NeedsImage: requestNeedsImage(mgr, req.Path, req.Model, hostForwardBody(req.Body))}
+}
+
+// hostForwardRequestPlatform 推断请求声明的平台：优先 X-Airgate-Platform 头，
+// 其次按模型名查目录。推不出时返回空串。
+func (h *HostService) hostForwardRequestPlatform(req hostForwardRequest) string {
+	platform := strings.TrimSpace(protoHeadersToHTTPHost(req.Headers).Get("X-Airgate-Platform"))
+	if platform == "" && req.Model != "" && h.manager != nil {
+		platform = h.manager.FindPlatformByModel(req.Model)
+	}
+	return platform
 }
 
 func hostAccountRequirements(mgr *Manager, req hostForwardRequest) scheduler.AccountRequirements {

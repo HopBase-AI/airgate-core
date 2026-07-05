@@ -344,11 +344,15 @@ func (h *HostService) getTask(ctx context.Context, pluginID string, req hostGetT
 func (h *HostService) listTasks(ctx context.Context, pluginID string, req hostListTasksRequest) (map[string]interface{}, error) {
 	query := h.db.Task.Query()
 
-	if req.PluginID != "" {
-		pluginID = req.PluginID
-	}
-	if pluginID != "" {
-		query.Where(enttask.PluginIDEQ(pluginID))
+	if len(req.PluginIDs) > 0 {
+		query.Where(enttask.PluginIDIn(req.PluginIDs...))
+	} else {
+		if req.PluginID != "" {
+			pluginID = req.PluginID
+		}
+		if pluginID != "" {
+			query.Where(enttask.PluginIDEQ(pluginID))
+		}
 	}
 	if req.UserID > 0 {
 		query.Where(enttask.UserIDEQ(int(req.UserID)))
