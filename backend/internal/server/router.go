@@ -438,6 +438,9 @@ func servePluginAsset(mgr *plugin.Manager, baseDir string) gin.HandlerFunc {
 			c.Status(http.StatusNotFound)
 			return
 		}
+		// 插件前端产物是固定文件名（index.js/css，无内容 hash），部署更新后文件名不变。
+		// 必须让浏览器每次 revalidate，否则旧 bundle 会被长期缓存，插件前端更新不生效。
+		c.Header("Cache-Control", "no-cache, must-revalidate")
 		c.Data(http.StatusOK, contentTypeFromExt(rel), data)
 	}
 }
