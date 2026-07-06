@@ -28,6 +28,10 @@ func TestScopeModelListResponseToRoutingSynthesizesUnknownExplicitModel(t *testi
 	if len(ids) != 1 || ids[0] != "GLM-5.2" {
 		t.Fatalf("model ids = %v, want [GLM-5.2]", ids)
 	}
+	entries := decodeModelEntries(t, scoped)
+	if got := entries[0]["owned_by"]; got != "hopbase" {
+		t.Fatalf("owned_by = %v, want hopbase", got)
+	}
 }
 
 func TestScopeModelListResponseToRoutingPreservesKnownModelMetadata(t *testing.T) {
@@ -132,4 +136,15 @@ func decodeModelIDs(t *testing.T, body []byte) []string {
 		ids = append(ids, item.ID)
 	}
 	return ids
+}
+
+func decodeModelEntries(t *testing.T, body []byte) []map[string]any {
+	t.Helper()
+	var payload struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("decode model list: %v; body=%s", err, body)
+	}
+	return payload.Data
 }

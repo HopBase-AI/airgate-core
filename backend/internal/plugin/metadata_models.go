@@ -190,7 +190,7 @@ func syntheticModelEntry(id string) map[string]any {
 		"id":           id,
 		"object":       "model",
 		"created":      time.Now().Unix(),
-		"owned_by":     "airgate",
+		"owned_by":     "hopbase",
 		"capabilities": []string{"chat"},
 	}
 }
