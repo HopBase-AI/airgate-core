@@ -87,7 +87,7 @@
 
 .ag-settings-tabs {
   width: 100%;
-  min-width: 60rem;
+  min-width: 70rem;
   max-width: none;
   margin-inline: auto;
 }
@@ -100,7 +100,7 @@
   display: grid;
   width: 100%;
   max-width: none;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 
 .ag-settings-tabs :where(.tabs__tab, [data-slot="tabs-tab"]) {
