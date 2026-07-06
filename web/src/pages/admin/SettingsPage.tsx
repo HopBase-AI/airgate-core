@@ -1,4 +1,4 @@
-import { type FormEvent, useState, useEffect, useRef } from 'react';
+import { type FormEvent, useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Alert, AlertDialog, Button, Card, Form, Input, Label, Modal, Spinner, Tabs, TextArea, useOverlayState } from '@heroui/react';
@@ -12,7 +12,7 @@ import { queryKeys } from '../../shared/queryKeys';
 import { useToast } from '../../shared/ui';
 import {
   Save, Loader2, Globe, Mail, MailSearch, Send, Upload, X, RotateCcw,
-  ShieldCheck, Copy, Trash2, KeyRound, Zap, Download, Database,
+  ShieldCheck, Copy, Trash2, KeyRound, Zap, Download, Database, Boxes, Plus,
 } from 'lucide-react';
 import type { SettingItem, TestSMTPReq } from '../../shared/types';
 import { SystemUpdatePanel } from './SystemUpdatePanel';
@@ -52,6 +52,16 @@ const STORAGE_KEYS = [
 // OpenClaw 一键接入相关 setting key。所有 key 统一加 "openclaw." 前缀，便于在 Setting 表中识别。
 // 默认值（DEFAULT_OPENCLAW_*）在后端 internal/app/openclaw/defaults.go 中维护了同构的一份，
 // 这里只负责前端展示 / 回填。keep in sync。
+// 模型目录覆盖层:每平台一个 JSON key。值 = 覆盖条目数组。
+// 存储层复用 settings(group=models);插件经 Host.Invoke("models.catalog") 读取。
+const MODELS_KEYS = ['models.catalog.claude', 'models.catalog.openai', 'models.catalog.kiro'] as const;
+type ModelCatalogSettingKey = typeof MODELS_KEYS[number];
+const MODEL_CATALOG_PLATFORMS: Array<{ key: ModelCatalogSettingKey; labelKey: string }> = [
+  { key: 'models.catalog.claude', labelKey: 'settings.models_platform_claude' },
+  { key: 'models.catalog.openai', labelKey: 'settings.models_platform_openai' },
+  { key: 'models.catalog.kiro', labelKey: 'settings.models_platform_kiro' },
+];
+
 const OPENCLAW_KEYS = [
   'openclaw.enabled',
   'openclaw.provider_name',
@@ -168,13 +178,14 @@ const DEFAULT_BALANCE_ALERT_BODY = `<div style="font-family: -apple-system, Blin
 
 // ==================== Tab 定义 ====================
 
-type TabKey = 'site' | 'security' | 'smtp' | 'storage' | 'openclaw' | 'system';
+type TabKey = 'site' | 'security' | 'smtp' | 'storage' | 'models' | 'openclaw' | 'system';
 
 const TABS: { key: TabKey; labelKey: string; icon: typeof Globe }[] = [
   { key: 'site', labelKey: 'settings.tab_site', icon: Globe },
   { key: 'security', labelKey: 'settings.tab_security', icon: ShieldCheck },
   { key: 'smtp', labelKey: 'settings.tab_smtp', icon: Mail },
   { key: 'storage', labelKey: 'settings.tab_storage', icon: Database },
+  { key: 'models', labelKey: 'settings.tab_models', icon: Boxes },
   { key: 'openclaw', labelKey: 'settings.tab_openclaw', icon: Zap },
   { key: 'system', labelKey: 'settings.tab_system', icon: Download },
 ];
@@ -186,6 +197,7 @@ const TAB_GROUP: Record<SaveTabKey, string> = {
   site: 'site',
   smtp: 'smtp',
   storage: 'storage',
+  models: 'models',
   openclaw: 'openclaw',
 };
 
@@ -193,6 +205,7 @@ const TAB_KEYS: Record<SaveTabKey, readonly string[]> = {
   site: SITE_KEYS,
   smtp: SMTP_KEYS,
   storage: STORAGE_KEYS,
+  models: MODELS_KEYS,
   openclaw: OPENCLAW_KEYS,
 };
 
@@ -209,6 +222,7 @@ export default function SettingsPage() {
   const [emailTplType, setEmailTplType] = useState<'verify' | 'balance_alert'>('verify');
   const [isEmailPreviewOpen, setEmailPreviewOpen] = useState(false);
   const [isSmtpTestOpen, setSmtpTestOpen] = useState(false);
+  const [modelCatalogErrors, setModelCatalogErrors] = useState<Record<string, string[]>>({});
 
   // 获取所有设置
   const { data: settings, isLoading } = useQuery({
@@ -262,6 +276,14 @@ export default function SettingsPage() {
     return val(key) === 'true';
   }
 
+  const handleModelCatalogValidationChange = useCallback((key: ModelCatalogSettingKey, errors: string[]) => {
+    setModelCatalogErrors((prev) => {
+      const prevErrors = prev[key] ?? [];
+      if (prevErrors.join('\n') === errors.join('\n')) return prev;
+      return { ...prev, [key]: errors };
+    });
+  }, []);
+
   function buildSaveItems(): SettingItem[] {
     if (activeTab === 'system') return [];
     if (activeTab === 'security') {
@@ -289,7 +311,13 @@ export default function SettingsPage() {
     }));
   }
 
+  const hasModelCatalogErrors = Object.values(modelCatalogErrors).some((errs) => errs.length > 0);
+
   function handleSave() {
+    if (activeTab === 'models' && hasModelCatalogErrors) {
+      toast('error', t('settings.models_fix_errors'));
+      return;
+    }
     const items = buildSaveItems();
     if (items.length === 0) return;
     saveMutation.mutate(items);
@@ -327,7 +355,7 @@ export default function SettingsPage() {
         {left ? <div className="ag-settings-card-footer-left">{left}</div> : null}
         <Button
           onPress={handleSave}
-          isDisabled={!hasChanges || saveMutation.isPending}
+          isDisabled={!hasChanges || saveMutation.isPending || (activeTab === 'models' && hasModelCatalogErrors)}
           aria-busy={saveMutation.isPending}
         >
           <Save className="w-4 h-4" />
@@ -662,6 +690,15 @@ export default function SettingsPage() {
 
         {activeTab === 'storage' && (
           <StoragePanel set={set} boolVal={boolVal} val={val} footer={saveAction} />
+        )}
+
+        {activeTab === 'models' && (
+          <ModelCatalogPanel
+            values={values}
+            set={set}
+            footer={saveAction}
+            onValidationChange={handleModelCatalogValidationChange}
+          />
         )}
 
         {activeTab === 'openclaw' && (
@@ -1495,6 +1532,254 @@ function LogoUpload({ value, onChange }: { value: string; onChange: (url: string
 }
 
 // ==================== Field wrapper ====================
+
+// ==================== 模型目录覆盖层编辑器 ====================
+//
+// 纯覆盖层语义:只列"你要新增/改价/上下架"的模型,不重复内置全表(内置价是不变的地板)。
+// 表单字段全部用字符串(便于数字输入控制),序列化成各插件 models.catalog.<platform> 期望的 JSON:
+//   [{ id, upstream_id?, name?, context_window?, max_output_tokens?, enabled?, pricing?{input,cached_input,cache_write_5m,cache_write_1h,output} }]
+// 第①层基础价(本编辑器)× 第②层分组倍率(分组管理,独立不动)= 用户实际扣费。
+
+interface CatalogRow {
+  id: string;
+  upstreamID: string;
+  name: string;
+  contextWindow: string;
+  maxOutput: string;
+  enabled: boolean;
+  input: string;
+  cachedInput: string;
+  cacheWrite5m: string;
+  cacheWrite1h: string;
+  output: string;
+}
+
+function emptyCatalogRow(): CatalogRow {
+  return {
+    id: '', upstreamID: '', name: '', contextWindow: '', maxOutput: '', enabled: true,
+    input: '', cachedInput: '', cacheWrite5m: '', cacheWrite1h: '', output: '',
+  };
+}
+
+function parseCatalogRows(raw: string): CatalogRow[] {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return [];
+  let arr: unknown;
+  try { arr = JSON.parse(trimmed); } catch { return []; }
+  if (!Array.isArray(arr)) return [];
+  const numStr = (v: unknown) => (typeof v === 'number' && v !== 0 ? String(v) : (typeof v === 'string' ? v : ''));
+  const priceStr = (v: unknown) => (typeof v === 'number' ? String(v) : (typeof v === 'string' ? v : ''));
+  return arr.map((item) => {
+    const e = (item ?? {}) as Record<string, unknown>;
+    const p = (e.pricing ?? {}) as Record<string, unknown>;
+    return {
+      id: typeof e.id === 'string' ? e.id : '',
+      upstreamID: typeof e.upstream_id === 'string' ? e.upstream_id : (typeof e.kiro_id === 'string' ? e.kiro_id : ''),
+      name: typeof e.name === 'string' ? e.name : '',
+      contextWindow: numStr(e.context_window),
+      maxOutput: numStr(e.max_output_tokens),
+      enabled: e.enabled !== false,
+      input: priceStr(p.input),
+      cachedInput: priceStr(p.cached_input),
+      cacheWrite5m: priceStr(p.cache_write_5m),
+      cacheWrite1h: priceStr(p.cache_write_1h),
+      output: priceStr(p.output),
+    };
+  });
+}
+
+function serializeCatalogRows(rows: CatalogRow[]): string {
+  const out = rows
+    .filter((r) => r.id.trim() !== '')
+    .map((r) => {
+      const entry: Record<string, unknown> = { id: r.id.trim() };
+      if (r.name.trim()) entry.name = r.name.trim();
+      if (r.upstreamID.trim()) entry.upstream_id = r.upstreamID.trim();
+      const ctx = Number(r.contextWindow);
+      if (r.contextWindow.trim() && Number.isFinite(ctx) && ctx > 0) entry.context_window = ctx;
+      const mo = Number(r.maxOutput);
+      if (r.maxOutput.trim() && Number.isFinite(mo) && mo > 0) entry.max_output_tokens = mo;
+      if (!r.enabled) entry.enabled = false;
+      const priceFields = [r.input, r.cachedInput, r.cacheWrite5m, r.cacheWrite1h, r.output];
+      if (priceFields.some((v) => v.trim() !== '')) {
+        const pricing: Record<string, number> = {};
+        const addPrice = (key: string, value: string) => {
+          const n = Number(value);
+          if (value.trim() && Number.isFinite(n) && n > 0) pricing[key] = n;
+        };
+        addPrice('input', r.input);
+        addPrice('cached_input', r.cachedInput);
+        addPrice('cache_write_5m', r.cacheWrite5m);
+        addPrice('cache_write_1h', r.cacheWrite1h);
+        addPrice('output', r.output);
+        if (Object.keys(pricing).length > 0) entry.pricing = pricing;
+      }
+      return entry;
+    });
+  return JSON.stringify(out, null, 2);
+}
+
+function validateCatalogRows(rows: CatalogRow[], t: (k: string, o?: Record<string, unknown>) => string): string[] {
+  const errs: string[] = [];
+  const seen = new Set<string>();
+  const idRe = /^[a-zA-Z0-9._-]+$/;
+  rows.forEach((r, i) => {
+    const id = r.id.trim();
+    if (!id) { errs.push(t('settings.models_err_id_empty', { n: i + 1 })); return; }
+    if (!idRe.test(id)) errs.push(t('settings.models_err_id_invalid', { id }));
+    if (r.upstreamID.trim() && !idRe.test(r.upstreamID.trim())) {
+      errs.push(t('settings.models_err_upstream_invalid', { id: r.upstreamID.trim() }));
+    }
+    if (seen.has(id)) errs.push(t('settings.models_err_dup', { id }));
+    seen.add(id);
+    [r.input, r.cachedInput, r.cacheWrite5m, r.cacheWrite1h, r.output].forEach((p) => {
+      if (p.trim() !== '' && !(Number(p) > 0)) errs.push(t('settings.models_err_price', { id }));
+    });
+  });
+  return errs;
+}
+
+function ModelCatalogPanel({ values, set, footer, onValidationChange }: {
+  values: Record<string, string>;
+  set: (key: string, value: string) => void;
+  footer: React.ReactNode;
+  onValidationChange: (key: ModelCatalogSettingKey, errors: string[]) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Card>
+      <Card.Header>
+        <Card.Title>{t('settings.tab_models')}</Card.Title>
+      </Card.Header>
+      <Card.Content>
+        <div className="ag-settings-section-stack">
+          {MODEL_CATALOG_PLATFORMS.map((platform) => (
+            <ModelCatalogEditor
+              key={platform.key}
+              label={t(platform.labelKey)}
+              settingKey={platform.key}
+              set={set}
+              value={values[platform.key] ?? ''}
+              onValidationChange={onValidationChange}
+            />
+          ))}
+        </div>
+        {footer}
+      </Card.Content>
+    </Card>
+  );
+}
+
+function ModelCatalogEditor({ label, settingKey, set, value, onValidationChange }: {
+  label: string;
+  settingKey: ModelCatalogSettingKey;
+  set: (key: string, value: string) => void;
+  value: string;
+  onValidationChange: (key: ModelCatalogSettingKey, errors: string[]) => void;
+}) {
+  const { t } = useTranslation();
+  // 本地 state 保证数字输入流畅(避免每键 parse→serialize 丢失尾字符);挂载时从 setting 初始化。
+  // 页面在 settings 加载完成前显示全局 spinner,故挂载时 values 已就绪。
+  const [rows, setRows] = useState<CatalogRow[]>(() => parseCatalogRows(value));
+
+  function commit(next: CatalogRow[]) {
+    setRows(next);
+    set(settingKey, next.some((r) => r.id.trim() !== '') ? serializeCatalogRows(next) : '');
+  }
+  const update = (i: number, patch: Partial<CatalogRow>) =>
+    commit(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const addRow = () => commit([...rows, emptyCatalogRow()]);
+  const removeRow = (i: number) => commit(rows.filter((_, idx) => idx !== i));
+
+  const errors = validateCatalogRows(rows, t);
+  const errorKey = errors.join('\n');
+  useEffect(() => {
+    onValidationChange(settingKey, errors);
+    return () => onValidationChange(settingKey, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingKey, errorKey, onValidationChange]);
+
+  return (
+    <SettingsSection
+      action={(
+        <Button size="sm" variant="ghost" onPress={addRow}>
+          <Plus className="w-3.5 h-3.5" />
+          {t('settings.models_add')}
+        </Button>
+      )}
+      description={t('settings.models_catalog_desc')}
+      title={`${t('settings.models_catalog')} · ${label}`}
+    >
+      {rows.length === 0 ? (
+        <p className="text-[12px] leading-5 text-text-tertiary">{t('settings.models_empty')}</p>
+      ) : (
+        <div className="space-y-4">
+          {rows.map((r, i) => (
+            <div key={i} className="rounded-lg border border-glass-border p-4 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Field label={t('settings.models_field_id')}>
+                  <Input value={r.id} onChange={(e) => update(i, { id: e.target.value })} placeholder="claude-xxx / gpt-xxx" />
+                </Field>
+                <Field label={t('settings.models_field_upstream')}>
+                  <Input value={r.upstreamID} onChange={(e) => update(i, { upstreamID: e.target.value })} placeholder="optional upstream id" />
+                </Field>
+                <Field label={t('settings.models_field_name')}>
+                  <Input value={r.name} onChange={(e) => update(i, { name: e.target.value })} placeholder="Claude XXX / GPT XXX" />
+                </Field>
+                <Field label={t('settings.models_field_context')}>
+                  <Input type="number" value={r.contextWindow} onChange={(e) => update(i, { contextWindow: e.target.value })} placeholder="1000000" />
+                </Field>
+                <Field label={t('settings.models_field_maxout')}>
+                  <Input type="number" value={r.maxOutput} onChange={(e) => update(i, { maxOutput: e.target.value })} placeholder="128000" />
+                </Field>
+              </div>
+              <div>
+                <Label className="block text-[13px] font-medium text-text-secondary mb-1.5">
+                  {t('settings.models_price_label')}
+                </Label>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  <Field label={t('settings.models_price_input')}>
+                    <Input type="number" value={r.input} onChange={(e) => update(i, { input: e.target.value })} placeholder="0" />
+                  </Field>
+                  <Field label={t('settings.models_price_cached')}>
+                    <Input type="number" value={r.cachedInput} onChange={(e) => update(i, { cachedInput: e.target.value })} placeholder="0" />
+                  </Field>
+                  <Field label={t('settings.models_price_w5m')}>
+                    <Input type="number" value={r.cacheWrite5m} onChange={(e) => update(i, { cacheWrite5m: e.target.value })} placeholder="0" />
+                  </Field>
+                  <Field label={t('settings.models_price_w1h')}>
+                    <Input type="number" value={r.cacheWrite1h} onChange={(e) => update(i, { cacheWrite1h: e.target.value })} placeholder="0" />
+                  </Field>
+                  <Field label={t('settings.models_price_output')}>
+                    <Input type="number" value={r.output} onChange={(e) => update(i, { output: e.target.value })} placeholder="0" />
+                  </Field>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <NativeSwitch
+                  isSelected={r.enabled}
+                  label={<span className="text-[13px] text-text-secondary">{t('settings.models_field_enabled')}</span>}
+                  onChange={(v) => update(i, { enabled: v })}
+                />
+                <Button size="sm" variant="ghost" onPress={() => removeRow(i)}>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  {t('common.delete')}
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {errors.length > 0 && (
+        <ul className="mt-3 space-y-1">
+          {errors.map((e, idx) => (
+            <li key={idx} className="text-[11px] text-danger">{e}</li>
+          ))}
+        </ul>
+      )}
+    </SettingsSection>
+  );
+}
 
 function SettingsSection({
   action,
