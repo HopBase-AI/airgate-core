@@ -163,7 +163,7 @@ func (f *Forwarder) acquireAccountSlot(c *gin.Context, state *forwardState) (fun
 }
 
 // forwardMetadataOnly 处理只读元信息请求（/v1/models 等）。
-// 插件本地合成响应，不需要账号、不计费、不走 middleware / failover。
+// 插件本地合成响应，不调度具体账号、不计费、不走 middleware / failover。
 func (f *Forwarder) forwardMetadataOnly(c *gin.Context, state *forwardState) {
 	req := &sdk.ForwardRequest{
 		// Account 留空：插件对 metadata 路径的判断发生在访问 account 之前
@@ -183,6 +183,11 @@ func (f *Forwarder) forwardMetadataOnly(c *gin.Context, state *forwardState) {
 	if err != nil {
 		slog.Error("metadata 请求插件失败", "plugin", state.plugin.Name, "path", state.requestPath, "error", err)
 		protocolError(c, http.StatusBadGateway, "server_error", "upstream_error", "metadata 请求插件失败")
+		return
+	}
+	if err := f.scopeMetadataOnlyModels(c.Request.Context(), state, &outcome); err != nil {
+		slog.Error("metadata 模型列表按分组收敛失败", "plugin", state.plugin.Name, "path", state.requestPath, "group_id", state.keyInfo.GroupID, "error", err)
+		protocolError(c, http.StatusInternalServerError, "server_error", "metadata_scope_failed", "模型列表加载失败")
 		return
 	}
 	if len(outcome.Upstream.Body) == 0 {
