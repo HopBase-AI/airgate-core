@@ -699,6 +699,7 @@ type hostListGroupsRequest struct {
 	EligibleOnly bool   `json:"eligible_only"`
 	Platform     string `json:"platform"`
 	NeedsImage   bool   `json:"needs_image"`
+	Model        string `json:"model"`
 }
 
 // listGroups 列出分组（默认全部；支持状态页可见性 / 用户转发资格过滤）。
@@ -794,6 +795,9 @@ func (h *HostService) listEligibleGroups(ctx context.Context, req hostListGroups
 		if !ok {
 			continue
 		}
+		if strings.TrimSpace(req.Model) != "" && !h.groupHasSchedulableAccountForModel(ctx, c, req.Model, req.NeedsImage) {
+			continue
+		}
 		items = append(items, map[string]interface{}{
 			"id":              int64(g.ID),
 			"name":            g.Name,
@@ -806,6 +810,24 @@ func (h *HostService) listEligibleGroups(ctx context.Context, req hostListGroups
 		})
 	}
 	return map[string]interface{}{"groups": items}, nil
+}
+
+func (h *HostService) groupHasSchedulableAccountForModel(ctx context.Context, c routing.Candidate, model string, needsImage bool) bool {
+	if h == nil || h.scheduler == nil {
+		return true
+	}
+	req := scheduler.AccountRequirements{Workload: scheduler.WorkloadChat}
+	if needsImage {
+		req = scheduler.AccountRequirements{
+			Workload: scheduler.WorkloadImage,
+			ImageProtocols: []scheduler.ImageProtocol{
+				scheduler.ImageProtocolImagesAPI,
+				scheduler.ImageProtocolResponsesTool,
+			},
+		}
+	}
+	_, err := h.scheduler.SelectAccountWithRequirements(ctx, c.Platform, model, 0, c.GroupID, "", req)
+	return err == nil
 }
 
 // reportAccountResult 把账号调用结果反馈给 scheduler。

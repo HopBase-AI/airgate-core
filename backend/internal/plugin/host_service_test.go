@@ -14,6 +14,7 @@ import (
 
 	"github.com/DouDOU-start/airgate-core/ent/enttest"
 	"github.com/DouDOU-start/airgate-core/ent/group"
+	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
 
@@ -429,6 +430,56 @@ func TestListGroupsEligibleOnly(t *testing.T) {
 	items = resp["groups"].([]map[string]interface{})
 	if len(items) != 3 || items[0]["id"].(int64) != int64(exclusive.ID) {
 		t.Fatalf("after grant groups = %v", items)
+	}
+}
+
+func TestListGroupsEligibleOnlyFiltersByModelSchedulability(t *testing.T) {
+	ctx := context.Background()
+	db := enttest.Open(t, "sqlite3", "file:list_groups_eligible_model?mode=memory&cache=shared&_fk=1", enttest.WithMigrateOptions(schema.WithGlobalUniqueID(false)))
+	t.Cleanup(func() { _ = db.Close() })
+
+	u := db.User.Create().SetEmail("u-model@example.com").SetPasswordHash("hash").SetBalance(1).SaveX(ctx)
+	image2Group := db.Group.Create().
+		SetName("Image2").
+		SetPlatform("openai").
+		SetPluginSettings(map[string]map[string]string{"openai": {"image_enabled": "true"}}).
+		SaveX(ctx)
+	geminiGroup := db.Group.Create().
+		SetName("Gemini Banana").
+		SetPlatform("openai").
+		SetPluginSettings(map[string]map[string]string{"openai": {"image_enabled": "true"}}).
+		SaveX(ctx)
+	image2Account := db.Account.Create().
+		SetName("image2").
+		SetPlatform("openai").
+		SetCredentials(map[string]string{"api_key": "sk-image"}).
+		SetExtra(map[string]interface{}{"allowed_workloads": []interface{}{"image"}}).
+		AddGroups(image2Group).
+		SaveX(ctx)
+	geminiAccount := db.Account.Create().
+		SetName("gemini").
+		SetPlatform("openai").
+		SetCredentials(map[string]string{"api_key": "sk-gemini"}).
+		SetExtra(map[string]interface{}{"allowed_workloads": []interface{}{"image"}}).
+		AddGroups(geminiGroup).
+		SaveX(ctx)
+	db.Group.UpdateOneID(image2Group.ID).SetModelRouting(map[string][]int64{"gpt-image-2": {int64(image2Account.ID)}}).ExecX(ctx)
+	db.Group.UpdateOneID(geminiGroup.ID).SetModelRouting(map[string][]int64{"gemini-3-pro-image": {int64(geminiAccount.ID)}}).ExecX(ctx)
+
+	host := &HostService{db: db, scheduler: scheduler.NewScheduler(db, nil)}
+	resp, err := host.listGroups(ctx, hostListGroupsRequest{
+		EligibleOnly: true,
+		UserID:       int64(u.ID),
+		Platform:     "openai",
+		NeedsImage:   true,
+		Model:        "gemini-3-pro-image",
+	})
+	if err != nil {
+		t.Fatalf("listGroups eligible model: %v", err)
+	}
+	items := resp["groups"].([]map[string]interface{})
+	if len(items) != 1 || items[0]["id"].(int64) != int64(geminiGroup.ID) {
+		t.Fatalf("groups = %v, want only Gemini group %d", items, geminiGroup.ID)
 	}
 }
 
