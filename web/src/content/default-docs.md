@@ -20,8 +20,8 @@ HopBase 对外暴露 OpenAI 兼容协议，并通过协议翻译同时兼容 Ant
 | --- | --- | --- |
 | `POST` | `/v1/chat/completions` | OpenAI Chat Completions（最广泛使用的协议，绝大多数 OpenAI SDK / 第三方客户端走这条） |
 | `POST` | `/v1/responses` | OpenAI Responses API（OpenAI 较新协议） |
-| `POST` | `/v1/images/generations` | OpenAI Images API（文生图，支持 `gpt-image-1.5` / `gpt-image-2`） |
-| `POST` | `/v1/images/edits` | OpenAI Images API（图生图，支持 `gpt-image-1.5` / `gpt-image-2`） |
+| `POST` | `/v1/images/generations` | OpenAI Images API（文生图，支持 `gpt-image-2` 与 Gemini Banana 图片模型） |
+| `POST` | `/v1/images/edits` | OpenAI Images API（图生图，支持 `gpt-image-2`） |
 | `GET`  | `/v1/images/tasks` | 查询异步生图任务状态（配合请求头 `Prefer: respond-async` 使用，详见下文「异步任务模式」） |
 | `POST` | `/v1/messages` | Anthropic Messages（Claude Code 等 Anthropic 客户端走这条；当前为协议翻译，未来对接原生 Claude 上游后将自动切换） |
 | `GET`  | `/v1/models` | 列出当前可用模型 |
@@ -73,7 +73,7 @@ client = OpenAI(
 )
 
 resp = client.images.generate(
-    model="gpt-image-2",            # gpt-image-1.5 | gpt-image-2
+    model="gpt-image-2",            # 也可用 gemini-3.1-flash-lite-image 等 Banana 文生图模型
     prompt="一只可爱的柴犬坐在樱花树下，日系水彩风格",
     size="2048x2048",               # gpt-image-2 支持任意合规 WIDTHxHEIGHT，或 auto
     quality="medium",               # low | medium | high | auto
@@ -87,6 +87,21 @@ img = resp.data[0]
 with open("out.png", "wb") as f:
     f.write(base64.b64decode(img.b64_json))
 ```
+
+Gemini Banana 图片模型同样走 OpenAI Images 协议，HopBase 会在内部桥接到上游
+Gemini `generateContent` 图片端点。客户端不要直接发送 Gemini native payload。
+
+常用模型与尺寸：
+
+| 模型 | 尺寸 |
+| --- | --- |
+| `gemini-2.5-flash-image` | `1024x1024`, `1536x1024`, `1024x1536` |
+| `gemini-3-pro-image` / `gemini-3-pro-image-preview` | 1K, 2K, 4K：`1024x1024`, `1536x1024`, `1024x1536`, `2048x2048`, `2048x1152`, `1152x2048`, `3840x2160`, `2160x3840` |
+| `gemini-3.1-flash-image` / `gemini-3.1-flash-image-preview` | 1K, 2K：`1024x1024`, `1536x1024`, `1024x1536`, `2048x2048`, `2048x1152`, `1152x2048` |
+| `gemini-3.1-flash-lite-image` | 1K only：`1024x1024`, `1536x1024`, `1024x1536` |
+
+如果请求了模型不支持的尺寸，HopBase 会先返回 `400`，不会消耗上游图片账号。例如
+`gemini-3.1-flash-lite-image` 不支持 2K/4K。
 
 ### OpenAI Images SDK（图生图）
 
