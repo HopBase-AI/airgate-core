@@ -3,8 +3,27 @@ package account
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 )
+
+type ConnectivityTestMode string
+
+const (
+	ConnectivityTestModeDefault           ConnectivityTestMode = "default"
+	ConnectivityTestModeAWSBedrockMinimal ConnectivityTestMode = "aws_bedrock_minimal"
+)
+
+func NormalizeConnectivityTestMode(mode string) (ConnectivityTestMode, error) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", string(ConnectivityTestModeDefault):
+		return ConnectivityTestModeDefault, nil
+	case string(ConnectivityTestModeAWSBedrockMinimal):
+		return ConnectivityTestModeAWSBedrockMinimal, nil
+	default:
+		return "", ErrInvalidConnectivityTestMode
+	}
+}
 
 // Proxy 账号绑定的代理信息。
 type Proxy struct {
@@ -310,6 +329,7 @@ type ConnectivityTest struct {
 	AccountName string
 	AccountType string
 	ModelID     string
+	Mode        ConnectivityTestMode
 	run         func(context.Context, http.ResponseWriter) error
 }
 

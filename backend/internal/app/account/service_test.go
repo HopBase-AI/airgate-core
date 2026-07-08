@@ -110,6 +110,83 @@ func TestGetModelsUsesPluginModelsForOAuthAccount(t *testing.T) {
 	}
 }
 
+func TestNormalizeConnectivityTestMode(t *testing.T) {
+	cases := []struct {
+		name    string
+		input   string
+		want    ConnectivityTestMode
+		wantErr bool
+	}{
+		{name: "empty is default", input: "", want: ConnectivityTestModeDefault},
+		{name: "default", input: "default", want: ConnectivityTestModeDefault},
+		{name: "trim case", input: " AWS_BEDROCK_MINIMAL ", want: ConnectivityTestModeAWSBedrockMinimal},
+		{name: "invalid", input: "bedrock", wantErr: true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := NormalizeConnectivityTestMode(c.input)
+			if c.wantErr {
+				if err == nil {
+					t.Fatalf("NormalizeConnectivityTestMode(%q) expected error", c.input)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("NormalizeConnectivityTestMode(%q) returned error: %v", c.input, err)
+			}
+			if got != c.want {
+				t.Fatalf("NormalizeConnectivityTestMode(%q) = %q, want %q", c.input, got, c.want)
+			}
+		})
+	}
+}
+
+func TestBuildConnectivityForwardRequestDefaultModeKeepsExistingTestHeaders(t *testing.T) {
+	req := buildConnectivityForwardRequest(Account{
+		ID:          42,
+		Name:        "aws-b",
+		Platform:    "claude",
+		Type:        "apikey",
+		Credentials: map[string]string{"api_key": "sk-test", "base_url": "https://example.com"},
+	}, "claude-opus-4-5-20251101", ConnectivityTestModeDefault)
+
+	if got := req.Headers.Get("X-Airgate-Internal"); got != "test" {
+		t.Fatalf("X-Airgate-Internal = %q, want test", got)
+	}
+	if got := req.Headers.Get(connectivityTestModeHeader); got != "" {
+		t.Fatalf("%s = %q, want empty in default mode", connectivityTestModeHeader, got)
+	}
+	if got := req.Headers.Get("Content-Type"); got != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", got)
+	}
+	if !req.Stream {
+		t.Fatalf("Stream = false, want true")
+	}
+	if req.Model != "claude-opus-4-5-20251101" {
+		t.Fatalf("Model = %q", req.Model)
+	}
+	if req.Account == nil || req.Account.ID != 42 || req.Account.Name != "aws-b" || req.Account.Platform != "claude" || req.Account.Type != "apikey" {
+		t.Fatalf("Account = %+v", req.Account)
+	}
+}
+
+func TestBuildConnectivityForwardRequestAWSBedrockMinimalModeAddsExplicitModeHeader(t *testing.T) {
+	req := buildConnectivityForwardRequest(Account{
+		ID:          42,
+		Name:        "aws-b",
+		Platform:    "claude",
+		Type:        "apikey",
+		Credentials: map[string]string{"api_key": "sk-test"},
+	}, "claude-sonnet-4-5-20250929", ConnectivityTestModeAWSBedrockMinimal)
+
+	if got := req.Headers.Get("X-Airgate-Internal"); got != "test" {
+		t.Fatalf("X-Airgate-Internal = %q, want test", got)
+	}
+	if got := req.Headers.Get(connectivityTestModeHeader); got != string(ConnectivityTestModeAWSBedrockMinimal) {
+		t.Fatalf("%s = %q, want %q", connectivityTestModeHeader, got, ConnectivityTestModeAWSBedrockMinimal)
+	}
+}
+
 func TestShouldPersistQuotaExtraAllowsClearingPlanMetadata(t *testing.T) {
 	if !shouldPersistQuotaExtra("plan_type", "") {
 		t.Fatalf("empty plan_type should be persisted to clear stale subscription data")

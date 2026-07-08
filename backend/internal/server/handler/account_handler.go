@@ -105,7 +105,8 @@ func (h *AccountHandler) handleError(logMessage, publicMessage string, err error
 		return 422, err.Error()
 	case errors.Is(err, appaccount.ErrModelRequired),
 		errors.Is(err, appaccount.ErrQuotaRefreshUnsupported),
-		errors.Is(err, appaccount.ErrInvalidDateRange):
+		errors.Is(err, appaccount.ErrInvalidDateRange),
+		errors.Is(err, appaccount.ErrInvalidConnectivityTestMode):
 		return 400, err.Error()
 	default:
 		slog.Error(logMessage, "error", err)

@@ -437,9 +437,16 @@ func (s *Service) ToggleScheduling(ctx context.Context, id int) (ToggleResult, e
 	return ToggleResult{ID: id, State: newState}, nil
 }
 
+const connectivityTestModeHeader = "X-Airgate-Test-Mode"
+
 // PrepareConnectivityTest 准备账号连通性测试。
-func (s *Service) PrepareConnectivityTest(ctx context.Context, id int, modelID string) (*ConnectivityTest, error) {
+func (s *Service) PrepareConnectivityTest(ctx context.Context, id int, modelID string, modeValue string) (*ConnectivityTest, error) {
 	logger := sdk.LoggerFromContext(ctx)
+	mode, err := NormalizeConnectivityTestMode(modeValue)
+	if err != nil {
+		return nil, err
+	}
+
 	item, err := s.repo.FindByID(ctx, id, LoadOptions{WithProxy: true})
 	if err != nil {
 		logger.Error("account_lookup_failed",
@@ -467,36 +474,13 @@ func (s *Service) PrepareConnectivityTest(ctx context.Context, id int, modelID s
 		return nil, ErrModelRequired
 	}
 
-	testBody, _ := json.Marshal(map[string]any{
-		"model":    modelID,
-		"messages": []map[string]string{{"role": "user", "content": "hi"}},
-		"stream":   true,
-	})
-
-	// X-Airgate-Internal 让下游网关（如 gateway-claude 的 claude_code_only 开关）
-	// 能识别这是管理后台自家的探测流量，跳过面向外部客户端的身份闸。
-	forwardReq := &sdk.ForwardRequest{
-		Account: &sdk.Account{
-			ID:          int64(item.ID),
-			Name:        item.Name,
-			Platform:    item.Platform,
-			Type:        item.Type,
-			Credentials: cloneStringMap(item.Credentials),
-			ProxyURL:    buildProxyURL(item.Proxy),
-		},
-		Body: testBody,
-		Headers: http.Header{
-			"Content-Type":       {"application/json"},
-			"X-Airgate-Internal": {"test"},
-		},
-		Model:  modelID,
-		Stream: true,
-	}
+	forwardReq := buildConnectivityForwardRequest(item, modelID, mode)
 
 	return &ConnectivityTest{
 		AccountName: item.Name,
 		AccountType: item.Type,
 		ModelID:     modelID,
+		Mode:        mode,
 		run: func(runCtx context.Context, writer http.ResponseWriter) error {
 			req := *forwardReq
 			req.Writer = writer
@@ -519,6 +503,39 @@ func (s *Service) PrepareConnectivityTest(ctx context.Context, id int, modelID s
 			return errors.New(msg)
 		},
 	}, nil
+}
+
+func buildConnectivityForwardRequest(item Account, modelID string, mode ConnectivityTestMode) *sdk.ForwardRequest {
+	testBody, _ := json.Marshal(map[string]any{
+		"model":    modelID,
+		"messages": []map[string]string{{"role": "user", "content": "hi"}},
+		"stream":   true,
+	})
+
+	// X-Airgate-Internal 让下游网关（如 gateway-claude 的 claude_code_only 开关）
+	// 能识别这是管理后台自家的探测流量，跳过面向外部客户端的身份闸。
+	headers := http.Header{
+		"Content-Type":       {"application/json"},
+		"X-Airgate-Internal": {"test"},
+	}
+	if mode == ConnectivityTestModeAWSBedrockMinimal {
+		headers.Set(connectivityTestModeHeader, string(ConnectivityTestModeAWSBedrockMinimal))
+	}
+
+	return &sdk.ForwardRequest{
+		Account: &sdk.Account{
+			ID:          int64(item.ID),
+			Name:        item.Name,
+			Platform:    item.Platform,
+			Type:        item.Type,
+			Credentials: cloneStringMap(item.Credentials),
+			ProxyURL:    buildProxyURL(item.Proxy),
+		},
+		Body:    testBody,
+		Headers: headers,
+		Model:   modelID,
+		Stream:  true,
+	}
 }
 
 func connectivityTestErrorMessage(outcome sdk.ForwardOutcome) string {

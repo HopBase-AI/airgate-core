@@ -9,6 +9,8 @@ var (
 	ErrPluginNotFound = errors.New("未找到对应平台插件")
 	// ErrModelRequired 缺少测试模型。
 	ErrModelRequired = errors.New("请指定测试模型")
+	// ErrInvalidConnectivityTestMode 连通性测试模式非法。
+	ErrInvalidConnectivityTestMode = errors.New("无效的测试模式")
 	// ErrQuotaRefreshUnsupported 当前平台不支持额度刷新。
 	ErrQuotaRefreshUnsupported = errors.New("该平台不支持刷新额度")
 	// ErrInvalidDateRange 日期范围参数非法。

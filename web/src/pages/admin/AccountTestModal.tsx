@@ -9,6 +9,7 @@ import { CommonModal } from '../../shared/components/CommonModal';
 import type { AccountResp, ModelInfo } from '../../shared/types';
 
 type TestStatus = 'idle' | 'connecting' | 'streaming' | 'success' | 'error';
+type ConnectivityTestMode = 'default' | 'aws_bedrock_minimal';
 
 interface OutputLine {
   text: string;
@@ -26,6 +27,7 @@ export function AccountTestModal({ open, account, onClose }: AccountTestModalPro
 
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
+  const [testMode, setTestMode] = useState<ConnectivityTestMode>('default');
   const [loadingModels, setLoadingModels] = useState(false);
 
   const [status, setStatus] = useState<TestStatus>('idle');
@@ -41,6 +43,7 @@ export function AccountTestModal({ open, account, onClose }: AccountTestModalPro
   // 加载模型列表
   useEffect(() => {
     if (!open || !account) return;
+    setTestMode('default');
     setLoadingModels(true);
     accountsApi.models(account.id)
       .then((list) => {
@@ -66,6 +69,7 @@ export function AccountTestModal({ open, account, onClose }: AccountTestModalPro
       setStreamingContent('');
       setErrorMessage('');
       setSelectedModel('');
+      setTestMode('default');
       setModels([]);
       setCopied(false);
     }
@@ -108,10 +112,11 @@ export function AccountTestModal({ open, account, onClose }: AccountTestModalPro
       const token = getToken();
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
+      const modeForRequest = account.platform.toLowerCase() === 'claude' ? testMode : 'default';
       const res = await fetch(url.toString(), {
         method: 'POST',
         headers,
-        body: JSON.stringify({ model_id: selectedModel }),
+        body: JSON.stringify({ model_id: selectedModel, test_mode: modeForRequest }),
         signal: controller.signal,
       });
 
@@ -276,7 +281,7 @@ export function AccountTestModal({ open, account, onClose }: AccountTestModalPro
       setErrorMessage(msg);
       addLine(msg, 'text-red-400');
     }
-  }, [account, selectedModel, addLine, scrollToBottom, t]);
+  }, [account, selectedModel, testMode, addLine, scrollToBottom, t]);
 
   const handleClose = () => {
     abortRef.current?.abort();
@@ -305,6 +310,20 @@ export function AccountTestModal({ open, account, onClose }: AccountTestModalPro
     : models.map((m) => ({ id: m.id, label: m.name || m.id }));
   const selectedModelLabel = modelOptions.find((item) => item.id === selectedModel)?.label ?? '';
   const isRunning = status === 'connecting' || status === 'streaming';
+  const showTestMode = account.platform.toLowerCase() === 'claude';
+  const testModeOptions: Array<{ id: ConnectivityTestMode; label: string; description: string }> = [
+    {
+      id: 'default',
+      label: t('accounts.test_mode_default', { defaultValue: '默认 Claude 测试' }),
+      description: t('accounts.test_mode_default_hint', { defaultValue: '使用现有 Claude 插件转发格式，适合验证正式链路。' }),
+    },
+    {
+      id: 'aws_bedrock_minimal',
+      label: t('accounts.test_mode_aws_bedrock', { defaultValue: 'AWS Bedrock 兼容测试' }),
+      description: t('accounts.test_mode_aws_bedrock_hint', { defaultValue: '仅本次后台测试不带 beta 参数，不影响客户真实调用。' }),
+    },
+  ];
+  const selectedTestModeLabel = testModeOptions.find((item) => item.id === testMode)?.label ?? '';
 
   return (
     <CommonModal
@@ -372,6 +391,33 @@ export function AccountTestModal({ open, account, onClose }: AccountTestModalPro
                     </ListBox>
                   </Select.Popover>
                 </Select>
+
+                {showTestMode && (
+                  <Select
+                    fullWidth
+                    selectedKey={testMode}
+                    onSelectionChange={(key) => setTestMode(key == null ? 'default' : String(key) as ConnectivityTestMode)}
+                    isDisabled={isRunning}
+                  >
+                    <Label>{t('accounts.test_mode', { defaultValue: '测试模式' })}</Label>
+                    <Select.Trigger>
+                      <Select.Value>{selectedTestModeLabel}</Select.Value>
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox items={testModeOptions}>
+                        {(item) => (
+                          <ListBox.Item id={item.id} textValue={item.label}>
+                            <div className="min-w-0">
+                              <div className="text-sm text-[var(--ag-text)]">{item.label}</div>
+                              <div className="text-xs text-[var(--ag-text-muted)]">{item.description}</div>
+                            </div>
+                          </ListBox.Item>
+                        )}
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                )}
 
                 {/* 终端输出区域 */}
                 <div className="relative group">

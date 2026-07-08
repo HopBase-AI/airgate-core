@@ -416,11 +416,12 @@ func (h *AccountHandler) TestAccount(c *gin.Context) {
 	}
 
 	var req struct {
-		ModelID string `json:"model_id"`
+		ModelID  string `json:"model_id"`
+		TestMode string `json:"test_mode"`
 	}
 	_ = c.ShouldBindJSON(&req)
 
-	testPlan, err := h.service.PrepareConnectivityTest(c.Request.Context(), id, req.ModelID)
+	testPlan, err := h.service.PrepareConnectivityTest(c.Request.Context(), id, req.ModelID, req.TestMode)
 	if err != nil {
 		httpCode, message := h.handleError("测试账号失败", "测试失败", err)
 		response.Error(c, httpCode, httpCode, message)
