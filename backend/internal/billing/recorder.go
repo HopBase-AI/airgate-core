@@ -11,6 +11,10 @@ import (
 	"time"
 
 	"github.com/DouDOU-start/airgate-core/ent"
+	entaccount "github.com/DouDOU-start/airgate-core/ent/account"
+	entapikey "github.com/DouDOU-start/airgate-core/ent/apikey"
+	entgroup "github.com/DouDOU-start/airgate-core/ent/group"
+	entuser "github.com/DouDOU-start/airgate-core/ent/user"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
 
@@ -118,11 +122,15 @@ func (r *Recorder) RecordSync(ctx context.Context, record UsageRecord) (int, err
 		_ = tx.Rollback()
 	}()
 
-	log, err := usageLogCreate(tx, record).Save(ctx)
+	refs, err := loadUsageLogRefs(ctx, tx, []UsageRecord{record})
+	if err != nil {
+		return 0, err
+	}
+	log, err := usageLogCreate(tx, record, refs).Save(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("插入 UsageLog 失败: %w", err)
 	}
-	if err := applyUsageCharges(ctx, tx, []UsageRecord{record}); err != nil {
+	if err := applyUsageCharges(ctx, tx, []UsageRecord{record}, refs); err != nil {
 		return 0, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -216,17 +224,22 @@ func (r *Recorder) batchInsert(ctx context.Context, batch []UsageRecord) error {
 		_ = tx.Rollback()
 	}()
 
+	refs, err := loadUsageLogRefs(ctx, tx, batch)
+	if err != nil {
+		return err
+	}
+
 	// 1. 批量写入 UsageLog（同时记录 actual_cost 和 billed_cost 双轨数据）
 	builders := make([]*ent.UsageLogCreate, 0, len(batch))
 	for _, rec := range batch {
-		builders = append(builders, usageLogCreate(tx, rec))
+		builders = append(builders, usageLogCreate(tx, rec, refs))
 	}
 
 	if _, err := tx.UsageLog.CreateBulk(builders...).Save(ctx); err != nil {
 		return fmt.Errorf("批量插入 UsageLog 失败: %w", err)
 	}
 
-	if err := applyUsageCharges(ctx, tx, batch); err != nil {
+	if err := applyUsageCharges(ctx, tx, batch, refs); err != nil {
 		return err
 	}
 
@@ -237,7 +250,133 @@ func (r *Recorder) batchInsert(ctx context.Context, batch []UsageRecord) error {
 	return nil
 }
 
-func usageLogCreate(tx *ent.Tx, rec UsageRecord) *ent.UsageLogCreate {
+type usageLogRefs struct {
+	users    map[int]struct{}
+	apiKeys  map[int]struct{}
+	accounts map[int]struct{}
+	groups   map[int]struct{}
+}
+
+func loadUsageLogRefs(ctx context.Context, tx *ent.Tx, batch []UsageRecord) (*usageLogRefs, error) {
+	refs := &usageLogRefs{}
+
+	userIDs, err := existingUserIDs(ctx, tx, collectUsageIDs(batch, func(rec UsageRecord) int { return rec.UserID }))
+	if err != nil {
+		return nil, fmt.Errorf("查询 UsageLog 用户关联失败: %w", err)
+	}
+	refs.users = mapUsageIDs(userIDs)
+
+	apiKeyIDs, err := existingAPIKeyIDs(ctx, tx, collectUsageIDs(batch, func(rec UsageRecord) int { return rec.APIKeyID }))
+	if err != nil {
+		return nil, fmt.Errorf("查询 UsageLog API Key 关联失败: %w", err)
+	}
+	refs.apiKeys = mapUsageIDs(apiKeyIDs)
+
+	accountIDs, err := existingAccountIDs(ctx, tx, collectUsageIDs(batch, func(rec UsageRecord) int { return rec.AccountID }))
+	if err != nil {
+		return nil, fmt.Errorf("查询 UsageLog 账号关联失败: %w", err)
+	}
+	refs.accounts = mapUsageIDs(accountIDs)
+
+	groupIDs, err := existingGroupIDs(ctx, tx, collectUsageIDs(batch, func(rec UsageRecord) int { return rec.GroupID }))
+	if err != nil {
+		return nil, fmt.Errorf("查询 UsageLog 分组关联失败: %w", err)
+	}
+	refs.groups = mapUsageIDs(groupIDs)
+
+	return refs, nil
+}
+
+func existingUserIDs(ctx context.Context, tx *ent.Tx, ids []int) ([]int, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	return tx.User.Query().Where(entuser.IDIn(ids...)).IDs(ctx)
+}
+
+func existingAPIKeyIDs(ctx context.Context, tx *ent.Tx, ids []int) ([]int, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	return tx.APIKey.Query().Where(entapikey.IDIn(ids...)).IDs(ctx)
+}
+
+func existingAccountIDs(ctx context.Context, tx *ent.Tx, ids []int) ([]int, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	return tx.Account.Query().Where(entaccount.IDIn(ids...)).IDs(ctx)
+}
+
+func existingGroupIDs(ctx context.Context, tx *ent.Tx, ids []int) ([]int, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	return tx.Group.Query().Where(entgroup.IDIn(ids...)).IDs(ctx)
+}
+
+func collectUsageIDs(batch []UsageRecord, pick func(UsageRecord) int) []int {
+	seen := make(map[int]struct{})
+	ids := make([]int, 0, len(batch))
+	for _, rec := range batch {
+		id := pick(rec)
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func mapUsageIDs(ids []int) map[int]struct{} {
+	out := make(map[int]struct{}, len(ids))
+	for _, id := range ids {
+		out[id] = struct{}{}
+	}
+	return out
+}
+
+func (r *usageLogRefs) hasUser(id int) bool {
+	if r == nil {
+		return id > 0
+	}
+	return hasUsageID(r.users, id)
+}
+
+func (r *usageLogRefs) hasAPIKey(id int) bool {
+	if r == nil {
+		return id > 0
+	}
+	return hasUsageID(r.apiKeys, id)
+}
+
+func (r *usageLogRefs) hasAccount(id int) bool {
+	if r == nil {
+		return id > 0
+	}
+	return hasUsageID(r.accounts, id)
+}
+
+func (r *usageLogRefs) hasGroup(id int) bool {
+	if r == nil {
+		return id > 0
+	}
+	return hasUsageID(r.groups, id)
+}
+
+func hasUsageID(ids map[int]struct{}, id int) bool {
+	if id <= 0 {
+		return false
+	}
+	_, ok := ids[id]
+	return ok
+}
+
+func usageLogCreate(tx *ent.Tx, rec UsageRecord, refs *usageLogRefs) *ent.UsageLogCreate {
 	b := tx.UsageLog.Create().
 		SetPlatform(rec.Platform).
 		SetModel(rec.Model).
@@ -279,11 +418,17 @@ func usageLogCreate(tx *ent.Tx, rec UsageRecord) *ent.UsageLogCreate {
 		SetUsageCostDetails(enrichUsageCostDetails(rec)).
 		SetUsageMetadata(rec.UsageMetadata).
 		SetUserIDSnapshot(rec.UserID).
-		SetUserEmailSnapshot(rec.UserEmail).
-		SetUserID(rec.UserID).
-		SetAccountID(rec.AccountID).
-		SetGroupID(rec.GroupID)
-	if rec.APIKeyID > 0 {
+		SetUserEmailSnapshot(rec.UserEmail)
+	if refs.hasUser(rec.UserID) {
+		b.SetUserID(rec.UserID)
+	}
+	if refs.hasAccount(rec.AccountID) {
+		b.SetAccountID(rec.AccountID)
+	}
+	if refs.hasGroup(rec.GroupID) {
+		b.SetGroupID(rec.GroupID)
+	}
+	if refs.hasAPIKey(rec.APIKeyID) {
 		b.SetAPIKeyID(rec.APIKeyID)
 	}
 	return b
@@ -515,7 +660,7 @@ func parseCostMetadataPositiveInt(metadata map[string]string, key string) int {
 	return value
 }
 
-func applyUsageCharges(ctx context.Context, tx *ent.Tx, batch []UsageRecord) error {
+func applyUsageCharges(ctx context.Context, tx *ent.Tx, batch []UsageRecord, refs *usageLogRefs) error {
 	// 在同一事务中扣费 —— 三个独立累加器：
 	// - User.balance：按 actual_cost 扣减。
 	// - APIKey.used_quota：按 billed_cost 累加。
@@ -525,13 +670,13 @@ func applyUsageCharges(ctx context.Context, tx *ent.Tx, batch []UsageRecord) err
 	keyActualCosts := make(map[int]float64)
 
 	for _, rec := range batch {
-		if rec.ActualCost > 0 {
+		if rec.ActualCost > 0 && refs.hasUser(rec.UserID) {
 			userActualCosts[rec.UserID] += rec.ActualCost
-			if rec.APIKeyID > 0 {
+			if refs.hasAPIKey(rec.APIKeyID) {
 				keyActualCosts[rec.APIKeyID] += rec.ActualCost
 			}
 		}
-		if rec.APIKeyID > 0 && rec.BilledCost > 0 {
+		if refs.hasAPIKey(rec.APIKeyID) && rec.BilledCost > 0 {
 			keyBilledCosts[rec.APIKeyID] += rec.BilledCost
 		}
 	}
