@@ -1776,6 +1776,8 @@ func (h *HostService) resolveHostModel(platform, model string) string {
 
 func hostForwardHeaders(req hostForwardRequest, route routing.Candidate) http.Header {
 	headers := protoHeadersToHTTPHost(req.Headers)
+	headers.Del("X-Airgate-Internal")
+	headers.Del("X-Airgate-Test-Mode")
 	headers.Set("X-Forwarded-Path", req.Path)
 	headers.Set("X-Forwarded-Method", req.Method)
 	headers.Set("X-Airgate-Internal", "host-forward")

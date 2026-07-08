@@ -14,6 +14,7 @@ import (
 
 	"github.com/DouDOU-start/airgate-core/ent/enttest"
 	"github.com/DouDOU-start/airgate-core/ent/group"
+	"github.com/DouDOU-start/airgate-core/internal/routing"
 	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
@@ -60,6 +61,43 @@ func TestHostForwardReasoningEffort(t *testing.T) {
 
 	if got := hostForwardReasoningEffort(req); got != "xhigh" {
 		t.Fatalf("hostForwardReasoningEffort() = %q, want %q", got, "xhigh")
+	}
+}
+
+func TestHostForwardHeadersDropsCallerInternalTestMode(t *testing.T) {
+	t.Parallel()
+
+	headers := hostForwardHeaders(hostForwardRequest{
+		Path:   "/v1/messages",
+		Method: "POST",
+		UserID: 12,
+		Headers: map[string]interface{}{
+			"Content-Type":        []string{"application/json"},
+			"X-Airgate-Platform":  []string{"claude"},
+			"X-Airgate-Internal":  []string{"test"},
+			"X-Airgate-Test-Mode": []string{"aws_bedrock_minimal"},
+		},
+	}, routing.Candidate{
+		GroupID: 19,
+		GroupPluginSettings: map[string]map[string]string{
+			"claude": {"claude_code_only": "false"},
+		},
+	})
+
+	if got := headers.Get("X-Airgate-Test-Mode"); got != "" {
+		t.Fatalf("X-Airgate-Test-Mode = %q, want empty", got)
+	}
+	if got := headers.Get("X-Airgate-Internal"); got != "host-forward" {
+		t.Fatalf("X-Airgate-Internal = %q, want host-forward", got)
+	}
+	if got := headers.Get("X-Airgate-Platform"); got != "claude" {
+		t.Fatalf("X-Airgate-Platform = %q, want claude", got)
+	}
+	if got := headers.Get("X-Airgate-Group-ID"); got != "19" {
+		t.Fatalf("X-Airgate-Group-ID = %q, want 19", got)
+	}
+	if got := headers.Get("X-Airgate-Plugin-Claude-Claude-Code-Only"); got != "false" {
+		t.Fatalf("plugin setting header = %q, want false", got)
 	}
 }
 

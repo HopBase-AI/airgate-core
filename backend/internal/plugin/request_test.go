@@ -1,8 +1,10 @@
 package plugin
 
 import (
+	"net/http"
 	"testing"
 
+	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 )
 
@@ -137,6 +139,72 @@ func TestAccountRequirementsForRequest(t *testing.T) {
 				t.Fatalf("ImageProtocols = %v, want %v", got.ImageProtocols, tt.wantProtocols)
 			}
 		})
+	}
+}
+
+func TestBuildHeadersDropsInternalTestModeFromClientRequest(t *testing.T) {
+	t.Parallel()
+
+	source := http.Header{
+		"Authorization":       {"Bearer sk-test"},
+		"X-Api-Key":           {"sk-test"},
+		"X-Airgate-Internal":  {"test"},
+		"X-Airgate-Test-Mode": {"aws_bedrock_minimal"},
+		"X-Airgate-Platform":  {"claude"},
+		"Anthropic-Version":   {"2023-06-01"},
+		"X-Client-Diagnostic": {"keep"},
+		"Connection":          {"keep-alive"},
+		"Transfer-Encoding":   {"chunked"},
+		"Proxy-Authorization": {"secret"},
+		"X-Forwarded-For":     {"203.0.113.10"},
+		"X-Forwarded-Proto":   {"https"},
+		"X-Forwarded-Host":    {"api.example.com"},
+		"X-Forwarded-Method":  {"POST"},
+		"X-Forwarded-Path":    {"/v1/messages"},
+		"X-Forwarded-Query":   {"beta=true"},
+	}
+	headers := buildHeaders(source, &auth.APIKeyInfo{
+		UserID:  12,
+		KeyID:   34,
+		GroupID: 56,
+		GroupPluginSettings: map[string]map[string]string{
+			"claude": {"claude_code_only": "false"},
+		},
+	})
+
+	for _, key := range []string{
+		"Authorization",
+		"X-Api-Key",
+		"X-Airgate-Internal",
+		"X-Airgate-Test-Mode",
+		"Connection",
+		"Transfer-Encoding",
+		"Proxy-Authorization",
+	} {
+		if got := headers.Get(key); got != "" {
+			t.Fatalf("%s = %q, want empty", key, got)
+		}
+	}
+	if got := headers.Get("X-Airgate-Platform"); got != "claude" {
+		t.Fatalf("X-Airgate-Platform = %q, want claude", got)
+	}
+	if got := headers.Get("Anthropic-Version"); got != "2023-06-01" {
+		t.Fatalf("Anthropic-Version = %q, want passthrough", got)
+	}
+	if got := headers.Get("X-Client-Diagnostic"); got != "keep" {
+		t.Fatalf("X-Client-Diagnostic = %q, want keep", got)
+	}
+	if got := headers.Get("X-Airgate-User-ID"); got != "12" {
+		t.Fatalf("X-Airgate-User-ID = %q, want 12", got)
+	}
+	if got := headers.Get("X-Airgate-API-Key-ID"); got != "34" {
+		t.Fatalf("X-Airgate-API-Key-ID = %q, want 34", got)
+	}
+	if got := headers.Get("X-Airgate-Group-ID"); got != "56" {
+		t.Fatalf("X-Airgate-Group-ID = %q, want 56", got)
+	}
+	if got := headers.Get("X-Airgate-Plugin-Claude-Claude-Code-Only"); got != "false" {
+		t.Fatalf("plugin setting header = %q, want false", got)
 	}
 }
 

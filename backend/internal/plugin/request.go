@@ -480,6 +480,7 @@ func buildHeaders(source http.Header, keyInfo *auth.APIKeyInfo) http.Header {
 	for k, v := range source {
 		lower := strings.ToLower(k)
 		if lower == "authorization" || lower == "x-api-key" ||
+			lower == "x-airgate-internal" || lower == "x-airgate-test-mode" ||
 			lower == "connection" || lower == "keep-alive" ||
 			lower == "proxy-authorization" || lower == "te" ||
 			lower == "transfer-encoding" || lower == "upgrade" {
