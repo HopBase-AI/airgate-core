@@ -2,6 +2,7 @@ package account
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -162,6 +163,16 @@ func TestBuildConnectivityForwardRequestDefaultModeKeepsExistingTestHeaders(t *t
 	if !req.Stream {
 		t.Fatalf("Stream = false, want true")
 	}
+	var body map[string]any
+	if err := json.Unmarshal(req.Body, &body); err != nil {
+		t.Fatalf("body is not JSON: %v", err)
+	}
+	if got := body["stream"]; got != true {
+		t.Fatalf("body stream = %#v, want true", got)
+	}
+	if got := body["max_tokens"]; got != float64(16) {
+		t.Fatalf("body max_tokens = %#v, want 16", got)
+	}
 	if req.Model != "claude-opus-4-5-20251101" {
 		t.Fatalf("Model = %q", req.Model)
 	}
@@ -184,6 +195,32 @@ func TestBuildConnectivityForwardRequestAWSBedrockMinimalModeAddsExplicitModeHea
 	}
 	if got := req.Headers.Get(connectivityTestModeHeader); got != string(ConnectivityTestModeAWSBedrockMinimal) {
 		t.Fatalf("%s = %q, want %q", connectivityTestModeHeader, got, ConnectivityTestModeAWSBedrockMinimal)
+	}
+	if req.Stream {
+		t.Fatalf("Stream = true, want false for AWS Bedrock minimal mode")
+	}
+	var body map[string]any
+	if err := json.Unmarshal(req.Body, &body); err != nil {
+		t.Fatalf("body is not JSON: %v", err)
+	}
+	if _, ok := body["stream"]; ok {
+		t.Fatalf("body should not include stream in AWS Bedrock minimal mode: %v", body)
+	}
+	if got := body["max_tokens"]; got != float64(16) {
+		t.Fatalf("body max_tokens = %#v, want 16", got)
+	}
+	if got := body["model"]; got != "claude-sonnet-4-5-20250929" {
+		t.Fatalf("body model = %#v", got)
+	}
+}
+
+func TestConnectivityTestForwardWriterDisabledForAWSBedrockMinimalMode(t *testing.T) {
+	writer := httptest.NewRecorder()
+	if got := connectivityTestForwardWriter(ConnectivityTestModeDefault, writer); got != writer {
+		t.Fatalf("default mode writer = %#v, want original writer", got)
+	}
+	if got := connectivityTestForwardWriter(ConnectivityTestModeAWSBedrockMinimal, writer); got != nil {
+		t.Fatalf("AWS Bedrock minimal writer = %#v, want nil", got)
 	}
 }
 
