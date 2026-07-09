@@ -410,7 +410,12 @@ func InvalidateAPIKeyCache(key string) {
 		deleteAllAPIKeyRedisCache()
 		return
 	}
-	hash := HashAPIKey(key)
+	InvalidateAPIKeyCacheByHash(HashAPIKey(key))
+}
+
+// InvalidateAPIKeyCacheByHash 按 key_hash 清除验证缓存（本地 + Redis）。
+// 缓存以 hash 为键，供只持有 hash 的调用方使用（如计费负余额兜底按 DB 里的 key_hash 失效）。
+func InvalidateAPIKeyCacheByHash(hash string) {
 	apiKeyCache.Delete(hash)
 	if apiKeyRedis != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)

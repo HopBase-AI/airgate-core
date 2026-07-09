@@ -92,6 +92,8 @@ const (
 	FieldUsageCostDetails = "usage_cost_details"
 	// FieldUsageMetadata holds the string denoting the usage_metadata field in the database.
 	FieldUsageMetadata = "usage_metadata"
+	// FieldRequestID holds the string denoting the request_id field in the database.
+	FieldRequestID = "request_id"
 	// FieldUserIDSnapshot holds the string denoting the user_id_snapshot field in the database.
 	FieldUserIDSnapshot = "user_id_snapshot"
 	// FieldUserEmailSnapshot holds the string denoting the user_email_snapshot field in the database.
@@ -180,6 +182,7 @@ var Columns = []string{
 	FieldUsageMetrics,
 	FieldUsageCostDetails,
 	FieldUsageMetadata,
+	FieldRequestID,
 	FieldUserIDSnapshot,
 	FieldUserEmailSnapshot,
 	FieldCreatedAt,
@@ -469,6 +472,11 @@ func ByEndpoint(opts ...sql.OrderTermOption) OrderOption {
 // ByReasoningEffort orders the results by the reasoning_effort field.
 func ByReasoningEffort(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldReasoningEffort, opts...).ToFunc()
+}
+
+// ByRequestID orders the results by the request_id field.
+func ByRequestID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRequestID, opts...).ToFunc()
 }
 
 // ByUserIDSnapshot orders the results by the user_id_snapshot field.

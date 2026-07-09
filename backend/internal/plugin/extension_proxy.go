@@ -15,8 +15,11 @@ import (
 	"github.com/DouDOU-start/airgate-core/internal/server/middleware"
 )
 
-// 请求体大小限制（100MB）
-const maxExtensionBodySize = 100 << 20
+// 请求体大小限制（60MB）。
+// 必须小于 pluginGRPCMaxMessageBytes（64MB，见 manager_runtime.go）：请求体要整体
+// 装进一条发往插件的 gRPC 消息，留 4MB 给 headers/元数据。旧值 100MB 是"收得下、
+// 送不出"——64~100MB 的请求能过入口，却必死在 gRPC 发送，还白占内存。
+const maxExtensionBodySize = 60 << 20
 
 // 禁止插件设置的响应头（安全黑名单）
 var blockedResponseHeaders = map[string]bool{
@@ -154,7 +157,8 @@ func (ep *ExtensionProxy) handle(c *gin.Context, pluginName, subPath, entry stri
 
 	req, err := ep.buildProxyRequest(c, subPath, entry)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "读取请求体失败（可能超过大小限制）"})
+		status, _, message := bodyReadError(err)
+		c.JSON(status, gin.H{"error": message})
 		return
 	}
 

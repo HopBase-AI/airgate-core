@@ -82,6 +82,9 @@ func (UsageLog) Fields() []ent.Field {
 		field.JSON("usage_metrics", []sdk.UsageMetric{}).Optional(),
 		field.JSON("usage_cost_details", []sdk.UsageCostDetail{}).Optional(),
 		field.JSON("usage_metadata", map[string]string{}).Optional(),
+		// 计费幂等 ID（UUID）。异步批量落库与 WAL 回放据此去重，防止"事务已提交但确认丢失"
+		// 场景下的重试造成重复入账/重复扣费。历史行留空（NULL），唯一索引对 NULL 不生效。
+		field.String("request_id").Optional(),
 		field.Int("user_id_snapshot").Default(0).
 			Comment("用户 ID 快照。用户硬删除后保留历史使用记录与计费归属。"),
 		field.String("user_email_snapshot").Default("").
@@ -103,6 +106,10 @@ func (UsageLog) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("created_at").
 			StorageKey("usage_log_created_at"),
+		// 幂等去重唯一索引。Postgres/SQLite 的唯一索引均不约束 NULL，历史行不受影响。
+		index.Fields("request_id").
+			Unique().
+			StorageKey("usage_log_request_id_unique"),
 		index.Fields("platform", "created_at").
 			StorageKey("usage_log_platform_created_at"),
 		index.Fields("user_id_snapshot", "created_at").

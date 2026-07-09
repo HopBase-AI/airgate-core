@@ -8,7 +8,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	entaccount "github.com/DouDOU-start/airgate-core/ent/account"
@@ -19,14 +22,19 @@ import (
 )
 
 const (
-	defaultBufferSize = 1000            // 内存 channel 缓冲大小
-	batchSize         = 100             // 批量写入阈值
-	flushInterval     = 5 * time.Second // 定时刷新间隔
-	maxRetries        = 3               // 写入失败最大重试次数
+	defaultBufferSize = 1000 // 内存 channel 缓冲大小
+	batchSize         = 100  // 批量写入阈值
+	maxRetries        = 3    // 写入失败最大重试次数
 )
+
+// flushInterval 定时刷新间隔（测试注入点）
+var flushInterval = 5 * time.Second
 
 // UsageRecord 使用记录
 type UsageRecord struct {
+	// RequestID 计费幂等 ID（UUID）。Record/RecordSync 入口自动补齐；
+	// 落库带唯一索引，WAL 回放与重试据此去重，防重复入账/扣费。
+	RequestID                    string
 	UserID                       int
 	UserEmail                    string
 	APIKeyID                     int
@@ -78,12 +86,31 @@ type UsageRecord struct {
 // Recorder 异步记录器
 // 使用 channel 缓冲，goroutine 批量写入
 // 每 100 条或每 5 秒 flush 一次
+//
+// 丢账防护：主队列满 / 落库重试耗尽 / 停机窗口 三类记录经 WAL 落盘暂存
+// （见 wal.go），后台回放去重后重新入库。未启用 WAL 时保持旧的丢弃行为。
 type Recorder struct {
 	db      *ent.Client
 	ch      chan UsageRecord
+	spillCh chan UsageRecord // 主队列满时的溢出队列，由专职协程落盘，请求协程不做磁盘 IO
 	stopCh  chan struct{}
 	stopped chan struct{}
 	once    sync.Once
+
+	// halted 置位后 Record 不再进 channel（停机 drain 已开始），直接同步落 WAL。
+	// 消除旧实现"往已 close 的 channel 发送"的停机 panic。
+	halted    atomic.Bool
+	spillDone chan struct{}
+
+	wal          *usageWAL
+	replayCancel context.CancelFunc
+	replayDone   chan struct{}
+
+	// onNegativeBalance 批量扣费提交后发现余额已透支的用户回调（如失效其 API Key 缓存）。
+	onNegativeBalance func(userIDs []int)
+
+	spilledTotal atomic.Uint64 // 成功落 WAL 的记录数
+	droppedTotal atomic.Uint64 // 最终仍被丢弃的记录数（WAL 未启用或落盘失败）
 }
 
 // NewRecorder 创建使用量记录器
@@ -92,28 +119,61 @@ func NewRecorder(db *ent.Client, bufferSize int) *Recorder {
 		bufferSize = defaultBufferSize
 	}
 	return &Recorder{
-		db:      db,
-		ch:      make(chan UsageRecord, bufferSize),
-		stopCh:  make(chan struct{}),
-		stopped: make(chan struct{}),
+		db:         db,
+		ch:         make(chan UsageRecord, bufferSize),
+		spillCh:    make(chan UsageRecord, bufferSize*4),
+		stopCh:     make(chan struct{}),
+		stopped:    make(chan struct{}),
+		spillDone:  make(chan struct{}),
+		replayDone: make(chan struct{}),
 	}
+}
+
+// EnableWAL 启用计费 WAL（须在 Start 之前调用）。失败不致命：退化为旧丢弃行为。
+func (r *Recorder) EnableWAL(dir string) error {
+	wal, err := newUsageWAL(dir)
+	if err != nil {
+		return err
+	}
+	r.wal = wal
+	return nil
+}
+
+// SetNegativeBalanceHook 注册负余额回调（须在 Start 之前调用）。
+func (r *Recorder) SetNegativeBalanceHook(fn func(userIDs []int)) {
+	r.onNegativeBalance = fn
 }
 
 // Record 提交使用记录（非阻塞）
 func (r *Recorder) Record(record UsageRecord) {
+	if record.RequestID == "" {
+		record.RequestID = uuid.NewString()
+	}
+	if r.halted.Load() {
+		// 停机窗口：run() 已在 drain，绕过 channel 直接落 WAL（此路径仅停机时走到，
+		// 磁盘 IO 可接受）
+		r.spillToWAL([]UsageRecord{record}, "recorder_halted")
+		return
+	}
 	select {
 	case r.ch <- record:
+		return
 	default:
-		slog.Warn("billing_record_buffer_full",
-			"user_id", record.UserID,
-			"model", record.Model,
-		)
+	}
+	// 主队列满：转溢出队列，由 spillLoop 批量落盘
+	select {
+	case r.spillCh <- record:
+	default:
+		r.drop(1, "spill_buffer_full", record.UserID, record.Model)
 	}
 }
 
 // RecordSync 同步写入一条使用记录并返回 usage_log.id。
 // 需要立即把 usage_id 关联到任务时使用；普通转发仍走异步 Record。
 func (r *Recorder) RecordSync(ctx context.Context, record UsageRecord) (int, error) {
+	if record.RequestID == "" {
+		record.RequestID = uuid.NewString()
+	}
 	tx, err := r.db.Tx(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("开启事务失败: %w", err)
@@ -142,6 +202,14 @@ func (r *Recorder) RecordSync(ctx context.Context, record UsageRecord) (int, err
 // Start 启动后台写入 goroutine
 func (r *Recorder) Start() {
 	go r.run()
+	go r.spillLoop()
+	if r.wal != nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		r.replayCancel = cancel
+		go r.replayLoop(ctx)
+	} else {
+		close(r.replayDone)
+	}
 }
 
 // Stop 停止写入，等待缓冲区清空
@@ -149,6 +217,11 @@ func (r *Recorder) Stop() {
 	r.once.Do(func() {
 		close(r.stopCh)
 		<-r.stopped
+		<-r.spillDone
+		if r.replayCancel != nil {
+			r.replayCancel()
+		}
+		<-r.replayDone
 	})
 }
 
@@ -178,11 +251,22 @@ func (r *Recorder) run() {
 			}
 
 		case <-r.stopCh:
-			// 停止前处理剩余数据
-			close(r.ch)
-			for rec := range r.ch {
-				batch = append(batch, rec)
-			}
+			// 停止前处理剩余数据。不 close(r.ch)：置 halted 让新 Record 改走 WAL，
+			// 避免"往已 close 的 channel 发送"panic（旧实现的停机丢账 bug）。
+			r.halted.Store(true)
+			r.drainAndFlush(ctx, batch)
+			return
+		}
+	}
+}
+
+// drainAndFlush 停机收尾：非阻塞排空主队列并整批落库。
+func (r *Recorder) drainAndFlush(ctx context.Context, batch []UsageRecord) {
+	for {
+		select {
+		case rec := <-r.ch:
+			batch = append(batch, rec)
+		default:
 			if len(batch) > 0 {
 				r.flush(ctx, batch)
 			}
@@ -191,7 +275,10 @@ func (r *Recorder) run() {
 	}
 }
 
-// flush 批量写入数据库，失败时重试
+// flushSleep 重试间隔（测试注入点）
+var flushSleep = time.Sleep
+
+// flush 批量写入数据库，失败时重试；重试耗尽转 WAL 落盘（未启用 WAL 才丢弃）
 func (r *Recorder) flush(ctx context.Context, batch []UsageRecord) {
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if err := r.batchInsert(ctx, batch); err != nil {
@@ -201,10 +288,10 @@ func (r *Recorder) flush(ctx context.Context, batch []UsageRecord) {
 				"error", err,
 			)
 			if attempt < maxRetries-1 {
-				time.Sleep(time.Duration(attempt+1) * time.Second)
+				flushSleep(time.Duration(attempt+1) * time.Second)
 				continue
 			}
-			slog.Error("billing_batch_flush_dropped", "count", len(batch))
+			r.spillToWAL(batch, "flush_retry_exhausted")
 			return
 		}
 		slog.Debug("billing_batch_flush_succeeded", "count", len(batch))
@@ -247,7 +334,37 @@ func (r *Recorder) batchInsert(ctx context.Context, batch []UsageRecord) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("提交事务失败: %w", err)
 	}
+
+	// 4. 提交后检查本批扣费用户是否已透支（best-effort，失败仅记日志）
+	r.notifyNegativeBalance(ctx, batch)
 	return nil
+}
+
+// notifyNegativeBalance 找出本批扣费后余额已为负的用户并触发回调。
+// 用途：立刻失效其 API Key 验证缓存，把"负余额仍可透支"的窗口从缓存 TTL 压到秒级。
+func (r *Recorder) notifyNegativeBalance(ctx context.Context, batch []UsageRecord) {
+	if r.onNegativeBalance == nil {
+		return
+	}
+	charged := collectUsageIDs(batch, func(rec UsageRecord) int {
+		if rec.ActualCost > 0 {
+			return rec.UserID
+		}
+		return 0
+	})
+	if len(charged) == 0 {
+		return
+	}
+	negative, err := r.db.User.Query().
+		Where(entuser.IDIn(charged...), entuser.BalanceLT(0)).
+		IDs(ctx)
+	if err != nil {
+		slog.Error("billing_negative_balance_query_failed", "error", err)
+		return
+	}
+	if len(negative) > 0 {
+		r.onNegativeBalance(negative)
+	}
 }
 
 type usageLogRefs struct {
@@ -430,6 +547,10 @@ func usageLogCreate(tx *ent.Tx, rec UsageRecord, refs *usageLogRefs) *ent.UsageL
 	}
 	if refs.hasAPIKey(rec.APIKeyID) {
 		b.SetAPIKeyID(rec.APIKeyID)
+	}
+	// 仅非空时写入：空值保持 NULL，避免历史调用方（未带幂等 ID）撞唯一索引
+	if rec.RequestID != "" {
+		b.SetRequestID(rec.RequestID)
 	}
 	return b
 }

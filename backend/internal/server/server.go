@@ -12,6 +12,8 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/DouDOU-start/airgate-core/ent"
+	entapikey "github.com/DouDOU-start/airgate-core/ent/apikey"
+	entuser "github.com/DouDOU-start/airgate-core/ent/user"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
@@ -70,6 +72,33 @@ func NewServer(cfg *config.Config, db *ent.Client, rdb *redis.Client) *Server {
 	concurrency := scheduler.NewConcurrencyManager(rdb)
 	calculator := billing.NewCalculator()
 	recorder := billing.NewRecorder(db, 0)
+	// 计费 WAL：队列满/落库失败/停机窗口的记录落盘暂存+回放，防丢账。
+	// 目录须挂载宿主卷（compose 已配 ./data/billing-wal）。启用失败不致命，退化为旧丢弃行为。
+	walDir := cfg.Billing.WALDir
+	if walDir == "" {
+		walDir = "data/billing-wal"
+	}
+	if err := recorder.EnableWAL(walDir); err != nil {
+		slog.Error("billing_wal_unavailable_fallback_drop", "dir", walDir, "error", err)
+	}
+	// 负余额兜底：批量扣费后发现透支，立刻失效该用户全部 API Key 的验证缓存，
+	// 把"负余额仍可透支"的窗口从缓存 TTL（5s）压到秒级。
+	recorder.SetNegativeBalanceHook(func(userIDs []int) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		hashes, err := db.APIKey.Query().
+			Where(entapikey.HasUserWith(entuser.IDIn(userIDs...))).
+			Select(entapikey.FieldKeyHash).
+			Strings(ctx)
+		if err != nil {
+			slog.Error("billing_negative_balance_invalidate_failed", "user_ids", userIDs, "error", err)
+			return
+		}
+		for _, hash := range hashes {
+			auth.InvalidateAPIKeyCacheByHash(hash)
+		}
+		slog.Warn("billing_negative_balance_keys_invalidated", "user_ids", userIDs, "keys", len(hashes))
+	})
 
 	// 插件系统组件
 	pluginDir := cfg.Plugins.Dir
@@ -230,21 +259,26 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// 主动释放领导租约，让接班实例尽快接管单例后台循环。
 	s.leader.Resign(ctx)
 
+	// ⚠️ 顺序关键：必须先排空在途 HTTP 请求，再停插件和记录器。
+	// 旧实现先 recorder.Stop() 再 srv.Shutdown()，停机窗口（≤ctx 超时）内完成的
+	// 请求会往已 close 的 channel 写账 → panic + 丢账，每次蓝绿切换都会触发。
+	err := s.srv.Shutdown(ctx)
+
 	// 停止 IP 限流器后台清理
 	if s.ipRateLimiter != nil {
 		s.ipRateLimiter.Stop()
 	}
-
-	// 停止使用量记录器
-	s.recorder.Stop()
 
 	// 停止插件市场后台同步
 	if !s.cfg.Plugins.Marketplace.Disabled {
 		s.marketplace.Stop()
 	}
 
-	// 停止所有插件
+	// 停止所有插件（在途请求已排空，任务收尾可能仍产生计费记录）
 	s.pluginMgr.StopAll(ctx)
 
-	return s.srv.Shutdown(ctx)
+	// 最后停使用量记录器：吞掉上面各步收尾产生的记录后再退出
+	s.recorder.Stop()
+
+	return err
 }

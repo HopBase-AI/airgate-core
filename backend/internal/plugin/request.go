@@ -3,6 +3,7 @@ package plugin
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -25,6 +26,17 @@ import (
 )
 
 // parseRequest 从 HTTP 请求构造 forwardState。认证 / body 读取 / 插件匹配失败时
+// bodyReadError 把读取请求体的错误映射为对外状态码/错误码/消息。
+// 超限（http.MaxBytesReader 触发）返回 413 与明确的上限提示，其余保持 400。
+func bodyReadError(err error) (status int, code string, message string) {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		return http.StatusRequestEntityTooLarge, "request_too_large",
+			fmt.Sprintf("请求体超过大小限制（%d MB）", maxExtensionBodySize>>20)
+	}
+	return http.StatusBadRequest, "invalid_request", "读取请求体失败"
+}
+
 // 直接写响应并返回 false。
 func (f *Forwarder) parseRequest(c *gin.Context) (*forwardState, bool) {
 	startedAt := time.Now()
@@ -43,7 +55,8 @@ func (f *Forwarder) parseRequest(c *gin.Context) (*forwardState, bool) {
 			sdk.LogFieldAPIKeyID, keyInfo.KeyID,
 			sdk.LogFieldError, err,
 		)
-		protocolError(c, http.StatusBadRequest, "invalid_request_error", "invalid_request", "读取请求体失败")
+		status, code, message := bodyReadError(err)
+		protocolError(c, status, "invalid_request_error", code, message)
 		return nil, false
 	}
 

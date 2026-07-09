@@ -48,6 +48,14 @@ type Config struct {
 	Security SecurityConfig `yaml:"security"`
 	Log      LogConfig      `yaml:"log"`
 	Plugins  PluginsConfig  `yaml:"plugins"`
+	Billing  BillingConfig  `yaml:"billing"`
+}
+
+// BillingConfig 计费配置
+type BillingConfig struct {
+	// WALDir 计费 WAL 落盘目录（丢账防护）。留空用默认 data/billing-wal。
+	// 容器部署须挂载到宿主卷，且蓝绿两个实例指向同一宿主目录（互相接管孤儿文件）。
+	WALDir string `yaml:"wal_dir"`
 }
 
 // LogConfig 日志配置
@@ -227,6 +235,9 @@ func applyEnvOverrides(cfg *Config) {
 	// 插件
 	envStr("PLUGINS_DIR", &cfg.Plugins.Dir)
 	envStr("PLUGINS_MARKETPLACE_GITHUB_TOKEN", &cfg.Plugins.Marketplace.GithubToken)
+
+	// 计费
+	envStr("BILLING_WAL_DIR", &cfg.Billing.WALDir)
 }
 
 // envStr 如果环境变量存在，覆盖目标字符串

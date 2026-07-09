@@ -523,6 +523,20 @@ func (ulc *UsageLogCreate) SetUsageMetadata(m map[string]string) *UsageLogCreate
 	return ulc
 }
 
+// SetRequestID sets the "request_id" field.
+func (ulc *UsageLogCreate) SetRequestID(s string) *UsageLogCreate {
+	ulc.mutation.SetRequestID(s)
+	return ulc
+}
+
+// SetNillableRequestID sets the "request_id" field if the given value is not nil.
+func (ulc *UsageLogCreate) SetNillableRequestID(s *string) *UsageLogCreate {
+	if s != nil {
+		ulc.SetRequestID(*s)
+	}
+	return ulc
+}
+
 // SetUserIDSnapshot sets the "user_id_snapshot" field.
 func (ulc *UsageLogCreate) SetUserIDSnapshot(i int) *UsageLogCreate {
 	ulc.mutation.SetUserIDSnapshot(i)
@@ -1129,6 +1143,10 @@ func (ulc *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := ulc.mutation.UsageMetadata(); ok {
 		_spec.SetField(usagelog.FieldUsageMetadata, field.TypeJSON, value)
 		_node.UsageMetadata = value
+	}
+	if value, ok := ulc.mutation.RequestID(); ok {
+		_spec.SetField(usagelog.FieldRequestID, field.TypeString, value)
+		_node.RequestID = value
 	}
 	if value, ok := ulc.mutation.UserIDSnapshot(); ok {
 		_spec.SetField(usagelog.FieldUserIDSnapshot, field.TypeInt, value)

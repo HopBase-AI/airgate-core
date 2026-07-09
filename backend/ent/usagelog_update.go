@@ -771,6 +771,26 @@ func (ulu *UsageLogUpdate) ClearUsageMetadata() *UsageLogUpdate {
 	return ulu
 }
 
+// SetRequestID sets the "request_id" field.
+func (ulu *UsageLogUpdate) SetRequestID(s string) *UsageLogUpdate {
+	ulu.mutation.SetRequestID(s)
+	return ulu
+}
+
+// SetNillableRequestID sets the "request_id" field if the given value is not nil.
+func (ulu *UsageLogUpdate) SetNillableRequestID(s *string) *UsageLogUpdate {
+	if s != nil {
+		ulu.SetRequestID(*s)
+	}
+	return ulu
+}
+
+// ClearRequestID clears the value of the "request_id" field.
+func (ulu *UsageLogUpdate) ClearRequestID() *UsageLogUpdate {
+	ulu.mutation.ClearRequestID()
+	return ulu
+}
+
 // SetUserIDSnapshot sets the "user_id_snapshot" field.
 func (ulu *UsageLogUpdate) SetUserIDSnapshot(i int) *UsageLogUpdate {
 	ulu.mutation.ResetUserIDSnapshot()
@@ -1186,6 +1206,12 @@ func (ulu *UsageLogUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if ulu.mutation.UsageMetadataCleared() {
 		_spec.ClearField(usagelog.FieldUsageMetadata, field.TypeJSON)
+	}
+	if value, ok := ulu.mutation.RequestID(); ok {
+		_spec.SetField(usagelog.FieldRequestID, field.TypeString, value)
+	}
+	if ulu.mutation.RequestIDCleared() {
+		_spec.ClearField(usagelog.FieldRequestID, field.TypeString)
 	}
 	if value, ok := ulu.mutation.UserIDSnapshot(); ok {
 		_spec.SetField(usagelog.FieldUserIDSnapshot, field.TypeInt, value)
@@ -2070,6 +2096,26 @@ func (uluo *UsageLogUpdateOne) ClearUsageMetadata() *UsageLogUpdateOne {
 	return uluo
 }
 
+// SetRequestID sets the "request_id" field.
+func (uluo *UsageLogUpdateOne) SetRequestID(s string) *UsageLogUpdateOne {
+	uluo.mutation.SetRequestID(s)
+	return uluo
+}
+
+// SetNillableRequestID sets the "request_id" field if the given value is not nil.
+func (uluo *UsageLogUpdateOne) SetNillableRequestID(s *string) *UsageLogUpdateOne {
+	if s != nil {
+		uluo.SetRequestID(*s)
+	}
+	return uluo
+}
+
+// ClearRequestID clears the value of the "request_id" field.
+func (uluo *UsageLogUpdateOne) ClearRequestID() *UsageLogUpdateOne {
+	uluo.mutation.ClearRequestID()
+	return uluo
+}
+
 // SetUserIDSnapshot sets the "user_id_snapshot" field.
 func (uluo *UsageLogUpdateOne) SetUserIDSnapshot(i int) *UsageLogUpdateOne {
 	uluo.mutation.ResetUserIDSnapshot()
@@ -2515,6 +2561,12 @@ func (uluo *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, er
 	}
 	if uluo.mutation.UsageMetadataCleared() {
 		_spec.ClearField(usagelog.FieldUsageMetadata, field.TypeJSON)
+	}
+	if value, ok := uluo.mutation.RequestID(); ok {
+		_spec.SetField(usagelog.FieldRequestID, field.TypeString, value)
+	}
+	if uluo.mutation.RequestIDCleared() {
+		_spec.ClearField(usagelog.FieldRequestID, field.TypeString)
 	}
 	if value, ok := uluo.mutation.UserIDSnapshot(); ok {
 		_spec.SetField(usagelog.FieldUserIDSnapshot, field.TypeInt, value)
