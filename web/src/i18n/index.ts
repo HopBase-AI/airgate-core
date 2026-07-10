@@ -94,4 +94,14 @@ i18n.use(initReactI18next).init({
   interpolation: { escapeValue: false },
 });
 
+// 切换语言时同步 <html lang>（无障碍与 SEO：初始 index.html 静态 lang 不会自动更新）
+const HTML_LANG: Record<string, string> = { zh: 'zh-CN', 'zh-HK': 'zh-HK', en: 'en', ja: 'ja' };
+function syncDocumentLang(lang: string) {
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = HTML_LANG[lang] || lang || 'en';
+  }
+}
+syncDocumentLang(i18n.language);
+i18n.on('languageChanged', syncDocumentLang);
+
 export default i18n;
