@@ -1537,8 +1537,13 @@ function LogoUpload({ value, onChange }: { value: string; onChange: (url: string
 //
 // 纯覆盖层语义:只列"你要新增/改价/上下架"的模型,不重复内置全表(内置价是不变的地板)。
 // 表单字段全部用字符串(便于数字输入控制),序列化成各插件 models.catalog.<platform> 期望的 JSON:
-//   [{ id, upstream_id?, name?, context_window?, max_output_tokens?, enabled?, pricing?{input,cached_input,cache_write_5m,cache_write_1h,output} }]
+//   [{ id, upstream_id?, name?, context_window?, max_output_tokens?, enabled?,
+//      pricing?{input,cached_input,cache_write_5m,cache_write_1h,output,
+//               priority_*,flex_*(仅 openai)}, long_context?{...}(仅 openai) }]
 // 第①层基础价(本编辑器)× 第②层分组倍率(分组管理,独立不动)= 用户实际扣费。
+//
+// 序列化以条目原始 JSON(raw)为底做合并:表单没有呈现的字段原样保留,
+// 防止"打开设置页保存一次"就把三档价/长上下文等高级字段静默抹掉。
 
 interface CatalogRow {
   id: string;
@@ -1552,12 +1557,28 @@ interface CatalogRow {
   cacheWrite5m: string;
   cacheWrite1h: string;
   output: string;
+  // OpenAI 专属:Priority / Flex 档与长上下文阶梯(其余平台不渲染、不改写)
+  prioInput: string;
+  prioCached: string;
+  prioOutput: string;
+  flexInput: string;
+  flexCached: string;
+  flexOutput: string;
+  lcThreshold: string;
+  lcInputMult: string;
+  lcCachedMult: string;
+  lcOutputMult: string;
+  // 原始 JSON 条目,序列化时作合并底座(未知字段无损保留)
+  raw: Record<string, unknown>;
 }
 
 function emptyCatalogRow(): CatalogRow {
   return {
     id: '', upstreamID: '', name: '', contextWindow: '', maxOutput: '', enabled: true,
     input: '', cachedInput: '', cacheWrite5m: '', cacheWrite1h: '', output: '',
+    prioInput: '', prioCached: '', prioOutput: '', flexInput: '', flexCached: '', flexOutput: '',
+    lcThreshold: '', lcInputMult: '', lcCachedMult: '', lcOutputMult: '',
+    raw: {},
   };
 }
 
@@ -1569,9 +1590,12 @@ function parseCatalogRows(raw: string): CatalogRow[] {
   if (!Array.isArray(arr)) return [];
   const numStr = (v: unknown) => (typeof v === 'number' && v !== 0 ? String(v) : (typeof v === 'string' ? v : ''));
   const priceStr = (v: unknown) => (typeof v === 'number' ? String(v) : (typeof v === 'string' ? v : ''));
+  const asObj = (v: unknown): Record<string, unknown> =>
+    (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {});
   return arr.map((item) => {
-    const e = (item ?? {}) as Record<string, unknown>;
-    const p = (e.pricing ?? {}) as Record<string, unknown>;
+    const e = asObj(item);
+    const p = asObj(e.pricing);
+    const lc = asObj(e.long_context);
     return {
       id: typeof e.id === 'string' ? e.id : '',
       upstreamID: typeof e.upstream_id === 'string' ? e.upstream_id : (typeof e.kiro_id === 'string' ? e.kiro_id : ''),
@@ -1584,42 +1608,79 @@ function parseCatalogRows(raw: string): CatalogRow[] {
       cacheWrite5m: priceStr(p.cache_write_5m),
       cacheWrite1h: priceStr(p.cache_write_1h),
       output: priceStr(p.output),
+      prioInput: priceStr(p.priority_input),
+      prioCached: priceStr(p.priority_cached_input),
+      prioOutput: priceStr(p.priority_output),
+      flexInput: priceStr(p.flex_input),
+      flexCached: priceStr(p.flex_cached_input),
+      flexOutput: priceStr(p.flex_output),
+      lcThreshold: numStr(lc.threshold),
+      lcInputMult: priceStr(lc.input_multiplier),
+      lcCachedMult: priceStr(lc.cached_multiplier),
+      lcOutputMult: priceStr(lc.output_multiplier),
+      raw: e,
     };
   });
 }
 
-function serializeCatalogRows(rows: CatalogRow[]): string {
+function serializeCatalogRows(rows: CatalogRow[], isOpenAI: boolean): string {
+  const setNum = (obj: Record<string, unknown>, key: string, value: string) => {
+    const n = Number(value);
+    if (value.trim() && Number.isFinite(n) && n > 0) obj[key] = n; else delete obj[key];
+  };
   const out = rows
     .filter((r) => r.id.trim() !== '')
     .map((r) => {
-      const entry: Record<string, unknown> = { id: r.id.trim() };
-      if (r.name.trim()) entry.name = r.name.trim();
-      if (r.upstreamID.trim()) entry.upstream_id = r.upstreamID.trim();
-      const ctx = Number(r.contextWindow);
-      if (r.contextWindow.trim() && Number.isFinite(ctx) && ctx > 0) entry.context_window = ctx;
-      const mo = Number(r.maxOutput);
-      if (r.maxOutput.trim() && Number.isFinite(mo) && mo > 0) entry.max_output_tokens = mo;
-      if (!r.enabled) entry.enabled = false;
-      const priceFields = [r.input, r.cachedInput, r.cacheWrite5m, r.cacheWrite1h, r.output];
-      if (priceFields.some((v) => v.trim() !== '')) {
-        const pricing: Record<string, number> = {};
-        const addPrice = (key: string, value: string) => {
-          const n = Number(value);
-          if (value.trim() && Number.isFinite(n) && n > 0) pricing[key] = n;
-        };
-        addPrice('input', r.input);
-        addPrice('cached_input', r.cachedInput);
-        addPrice('cache_write_5m', r.cacheWrite5m);
-        addPrice('cache_write_1h', r.cacheWrite1h);
-        addPrice('output', r.output);
-        if (Object.keys(pricing).length > 0) entry.pricing = pricing;
+      const entry: Record<string, unknown> = { ...r.raw, id: r.id.trim() };
+      if (r.name.trim()) entry.name = r.name.trim(); else delete entry.name;
+      // upstream_id 与 kiro_id 是同义旧写法,统一写 upstream_id、清掉旧键防漂移
+      delete entry.kiro_id;
+      if (r.upstreamID.trim()) entry.upstream_id = r.upstreamID.trim(); else delete entry.upstream_id;
+      setNum(entry, 'context_window', r.contextWindow);
+      setNum(entry, 'max_output_tokens', r.maxOutput);
+      if (!r.enabled) entry.enabled = false; else delete entry.enabled;
+
+      const rawPricing = (entry.pricing && typeof entry.pricing === 'object' && !Array.isArray(entry.pricing))
+        ? { ...(entry.pricing as Record<string, unknown>) } : {};
+      setNum(rawPricing, 'input', r.input);
+      setNum(rawPricing, 'cached_input', r.cachedInput);
+      setNum(rawPricing, 'output', r.output);
+      if (isOpenAI) {
+        setNum(rawPricing, 'priority_input', r.prioInput);
+        setNum(rawPricing, 'priority_cached_input', r.prioCached);
+        setNum(rawPricing, 'priority_output', r.prioOutput);
+        setNum(rawPricing, 'flex_input', r.flexInput);
+        setNum(rawPricing, 'flex_cached_input', r.flexCached);
+        setNum(rawPricing, 'flex_output', r.flexOutput);
+      } else {
+        setNum(rawPricing, 'cache_write_5m', r.cacheWrite5m);
+        setNum(rawPricing, 'cache_write_1h', r.cacheWrite1h);
+      }
+      if (Object.keys(rawPricing).length > 0) entry.pricing = rawPricing; else delete entry.pricing;
+
+      if (isOpenAI) {
+        const rawLC = (entry.long_context && typeof entry.long_context === 'object' && !Array.isArray(entry.long_context))
+          ? { ...(entry.long_context as Record<string, unknown>) } : {};
+        setNum(rawLC, 'threshold', r.lcThreshold);
+        setNum(rawLC, 'input_multiplier', r.lcInputMult);
+        setNum(rawLC, 'cached_multiplier', r.lcCachedMult);
+        setNum(rawLC, 'output_multiplier', r.lcOutputMult);
+        if (Object.keys(rawLC).length > 0) entry.long_context = rawLC; else delete entry.long_context;
       }
       return entry;
     });
   return JSON.stringify(out, null, 2);
 }
 
-function validateCatalogRows(rows: CatalogRow[], t: (k: string, o?: Record<string, unknown>) => string): string[] {
+function catalogPriceFields(r: CatalogRow, isOpenAI: boolean): string[] {
+  const shared = [r.input, r.cachedInput, r.output];
+  return isOpenAI
+    ? [...shared, r.prioInput, r.prioCached, r.prioOutput, r.flexInput, r.flexCached, r.flexOutput,
+      r.lcThreshold, r.lcInputMult, r.lcCachedMult, r.lcOutputMult]
+    : [...shared, r.cacheWrite5m, r.cacheWrite1h];
+}
+
+function validateCatalogRows(rows: CatalogRow[], isOpenAI: boolean, t: (k: string, o?: Record<string, unknown>) => string): string[] {
   const errs: string[] = [];
   const seen = new Set<string>();
   const idRe = /^[a-zA-Z0-9._-]+$/;
@@ -1632,7 +1693,7 @@ function validateCatalogRows(rows: CatalogRow[], t: (k: string, o?: Record<strin
     }
     if (seen.has(id)) errs.push(t('settings.models_err_dup', { id }));
     seen.add(id);
-    [r.input, r.cachedInput, r.cacheWrite5m, r.cacheWrite1h, r.output].forEach((p) => {
+    catalogPriceFields(r, isOpenAI).forEach((p) => {
       if (p.trim() !== '' && !(Number(p) > 0)) errs.push(t('settings.models_err_price', { id }));
     });
   });
@@ -1678,20 +1739,21 @@ function ModelCatalogEditor({ label, settingKey, set, value, onValidationChange 
   onValidationChange: (key: ModelCatalogSettingKey, errors: string[]) => void;
 }) {
   const { t } = useTranslation();
+  const isOpenAI = settingKey === 'models.catalog.openai';
   // 本地 state 保证数字输入流畅(避免每键 parse→serialize 丢失尾字符);挂载时从 setting 初始化。
   // 页面在 settings 加载完成前显示全局 spinner,故挂载时 values 已就绪。
   const [rows, setRows] = useState<CatalogRow[]>(() => parseCatalogRows(value));
 
   function commit(next: CatalogRow[]) {
     setRows(next);
-    set(settingKey, next.some((r) => r.id.trim() !== '') ? serializeCatalogRows(next) : '');
+    set(settingKey, next.some((r) => r.id.trim() !== '') ? serializeCatalogRows(next, isOpenAI) : '');
   }
   const update = (i: number, patch: Partial<CatalogRow>) =>
     commit(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   const addRow = () => commit([...rows, emptyCatalogRow()]);
   const removeRow = (i: number) => commit(rows.filter((_, idx) => idx !== i));
 
-  const errors = validateCatalogRows(rows, t);
+  const errors = validateCatalogRows(rows, isOpenAI, t);
   const errorKey = errors.join('\n');
   useEffect(() => {
     onValidationChange(settingKey, errors);
@@ -1742,19 +1804,80 @@ function ModelCatalogEditor({ label, settingKey, set, value, onValidationChange 
                     <Input type="number" value={r.input} onChange={(e) => update(i, { input: e.target.value })} placeholder="0" />
                   </Field>
                   <Field label={t('settings.models_price_cached')}>
-                    <Input type="number" value={r.cachedInput} onChange={(e) => update(i, { cachedInput: e.target.value })} placeholder="0" />
+                    <Input type="number" value={r.cachedInput} onChange={(e) => update(i, { cachedInput: e.target.value })} placeholder={isOpenAI ? t('settings.models_ph_auto_cached') : '0'} />
                   </Field>
-                  <Field label={t('settings.models_price_w5m')}>
-                    <Input type="number" value={r.cacheWrite5m} onChange={(e) => update(i, { cacheWrite5m: e.target.value })} placeholder="0" />
-                  </Field>
-                  <Field label={t('settings.models_price_w1h')}>
-                    <Input type="number" value={r.cacheWrite1h} onChange={(e) => update(i, { cacheWrite1h: e.target.value })} placeholder="0" />
-                  </Field>
+                  {!isOpenAI && (
+                    <Field label={t('settings.models_price_w5m')}>
+                      <Input type="number" value={r.cacheWrite5m} onChange={(e) => update(i, { cacheWrite5m: e.target.value })} placeholder={t('settings.models_ph_auto_w5m')} />
+                    </Field>
+                  )}
+                  {!isOpenAI && (
+                    <Field label={t('settings.models_price_w1h')}>
+                      <Input type="number" value={r.cacheWrite1h} onChange={(e) => update(i, { cacheWrite1h: e.target.value })} placeholder={t('settings.models_ph_auto_w1h')} />
+                    </Field>
+                  )}
                   <Field label={t('settings.models_price_output')}>
                     <Input type="number" value={r.output} onChange={(e) => update(i, { output: e.target.value })} placeholder="0" />
                   </Field>
                 </div>
               </div>
+              {isOpenAI && (
+                <div>
+                  <Label className="block text-[13px] font-medium text-text-secondary mb-1.5">
+                    {t('settings.models_price_prio_label')}
+                  </Label>
+                  <div className="grid grid-cols-3 gap-3">
+                    <Field label={t('settings.models_price_input')}>
+                      <Input type="number" value={r.prioInput} onChange={(e) => update(i, { prioInput: e.target.value })} placeholder={t('settings.models_ph_auto2')} />
+                    </Field>
+                    <Field label={t('settings.models_price_cached')}>
+                      <Input type="number" value={r.prioCached} onChange={(e) => update(i, { prioCached: e.target.value })} placeholder={t('settings.models_ph_auto2')} />
+                    </Field>
+                    <Field label={t('settings.models_price_output')}>
+                      <Input type="number" value={r.prioOutput} onChange={(e) => update(i, { prioOutput: e.target.value })} placeholder={t('settings.models_ph_auto2')} />
+                    </Field>
+                  </div>
+                </div>
+              )}
+              {isOpenAI && (
+                <div>
+                  <Label className="block text-[13px] font-medium text-text-secondary mb-1.5">
+                    {t('settings.models_price_flex_label')}
+                  </Label>
+                  <div className="grid grid-cols-3 gap-3">
+                    <Field label={t('settings.models_price_input')}>
+                      <Input type="number" value={r.flexInput} onChange={(e) => update(i, { flexInput: e.target.value })} placeholder={t('settings.models_ph_auto05')} />
+                    </Field>
+                    <Field label={t('settings.models_price_cached')}>
+                      <Input type="number" value={r.flexCached} onChange={(e) => update(i, { flexCached: e.target.value })} placeholder={t('settings.models_ph_auto05')} />
+                    </Field>
+                    <Field label={t('settings.models_price_output')}>
+                      <Input type="number" value={r.flexOutput} onChange={(e) => update(i, { flexOutput: e.target.value })} placeholder={t('settings.models_ph_auto05')} />
+                    </Field>
+                  </div>
+                </div>
+              )}
+              {isOpenAI && (
+                <div>
+                  <Label className="block text-[13px] font-medium text-text-secondary mb-1.5">
+                    {t('settings.models_price_lc_label')}
+                  </Label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <Field label={t('settings.models_lc_threshold')}>
+                      <Input type="number" value={r.lcThreshold} onChange={(e) => update(i, { lcThreshold: e.target.value })} placeholder="272000" />
+                    </Field>
+                    <Field label={t('settings.models_lc_input_mult')}>
+                      <Input type="number" value={r.lcInputMult} onChange={(e) => update(i, { lcInputMult: e.target.value })} placeholder="2" />
+                    </Field>
+                    <Field label={t('settings.models_lc_cached_mult')}>
+                      <Input type="number" value={r.lcCachedMult} onChange={(e) => update(i, { lcCachedMult: e.target.value })} placeholder="2" />
+                    </Field>
+                    <Field label={t('settings.models_lc_output_mult')}>
+                      <Input type="number" value={r.lcOutputMult} onChange={(e) => update(i, { lcOutputMult: e.target.value })} placeholder="1.5" />
+                    </Field>
+                  </div>
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <NativeSwitch
                   isSelected={r.enabled}

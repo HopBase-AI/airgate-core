@@ -69,6 +69,21 @@ func (m *Manager) GetModels(platform string) []sdk.ModelInfo {
 	return cloneModels(m.modelCache[platform])
 }
 
+// UpdateModelCache 用插件推送的最新清单替换某平台的模型缓存快照。
+//
+// 模型缓存在插件启动时由一次 Models() 调用冻结,而模型目录覆盖层在插件进程内
+// 异步生效(SDK 客户端还带首调缓存),启动快照不含覆盖层后来新增的模型。
+// 网关插件经 host method models.refresh 在覆盖层变化后推送当前生效清单,
+// 使 core 侧消费方(AI Chat 模型下拉、家族限流、调度元数据)与插件保持一致。
+func (m *Manager) UpdateModelCache(platform string, models []sdk.ModelInfo) {
+	if platform == "" {
+		return
+	}
+	m.mu.Lock()
+	m.modelCache[platform] = cloneModels(models)
+	m.mu.Unlock()
+}
+
 // SchedulingModel 查询模型目录中指定模型的 scheduling_model 元数据。
 // 插件可在 ModelInfo.Metadata["scheduling_model"] 中声明调度时应使用的替代模型，
 // 使 Core 无需硬编码跨协议的模型映射。未找到时返回空字符串。

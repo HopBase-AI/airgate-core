@@ -184,6 +184,7 @@ const (
 	hostMethodPlatformsList          = "platforms.list"
 	hostMethodModelsList             = "models.list"
 	hostMethodModelsCatalog          = "models.catalog"
+	hostMethodModelsRefresh          = "models.refresh"
 	hostMethodUsersGet               = "users.get"
 	hostMethodUsersUpdateBalance     = "users.update_balance"
 	hostMethodAssetsStore            = "assets.store"
@@ -251,6 +252,12 @@ func (h *HostService) invoke(
 			return nil, err
 		}
 		return h.getModelsCatalog(ctx, req)
+	case hostMethodModelsRefresh:
+		var req hostModelsRefreshRequest
+		if err := decodeHostPayload(payload, &req); err != nil {
+			return nil, err
+		}
+		return h.refreshModels(pluginID, req)
 	case hostMethodUsersGet:
 		var req hostGetUserInfoRequest
 		if err := decodeHostPayload(payload, &req); err != nil {
@@ -1425,6 +1432,66 @@ func (h *HostService) listModels(_ context.Context, req hostListModelsRequest) (
 		})
 	}
 	return map[string]interface{}{"models": items}, nil
+}
+
+// hostModelsRefreshRequest models.refresh 请求体：插件推送其当前生效的完整模型清单。
+type hostModelsRefreshRequest struct {
+	Models []hostModelsRefreshEntry `json:"models"`
+}
+
+type hostModelsRefreshEntry struct {
+	ID              string            `json:"id"`
+	Name            string            `json:"name"`
+	ContextWindow   int64             `json:"context_window"`
+	MaxOutputTokens int64             `json:"max_output_tokens"`
+	Capabilities    []string          `json:"capabilities"`
+	Metadata        map[string]string `json:"metadata"`
+}
+
+// modelsRefreshMaxEntries 单次推送的模型数上限,防异常插件把缓存撑爆。
+const modelsRefreshMaxEntries = 512
+
+// refreshModels 接收网关插件推送的最新模型清单，整体替换该平台的模型缓存快照。
+//
+// 平台取自调用方插件身份（不由 payload 指定），插件只能刷新自己平台的清单。
+// 插件启动时 core 冻结的快照不含覆盖层后来新增的模型（如后台上新模型），
+// 此方法是插件侧覆盖层生效后向 core 同步目录的通道，见 Manager.UpdateModelCache。
+func (h *HostService) refreshModels(pluginID string, req hostModelsRefreshRequest) (map[string]interface{}, error) {
+	inst := h.manager.GetInstance(pluginID)
+	if inst == nil || inst.Platform == "" {
+		return nil, status.Errorf(codes.FailedPrecondition, "插件 %q 不是已加载的网关插件", pluginID)
+	}
+	if len(req.Models) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "models 不能为空")
+	}
+	if len(req.Models) > modelsRefreshMaxEntries {
+		return nil, status.Errorf(codes.InvalidArgument, "models 数量超过上限 %d", modelsRefreshMaxEntries)
+	}
+	models := make([]sdk.ModelInfo, 0, len(req.Models))
+	for _, e := range req.Models {
+		id := strings.TrimSpace(e.ID)
+		if id == "" {
+			continue
+		}
+		models = append(models, sdk.ModelInfo{
+			ID:              id,
+			Name:            e.Name,
+			ContextWindow:   int(e.ContextWindow),
+			MaxOutputTokens: int(e.MaxOutputTokens),
+			Capabilities:    e.Capabilities,
+			Metadata:        e.Metadata,
+		})
+	}
+	if len(models) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "models 不能全为空条目")
+	}
+	h.manager.UpdateModelCache(inst.Platform, models)
+	slog.Info("models_cache_refreshed",
+		sdk.LogFieldPluginID, pluginID,
+		"platform", inst.Platform,
+		"count", len(models),
+	)
+	return map[string]interface{}{"updated": len(models)}, nil
 }
 
 // modelCatalogSettingKey 模型目录覆盖层的 settings key 约定：models.catalog.<platform>。
