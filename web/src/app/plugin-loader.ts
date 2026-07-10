@@ -133,16 +133,22 @@ function rewriteBareImports(code: string): string {
  * 由于插件构建时将 react 等声明为 external，产物包含裸 import（浏览器无法解析）。
  * 这里通过 fetch → 重写 import → Blob URL → dynamic import 来解决。
  */
+// __ASSET_VERSION__ 由 vite define 注入（每次构建变）。给固定文件名的插件资源加
+// 版本 query：部署后 URL 变，绕过浏览器 disk cache 与企业代理对旧 index.js 的缓存。
+declare const __ASSET_VERSION__: string;
+const assetVersion = typeof __ASSET_VERSION__ === 'string' ? __ASSET_VERSION__ : '';
+const versionQuery = assetVersion ? `?v=${assetVersion}` : '';
+
 async function fetchPluginFrontend(
   pluginId: string,
 ): Promise<PluginFrontendModule | null> {
   try {
-    const url = `/plugins/${pluginId}/assets/index.js`;
+    const url = `/plugins/${pluginId}/assets/index.js${versionQuery}`;
     const resp = await fetch(url, { cache: 'no-cache' });
     if (!resp.ok) return null;
 
     // Load plugin CSS if available
-    const cssUrl = `/plugins/${pluginId}/assets/index.css`;
+    const cssUrl = `/plugins/${pluginId}/assets/index.css${versionQuery}`;
     fetch(cssUrl, { cache: 'no-cache' }).then((cssResp) => {
       if (!cssResp.ok) return;
       return cssResp.text().then((css) => {

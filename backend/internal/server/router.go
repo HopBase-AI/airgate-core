@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -439,10 +441,25 @@ func servePluginAsset(mgr *plugin.Manager, baseDir string) gin.HandlerFunc {
 			return
 		}
 		// 插件前端产物是固定文件名（index.js/css，无内容 hash），部署更新后文件名不变。
-		// 必须让浏览器每次 revalidate，否则旧 bundle 会被长期缓存，插件前端更新不生效。
-		c.Header("Cache-Control", "no-cache, must-revalidate")
-		c.Data(http.StatusOK, contentTypeFromExt(rel), data)
+		// no-cache 要求每次 revalidate，但只有配上内容 ETag 才能真正 revalidate：
+		// 无验证器时部分浏览器/代理会退化成直接返回缓存旧版，导致插件前端更新不生效。
+		// 前端加载器另叠加 ?v=<build> query busting 穿透顽固代理（见 web/plugin-loader.ts）。
+		serveAssetWithETag(c, contentTypeFromExt(rel), data)
 	}
+}
+
+// serveAssetWithETag 以内容 hash 作为强 ETag 提供资源，支持 If-None-Match 条件请求
+// 返回 304，让固定文件名资源的 revalidate 真正生效（no-cache 无验证器会退化为返回旧版）。
+func serveAssetWithETag(c *gin.Context, contentType string, data []byte) {
+	sum := sha256.Sum256(data)
+	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
+	c.Header("Cache-Control", "no-cache, must-revalidate")
+	c.Header("ETag", etag)
+	if match := c.GetHeader("If-None-Match"); match == etag {
+		c.Status(http.StatusNotModified)
+		return
+	}
+	c.Data(http.StatusOK, contentType, data)
 }
 
 // contentTypeFromExt 按扩展名返回 Content-Type。覆盖插件资源里常见的几种文件，

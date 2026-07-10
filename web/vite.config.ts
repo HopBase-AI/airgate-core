@@ -6,7 +6,15 @@ import http from 'node:http';
 const BACKEND = 'http://localhost:9517';
 const backendUrl = new URL(BACKEND);
 
+// 每次构建生成一个资产版本号。核心主应用产物带内容 hash 可靠更新，但插件前端是
+// 固定文件名 index.js，缺内容指纹，某些客户端/企业代理会缓存旧版且无视 no-cache。
+// 用此版本号给插件资源 URL 加 query busting：部署后 URL 变，穿透所有缓存层。
+const assetVersion = String(Date.now());
+
 export default defineConfig({
+  define: {
+    __ASSET_VERSION__: JSON.stringify(assetVersion),
+  },
   plugins: [
     react(),
     tailwindcss(),
