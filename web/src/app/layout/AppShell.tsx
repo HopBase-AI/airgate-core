@@ -83,16 +83,17 @@ const apiKeyMenuItems: MenuItem[] = [
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'airgate:sidebar:collapsed';
 
 const LANGUAGE_OPTIONS = [
+  { key: 'en', label: 'English', shortLabel: 'EN' },
   { key: 'zh', label: '简体中文', shortLabel: '简' },
   { key: 'zh-HK', label: '繁體中文（香港）', shortLabel: '繁' },
-  { key: 'en', label: 'English', shortLabel: 'EN' },
+  { key: 'ja', label: '日本語', shortLabel: '日' },
 ] as const;
 
 function normalizeAppLanguage(lang: string | undefined) {
   const baseLang = lang?.split('-')[0];
   return LANGUAGE_OPTIONS.find((item) => item.key === lang)?.key
     ?? LANGUAGE_OPTIONS.find((item) => item.key === baseLang)?.key
-    ?? 'zh';
+    ?? 'en';
 }
 
 /**

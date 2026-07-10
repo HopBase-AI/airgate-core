@@ -2,7 +2,6 @@
   "app_name": "HopBase",
   "app_subtitle": "API Gateway Management",
   "powered_by": "Powered by HopBase",
-
   "home": {
     "badge": "Unified AI API Gateway",
     "subtitle": "Secure and efficient AI API aggregation and management platform",
@@ -25,13 +24,11 @@
     "feature_multi_platform": "Multi-Platform",
     "feature_multi_platform_desc": "Built-in support for OpenAI, Anthropic, and other major platforms, ready to use out of the box."
   },
-
   "datepicker": {
     "placeholder": "Select date",
     "clear": "Clear",
     "today": "Today"
   },
-
   "common": {
     "login": "Login",
     "register": "Register",
@@ -88,7 +85,6 @@
     "server_error": "Server response error (HTTP {{status}})",
     "view_all": "View All"
   },
-
   "status": {
     "active": "Active",
     "enabled": "Enabled",
@@ -101,7 +97,6 @@
     "failed": "Failed",
     "installed": "Installed"
   },
-
   "nav": {
     "overview": "Overview",
     "management": "Management",
@@ -129,7 +124,6 @@
     "status": "Status",
     "back_to_console": "Back to Console"
   },
-
   "plugin_shell": {
     "breadcrumbs": "Breadcrumbs",
     "console": "Console",
@@ -137,7 +131,6 @@
     "plugin_workbench": "{{name}} plugin workbench",
     "playground_title": "AI Chat"
   },
-
   "auth": {
     "email": "Email",
     "password": "Password",
@@ -184,7 +177,6 @@
     "apikey_never": "Never",
     "apikey_rate": "Rate"
   },
-
   "dashboard": {
     "title": "Dashboard",
     "load_failed": "Failed to load dashboard: {{error}}",
@@ -249,7 +241,6 @@
     "all_users": "All Users",
     "filter_user": "Filter User"
   },
-
   "user_overview": {
     "title": "My Overview",
     "description": "View your account status and usage",
@@ -259,7 +250,6 @@
     "today": "Today",
     "cumulative": "Cumulative"
   },
-
   "users": {
     "title": "Users",
     "description": "Manage system users, roles and balances",
@@ -323,7 +313,6 @@
     "disable_title": "Disable User",
     "disable_confirm": "Are you sure you want to disable user {{email}}? The user will not be able to log in or use APIs."
   },
-
   "accounts": {
     "title": "Accounts",
     "description": "Manage upstream platform accounts, authentication details and scheduling",
@@ -386,6 +375,11 @@
     "test_connection": "Test Connection",
     "test_modal_title": "Test Account Connection",
     "select_model": "Select Test Model",
+    "test_mode": "Test Mode",
+    "test_mode_default": "Default Claude Test",
+    "test_mode_default_hint": "Uses the current Claude plugin forwarding format for the production path.",
+    "test_mode_aws_bedrock": "AWS Bedrock Compatible Test",
+    "test_mode_aws_bedrock_hint": "Omits beta parameters only for this admin test; real customer calls are unchanged.",
     "start_test": "Start Test",
     "retry": "Retry",
     "test_ready": "Click \"Start Test\" to begin...",
@@ -498,9 +492,9 @@
     "bulk_refresh_filtered": "Auto-filtered: refreshing {{count}} OAuth accounts, skipping {{skipped}} non-OAuth",
     "bulk_partial": "Partial success: {{success}} ok, {{failed}} failed ({{total}} total)",
     "bulk_all_failed": "All operations failed",
-    "select_proxy": "Select a proxy"
+    "select_proxy": "Select a proxy",
+    "family_cooldown_label": "{{count}} family cooldown"
   },
-
   "groups": {
     "title": "Groups",
     "description": "Manage model groups, routing and subscription policies",
@@ -578,9 +572,12 @@
     "copy_accounts_placeholder": "Select a group to copy its accounts...",
     "copy_accounts_select_platform_first": "Select a platform first",
     "copy_accounts_empty": "No other groups on this platform",
-    "copy_accounts_count": "{{count}} accounts"
+    "copy_accounts_count": "{{count}} accounts",
+    "force_instructions": "Force Instructions",
+    "force_instructions_hint": "Leave empty to keep as-is. Choose a preset or enter custom content.",
+    "instructions_none": "No override",
+    "instructions_custom_placeholder": "Enter custom instructions..."
   },
-
   "api_keys": {
     "title": "API Keys",
     "description": "Manage API access keys, quotas and IP policies",
@@ -616,7 +613,6 @@
     "today": "Today",
     "thirty_days": "30 Days"
   },
-
   "subscriptions": {
     "title": "Subscriptions",
     "description": "Manage user subscriptions, assign and adjust plans",
@@ -640,7 +636,6 @@
     "bulk_success": "Bulk assignment successful",
     "adjust_success": "Subscription adjusted successfully"
   },
-
   "proxies": {
     "title": "Proxies",
     "description": "Manage proxy servers, supports HTTP and SOCKS5",
@@ -663,7 +658,6 @@
     "test_success": "Connection test passed: {{detail}}",
     "test_failed": "Connection test failed: {{error}}"
   },
-
   "usage": {
     "title": "Usage",
     "description": "Query logs and multi-dimensional statistics",
@@ -741,7 +735,6 @@
     "granularity_hour": "Hourly",
     "granularity_day": "Daily"
   },
-
   "plugins": {
     "title": "Plugins",
     "description": "Install, configure and manage system plugins",
@@ -779,13 +772,11 @@
     "reload_success": "Plugin reloaded successfully",
     "dev_badge": "Dev"
   },
-
   "settings": {
     "title": "Settings",
     "description": "Manage global system configuration",
     "no_settings": "No settings available",
     "save_success": "Settings saved",
-
     "tab_site": "Site Branding",
     "tab_registration": "Registration",
     "tab_defaults": "User Defaults",
@@ -796,7 +787,7 @@
     "tab_models": "Model Catalog",
     "tab_system": "System Update",
     "models_catalog": "Model catalog overrides (live repricing / add / hide)",
-    "models_catalog_desc": "Add models, override an existing model's base price, or hide a model — no code change or redeploy. List only the models you want to change; anything not listed keeps the plugin's built-in default price (safe floor). This sets the base price (official USD); the user's actual charge = base price × group multiplier (the multiplier is configured under Groups, independently). Takes effect within ~1 min of saving (or reload the plugin under Plugins for instant effect).",
+    "models_catalog_desc": "Add models, override an existing model's base price, or hide a model — no code change or redeploy. List only the models you want to change; anything not listed keeps the plugin's built-in default price (safe floor). This sets the base price (official or channel benchmark price, depending on the business pricing basis); the user's actual charge = base price × group multiplier (the multiplier is configured under Groups, independently). Takes effect within ~1 min of saving (or reload the plugin under Plugins for instant effect).",
     "models_platform_claude": "Claude",
     "models_platform_openai": "OpenAI / Codex",
     "models_platform_kiro": "Kiro",
@@ -814,13 +805,24 @@
     "models_price_w5m": "Cache write 5m",
     "models_price_w1h": "Cache write 1h",
     "models_price_output": "Output",
+    "models_price_prio_label": "Priority tier (optional; blank = standard ×2 for new models, built-in models keep their built-in tier)",
+    "models_price_flex_label": "Flex / Batch tier (optional; blank = standard ×0.5 for new models, built-in models keep their built-in tier)",
+    "models_price_lc_label": "Long-context tier (optional; whole request billed at multiplier once input exceeds threshold; blank = family default)",
+    "models_lc_threshold": "Threshold (input tokens)",
+    "models_lc_input_mult": "Input ×",
+    "models_lc_cached_mult": "Cached read ×",
+    "models_lc_output_mult": "Output ×",
+    "models_ph_auto2": "std ×2",
+    "models_ph_auto05": "std ×0.5",
+    "models_ph_auto_cached": "input ×0.1",
+    "models_ph_auto_w5m": "input ×1.25",
+    "models_ph_auto_w1h": "input ×2",
     "models_err_id_empty": "Row {{n}}: model ID cannot be empty",
     "models_err_id_invalid": "Model ID {{id}} has invalid characters (only letters, digits, . _ -)",
     "models_err_upstream_invalid": "Upstream ID {{id}} has invalid characters (only letters, digits, . _ -)",
     "models_err_dup": "Model ID {{id}} is duplicated",
     "models_err_price": "Model {{id}} prices must be positive numbers",
     "models_fix_errors": "Please fix the model catalog errors before saving.",
-
     "system_update_title": "System Update",
     "system_current_version": "Current",
     "system_latest_version": "Latest",
@@ -852,7 +854,6 @@
     "system_failed_title": "Upgrade failed",
     "system_last_failed": "Last upgrade failed",
     "system_restarting_hint": "Core is restarting; the page will reload in 5 seconds. If unresponsive for too long, check systemd logs on the server.",
-
     "security_admin_key": "Admin API Key",
     "security_admin_key_desc": "Global API key for external system integration, with full administrator privileges",
     "security_admin_key_warning": "Warning: this key has full administrator privileges. Keep it secure.",
@@ -871,7 +872,6 @@
     "security_admin_key_regenerate_confirm_msg": "Regenerating will immediately invalidate the existing key. Continue?",
     "security_admin_key_delete_confirm_title": "Delete admin API key",
     "security_admin_key_delete_confirm_msg": "Once deleted, this key is immediately invalidated and any integration using it will lose access. Continue?",
-
     "site_branding": "Site Branding",
     "site_name": "Site Name",
     "site_name_hint": "Displayed in browser title bar and sidebar logo",
@@ -889,7 +889,6 @@
     "doc_url": "Documentation URL",
     "home_content": "Home Page Content",
     "home_content_hint": "Supports HTML, leave empty to hide",
-
     "registration_auth": "Registration & Authentication",
     "registration_enabled": "Open Registration",
     "registration_enabled_desc": "When disabled, only admins can create new users",
@@ -898,13 +897,11 @@
     "email_verify_no_smtp": "Please configure SMTP in \"Email\" tab first",
     "email_suffix_whitelist": "Email Suffix Whitelist",
     "email_suffix_whitelist_hint": "One suffix per line (e.g. gmail.com), leave empty for no restriction",
-
     "new_user_defaults": "New User Defaults",
     "default_balance": "Default Balance",
     "default_balance_hint": "Initial balance for newly registered users (USD)",
     "default_concurrency": "Default Concurrency",
     "default_concurrency_hint": "Default max concurrent requests for new users",
-
     "smtp_config": "SMTP Mail Server",
     "smtp_host": "Server Host",
     "smtp_port": "Port",
@@ -926,7 +923,6 @@
     "smtp_test_prompt": "Enter the email address to receive the test email:",
     "smtp_test_recipient": "Recipient Email",
     "smtp_test_success": "Test email sent, please check your inbox",
-
     "storage_config": "MinIO / S3 / R2 Object Storage",
     "s3_endpoint": "Endpoint",
     "s3_endpoint_hint": "MinIO/S3 service address, such as http://minio:9000 or s3.amazonaws.com.",
@@ -950,7 +946,6 @@
     "asset_retention_section_hint": "This section only controls the Studio task lifecycle. Expired terminal tasks and their related inputs/outputs are cleaned together; leave blank to use the default, 0 means keep forever.",
     "asset_retention_generated_days": "Studio task retention (days)",
     "asset_retention_generated_days_hint": "Studio generation tasks, generated images, and task inputs are cleaned together. Leave blank to use the default; set 0 to disable auto cleanup. Default is 7 days.",
-
     "openclaw_quickstart": "One-line install command",
     "openclaw_quickstart_desc": "Pick the command for your OS. Both scripts generate openclaw.json (~/.openclaw/ on Unix, %USERPROFILE%\\.openclaw\\ on Windows) with interactive model selection.",
     "openclaw_install_tab_unix": "Linux / macOS",
@@ -973,15 +968,13 @@
     "openclaw_models_preset_desc": "JSON array. Fields match openclaw.json provider.models[] exactly; the extra 'label' field is shown to users by the install script.",
     "openclaw_models_not_array": "Preset must be a JSON array",
     "landing_pricing": "Landing pricing tables",
-    "landing_pricing_desc": "JSON object that drives the 4 model pricing tables on the landing page (tables.claude-max / claude-aws / claude-kiro / openai). Each row's cells are: model (model/tag/tagStyle), official strike price (strike/note), deal price (strong/note/save; deal:true highlights the column), savings pill (pill), description (text). Leave empty to keep the built-in tables; changes apply on landing refresh without a redeploy.",
-    "landing_pricing_invalid": "Must be a JSON object containing a tables object"
+    "landing_pricing_desc": "JSON object that drives the landing pricing tables. tables can replace built-in tables (claude-max / claude-aws / claude-kiro / openai); panels can add independent model tabs (key/tab/title/headers/rows). Each row's cells are: model (model/tag/tagStyle), official strike price (strike/note), deal price (strong/note/save; deal:true highlights the column), savings pill (pill), description (text). Leave empty to keep the built-in tables; changes apply on landing refresh.",
+    "landing_pricing_invalid": "Must be a JSON object containing a tables object or panels array"
   },
-
   "docs": {
     "cta_hint": "Ready to start? Jump in now.",
     "toc": "Contents"
   },
-
   "profile": {
     "title": "Profile",
     "description": "View and edit your personal information",
@@ -1013,7 +1006,6 @@
     "balance_alert_saved": "Balance alert settings saved",
     "balance_history": "Balance History"
   },
-
   "user_keys": {
     "title": "API Keys",
     "description": "Manage your personal API access keys",
@@ -1068,7 +1060,6 @@
     "ccs_session_expired": "Session expired. Please log in with your API key again before importing.",
     "codex_config_toml_hint": "Make sure the following content is at the beginning of the config.toml file"
   },
-
   "setup": {
     "title": "System Setup",
     "step_db": "Database",
@@ -1115,13 +1106,12 @@
     "run_install": "Run Installation",
     "installing_btn": "Installing..."
   },
-
   "playground": {
     "title": "AI Chat",
     "workflow_title": "Creative Studio",
     "studio_created_at": "Created",
-    "studio_asset_expiring": "Expires in {{time}}. Save it soon.",
-    "studio_asset_expired": "Expired. Save a local copy now.",
+    "studio_asset_expiring": "Expires in {{time}} — save soon",
+    "studio_asset_expired": "Expired — save now",
     "conversations": "Conversations",
     "new_conversation": "New Conversation",
     "no_conversations": "No conversations yet",
@@ -1223,7 +1213,6 @@
     "edit_generated_image": "Edit this image",
     "no_image_model_available": "No image model available — pick one to edit this image.",
     "cancel": "Cancel",
-
     "wf_nodes": "Nodes",
     "wf_input": "Input",
     "wf_generation": "Generation",
@@ -1235,7 +1224,6 @@
     "wf_running": "Running...",
     "wf_clear": "Clear",
     "wf_quick_input_placeholder": "Describe what to generate... (Enter to send)",
-
     "wf_node_text_input": "Text Input",
     "wf_node_image_reference": "Image Reference",
     "wf_node_image_generate": "Image Generate",
@@ -1244,7 +1232,6 @@
     "wf_node_batch_generate": "Batch Generate",
     "wf_node_resize": "Resize",
     "wf_node_merge": "Merge",
-
     "wf_prompt_placeholder": "Enter prompt text...",
     "wf_select_image": "Select Image",
     "wf_change_image": "Change Image",
@@ -1261,9 +1248,91 @@
     "wf_match_value": "Match Value",
     "wf_contains": "Contains",
     "wf_equals": "Equals",
-    "wf_regex": "Regex"
+    "wf_regex": "Regex",
+    "wf_port_text": "Text",
+    "wf_port_image": "Image",
+    "wf_port_images": "Images",
+    "wf_port_prompt": "Prompt",
+    "wf_port_size": "Size",
+    "wf_port_count": "Count",
+    "wf_port_edited_image": "Edited image",
+    "wf_port_resized_image": "Resized image",
+    "wf_port_merged_image": "Merged image",
+    "wf_port_condition": "Condition",
+    "wf_port_input": "Input",
+    "wf_port_true": "True",
+    "wf_port_false": "False",
+    "wf_port_image_a": "Image A",
+    "wf_port_image_b": "Image B",
+    "wf_port_layout": "Layout",
+    "wf_port_width": "Width",
+    "wf_port_height": "Height",
+    "wf_port_resized": "Resized",
+    "studio_task_queued": "Queued...",
+    "studio_task_failed": "Generation failed",
+    "studio_task_processing": "Generating...",
+    "studio_confirm_delete_task": "Delete this task?",
+    "studio_batch_progress": "Batch {{done}}/{{total}}",
+    "studio_batch_partial": "{{done}} succeeded · {{failed}} failed",
+    "studio_batch_done": "Batch done · {{total}} images",
+    "studio_retry_failed": "Retry {{count}} failed",
+    "studio_delete": "Delete",
+    "studio_queue_position": "In queue · #{{pos}}",
+    "studio_eta": "{{elapsed}}s elapsed · ~{{eta}}s",
+    "studio_retry": "Retry",
+    "studio_confirm_regenerate": "Regenerate? This uses one generation credit.",
+    "studio_confirm_delete": "Delete this image?",
+    "studio_download": "Download",
+    "studio_regenerate": "Retry",
+    "studio_use_as_reference": "Use as reference",
+    "studio_edit_this": "Edit this",
+    "studio_gallery_empty": "No images yet",
+    "studio_gallery_empty_hint": "Enter a prompt below to start creating",
+    "studio_shortcut_send": "Send",
+    "studio_shortcut_newline": "New line",
+    "studio_group": "Channel",
+    "studio_projects": "Projects",
+    "studio_project_new": "New project",
+    "studio_all_works": "All works",
+    "studio_project_rename": "Rename",
+    "studio_project_delete": "Delete",
+    "studio_back_console": "Back to console",
+    "studio_console": "Console",
+    "studio_inspiration_gallery": "Inspiration Gallery",
+    "studio_close": "Close",
+    "studio_source_image_keyboard_hint": "Reference image — Enter to open, Delete to remove",
+    "studio_remove_source_image": "Remove reference",
+    "studio_clear_all": "Clear all",
+    "studio_clear_selection": "Clear selection",
+    "studio_add_reference": "Add reference",
+    "studio_generating": "Generating...",
+    "studio_batch_generate": "Batch generate",
+    "studio_batch_unit": "images",
+    "studio_batch_process": "Batch process",
+    "studio_batch_images": "images",
+    "studio_batch_multi_prompt": "Multi-prompt",
+    "studio_batch_multi_image": "Multi-image",
+    "studio_batch_prompts": "Batch prompts",
+    "studio_batch_placeholder": "One prompt per line...",
+    "studio_batch_empty": "No prompts yet",
+    "studio_batch_upload": "Upload images",
+    "studio_batch_add_images": "Click or drag to add images",
+    "studio_batch_shared_prompt": "Shared prompt",
+    "studio_batch_shared_placeholder": "Apply the same description to all images...",
+    "studio_model": "Model",
+    "studio_size": "Size",
+    "studio_source_image": "Reference image",
+    "studio_remove_image": "Remove image",
+    "studio_upload_hint": "Click to upload or drag an image here",
+    "studio_prompt": "Prompt",
+    "studio_img2img_placeholder": "Describe the changes you want...",
+    "studio_generate": "Generate",
+    "studio_selection_set": "Region selected — drag to reselect",
+    "studio_selection_hint": "Drag on the image to select a region to edit",
+    "studio_inpaint_placeholder": "Describe the region to edit...",
+    "studio_prompt_placeholder": "Describe the image you want to generate...",
+    "studio_count": "Count"
   },
-
   "pagination": {
     "total": "{{count}} items total",
     "page": "Page {{page}} / {{total}}",
@@ -1271,13 +1340,11 @@
     "prev": "Previous",
     "next": "Next"
   },
-
   "dialog": {
     "confirm_title": "Confirm",
     "cancel": "Cancel",
     "confirm": "OK"
   },
-
   "error": {
     "page_error": "Something went wrong",
     "unknown": "Unknown error",

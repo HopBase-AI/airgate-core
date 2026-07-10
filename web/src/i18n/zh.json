@@ -2,7 +2,6 @@
   "app_name": "HopBase",
   "app_subtitle": "API 网关管理平台",
   "powered_by": "Powered by HopBase",
-
   "home": {
     "badge": "AI API 统一网关",
     "subtitle": "安全、高效的 AI API 聚合与管理平台",
@@ -25,13 +24,11 @@
     "feature_multi_platform": "多平台支持",
     "feature_multi_platform_desc": "内置 OpenAI、Anthropic 等主流平台支持，开箱即用。"
   },
-
   "datepicker": {
     "placeholder": "选择日期",
     "clear": "清除",
     "today": "今天"
   },
-
   "common": {
     "login": "登录",
     "register": "注册",
@@ -88,7 +85,6 @@
     "server_error": "服务端响应异常 (HTTP {{status}})",
     "view_all": "查看全部"
   },
-
   "status": {
     "active": "活跃",
     "enabled": "已启用",
@@ -101,7 +97,6 @@
     "failed": "失败",
     "installed": "已安装"
   },
-
   "nav": {
     "overview": "概览",
     "management": "管理",
@@ -129,7 +124,6 @@
     "status": "服务状态",
     "back_to_console": "返回控制台"
   },
-
   "plugin_shell": {
     "breadcrumbs": "面包屑",
     "console": "控制台",
@@ -137,7 +131,6 @@
     "plugin_workbench": "{{name}}插件工作台",
     "playground_title": "AI 对话"
   },
-
   "auth": {
     "email": "邮箱",
     "password": "密码",
@@ -184,7 +177,6 @@
     "apikey_never": "永不过期",
     "apikey_rate": "倍率"
   },
-
   "dashboard": {
     "title": "管理控制台",
     "load_failed": "加载仪表盘数据失败：{{error}}",
@@ -249,7 +241,6 @@
     "all_users": "全部用户",
     "filter_user": "筛选用户"
   },
-
   "user_overview": {
     "title": "个人概览",
     "description": "查看你的账户状态和使用情况",
@@ -259,7 +250,6 @@
     "today": "今日统计",
     "cumulative": "累计统计"
   },
-
   "users": {
     "title": "用户管理",
     "description": "管理系统用户、角色与余额",
@@ -323,7 +313,6 @@
     "disable_title": "禁用用户",
     "disable_confirm": "确定要禁用用户 {{email}} 吗？禁用后该用户将无法登录和使用 API。"
   },
-
   "accounts": {
     "title": "账号管理",
     "description": "管理上游平台账号，配置认证信息与调度参数",
@@ -385,6 +374,11 @@
     "test_connection": "测试连接",
     "test_modal_title": "测试账号连接",
     "select_model": "选择测试模型",
+    "test_mode": "测试模式",
+    "test_mode_default": "默认 Claude 测试",
+    "test_mode_default_hint": "使用现有 Claude 插件转发格式，适合验证正式链路。",
+    "test_mode_aws_bedrock": "AWS Bedrock 兼容测试",
+    "test_mode_aws_bedrock_hint": "仅本次后台测试不带 beta 参数，不影响客户真实调用。",
     "start_test": "开始测试",
     "retry": "重试",
     "test_ready": "点击「开始测试」按钮开始...",
@@ -499,7 +493,6 @@
     "bulk_all_failed": "全部操作失败",
     "select_proxy": "请选择代理"
   },
-
   "groups": {
     "title": "分组管理",
     "description": "管理模型分组，配置路由与订阅策略",
@@ -583,7 +576,6 @@
     "copy_accounts_empty": "该平台暂无其他分组可复制",
     "copy_accounts_count": "{{count}} 个账号"
   },
-
   "api_keys": {
     "title": "API 密钥",
     "description": "管理 API 访问密钥，设置配额与 IP 控制策略",
@@ -619,7 +611,6 @@
     "today": "今日",
     "thirty_days": "近30天"
   },
-
   "subscriptions": {
     "title": "订阅管理",
     "description": "管理用户订阅，分配与调整订阅计划",
@@ -643,7 +634,6 @@
     "bulk_success": "批量分配成功",
     "adjust_success": "订阅调整成功"
   },
-
   "proxies": {
     "title": "代理池",
     "description": "管理代理服务器，支持 HTTP 和 SOCKS5 协议",
@@ -666,7 +656,6 @@
     "test_success": "连通性测试成功：{{detail}}",
     "test_failed": "连通性测试失败: {{error}}"
   },
-
   "usage": {
     "title": "使用记录",
     "description": "查询请求日志与多维统计分析",
@@ -744,7 +733,6 @@
     "granularity_hour": "按小时",
     "granularity_day": "按天"
   },
-
   "plugins": {
     "title": "插件管理",
     "description": "安装、配置和管理系统插件",
@@ -782,13 +770,11 @@
     "reload_success": "插件热加载成功",
     "dev_badge": "开发"
   },
-
   "settings": {
     "title": "系统设置",
     "description": "管理系统全局配置项",
     "no_settings": "暂无设置项",
     "save_success": "设置已保存",
-
     "tab_site": "站点品牌",
     "tab_registration": "注册认证",
     "tab_defaults": "新用户默认值",
@@ -799,7 +785,7 @@
     "tab_models": "模型目录",
     "tab_system": "系统更新",
     "models_catalog": "模型目录覆盖(动态改价 / 上下架)",
-    "models_catalog_desc": "在此新增模型、覆盖既有模型的基础价、或隐藏模型——无需改代码发版。只列你要改的模型即可,未列出的模型沿用插件内置默认价(安全地板)。这里配的是「基础价」(官方美元价),用户实际扣费 = 基础价 × 分组倍率(分组倍率在分组管理里配,与此独立)。保存后约 1 分钟内生效(或到插件管理点重载立即生效)。",
+    "models_catalog_desc": "在此新增模型、覆盖既有模型的基础价、或隐藏模型——无需改代码发版。只列你要改的模型即可,未列出的模型沿用插件内置默认价(安全地板)。这里配的是「基础价」(官方或渠道基准价,按业务口径决定),用户实际扣费 = 基础价 × 分组倍率(分组倍率在分组管理里配,与此独立)。保存后约 1 分钟内生效(或到插件管理点重载立即生效)。",
     "models_platform_claude": "Claude",
     "models_platform_openai": "OpenAI / Codex",
     "models_platform_kiro": "Kiro",
@@ -817,13 +803,24 @@
     "models_price_w5m": "缓存写 5m",
     "models_price_w1h": "缓存写 1h",
     "models_price_output": "输出",
+    "models_price_prio_label": "Priority 档(可选;新模型留空＝标准×2 自动推导,内置模型沿用内置价)",
+    "models_price_flex_label": "Flex / Batch 档(可选;新模型留空＝标准×0.5 自动推导,内置模型沿用内置价)",
+    "models_price_lc_label": "长上下文阶梯(可选;输入超过阈值时整笔请求按倍率计费;留空＝沿用系列默认)",
+    "models_lc_threshold": "阈值(输入 tokens)",
+    "models_lc_input_mult": "输入倍率",
+    "models_lc_cached_mult": "缓存读倍率",
+    "models_lc_output_mult": "输出倍率",
+    "models_ph_auto2": "标准×2",
+    "models_ph_auto05": "标准×0.5",
+    "models_ph_auto_cached": "输入×0.1",
+    "models_ph_auto_w5m": "输入×1.25",
+    "models_ph_auto_w1h": "输入×2",
     "models_err_id_empty": "第 {{n}} 行:模型 ID 不能为空",
     "models_err_id_invalid": "模型 ID {{id}} 含非法字符(仅允许字母、数字、. _ -)",
     "models_err_upstream_invalid": "上游 ID {{id}} 含非法字符(仅允许字母、数字、. _ -)",
     "models_err_dup": "模型 ID {{id}} 重复",
     "models_err_price": "模型 {{id}} 的价格必须为正数",
     "models_fix_errors": "请先修正模型目录错误再保存。",
-
     "system_update_title": "系统更新",
     "system_current_version": "当前版本",
     "system_latest_version": "最新版本",
@@ -855,7 +852,6 @@
     "system_failed_title": "升级失败",
     "system_last_failed": "上次升级失败",
     "system_restarting_hint": "core 已开始重启，5 秒后页面将自动刷新。如长时间无响应，请到服务器排查 systemd 日志。",
-
     "security_admin_key": "管理员 API Key",
     "security_admin_key_desc": "用于外部系统集成的全局 API Key，拥有完整的管理员权限",
     "security_admin_key_warning": "警告：此密钥拥有完整的管理员权限，请妥善保管。",
@@ -874,7 +870,6 @@
     "security_admin_key_regenerate_confirm_msg": "重新生成后旧密钥将立即失效。确定要继续吗？",
     "security_admin_key_delete_confirm_title": "删除管理员 API Key",
     "security_admin_key_delete_confirm_msg": "删除后此密钥将立即失效，所有使用该密钥的集成都将无法访问。确定要继续吗？",
-
     "site_branding": "站点品牌信息",
     "site_name": "站点名称",
     "site_name_hint": "显示在浏览器标题栏和侧边栏 Logo 旁",
@@ -892,7 +887,6 @@
     "doc_url": "文档链接",
     "home_content": "首页自定义内容",
     "home_content_hint": "支持 HTML，留空则不显示",
-
     "registration_auth": "注册与认证",
     "registration_enabled": "开放注册",
     "registration_enabled_desc": "关闭后新用户无法自行注册，只能由管理员创建",
@@ -901,13 +895,11 @@
     "email_verify_no_smtp": "请先在「邮件配置」中配置 SMTP 后才能开启",
     "email_suffix_whitelist": "注册邮箱后缀白名单",
     "email_suffix_whitelist_hint": "每行一个后缀（如 gmail.com），留空不限制",
-
     "new_user_defaults": "新用户默认值",
     "default_balance": "默认余额",
     "default_balance_hint": "新注册用户的初始余额（美元）",
     "default_concurrency": "默认并发数",
     "default_concurrency_hint": "新注册用户的默认最大并发请求数",
-
     "smtp_config": "SMTP 邮件服务器",
     "smtp_host": "服务器地址",
     "smtp_port": "端口",
@@ -929,7 +921,6 @@
     "smtp_test_prompt": "请输入接收测试邮件的邮箱地址：",
     "smtp_test_recipient": "收件邮箱",
     "smtp_test_success": "测试邮件已发送，请检查收件箱",
-
     "storage_config": "MinIO / S3 / R2 对象存储",
     "s3_endpoint": "Endpoint",
     "s3_endpoint_hint": "MinIO/S3 服务地址，可填写 http://minio:9000 或 s3.amazonaws.com。",
@@ -953,7 +944,6 @@
     "asset_retention_section_hint": "当前仅管理 Studio 任务生命周期。到期后会清理终态任务记录及其关联的输入、输出资源；留空使用默认值，0 表示永久保留。",
     "asset_retention_generated_days": "Studio 任务保留天数",
     "asset_retention_generated_days_hint": "Studio 生成任务、生成图片和任务输入资源会一起清理。留空使用默认值，填 0 可关闭自动清理，默认 7 天。",
-
     "openclaw_quickstart": "一键安装命令",
     "openclaw_quickstart_desc": "根据用户的操作系统选择下面对应的一键安装命令。脚本会自动生成 openclaw.json（Unix 在 ~/.openclaw/，Windows 在 %USERPROFILE%\\.openclaw\\），支持交互式选择模型。",
     "openclaw_install_tab_unix": "Linux / macOS",
@@ -976,15 +966,13 @@
     "openclaw_models_preset_desc": "JSON 数组，管理员预设的可选模型。字段与 openclaw.json 里 provider.models[] 完全一致，额外带一个 label 供一键脚本展示给用户勾选。",
     "openclaw_models_not_array": "预设必须是一个 JSON 数组",
     "landing_pricing": "官网价格表配置",
-    "landing_pricing_desc": "JSON 对象，驱动官网首页 4 张模型价格表（tables.claude-max / claude-aws / claude-kiro / openai）。每行 cells 依次为：模型（model/tag/tagStyle）、官方划线价（strike/note）、售价（strong/note/save，deal:true 高亮列）、省幅胶囊（pill）、说明（text）。留空则官网使用页面内置表；保存后官网刷新即生效，无需发版。",
-    "landing_pricing_invalid": "需为包含 tables 对象的 JSON"
+    "landing_pricing_desc": "JSON 对象，驱动官网首页价格表。tables 可替换内置表（claude-max / claude-aws / claude-kiro / openai）；panels 可新增独立模型页签（key/tab/title/headers/rows）。每行 cells 依次为：模型（model/tag/tagStyle）、官方划线价（strike/note）、售价（strong/note/save，deal:true 高亮列）、省幅胶囊（pill）、说明（text）。留空则官网使用页面内置表；保存后官网刷新即生效。",
+    "landing_pricing_invalid": "需为包含 tables 对象或 panels 数组的 JSON"
   },
-
   "docs": {
     "cta_hint": "准备好了吗？立即开始使用。",
     "toc": "目录"
   },
-
   "profile": {
     "title": "个人资料",
     "description": "查看和编辑个人信息",
@@ -1016,7 +1004,6 @@
     "balance_alert_saved": "余额预警设置已保存",
     "balance_history": "余额记录"
   },
-
   "user_keys": {
     "title": "API 密钥",
     "description": "管理个人 API 访问密钥",
@@ -1071,7 +1058,6 @@
     "ccs_session_expired": "登录会话已失效，请重新使用 API 密钥登录后再尝试导入",
     "codex_config_toml_hint": "请确保以下内容位于 config.toml 文件的开头部分"
   },
-
   "setup": {
     "title": "系统安装向导",
     "step_db": "数据库配置",
@@ -1118,7 +1104,6 @@
     "run_install": "执行安装",
     "installing_btn": "安装中..."
   },
-
   "playground": {
     "title": "AI 对话",
     "workflow_title": "创作中心",
@@ -1226,7 +1211,6 @@
     "edit_generated_image": "编辑这张图",
     "no_image_model_available": "当前没有可用的图像模型，请先选择一个用于编辑。",
     "cancel": "取消",
-
     "wf_nodes": "节点",
     "wf_input": "输入",
     "wf_generation": "生成",
@@ -1238,7 +1222,6 @@
     "wf_running": "运行中...",
     "wf_clear": "清空",
     "wf_quick_input_placeholder": "描述你想生成的内容...(按 Enter 发送)",
-
     "wf_node_text_input": "文本输入",
     "wf_node_image_reference": "图片引用",
     "wf_node_image_generate": "图片生成",
@@ -1247,7 +1230,6 @@
     "wf_node_batch_generate": "批量生成",
     "wf_node_resize": "调整尺寸",
     "wf_node_merge": "合并图片",
-
     "wf_prompt_placeholder": "输入提示词...",
     "wf_select_image": "选择图片",
     "wf_change_image": "更换图片",
@@ -1265,7 +1247,6 @@
     "wf_contains": "包含",
     "wf_equals": "等于",
     "wf_regex": "正则",
-
     "wf_port_text": "文本",
     "wf_port_image": "图片",
     "wf_port_images": "图片",
@@ -1284,9 +1265,72 @@
     "wf_port_layout": "布局",
     "wf_port_width": "宽度",
     "wf_port_height": "高度",
-    "wf_port_resized": "缩放后"
+    "wf_port_resized": "缩放后",
+    "studio_task_queued": "队列中...",
+    "studio_task_failed": "生成失败",
+    "studio_task_processing": "生成中...",
+    "studio_confirm_delete_task": "确定要删除这个任务吗？",
+    "studio_batch_progress": "批量生成 {{done}}/{{total}}",
+    "studio_batch_partial": "成功 {{done}} · 失败 {{failed}}",
+    "studio_batch_done": "批量完成 {{total}} 张",
+    "studio_retry_failed": "重试失败的 {{count}} 张",
+    "studio_delete": "删除",
+    "studio_queue_position": "队列中 · 第 {{pos}} 位",
+    "studio_eta": "已用 {{elapsed}}s · 约 {{eta}}s",
+    "studio_retry": "重试",
+    "studio_confirm_regenerate": "确定要重新生成吗？将消耗一次生成额度。",
+    "studio_confirm_delete": "确定要删除这张图片吗？",
+    "studio_download": "下载",
+    "studio_regenerate": "重试",
+    "studio_use_as_reference": "参考图",
+    "studio_edit_this": "编辑这张",
+    "studio_gallery_empty": "还没有生成的图片",
+    "studio_gallery_empty_hint": "在下方输入框输入提示词，开始创作",
+    "studio_shortcut_send": "发送",
+    "studio_shortcut_newline": "换行",
+    "studio_group": "通道",
+    "studio_projects": "项目",
+    "studio_project_new": "新建项目",
+    "studio_all_works": "全部作品",
+    "studio_project_rename": "重命名",
+    "studio_project_delete": "删除",
+    "studio_back_console": "返回控制台",
+    "studio_console": "控制台",
+    "studio_inspiration_gallery": "灵感画廊",
+    "studio_close": "关闭",
+    "studio_source_image_keyboard_hint": "参考图，按回车打开，按 Delete 删除",
+    "studio_remove_source_image": "移除参考图",
+    "studio_clear_all": "清除全部",
+    "studio_clear_selection": "清除选区",
+    "studio_add_reference": "添加参考图",
+    "studio_generating": "生成中...",
+    "studio_batch_generate": "批量生成",
+    "studio_batch_unit": "张",
+    "studio_batch_process": "批量处理",
+    "studio_batch_images": "张图片",
+    "studio_batch_multi_prompt": "多提示词",
+    "studio_batch_multi_image": "多图片",
+    "studio_batch_prompts": "批量提示词",
+    "studio_batch_placeholder": "每行一个提示词...",
+    "studio_batch_empty": "尚未输入提示词",
+    "studio_batch_upload": "上传图片",
+    "studio_batch_add_images": "点击或拖拽添加图片",
+    "studio_batch_shared_prompt": "统一提示词",
+    "studio_batch_shared_placeholder": "对所有图片应用相同的描述...",
+    "studio_model": "模型",
+    "studio_size": "尺寸",
+    "studio_source_image": "参考图片",
+    "studio_remove_image": "移除图片",
+    "studio_upload_hint": "点击上传或拖拽图片到此处",
+    "studio_prompt": "提示词",
+    "studio_img2img_placeholder": "描述你想要的变化...",
+    "studio_generate": "生成",
+    "studio_selection_set": "已选定修改区域，拖拽可重新选择",
+    "studio_selection_hint": "在图片上拖拽选择要修改的区域",
+    "studio_inpaint_placeholder": "描述要修改的区域...",
+    "studio_prompt_placeholder": "描述你想生成的图片...",
+    "studio_count": "数量"
   },
-
   "pagination": {
     "total": "共 {{count}} 条",
     "page": "第 {{page}} / {{total}} 页",
@@ -1294,13 +1338,11 @@
     "prev": "上一页",
     "next": "下一页"
   },
-
   "dialog": {
     "confirm_title": "请确认",
     "cancel": "取消",
     "confirm": "确认"
   },
-
   "error": {
     "page_error": "页面出现了错误",
     "unknown": "未知错误",
