@@ -1147,6 +1147,7 @@
     "attach_images": "Attach images",
     "file": "File",
     "attach_files": "Attach files",
+    "drop_to_attach": "Drop to attach",
     "attachment_processing": "Processing attachments…",
     "attachment_optimized": "Optimized {{from}} → {{to}}",
     "attachment_optimized_badge": "Optimized",

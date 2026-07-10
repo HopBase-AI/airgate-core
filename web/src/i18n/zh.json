@@ -1150,6 +1150,7 @@
     "attach_images": "添加图片",
     "file": "文件",
     "attach_files": "添加文件",
+    "drop_to_attach": "松开以添加附件",
     "attachment_processing": "解析附件中…",
     "attachment_optimized": "已优化 {{from}} → {{to}}",
     "attachment_optimized_badge": "已优化",
