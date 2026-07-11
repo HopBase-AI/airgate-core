@@ -8,8 +8,8 @@ import { authApi } from '../shared/api/auth';
 import { usersApi } from '../shared/api/users';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { useStatusPageEnabled } from '../shared/hooks/useStatusPageEnabled';
-import { ApiError, setSessionAPIKey, setToken } from '../shared/api/client';
-import { Mail, Lock, User, ArrowRight, Sun, Moon, ShieldCheck, Key, Activity, Layers, Gauge, BarChart3 } from 'lucide-react';
+import { ApiError, setToken } from '../shared/api/client';
+import { Mail, Lock, User, ArrowRight, Sun, Moon, ShieldCheck, Activity, Layers, Gauge, BarChart3 } from 'lucide-react';
 
 /* ==================== 第三方登录 ==================== */
 
@@ -80,7 +80,7 @@ function OAuthButtons({
   );
 }
 
-type TabKey = 'login' | 'register' | 'apikey';
+type TabKey = 'login' | 'register';
 
 function AgreementCheckbox({
   checked,
@@ -517,83 +517,6 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-/* ==================== API Key 登录表单 ==================== */
-
-function APIKeyLoginForm() {
-  const navigate = useNavigate();
-  const { login } = useAuth();
-  const { t } = useTranslation();
-
-  const [apiKey, setApiKey] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [acceptedAgreement, setAcceptedAgreement] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!acceptedAgreement) { setError(t('auth.agreement_required')); return; }
-    setLoading(true);
-    setError('');
-
-    try {
-      const resp = await authApi.loginByAPIKey({ key: apiKey });
-      // 把用户输入的原文 Key 暂存到 sessionStorage，供 CCS 导入等需要原文的功能使用。
-      setSessionAPIKey(apiKey);
-      login(resp.token, { ...resp.user, api_key_id: resp.api_key_id, api_key_name: resp.api_key_name });
-      navigate({ to: '/' });
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else {
-        setError(t('auth.login_failed'));
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <Form onSubmit={handleSubmit} className="space-y-4">
-      <HeroTextField fullWidth isRequired>
-        <Label>API Key</Label>
-        <div className="relative">
-          <Key className="pointer-events-none absolute left-3 top-1/2 z-10 w-4 h-4 -translate-y-1/2 text-text-tertiary" />
-          <Input
-            className="pl-9"
-            name="api_key"
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="sk-..."
-            autoComplete="off"
-            autoFocus
-            required
-          />
-        </div>
-      </HeroTextField>
-      <p className="text-[11px] text-text-tertiary">{t('auth.apikey_login_hint')}</p>
-      {error && (
-        <Alert status="danger">
-          <Alert.Content>
-            <Alert.Description>{error}</Alert.Description>
-          </Alert.Content>
-        </Alert>
-      )}
-      <AgreementCheckbox
-        checked={acceptedAgreement}
-        onChange={(selected) => {
-          setAcceptedAgreement(selected);
-          if (selected && error === t('auth.agreement_required')) setError('');
-        }}
-      />
-      <Button type="submit" isDisabled={loading || !acceptedAgreement} className="w-full h-11" variant="primary" aria-busy={loading}>
-        <ArrowRight className="w-4 h-4" />
-        {t('common.login')}
-      </Button>
-    </Form>
-  );
-}
-
 /* ==================== 登录页主组件 ==================== */
 
 export default function LoginPage() {
@@ -758,7 +681,6 @@ export default function LoginPage() {
               {site.registration_enabled ? (
                 <Tabs.Tab id="register">{t('common.register')}</Tabs.Tab>
               ) : null}
-              <Tabs.Tab id="apikey">API Key</Tabs.Tab>
             </Tabs.List>
           </Tabs>
 
@@ -790,9 +712,7 @@ export default function LoginPage() {
               </Alert>
             )}
 
-            {activeTab === 'apikey' ? (
-              <APIKeyLoginForm />
-            ) : activeTab === 'register' && site.registration_enabled ? (
+            {activeTab === 'register' && site.registration_enabled ? (
               <RegisterForm onSuccess={handleRegisterSuccess} />
             ) : (
               <LoginForm />

@@ -35,6 +35,18 @@ const DEFAULT_KEYS = [
   'default_balance', 'default_concurrency',
 ] as const;
 
+// 第三方登录（OAuth）配置：与安全 tab 一起保存，group=oauth。
+// 公开设置只暴露 *_enabled 开关，client_id/secret 仅管理员接口可见。
+const OAUTH_KEYS = [
+  'oauth_google_enabled', 'oauth_google_client_id', 'oauth_google_client_secret',
+  'oauth_github_enabled', 'oauth_github_client_id', 'oauth_github_client_secret',
+] as const;
+
+const OAUTH_PROVIDERS = [
+  { id: 'google', label: 'Google' },
+  { id: 'github', label: 'GitHub' },
+] as const;
+
 const SMTP_KEYS = [
   'smtp_host', 'smtp_port', 'smtp_username', 'smtp_password',
   'smtp_from_email', 'smtp_from_name', 'smtp_use_tls',
@@ -298,6 +310,11 @@ export default function SettingsPage() {
           value: values[key] ?? '',
           group: 'defaults',
         })),
+        ...OAUTH_KEYS.map((key) => ({
+          key,
+          value: values[key] ?? '',
+          group: 'oauth',
+        })),
       ];
     }
 
@@ -543,6 +560,54 @@ export default function SettingsPage() {
                         placeholder="gmail.com&#10;outlook.com"
                       />
                     </Field>
+                  </div>
+                </SettingsSection>
+
+                <SettingsSection title={t('settings.oauth_section', { defaultValue: '第三方登录' })}>
+                  <div className="space-y-6">
+                    {OAUTH_PROVIDERS.map(({ id, label }) => (
+                      <div key={id} className="rounded-lg border border-glass-border p-4 space-y-4">
+                        <NativeSwitch
+                          isSelected={boolVal(`oauth_${id}_enabled`)}
+                          label={(
+                            <>
+                              <span className="text-sm font-medium text-text">
+                                {t('settings.oauth_provider_enabled', { defaultValue: '启用 {{provider}} 登录', provider: label })}
+                              </span>
+                              <span className="block text-xs text-text-tertiary">
+                                {t('settings.oauth_provider_enabled_desc', { defaultValue: '需先在 {{provider}} 侧创建 OAuth 应用并填入下方凭证', provider: label })}
+                              </span>
+                            </>
+                          )}
+                          onChange={(v) => set(`oauth_${id}_enabled`, String(v))}
+                        />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <Field label="Client ID">
+                            <Input
+                              value={val(`oauth_${id}_client_id`)}
+                              onChange={(e) => set(`oauth_${id}_client_id`, e.target.value)}
+                              placeholder={id === 'google' ? 'xxx.apps.googleusercontent.com' : 'Ov23...'}
+                              autoComplete="off"
+                            />
+                          </Field>
+                          <Field label="Client Secret">
+                            <Input
+                              type="password"
+                              value={val(`oauth_${id}_client_secret`)}
+                              onChange={(e) => set(`oauth_${id}_client_secret`, e.target.value)}
+                              placeholder="••••••••"
+                              autoComplete="new-password"
+                            />
+                          </Field>
+                        </div>
+                        <p className="text-xs text-text-tertiary break-all">
+                          {t('settings.oauth_callback_hint', { defaultValue: '回调地址（需与平台侧登记完全一致）：' })}
+                          <code className="ml-1 font-mono">
+                            {`${(val('api_base_url') || 'https://<api-domain>').replace(/\/+$/, '')}/api/v1/auth/oauth/${id}/callback`}
+                          </code>
+                        </p>
+                      </div>
+                    ))}
                   </div>
                 </SettingsSection>
 
