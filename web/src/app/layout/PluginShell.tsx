@@ -6,6 +6,7 @@ import { getTokenRole } from '../../shared/api/client';
 import { setStoredLanguage } from '../../i18n';
 import { useTheme } from '../providers/ThemeProvider';
 import { PluginBreadcrumbs, type PluginBreadcrumbItem } from '../../shared/components/PluginBreadcrumbs';
+import { AnnouncementBanner } from '../../shared/components/AnnouncementBanner';
 import {
   Languages,
   LogOut,
@@ -139,6 +140,7 @@ export function PluginShell({
         </div>
       </header>
 
+      <AnnouncementBanner className="mx-2.5 mt-2 sm:mx-4" />
       <main className="min-h-0 flex-1 overflow-hidden">
         {children}
       </main>

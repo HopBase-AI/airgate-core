@@ -25,6 +25,8 @@ import { CommonModal } from '../../shared/components/CommonModal';
 const SITE_KEYS = [
   'site_name', 'site_subtitle', 'site_logo', 'api_base_url',
   'contact_info', 'doc_url', 'landing_pricing_json',
+  // 整站通知横幅（放 site 组：随站点 tab 保存，且 site 组全量走公开设置接口）
+  'announcement_enabled', 'announcement_level', 'announcement_content',
 ] as const;
 
 const REG_KEYS = [
@@ -527,6 +529,43 @@ export default function SettingsPage() {
                   {landingPricingError && (
                     <p className="text-[11px] text-danger mt-1.5">{landingPricingError}</p>
                   )}
+                </SettingsSection>
+
+                <SettingsSection
+                  description={t('settings.announcement_desc')}
+                  title={t('settings.announcement_title')}
+                >
+                  <div className="space-y-4">
+                    <NativeSwitch
+                      isSelected={boolVal('announcement_enabled')}
+                      label={<span className="text-sm font-medium text-text">{t('settings.announcement_enabled')}</span>}
+                      onChange={(v) => set('announcement_enabled', String(v))}
+                    />
+                    <Field label={t('settings.announcement_level')}>
+                      <div className="flex max-w-md gap-1">
+                        {(['info', 'warning', 'danger'] as const).map((lv) => (
+                          <Button
+                            key={lv}
+                            fullWidth
+                            size="sm"
+                            variant={(val('announcement_level') || 'info') === lv ? 'primary' : 'secondary'}
+                            onPress={() => set('announcement_level', lv)}
+                          >
+                            {t(`settings.announcement_level_${lv}`)}
+                          </Button>
+                        ))}
+                      </div>
+                    </Field>
+                    <Field label={t('settings.announcement_content')}>
+                      <TextArea
+                        aria-label={t('settings.announcement_content')}
+                        value={val('announcement_content')}
+                        onChange={(e) => set('announcement_content', e.target.value)}
+                        className="h-24 w-full text-sm leading-5"
+                        placeholder={t('settings.announcement_content_ph')}
+                      />
+                    </Field>
+                  </div>
                 </SettingsSection>
               </div>
               {saveAction}

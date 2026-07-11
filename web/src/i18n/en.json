@@ -1013,7 +1013,16 @@
     "landing_pricing_invalid": "Must be a JSON object containing a tables object or panels array",
     "models_builtin_title": "Built-in models (billed at built-in base price unless overridden)",
     "models_builtin_hint": "These are the plugin's built-in models and base prices, reported by the plugin. Click \"Override\" to create an editable entry; leave fields empty to keep built-in defaults.",
-    "models_builtin_override": "Override"
+    "models_builtin_override": "Override",
+    "announcement_title": "Site-wide Announcement",
+    "announcement_desc": "When enabled, a banner is shown at the top of every console page for all users. Users can dismiss it; it reappears for everyone when the content or level changes.",
+    "announcement_enabled": "Enable announcement banner",
+    "announcement_level": "Level",
+    "announcement_level_info": "Info",
+    "announcement_level_warning": "Warning",
+    "announcement_level_danger": "Critical",
+    "announcement_content": "Content",
+    "announcement_content_ph": "e.g. Scheduled maintenance tonight 22:00–23:00; brief interruptions possible."
   },
   "docs": {
     "cta_hint": "Ready to start? Jump in now.",

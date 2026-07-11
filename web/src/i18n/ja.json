@@ -1011,7 +1011,16 @@
     "landing_pricing_invalid": "tables オブジェクトまたは panels 配列を含む JSON である必要があります",
     "models_builtin_title": "組み込みモデル（未上書き時は組み込み基本価格で課金）",
     "models_builtin_hint": "以下はプラグインが報告した組み込みモデルと基本価格です。「上書き」をクリックすると編集可能な項目が作成されます。空欄のままのフィールドは組み込みのデフォルトを引き継ぎます。",
-    "models_builtin_override": "上書き"
+    "models_builtin_override": "上書き",
+    "announcement_title": "サイト全体のお知らせ",
+    "announcement_desc": "有効にするとコンソール全ページの上部にバナーを表示します。ユーザーは閉じることができ、内容やレベルを更新すると全員に再表示されます。",
+    "announcement_enabled": "お知らせバナーを有効化",
+    "announcement_level": "レベル",
+    "announcement_level_info": "情報",
+    "announcement_level_warning": "注意",
+    "announcement_level_danger": "緊急",
+    "announcement_content": "内容",
+    "announcement_content_ph": "例：本日 22:00〜23:00 にメンテナンスを実施します。短時間の中断が発生する場合があります。"
   },
   "docs": {
     "cta_hint": "準備はできましたか？今すぐ利用を始めましょう。",

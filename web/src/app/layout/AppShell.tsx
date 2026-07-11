@@ -15,6 +15,7 @@ import { effectiveDocUrl } from '../../shared/utils/docUrl';
 import { useIsMobile } from '../../shared/hooks/useMediaQuery';
 import { usePersistentBoolean } from '../../shared/hooks/usePersistentBoolean';
 import { TopLoadingLine } from '../../shared/components/PageLoading';
+import { AnnouncementBanner } from '../../shared/components/AnnouncementBanner';
 import {
   LayoutDashboard,
   Users,
@@ -573,6 +574,7 @@ export function AppShell({ children }: AppShellProps) {
 
         <main className="min-h-0 flex-1 overflow-auto bg-bg pt-12 ag-main">
           <div className="ag-main-content mx-auto w-full max-w-[1920px] p-4 md:p-6 2xl:p-8">
+            <AnnouncementBanner className="mb-4" />
             {children}
           </div>
         </main>

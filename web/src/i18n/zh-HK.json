@@ -1011,7 +1011,16 @@
     "landing_pricing_invalid": "需為包含 tables 對象或 panels 數組的 JSON",
     "models_builtin_title": "內建模型（未覆蓋時按內建基礎價計費）",
     "models_builtin_hint": "以下為插件內建模型與內建基礎價，來自插件上報。點「覆蓋」產生可編輯條目，只改你要改的欄位，留空欄位繼續沿用內建預設。",
-    "models_builtin_override": "覆蓋"
+    "models_builtin_override": "覆蓋",
+    "announcement_title": "全站通知",
+    "announcement_desc": "啟用後橫幅展示在控制台所有頁面頂部,全部用戶可見、可手動關閉;內容或級別更新後會對所有人重新彈出。",
+    "announcement_enabled": "啟用通知橫幅",
+    "announcement_level": "級別",
+    "announcement_level_info": "資訊",
+    "announcement_level_warning": "提醒",
+    "announcement_level_danger": "緊急",
+    "announcement_content": "通知內容",
+    "announcement_content_ph": "例如:今晚 22:00-23:00 系統維護,期間服務可能短暫中斷。"
   },
   "docs": {
     "cta_hint": "准備好了吗？立即開始使用。",
