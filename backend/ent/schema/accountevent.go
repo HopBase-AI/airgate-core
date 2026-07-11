@@ -39,6 +39,10 @@ func (AccountEvent) Fields() []ent.Field {
 			Comment("事件来源：forward（转发判决）/ probe（配额巡检）/ manual（管理员操作）"),
 		field.Int("upstream_status").Default(0).
 			Comment("上游 HTTP 状态码，无则为 0"),
+		field.Int("user_id").Default(0).
+			Comment("触发本次事件请求的终端用户 ID（转发判决链路）；探测/手动/无用户上下文为 0。修复后据此定位要通知的用户"),
+		field.Int("api_key_id").Default(0).
+			Comment("触发本次事件请求所用的 API Key ID；无则为 0"),
 		field.Time("state_until").Optional().Nillable().
 			Comment("rate_limited / degraded 的冷却到期时间"),
 		field.Time("created_at").Default(timeNow).Immutable(),

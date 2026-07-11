@@ -25,6 +25,10 @@ const (
 	FieldSource = "source"
 	// FieldUpstreamStatus holds the string denoting the upstream_status field in the database.
 	FieldUpstreamStatus = "upstream_status"
+	// FieldUserID holds the string denoting the user_id field in the database.
+	FieldUserID = "user_id"
+	// FieldAPIKeyID holds the string denoting the api_key_id field in the database.
+	FieldAPIKeyID = "api_key_id"
 	// FieldStateUntil holds the string denoting the state_until field in the database.
 	FieldStateUntil = "state_until"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
@@ -50,6 +54,8 @@ var Columns = []string{
 	FieldFamily,
 	FieldSource,
 	FieldUpstreamStatus,
+	FieldUserID,
+	FieldAPIKeyID,
 	FieldStateUntil,
 	FieldCreatedAt,
 }
@@ -84,6 +90,10 @@ var (
 	DefaultSource string
 	// DefaultUpstreamStatus holds the default value on creation for the "upstream_status" field.
 	DefaultUpstreamStatus int
+	// DefaultUserID holds the default value on creation for the "user_id" field.
+	DefaultUserID int
+	// DefaultAPIKeyID holds the default value on creation for the "api_key_id" field.
+	DefaultAPIKeyID int
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 )
@@ -147,6 +157,16 @@ func BySource(opts ...sql.OrderTermOption) OrderOption {
 // ByUpstreamStatus orders the results by the upstream_status field.
 func ByUpstreamStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUpstreamStatus, opts...).ToFunc()
+}
+
+// ByUserID orders the results by the user_id field.
+func ByUserID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUserID, opts...).ToFunc()
+}
+
+// ByAPIKeyID orders the results by the api_key_id field.
+func ByAPIKeyID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAPIKeyID, opts...).ToFunc()
 }
 
 // ByStateUntil orders the results by the state_until field.

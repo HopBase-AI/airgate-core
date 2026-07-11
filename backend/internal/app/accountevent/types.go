@@ -23,6 +23,13 @@ type Event struct {
 	UpstreamStatus int
 	StateUntil     *time.Time
 	CreatedAt      time.Time
+
+	// 触发者归属（转发判决链路带入；探测/手动事件为 0/空）。
+	// UserEmail / APIKeyName 由 store 读取时联查填充，用户/密钥已删除时为空。
+	UserID     int
+	UserEmail  string
+	APIKeyID   int
+	APIKeyName string
 }
 
 // ListFilter 事件列表筛选条件。

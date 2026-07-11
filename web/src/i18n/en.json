@@ -149,7 +149,8 @@
     "type_manual_recovered": "Manually Recovered",
     "source_forward": "Forward",
     "source_probe": "Probe",
-    "source_manual": "Manual"
+    "source_manual": "Manual",
+    "triggered_by": "Triggered By"
   },
   "plugin_shell": {
     "breadcrumbs": "Breadcrumbs",
@@ -1119,7 +1120,8 @@
     "one_click_generate": "Generate Setup Command",
     "one_click_pregen_hint": "This generates a one-time setup command for this key (valid for 15 minutes, single use). Generating changes nothing on your machine — configuration is only written when you run the command in your terminal.",
     "one_click_status_verified_codex": "All set! Open a new terminal and run codex to get started.",
-    "one_click_ccs_title": "Switching between multiple configs?"
+    "one_click_ccs_title": "Switching between multiple configs?",
+    "one_click_codex_unavailable": "This key's plan does not support Codex CLI — a Codex / GPT plan key is required."
   },
   "setup": {
     "title": "System Setup",

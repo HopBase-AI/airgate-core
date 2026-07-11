@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	entsql "entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/schema"
 
 	"github.com/DouDOU-start/airgate-core/ent"
@@ -21,8 +22,18 @@ import (
 
 func newBillingTestDB(t *testing.T, name string) *ent.Client {
 	t.Helper()
+	// 单连接序列化：Recorder 的异步 flush 与测试断言查询并发落在 shared-cache
+	// 内存库的不同连接上会偶发 "database table is locked"（SQLITE_LOCKED，
+	// busy_timeout 无效），是 CI 随机红的根因之一。生产是 Postgres 无此问题。
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared&_fk=1", name)
-	db := enttest.Open(t, "sqlite3", dsn, enttest.WithMigrateOptions(schema.WithGlobalUniqueID(false)))
+	drv, err := entsql.Open("sqlite3", dsn)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	drv.DB().SetMaxOpenConns(1)
+	db := enttest.NewClient(t,
+		enttest.WithOptions(ent.Driver(drv)),
+		enttest.WithMigrateOptions(schema.WithGlobalUniqueID(false)))
 	t.Cleanup(func() { _ = db.Close() })
 	return db
 }

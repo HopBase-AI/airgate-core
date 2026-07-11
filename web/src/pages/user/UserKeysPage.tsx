@@ -512,15 +512,6 @@ export default function UserKeysPage() {
                       >
                         <Rocket className="w-3.5 h-3.5" style={{ color: 'var(--ag-primary)' }} />
                       </Button>
-                      <Button
-                        isIconOnly
-                        size="sm"
-                        variant="secondary"
-                        aria-label={t('user_keys.use_key')}
-                        onPress={() => openUseKeyModal(row)}
-                      >
-                        <Terminal className="w-3.5 h-3.5" />
-                      </Button>
                       <Dropdown>
                         <Dropdown.Trigger
                           aria-label={t('common.more')}
@@ -533,6 +524,9 @@ export default function UserKeysPage() {
                             aria-label={t('common.actions')}
                             onAction={(key) => {
                               switch (String(key)) {
+                                case 'use_key':
+                                  openUseKeyModal(row);
+                                  break;
                                 case 'import_ccs':
                                   openCcsModal(row);
                                   break;
@@ -551,6 +545,12 @@ export default function UserKeysPage() {
                               }
                             }}
                           >
+                            <Dropdown.Item id="use_key" textValue={t('user_keys.use_key')}>
+                              <span className="flex items-center gap-2">
+                                <Terminal className="w-3.5 h-3.5" style={{ color: 'var(--ag-text-tertiary)' }} />
+                                {t('user_keys.use_key')}
+                              </span>
+                            </Dropdown.Item>
                             <Dropdown.Item id="import_ccs" textValue={t('user_keys.import_ccs')}>
                               <span className="flex items-center gap-2">
                                 <Upload className="w-3.5 h-3.5" style={{ color: 'var(--ag-text-tertiary)' }} />

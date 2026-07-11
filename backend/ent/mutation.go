@@ -3221,6 +3221,10 @@ type AccountEventMutation struct {
 	source             *string
 	upstream_status    *int
 	addupstream_status *int
+	user_id            *int
+	adduser_id         *int
+	api_key_id         *int
+	addapi_key_id      *int
 	state_until        *time.Time
 	created_at         *time.Time
 	clearedFields      map[string]struct{}
@@ -3529,6 +3533,118 @@ func (m *AccountEventMutation) ResetUpstreamStatus() {
 	m.addupstream_status = nil
 }
 
+// SetUserID sets the "user_id" field.
+func (m *AccountEventMutation) SetUserID(i int) {
+	m.user_id = &i
+	m.adduser_id = nil
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *AccountEventMutation) UserID() (r int, exists bool) {
+	v := m.user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the AccountEvent entity.
+// If the AccountEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountEventMutation) OldUserID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// AddUserID adds i to the "user_id" field.
+func (m *AccountEventMutation) AddUserID(i int) {
+	if m.adduser_id != nil {
+		*m.adduser_id += i
+	} else {
+		m.adduser_id = &i
+	}
+}
+
+// AddedUserID returns the value that was added to the "user_id" field in this mutation.
+func (m *AccountEventMutation) AddedUserID() (r int, exists bool) {
+	v := m.adduser_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *AccountEventMutation) ResetUserID() {
+	m.user_id = nil
+	m.adduser_id = nil
+}
+
+// SetAPIKeyID sets the "api_key_id" field.
+func (m *AccountEventMutation) SetAPIKeyID(i int) {
+	m.api_key_id = &i
+	m.addapi_key_id = nil
+}
+
+// APIKeyID returns the value of the "api_key_id" field in the mutation.
+func (m *AccountEventMutation) APIKeyID() (r int, exists bool) {
+	v := m.api_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAPIKeyID returns the old "api_key_id" field's value of the AccountEvent entity.
+// If the AccountEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountEventMutation) OldAPIKeyID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAPIKeyID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAPIKeyID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAPIKeyID: %w", err)
+	}
+	return oldValue.APIKeyID, nil
+}
+
+// AddAPIKeyID adds i to the "api_key_id" field.
+func (m *AccountEventMutation) AddAPIKeyID(i int) {
+	if m.addapi_key_id != nil {
+		*m.addapi_key_id += i
+	} else {
+		m.addapi_key_id = &i
+	}
+}
+
+// AddedAPIKeyID returns the value that was added to the "api_key_id" field in this mutation.
+func (m *AccountEventMutation) AddedAPIKeyID() (r int, exists bool) {
+	v := m.addapi_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAPIKeyID resets all changes to the "api_key_id" field.
+func (m *AccountEventMutation) ResetAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+}
+
 // SetStateUntil sets the "state_until" field.
 func (m *AccountEventMutation) SetStateUntil(t time.Time) {
 	m.state_until = &t
@@ -3687,7 +3803,7 @@ func (m *AccountEventMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AccountEventMutation) Fields() []string {
-	fields := make([]string, 0, 7)
+	fields := make([]string, 0, 9)
 	if m.event_type != nil {
 		fields = append(fields, accountevent.FieldEventType)
 	}
@@ -3702,6 +3818,12 @@ func (m *AccountEventMutation) Fields() []string {
 	}
 	if m.upstream_status != nil {
 		fields = append(fields, accountevent.FieldUpstreamStatus)
+	}
+	if m.user_id != nil {
+		fields = append(fields, accountevent.FieldUserID)
+	}
+	if m.api_key_id != nil {
+		fields = append(fields, accountevent.FieldAPIKeyID)
 	}
 	if m.state_until != nil {
 		fields = append(fields, accountevent.FieldStateUntil)
@@ -3727,6 +3849,10 @@ func (m *AccountEventMutation) Field(name string) (ent.Value, bool) {
 		return m.Source()
 	case accountevent.FieldUpstreamStatus:
 		return m.UpstreamStatus()
+	case accountevent.FieldUserID:
+		return m.UserID()
+	case accountevent.FieldAPIKeyID:
+		return m.APIKeyID()
 	case accountevent.FieldStateUntil:
 		return m.StateUntil()
 	case accountevent.FieldCreatedAt:
@@ -3750,6 +3876,10 @@ func (m *AccountEventMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldSource(ctx)
 	case accountevent.FieldUpstreamStatus:
 		return m.OldUpstreamStatus(ctx)
+	case accountevent.FieldUserID:
+		return m.OldUserID(ctx)
+	case accountevent.FieldAPIKeyID:
+		return m.OldAPIKeyID(ctx)
 	case accountevent.FieldStateUntil:
 		return m.OldStateUntil(ctx)
 	case accountevent.FieldCreatedAt:
@@ -3798,6 +3928,20 @@ func (m *AccountEventMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetUpstreamStatus(v)
 		return nil
+	case accountevent.FieldUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case accountevent.FieldAPIKeyID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAPIKeyID(v)
+		return nil
 	case accountevent.FieldStateUntil:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -3823,6 +3967,12 @@ func (m *AccountEventMutation) AddedFields() []string {
 	if m.addupstream_status != nil {
 		fields = append(fields, accountevent.FieldUpstreamStatus)
 	}
+	if m.adduser_id != nil {
+		fields = append(fields, accountevent.FieldUserID)
+	}
+	if m.addapi_key_id != nil {
+		fields = append(fields, accountevent.FieldAPIKeyID)
+	}
 	return fields
 }
 
@@ -3833,6 +3983,10 @@ func (m *AccountEventMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case accountevent.FieldUpstreamStatus:
 		return m.AddedUpstreamStatus()
+	case accountevent.FieldUserID:
+		return m.AddedUserID()
+	case accountevent.FieldAPIKeyID:
+		return m.AddedAPIKeyID()
 	}
 	return nil, false
 }
@@ -3848,6 +4002,20 @@ func (m *AccountEventMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddUpstreamStatus(v)
+		return nil
+	case accountevent.FieldUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUserID(v)
+		return nil
+	case accountevent.FieldAPIKeyID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAPIKeyID(v)
 		return nil
 	}
 	return fmt.Errorf("unknown AccountEvent numeric field %s", name)
@@ -3899,6 +4067,12 @@ func (m *AccountEventMutation) ResetField(name string) error {
 		return nil
 	case accountevent.FieldUpstreamStatus:
 		m.ResetUpstreamStatus()
+		return nil
+	case accountevent.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case accountevent.FieldAPIKeyID:
+		m.ResetAPIKeyID()
 		return nil
 	case accountevent.FieldStateUntil:
 		m.ResetStateUntil()

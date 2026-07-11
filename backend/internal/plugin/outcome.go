@@ -190,6 +190,9 @@ func (f *Forwarder) applyOutcome(ctx context.Context, state *forwardState, execu
 		Duration:       execution.duration,
 		IsPool:         state.account != nil && state.account.UpstreamIsPool,
 		UpstreamStatus: execution.outcome.Upstream.StatusCode,
+		// 触发者归属:异常事件带上请求方,修复后知道该通知哪个用户。
+		UserID:   forwardStateUserID(state),
+		APIKeyID: forwardStateKeyID(state),
 		// Family 让限流冷却落到 (account, family) 维度。撞 gpt-image 4000/min
 		// 时账号上 chat 模型仍可调用，避免单模型限流误伤整账号。
 		// 优先从插件目录查 Metadata["family"]，未声明时回退到硬编码规则。
@@ -207,6 +210,21 @@ func (f *Forwarder) applyOutcome(ctx context.Context, state *forwardState, execu
 			"account_id", state.account.ID,
 			"error", execution.err)
 	}
+}
+
+// forwardStateUserID / forwardStateKeyID 从转发状态提取触发者，鉴权信息缺失时为 0。
+func forwardStateUserID(state *forwardState) int {
+	if state == nil || state.keyInfo == nil {
+		return 0
+	}
+	return state.keyInfo.UserID
+}
+
+func forwardStateKeyID(state *forwardState) int {
+	if state == nil || state.keyInfo == nil {
+		return 0
+	}
+	return state.keyInfo.KeyID
 }
 
 // judgmentReason 优先 outcome.Reason，其次 err.Error()。

@@ -16,4 +16,10 @@ type AccountEventResp struct {
 	UpstreamStatus int    `json:"upstream_status,omitempty"`
 	StateUntil     string `json:"state_until,omitempty"`
 	CreatedAt      string `json:"created_at"`
+
+	// 触发者归属（转发链路带入；探测/手动事件为 0/空）。
+	UserID     int    `json:"user_id,omitempty"`
+	UserEmail  string `json:"user_email,omitempty"`
+	APIKeyID   int    `json:"api_key_id,omitempty"`
+	APIKeyName string `json:"api_key_name,omitempty"`
 }

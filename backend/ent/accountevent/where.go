@@ -75,6 +75,16 @@ func UpstreamStatus(v int) predicate.AccountEvent {
 	return predicate.AccountEvent(sql.FieldEQ(FieldUpstreamStatus, v))
 }
 
+// UserID applies equality check predicate on the "user_id" field. It's identical to UserIDEQ.
+func UserID(v int) predicate.AccountEvent {
+	return predicate.AccountEvent(sql.FieldEQ(FieldUserID, v))
+}
+
+// APIKeyID applies equality check predicate on the "api_key_id" field. It's identical to APIKeyIDEQ.
+func APIKeyID(v int) predicate.AccountEvent {
+	return predicate.AccountEvent(sql.FieldEQ(FieldAPIKeyID, v))
+}
+
 // StateUntil applies equality check predicate on the "state_until" field. It's identical to StateUntilEQ.
 func StateUntil(v time.Time) predicate.AccountEvent {
 	return predicate.AccountEvent(sql.FieldEQ(FieldStateUntil, v))
@@ -338,6 +348,86 @@ func UpstreamStatusLT(v int) predicate.AccountEvent {
 // UpstreamStatusLTE applies the LTE predicate on the "upstream_status" field.
 func UpstreamStatusLTE(v int) predicate.AccountEvent {
 	return predicate.AccountEvent(sql.FieldLTE(FieldUpstreamStatus, v))
+}
+
+// UserIDEQ applies the EQ predicate on the "user_id" field.
+func UserIDEQ(v int) predicate.AccountEvent {
+	return predicate.AccountEvent(sql.FieldEQ(FieldUserID, v))
+}
+
+// UserIDNEQ applies the NEQ predicate on the "user_id" field.
+func UserIDNEQ(v int) predicate.AccountEvent {
+	return predicate.AccountEvent(sql.FieldNEQ(FieldUserID, v))
+}
+
+// UserIDIn applies the In predicate on the "user_id" field.
+func UserIDIn(vs ...int) predicate.AccountEvent {
+	return predicate.AccountEvent(sql.FieldIn(FieldUserID, vs...))
+}
+
+// UserIDNotIn applies the NotIn predicate on the "user_id" field.
+func UserIDNotIn(vs ...int) predicate.AccountEvent {
+	return predicate.AccountEvent(sql.FieldNotIn(FieldUserID, vs...))
+}
+
+// UserIDGT applies the GT predicate on the "user_id" field.
+func UserIDGT(v int) predicate.AccountEvent {
+	return predicate.AccountEvent(sql.FieldGT(FieldUserID, v))
+}
+
+// UserIDGTE applies the GTE predicate on the "user_id" field.
+func UserIDGTE(v int) predicate.AccountEvent {
+	return predicate.AccountEvent(sql.FieldGTE(FieldUserID, v))
+}
+
+// UserIDLT applies the LT predicate on the "user_id" field.
+func UserIDLT(v int) predicate.AccountEvent {
+	return predicate.AccountEvent(sql.FieldLT(FieldUserID, v))
+}
+
+// UserIDLTE applies the LTE predicate on the "user_id" field.
+func UserIDLTE(v int) predicate.AccountEvent {
+	return predicate.AccountEvent(sql.FieldLTE(FieldUserID, v))
+}
+
+// APIKeyIDEQ applies the EQ predicate on the "api_key_id" field.
+func APIKeyIDEQ(v int) predicate.AccountEvent {
+	return predicate.AccountEvent(sql.FieldEQ(FieldAPIKeyID, v))
+}
+
+// APIKeyIDNEQ applies the NEQ predicate on the "api_key_id" field.
+func APIKeyIDNEQ(v int) predicate.AccountEvent {
+	return predicate.AccountEvent(sql.FieldNEQ(FieldAPIKeyID, v))
+}
+
+// APIKeyIDIn applies the In predicate on the "api_key_id" field.
+func APIKeyIDIn(vs ...int) predicate.AccountEvent {
+	return predicate.AccountEvent(sql.FieldIn(FieldAPIKeyID, vs...))
+}
+
+// APIKeyIDNotIn applies the NotIn predicate on the "api_key_id" field.
+func APIKeyIDNotIn(vs ...int) predicate.AccountEvent {
+	return predicate.AccountEvent(sql.FieldNotIn(FieldAPIKeyID, vs...))
+}
+
+// APIKeyIDGT applies the GT predicate on the "api_key_id" field.
+func APIKeyIDGT(v int) predicate.AccountEvent {
+	return predicate.AccountEvent(sql.FieldGT(FieldAPIKeyID, v))
+}
+
+// APIKeyIDGTE applies the GTE predicate on the "api_key_id" field.
+func APIKeyIDGTE(v int) predicate.AccountEvent {
+	return predicate.AccountEvent(sql.FieldGTE(FieldAPIKeyID, v))
+}
+
+// APIKeyIDLT applies the LT predicate on the "api_key_id" field.
+func APIKeyIDLT(v int) predicate.AccountEvent {
+	return predicate.AccountEvent(sql.FieldLT(FieldAPIKeyID, v))
+}
+
+// APIKeyIDLTE applies the LTE predicate on the "api_key_id" field.
+func APIKeyIDLTE(v int) predicate.AccountEvent {
+	return predicate.AccountEvent(sql.FieldLTE(FieldAPIKeyID, v))
 }
 
 // StateUntilEQ applies the EQ predicate on the "state_until" field.

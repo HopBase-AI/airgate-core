@@ -202,6 +202,11 @@ export interface AccountEventResp {
   state_until?: string;
   /** RFC3339 UTC */
   created_at: string;
+  /** 触发者归属（转发链路带入；探测/手动事件缺省）。 */
+  user_id?: number;
+  user_email?: string;
+  api_key_id?: number;
+  api_key_name?: string;
 }
 
 export interface CreateAccountReq {

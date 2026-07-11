@@ -160,8 +160,16 @@ func init() {
 	accounteventDescUpstreamStatus := accounteventFields[4].Descriptor()
 	// accountevent.DefaultUpstreamStatus holds the default value on creation for the upstream_status field.
 	accountevent.DefaultUpstreamStatus = accounteventDescUpstreamStatus.Default.(int)
+	// accounteventDescUserID is the schema descriptor for user_id field.
+	accounteventDescUserID := accounteventFields[5].Descriptor()
+	// accountevent.DefaultUserID holds the default value on creation for the user_id field.
+	accountevent.DefaultUserID = accounteventDescUserID.Default.(int)
+	// accounteventDescAPIKeyID is the schema descriptor for api_key_id field.
+	accounteventDescAPIKeyID := accounteventFields[6].Descriptor()
+	// accountevent.DefaultAPIKeyID holds the default value on creation for the api_key_id field.
+	accountevent.DefaultAPIKeyID = accounteventDescAPIKeyID.Default.(int)
 	// accounteventDescCreatedAt is the schema descriptor for created_at field.
-	accounteventDescCreatedAt := accounteventFields[6].Descriptor()
+	accounteventDescCreatedAt := accounteventFields[8].Descriptor()
 	// accountevent.DefaultCreatedAt holds the default value on creation for the created_at field.
 	accountevent.DefaultCreatedAt = accounteventDescCreatedAt.Default.(func() time.Time)
 	balancelogFields := schema.BalanceLog{}.Fields()

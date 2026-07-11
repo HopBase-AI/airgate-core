@@ -65,6 +65,24 @@ function EventTypeChip({ eventType }: { eventType: AccountEventType }) {
   );
 }
 
+// TriggeredByCell 触发本次事件的终端用户（邮箱 + 所用密钥名）。
+// 探测/手动事件没有用户上下文显示 "-"；用户已删除时回退显示 #ID。
+function TriggeredByCell({ row }: { row: AccountEventResp }) {
+  if (!row.user_id && !row.api_key_id) {
+    return <span style={{ color: 'var(--ag-text-tertiary)' }}>-</span>;
+  }
+  const who = row.user_email || (row.user_id ? `#${row.user_id}` : '');
+  const key = row.api_key_name || (row.api_key_id ? `key #${row.api_key_id}` : '');
+  return (
+    <div className="flex min-w-0 flex-col" title={[who, key].filter(Boolean).join(' · ')}>
+      <span className="truncate" style={{ color: 'var(--ag-text)' }}>{who || '-'}</span>
+      {key ? (
+        <span className="truncate text-[11px]" style={{ color: 'var(--ag-text-tertiary)' }}>{key}</span>
+      ) : null}
+    </div>
+  );
+}
+
 function ReasonCell({ row }: { row: AccountEventResp }) {
   const reason = row.reason?.trim() ?? '';
   if (!reason && !row.family) {
@@ -234,14 +252,15 @@ export default function AccountEventsPage() {
           <CommonTable.Column id="reason">{t('account_events.reason')}</CommonTable.Column>
           <CommonTable.Column id="upstream_status" style={{ width: 88 }}>{t('account_events.upstream_status')}</CommonTable.Column>
           <CommonTable.Column id="source" style={{ width: 72 }}>{t('account_events.source')}</CommonTable.Column>
+          <CommonTable.Column id="triggered_by" style={{ width: 180 }}>{t('account_events.triggered_by')}</CommonTable.Column>
           <CommonTable.Column id="until" style={{ width: 148 }}>{t('account_events.cooldown_until')}</CommonTable.Column>
         </CommonTable.Header>
         <CommonTable.Body>
           {isLoading ? (
-            <TableLoadingRow colSpan={7} />
+            <TableLoadingRow colSpan={8} />
           ) : rows.length === 0 ? (
             <CommonTable.Row id="empty">
-              <CommonTable.Cell colSpan={7}>
+              <CommonTable.Cell colSpan={8}>
                 <EmptyState>
                   <div className="text-sm text-default-500">{t('account_events.empty')}</div>
                 </EmptyState>
@@ -277,6 +296,9 @@ export default function AccountEventsPage() {
                   )}
                 </CommonTable.Cell>
                 <CommonTable.Cell>{sourceLabel(row.source)}</CommonTable.Cell>
+                <CommonTable.Cell>
+                  <TriggeredByCell row={row} />
+                </CommonTable.Cell>
                 <CommonTable.Cell>
                   {row.state_until ? (
                     <span className="font-mono tabular-nums whitespace-nowrap">{formatEventTime(row.state_until)}</span>

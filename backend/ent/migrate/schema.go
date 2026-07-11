@@ -110,6 +110,8 @@ var (
 		{Name: "family", Type: field.TypeString, Default: ""},
 		{Name: "source", Type: field.TypeString, Default: ""},
 		{Name: "upstream_status", Type: field.TypeInt, Default: 0},
+		{Name: "user_id", Type: field.TypeInt, Default: 0},
+		{Name: "api_key_id", Type: field.TypeInt, Default: 0},
 		{Name: "state_until", Type: field.TypeTime, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "account_events", Type: field.TypeInt},
@@ -122,7 +124,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "account_events_accounts_events",
-				Columns:    []*schema.Column{AccountEventsColumns[8]},
+				Columns:    []*schema.Column{AccountEventsColumns[10]},
 				RefColumns: []*schema.Column{AccountsColumns[0]},
 				OnDelete:   schema.Cascade,
 			},
@@ -131,12 +133,12 @@ var (
 			{
 				Name:    "accountevent_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{AccountEventsColumns[7]},
+				Columns: []*schema.Column{AccountEventsColumns[9]},
 			},
 			{
 				Name:    "accountevent_account_events",
 				Unique:  false,
-				Columns: []*schema.Column{AccountEventsColumns[8]},
+				Columns: []*schema.Column{AccountEventsColumns[10]},
 			},
 		},
 	}

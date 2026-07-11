@@ -62,6 +62,10 @@ func toAccountEventResp(item appaccountevent.Event) dto.AccountEventResp {
 		Source:         item.Source,
 		UpstreamStatus: item.UpstreamStatus,
 		CreatedAt:      item.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		UserID:         item.UserID,
+		UserEmail:      item.UserEmail,
+		APIKeyID:       item.APIKeyID,
+		APIKeyName:     item.APIKeyName,
 	}
 	if item.StateUntil != nil {
 		resp.StateUntil = item.StateUntil.UTC().Format("2006-01-02T15:04:05Z")

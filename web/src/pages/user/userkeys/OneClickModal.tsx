@@ -126,9 +126,10 @@ export function OneClickModal({
     },
   });
 
-  // Codex CLI 仅 openai 平台分组的密钥可用;其余平台强制回落 Claude Code。
-  const showClientTabs = platform === 'openai';
-  const effectiveClient = showClientTabs ? client : 'claude';
+  // Codex CLI 仅 openai 平台分组的密钥可用。标签常显、不可用时置灰并注明原因——
+  // 隐藏式设计会让拿着 Claude 套餐密钥的用户以为"没有 Codex 功能"。
+  const codexAvailable = platform === 'openai';
+  const effectiveClient = codexAvailable ? client : 'claude';
 
   const { data: statusData } = useQuery({
     queryKey: queryKeys.oneclickStatus(issue?.token ?? ''),
@@ -172,8 +173,8 @@ export function OneClickModal({
                     : t('user_keys.one_click_desc')}
                 </p>
 
-                {/* 客户端切换（仅 openai 平台密钥） */}
-                {showClientTabs && (
+                {/* 客户端切换（Codex 仅 openai 平台密钥可用，其余置灰注明） */}
+                <div>
                   <div className="flex gap-1">
                     <Button
                       fullWidth
@@ -186,13 +187,19 @@ export function OneClickModal({
                     <Button
                       fullWidth
                       size="sm"
+                      isDisabled={!codexAvailable}
                       variant={effectiveClient === 'codex' ? 'primary' : 'secondary'}
                       onPress={() => setClient('codex')}
                     >
                       Codex CLI
                     </Button>
                   </div>
-                )}
+                  {!codexAvailable && (
+                    <p className="mt-1 text-[11px] leading-4 text-text-tertiary">
+                      {t('user_keys.one_click_codex_unavailable')}
+                    </p>
+                  )}
+                </div>
 
                 {/* OS 切换 */}
                 <div className="flex gap-1">

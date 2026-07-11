@@ -28,6 +28,10 @@ type AccountEvent struct {
 	Source string `json:"source,omitempty"`
 	// 上游 HTTP 状态码，无则为 0
 	UpstreamStatus int `json:"upstream_status,omitempty"`
+	// 触发本次事件请求的终端用户 ID（转发判决链路）；探测/手动/无用户上下文为 0。修复后据此定位要通知的用户
+	UserID int `json:"user_id,omitempty"`
+	// 触发本次事件请求所用的 API Key ID；无则为 0
+	APIKeyID int `json:"api_key_id,omitempty"`
 	// rate_limited / degraded 的冷却到期时间
 	StateUntil *time.Time `json:"state_until,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
@@ -64,7 +68,7 @@ func (*AccountEvent) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case accountevent.FieldID, accountevent.FieldUpstreamStatus:
+		case accountevent.FieldID, accountevent.FieldUpstreamStatus, accountevent.FieldUserID, accountevent.FieldAPIKeyID:
 			values[i] = new(sql.NullInt64)
 		case accountevent.FieldEventType, accountevent.FieldReason, accountevent.FieldFamily, accountevent.FieldSource:
 			values[i] = new(sql.NullString)
@@ -122,6 +126,18 @@ func (ae *AccountEvent) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field upstream_status", values[i])
 			} else if value.Valid {
 				ae.UpstreamStatus = int(value.Int64)
+			}
+		case accountevent.FieldUserID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field user_id", values[i])
+			} else if value.Valid {
+				ae.UserID = int(value.Int64)
+			}
+		case accountevent.FieldAPIKeyID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field api_key_id", values[i])
+			} else if value.Valid {
+				ae.APIKeyID = int(value.Int64)
 			}
 		case accountevent.FieldStateUntil:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -198,6 +214,12 @@ func (ae *AccountEvent) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("upstream_status=")
 	builder.WriteString(fmt.Sprintf("%v", ae.UpstreamStatus))
+	builder.WriteString(", ")
+	builder.WriteString("user_id=")
+	builder.WriteString(fmt.Sprintf("%v", ae.UserID))
+	builder.WriteString(", ")
+	builder.WriteString("api_key_id=")
+	builder.WriteString(fmt.Sprintf("%v", ae.APIKeyID))
 	builder.WriteString(", ")
 	if v := ae.StateUntil; v != nil {
 		builder.WriteString("state_until=")

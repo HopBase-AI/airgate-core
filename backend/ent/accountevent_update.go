@@ -106,6 +106,48 @@ func (aeu *AccountEventUpdate) AddUpstreamStatus(i int) *AccountEventUpdate {
 	return aeu
 }
 
+// SetUserID sets the "user_id" field.
+func (aeu *AccountEventUpdate) SetUserID(i int) *AccountEventUpdate {
+	aeu.mutation.ResetUserID()
+	aeu.mutation.SetUserID(i)
+	return aeu
+}
+
+// SetNillableUserID sets the "user_id" field if the given value is not nil.
+func (aeu *AccountEventUpdate) SetNillableUserID(i *int) *AccountEventUpdate {
+	if i != nil {
+		aeu.SetUserID(*i)
+	}
+	return aeu
+}
+
+// AddUserID adds i to the "user_id" field.
+func (aeu *AccountEventUpdate) AddUserID(i int) *AccountEventUpdate {
+	aeu.mutation.AddUserID(i)
+	return aeu
+}
+
+// SetAPIKeyID sets the "api_key_id" field.
+func (aeu *AccountEventUpdate) SetAPIKeyID(i int) *AccountEventUpdate {
+	aeu.mutation.ResetAPIKeyID()
+	aeu.mutation.SetAPIKeyID(i)
+	return aeu
+}
+
+// SetNillableAPIKeyID sets the "api_key_id" field if the given value is not nil.
+func (aeu *AccountEventUpdate) SetNillableAPIKeyID(i *int) *AccountEventUpdate {
+	if i != nil {
+		aeu.SetAPIKeyID(*i)
+	}
+	return aeu
+}
+
+// AddAPIKeyID adds i to the "api_key_id" field.
+func (aeu *AccountEventUpdate) AddAPIKeyID(i int) *AccountEventUpdate {
+	aeu.mutation.AddAPIKeyID(i)
+	return aeu
+}
+
 // SetStateUntil sets the "state_until" field.
 func (aeu *AccountEventUpdate) SetStateUntil(t time.Time) *AccountEventUpdate {
 	aeu.mutation.SetStateUntil(t)
@@ -217,6 +259,18 @@ func (aeu *AccountEventUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := aeu.mutation.AddedUpstreamStatus(); ok {
 		_spec.AddField(accountevent.FieldUpstreamStatus, field.TypeInt, value)
+	}
+	if value, ok := aeu.mutation.UserID(); ok {
+		_spec.SetField(accountevent.FieldUserID, field.TypeInt, value)
+	}
+	if value, ok := aeu.mutation.AddedUserID(); ok {
+		_spec.AddField(accountevent.FieldUserID, field.TypeInt, value)
+	}
+	if value, ok := aeu.mutation.APIKeyID(); ok {
+		_spec.SetField(accountevent.FieldAPIKeyID, field.TypeInt, value)
+	}
+	if value, ok := aeu.mutation.AddedAPIKeyID(); ok {
+		_spec.AddField(accountevent.FieldAPIKeyID, field.TypeInt, value)
 	}
 	if value, ok := aeu.mutation.StateUntil(); ok {
 		_spec.SetField(accountevent.FieldStateUntil, field.TypeTime, value)
@@ -347,6 +401,48 @@ func (aeuo *AccountEventUpdateOne) SetNillableUpstreamStatus(i *int) *AccountEve
 // AddUpstreamStatus adds i to the "upstream_status" field.
 func (aeuo *AccountEventUpdateOne) AddUpstreamStatus(i int) *AccountEventUpdateOne {
 	aeuo.mutation.AddUpstreamStatus(i)
+	return aeuo
+}
+
+// SetUserID sets the "user_id" field.
+func (aeuo *AccountEventUpdateOne) SetUserID(i int) *AccountEventUpdateOne {
+	aeuo.mutation.ResetUserID()
+	aeuo.mutation.SetUserID(i)
+	return aeuo
+}
+
+// SetNillableUserID sets the "user_id" field if the given value is not nil.
+func (aeuo *AccountEventUpdateOne) SetNillableUserID(i *int) *AccountEventUpdateOne {
+	if i != nil {
+		aeuo.SetUserID(*i)
+	}
+	return aeuo
+}
+
+// AddUserID adds i to the "user_id" field.
+func (aeuo *AccountEventUpdateOne) AddUserID(i int) *AccountEventUpdateOne {
+	aeuo.mutation.AddUserID(i)
+	return aeuo
+}
+
+// SetAPIKeyID sets the "api_key_id" field.
+func (aeuo *AccountEventUpdateOne) SetAPIKeyID(i int) *AccountEventUpdateOne {
+	aeuo.mutation.ResetAPIKeyID()
+	aeuo.mutation.SetAPIKeyID(i)
+	return aeuo
+}
+
+// SetNillableAPIKeyID sets the "api_key_id" field if the given value is not nil.
+func (aeuo *AccountEventUpdateOne) SetNillableAPIKeyID(i *int) *AccountEventUpdateOne {
+	if i != nil {
+		aeuo.SetAPIKeyID(*i)
+	}
+	return aeuo
+}
+
+// AddAPIKeyID adds i to the "api_key_id" field.
+func (aeuo *AccountEventUpdateOne) AddAPIKeyID(i int) *AccountEventUpdateOne {
+	aeuo.mutation.AddAPIKeyID(i)
 	return aeuo
 }
 
@@ -491,6 +587,18 @@ func (aeuo *AccountEventUpdateOne) sqlSave(ctx context.Context) (_node *AccountE
 	}
 	if value, ok := aeuo.mutation.AddedUpstreamStatus(); ok {
 		_spec.AddField(accountevent.FieldUpstreamStatus, field.TypeInt, value)
+	}
+	if value, ok := aeuo.mutation.UserID(); ok {
+		_spec.SetField(accountevent.FieldUserID, field.TypeInt, value)
+	}
+	if value, ok := aeuo.mutation.AddedUserID(); ok {
+		_spec.AddField(accountevent.FieldUserID, field.TypeInt, value)
+	}
+	if value, ok := aeuo.mutation.APIKeyID(); ok {
+		_spec.SetField(accountevent.FieldAPIKeyID, field.TypeInt, value)
+	}
+	if value, ok := aeuo.mutation.AddedAPIKeyID(); ok {
+		_spec.AddField(accountevent.FieldAPIKeyID, field.TypeInt, value)
 	}
 	if value, ok := aeuo.mutation.StateUntil(); ok {
 		_spec.SetField(accountevent.FieldStateUntil, field.TypeTime, value)

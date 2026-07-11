@@ -40,6 +40,8 @@ type Judgment struct {
 	IsPool         bool          // 池账号（upstream_is_pool）走豁免路径
 	Family         string        // 模型家族键（见 ModelFamily）。非空时 RateLimited 走 Redis 家族冷却而非账号级 DB state，避免 gpt-image 限流误伤 chat。
 	UpstreamStatus int           // 上游 HTTP 状态码，用于池账号区分 401（自身凭证无效）和 403（透传上游错误）。
+	UserID         int           // 触发本次判决请求的终端用户 ID（API Key 归属），无用户上下文为 0。
+	APIKeyID       int           // 触发本次判决请求所用的 API Key ID，无则为 0。
 }
 
 // StateMachine 账号状态机。所有状态转移必须通过 Apply 入口。
@@ -116,22 +118,22 @@ func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 				"until", until,
 				sdk.LogFieldReason, j.Reason,
 			)
-			sm.recordEvent(accountID, accountevent.EventTypeRateLimited, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, &until)
+			sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeRateLimited, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, &until)
 			return
 		}
 		sm.transition(ctx, accountID, account.StateRateLimited, &until, j.Reason)
-		sm.recordEvent(accountID, accountevent.EventTypeRateLimited, j.Reason, "", eventSourceForward, j.UpstreamStatus, &until)
+		sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeRateLimited, j.Reason, "", eventSourceForward, j.UpstreamStatus, &until)
 
 	case sdk.OutcomeAccountDead:
 		if j.IsPool && j.UpstreamStatus != 401 {
 			// 池账号的 403 等是上游透传的错误，池子本身没问题，
 			// 不动状态，靠 failover 重试消化。仍记一条上游侧事件供异常监控追溯。
 			// 401 表示池子自身的凭证无效，仍需禁用并说明原因。
-			sm.recordEvent(accountID, accountevent.EventTypeUpstreamError, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, nil)
+			sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeUpstreamError, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, nil)
 			return
 		}
 		sm.transition(ctx, accountID, account.StateDisabled, nil, j.Reason)
-		sm.recordEvent(accountID, accountevent.EventTypeDisabled, j.Reason, "", eventSourceForward, j.UpstreamStatus, nil)
+		sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeDisabled, j.Reason, "", eventSourceForward, j.UpstreamStatus, nil)
 
 	case sdk.OutcomeUpstreamTransient:
 		// 按定义，UpstreamTransient 是"上游侧瞬时故障"（SSE 提前断流、网络抖动、上游 5xx 等），
@@ -143,7 +145,7 @@ func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 		if j.IsPool {
 			sm.applyDegraded(ctx, accountID, j)
 		} else {
-			sm.recordEvent(accountID, accountevent.EventTypeUpstreamError, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, nil)
+			sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeUpstreamError, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, nil)
 		}
 
 	case sdk.OutcomeClientError, sdk.OutcomeStreamAborted, sdk.OutcomeUnknown:
@@ -159,7 +161,7 @@ func (sm *StateMachine) applyDegraded(ctx context.Context, accountID int, j Judg
 	}
 	until := time.Now().Add(dur)
 	sm.transition(ctx, accountID, account.StateDegraded, &until, j.Reason)
-	sm.recordEvent(accountID, accountevent.EventTypeDegraded, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, &until)
+	sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeDegraded, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, &until)
 }
 
 // transitionActive 成功时回到 active：清 state_until、清 reason、清失败计数、更新 last_used_at。
@@ -201,7 +203,7 @@ func (sm *StateMachine) transitionActive(ctx context.Context, accountID int, sou
 	// 只有从异常态（rate_limited / degraded）回来才留"已恢复"事件，
 	// active → active 的常规成功不落事件（避免每次请求都写一条）。
 	if prevState == account.StateRateLimited || prevState == account.StateDegraded {
-		sm.recordEvent(accountID, accountevent.EventTypeRecovered, "", "", source, 0, nil)
+		sm.recordEvent(accountID, 0, 0, accountevent.EventTypeRecovered, "", "", source, 0, nil)
 	}
 }
 

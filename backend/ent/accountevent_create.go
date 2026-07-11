@@ -83,6 +83,34 @@ func (aec *AccountEventCreate) SetNillableUpstreamStatus(i *int) *AccountEventCr
 	return aec
 }
 
+// SetUserID sets the "user_id" field.
+func (aec *AccountEventCreate) SetUserID(i int) *AccountEventCreate {
+	aec.mutation.SetUserID(i)
+	return aec
+}
+
+// SetNillableUserID sets the "user_id" field if the given value is not nil.
+func (aec *AccountEventCreate) SetNillableUserID(i *int) *AccountEventCreate {
+	if i != nil {
+		aec.SetUserID(*i)
+	}
+	return aec
+}
+
+// SetAPIKeyID sets the "api_key_id" field.
+func (aec *AccountEventCreate) SetAPIKeyID(i int) *AccountEventCreate {
+	aec.mutation.SetAPIKeyID(i)
+	return aec
+}
+
+// SetNillableAPIKeyID sets the "api_key_id" field if the given value is not nil.
+func (aec *AccountEventCreate) SetNillableAPIKeyID(i *int) *AccountEventCreate {
+	if i != nil {
+		aec.SetAPIKeyID(*i)
+	}
+	return aec
+}
+
 // SetStateUntil sets the "state_until" field.
 func (aec *AccountEventCreate) SetStateUntil(t time.Time) *AccountEventCreate {
 	aec.mutation.SetStateUntil(t)
@@ -173,6 +201,14 @@ func (aec *AccountEventCreate) defaults() {
 		v := accountevent.DefaultUpstreamStatus
 		aec.mutation.SetUpstreamStatus(v)
 	}
+	if _, ok := aec.mutation.UserID(); !ok {
+		v := accountevent.DefaultUserID
+		aec.mutation.SetUserID(v)
+	}
+	if _, ok := aec.mutation.APIKeyID(); !ok {
+		v := accountevent.DefaultAPIKeyID
+		aec.mutation.SetAPIKeyID(v)
+	}
 	if _, ok := aec.mutation.CreatedAt(); !ok {
 		v := accountevent.DefaultCreatedAt()
 		aec.mutation.SetCreatedAt(v)
@@ -200,6 +236,12 @@ func (aec *AccountEventCreate) check() error {
 	}
 	if _, ok := aec.mutation.UpstreamStatus(); !ok {
 		return &ValidationError{Name: "upstream_status", err: errors.New(`ent: missing required field "AccountEvent.upstream_status"`)}
+	}
+	if _, ok := aec.mutation.UserID(); !ok {
+		return &ValidationError{Name: "user_id", err: errors.New(`ent: missing required field "AccountEvent.user_id"`)}
+	}
+	if _, ok := aec.mutation.APIKeyID(); !ok {
+		return &ValidationError{Name: "api_key_id", err: errors.New(`ent: missing required field "AccountEvent.api_key_id"`)}
 	}
 	if _, ok := aec.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "AccountEvent.created_at"`)}
@@ -252,6 +294,14 @@ func (aec *AccountEventCreate) createSpec() (*AccountEvent, *sqlgraph.CreateSpec
 	if value, ok := aec.mutation.UpstreamStatus(); ok {
 		_spec.SetField(accountevent.FieldUpstreamStatus, field.TypeInt, value)
 		_node.UpstreamStatus = value
+	}
+	if value, ok := aec.mutation.UserID(); ok {
+		_spec.SetField(accountevent.FieldUserID, field.TypeInt, value)
+		_node.UserID = value
+	}
+	if value, ok := aec.mutation.APIKeyID(); ok {
+		_spec.SetField(accountevent.FieldAPIKeyID, field.TypeInt, value)
+		_node.APIKeyID = value
 	}
 	if value, ok := aec.mutation.StateUntil(); ok {
 		_spec.SetField(accountevent.FieldStateUntil, field.TypeTime, value)

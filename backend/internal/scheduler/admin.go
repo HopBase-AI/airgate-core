@@ -25,7 +25,7 @@ func (s *Scheduler) ManualRecover(ctx context.Context, accountID int) error {
 	if err == nil {
 		_ = s.sanitizeModelRoutingForAccount(ctx, accountID)
 		s.routeCache.InvalidateAll()
-		s.state.recordEvent(accountID, accountevent.EventTypeManualRecovered, "", "", eventSourceManual, 0, nil)
+		s.state.recordEvent(accountID, 0, 0, accountevent.EventTypeManualRecovered, "", "", eventSourceManual, 0, nil)
 	}
 	return err
 }
@@ -42,7 +42,7 @@ func (s *Scheduler) ManualDisable(ctx context.Context, accountID int, reason str
 	if err == nil {
 		_ = s.sanitizeModelRoutingForAccount(ctx, accountID)
 		s.routeCache.InvalidateAll()
-		s.state.recordEvent(accountID, accountevent.EventTypeManualDisabled, reason, "", eventSourceManual, 0, nil)
+		s.state.recordEvent(accountID, 0, 0, accountevent.EventTypeManualDisabled, reason, "", eventSourceManual, 0, nil)
 	}
 	return err
 }
@@ -54,7 +54,7 @@ func (s *Scheduler) MarkRateLimited(ctx context.Context, accountID int, until ti
 	alreadyIn := s.accountInState(ctx, accountID, account.StateRateLimited)
 	s.state.transition(ctx, accountID, account.StateRateLimited, &until, reason)
 	if !alreadyIn {
-		s.state.recordEvent(accountID, accountevent.EventTypeRateLimited, reason, "", eventSourceProbe, 0, &until)
+		s.state.recordEvent(accountID, 0, 0, accountevent.EventTypeRateLimited, reason, "", eventSourceProbe, 0, &until)
 	}
 }
 
@@ -85,7 +85,7 @@ func (s *Scheduler) MarkDisabled(ctx context.Context, accountID int, reason stri
 	alreadyIn := s.accountInState(ctx, accountID, account.StateDisabled)
 	s.state.transition(ctx, accountID, account.StateDisabled, nil, reason)
 	if !alreadyIn {
-		s.state.recordEvent(accountID, accountevent.EventTypeDisabled, reason, "", eventSourceProbe, 0, nil)
+		s.state.recordEvent(accountID, 0, 0, accountevent.EventTypeDisabled, reason, "", eventSourceProbe, 0, nil)
 	}
 	_ = s.sanitizeModelRoutingForAccount(ctx, accountID)
 	s.routeCache.InvalidateAll()

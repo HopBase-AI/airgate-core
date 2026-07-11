@@ -149,7 +149,8 @@
     "type_manual_recovered": "手动恢复",
     "source_forward": "转发",
     "source_probe": "巡检",
-    "source_manual": "手动"
+    "source_manual": "手动",
+    "triggered_by": "触发用户"
   },
   "plugin_shell": {
     "breadcrumbs": "面包屑",
@@ -1117,7 +1118,8 @@
     "one_click_generate": "生成接入命令",
     "one_click_pregen_hint": "点击后会为该密钥生成一条一次性接入命令（15 分钟内有效、只能使用一次）。生成本身不会改动你本机任何配置，只有把命令粘贴到终端执行时才会写入。",
     "one_click_status_verified_codex": "接入成功！打开新终端输入 codex 即可开始使用。",
-    "one_click_ccs_title": "需要多套配置来回切换？"
+    "one_click_ccs_title": "需要多套配置来回切换？",
+    "one_click_codex_unavailable": "该密钥所属套餐不支持 Codex CLI——需要 Codex / GPT 套餐分组的密钥。"
   },
   "setup": {
     "title": "系统安装向导",

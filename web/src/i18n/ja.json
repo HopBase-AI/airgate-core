@@ -149,7 +149,8 @@
     "type_manual_recovered": "手動復旧",
     "source_forward": "転送",
     "source_probe": "巡回チェック",
-    "source_manual": "手動"
+    "source_manual": "手動",
+    "triggered_by": "トリガーユーザー"
   },
   "plugin_shell": {
     "breadcrumbs": "パンくずリスト",
@@ -1117,7 +1118,8 @@
     "one_click_generate": "接続コマンドを生成",
     "one_click_pregen_hint": "クリックするとこのキー用の使い捨て接続コマンドを生成します（15 分間有効・1 回のみ）。生成だけでは端末側の設定は一切変更されず、コマンドをターミナルで実行した時にのみ書き込まれます。",
     "one_click_status_verified_codex": "接続完了！新しいターミナルで codex を実行してください。",
-    "one_click_ccs_title": "複数の設定を切り替えたい場合は？"
+    "one_click_ccs_title": "複数の設定を切り替えたい場合は？",
+    "one_click_codex_unavailable": "このキーのプランは Codex CLI に対応していません。Codex / GPT プランのキーが必要です。"
   },
   "setup": {
     "title": "システムインストールウィザード",

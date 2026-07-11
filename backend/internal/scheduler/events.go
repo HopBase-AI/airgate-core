@@ -39,7 +39,7 @@ const eventWriteConcurrency = 8
 //
 // until 为冷却到期时间（无则 nil）。
 func (sm *StateMachine) recordEvent(
-	accountID int,
+	accountID, userID, apiKeyID int,
 	eventType accountevent.EventType,
 	reason, family, source string,
 	upstreamStatus int,
@@ -73,7 +73,9 @@ func (sm *StateMachine) recordEvent(
 			SetReason(truncateReason(reason)).
 			SetFamily(family).
 			SetSource(source).
-			SetUpstreamStatus(upstreamStatus)
+			SetUpstreamStatus(upstreamStatus).
+			SetUserID(userID).
+			SetAPIKeyID(apiKeyID)
 		if until != nil {
 			builder = builder.SetStateUntil(*until)
 		}

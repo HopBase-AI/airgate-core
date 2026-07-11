@@ -7,6 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	entsql "entgo.io/ent/dialect/sql"
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/DouDOU-start/airgate-core/ent"
@@ -19,7 +20,17 @@ import (
 
 func enttestOpenEvents(t *testing.T) *ent.Client {
 	t.Helper()
-	db := enttest.Open(t, "sqlite3", "file:scheduler_events?mode=memory&cache=shared&_fk=1",
+	// 先开 driver 并把连接池压到 1：事件是异步 goroutine 写入，与状态更新并发
+	// 落在 shared-cache 内存库的不同连接上会偶发 "database table is locked"
+	// （SQLITE_LOCKED，busy_timeout 对其无效），表现为 CI/本地随机红。
+	// 单连接彻底消除并发写锁；生产是 Postgres 无此问题。
+	drv, err := entsql.Open("sqlite3", "file:scheduler_events?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	drv.DB().SetMaxOpenConns(1)
+	db := enttest.NewClient(t,
+		enttest.WithOptions(ent.Driver(drv)),
 		enttest.WithMigrateOptions(migrate.WithGlobalUniqueID(false)))
 	t.Cleanup(func() { _ = db.Close() })
 	return db
