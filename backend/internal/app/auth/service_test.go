@@ -241,6 +241,22 @@ type authStubRepository struct {
 	validateAPIKeySession  func(userID, keyID int) (User, error)
 	validateAPIKeyForLogin func(key string) (APIKeyLoginInfo, error)
 	getAPIKeyBrief         func(keyID int) (APIKeyBrief, error)
+	findUserByIdentity     func(provider, providerUserID string) (User, error)
+	linkIdentity           func(userID int, identity IdentityInput) error
+}
+
+func (s authStubRepository) FindUserByIdentity(_ context.Context, provider, providerUserID string) (User, error) {
+	if s.findUserByIdentity == nil {
+		return User{}, ErrUserNotFound
+	}
+	return s.findUserByIdentity(provider, providerUserID)
+}
+
+func (s authStubRepository) LinkIdentity(_ context.Context, userID int, identity IdentityInput) error {
+	if s.linkIdentity == nil {
+		return nil
+	}
+	return s.linkIdentity(userID, identity)
 }
 
 func (s authStubRepository) FindByEmail(_ context.Context, _ string) (User, error) {

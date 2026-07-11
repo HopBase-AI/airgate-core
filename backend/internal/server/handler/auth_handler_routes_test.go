@@ -108,3 +108,9 @@ func (stubAuthRepo) ValidateAPIKeyForLogin(_ context.Context, _ string) (appauth
 func (stubAuthRepo) GetAPIKeyBrief(_ context.Context, _ int) (appauth.APIKeyBrief, error) {
 	return appauth.APIKeyBrief{}, nil
 }
+func (stubAuthRepo) FindUserByIdentity(_ context.Context, _, _ string) (appauth.User, error) {
+	return appauth.User{}, appauth.ErrUserNotFound
+}
+func (stubAuthRepo) LinkIdentity(_ context.Context, _ int, _ appauth.IdentityInput) error {
+	return nil
+}

@@ -34,6 +34,8 @@ type Tx struct {
 	UsageLog *UsageLogClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
+	// UserIdentity is the client for interacting with the UserIdentity builders.
+	UserIdentity *UserIdentityClient
 	// UserSubscription is the client for interacting with the UserSubscription builders.
 	UserSubscription *UserSubscriptionClient
 
@@ -178,6 +180,7 @@ func (tx *Tx) init() {
 	tx.Task = NewTaskClient(tx.config)
 	tx.UsageLog = NewUsageLogClient(tx.config)
 	tx.User = NewUserClient(tx.config)
+	tx.UserIdentity = NewUserIdentityClient(tx.config)
 	tx.UserSubscription = NewUserSubscriptionClient(tx.config)
 }
 

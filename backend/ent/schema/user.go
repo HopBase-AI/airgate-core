@@ -44,5 +44,7 @@ func (User) Edges() []ent.Edge {
 		// 用户可访问的专属分组（多对多）
 		edge.To("allowed_groups", Group.Type),
 		edge.To("balance_logs", BalanceLog.Type),
+		// 第三方登录身份绑定（OAuth）
+		edge.To("identities", UserIdentity.Type),
 	}
 }

@@ -17,6 +17,8 @@ interface SiteSettings {
   home_content: string;
   registration_enabled: boolean;
   email_verify_enabled: boolean;
+  oauth_google_enabled: boolean;
+  oauth_github_enabled: boolean;
   settings_loaded: boolean;
 }
 
@@ -31,6 +33,8 @@ const defaults: SiteSettings = {
   home_content: '',
   registration_enabled: true,
   email_verify_enabled: false,
+  oauth_google_enabled: false,
+  oauth_github_enabled: false,
   settings_loaded: false,
 };
 
@@ -50,6 +54,8 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
     // Boolean 字段从字符串转换
     registration_enabled: data?.registration_enabled !== 'false',
     email_verify_enabled: data?.email_verify_enabled === 'true',
+    oauth_google_enabled: data?.oauth_google_enabled === 'true',
+    oauth_github_enabled: data?.oauth_github_enabled === 'true',
     settings_loaded: !isPending,
   }), [data, isPending]);
 

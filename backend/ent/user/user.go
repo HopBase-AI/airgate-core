@@ -55,6 +55,8 @@ const (
 	EdgeAllowedGroups = "allowed_groups"
 	// EdgeBalanceLogs holds the string denoting the balance_logs edge name in mutations.
 	EdgeBalanceLogs = "balance_logs"
+	// EdgeIdentities holds the string denoting the identities edge name in mutations.
+	EdgeIdentities = "identities"
 	// Table holds the table name of the user in the database.
 	Table = "users"
 	// APIKeysTable is the table that holds the api_keys relation/edge.
@@ -90,6 +92,13 @@ const (
 	BalanceLogsInverseTable = "balance_logs"
 	// BalanceLogsColumn is the table column denoting the balance_logs relation/edge.
 	BalanceLogsColumn = "user_balance_logs"
+	// IdentitiesTable is the table that holds the identities relation/edge.
+	IdentitiesTable = "user_identities"
+	// IdentitiesInverseTable is the table name for the UserIdentity entity.
+	// It exists in this package in order to avoid circular dependency with the "useridentity" package.
+	IdentitiesInverseTable = "user_identities"
+	// IdentitiesColumn is the table column denoting the identities relation/edge.
+	IdentitiesColumn = "user_identities"
 )
 
 // Columns holds all SQL columns for user fields.
@@ -351,6 +360,20 @@ func ByBalanceLogs(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newBalanceLogsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByIdentitiesCount orders the results by identities count.
+func ByIdentitiesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newIdentitiesStep(), opts...)
+	}
+}
+
+// ByIdentities orders the results by identities terms.
+func ByIdentities(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newIdentitiesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newAPIKeysStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -384,5 +407,12 @@ func newBalanceLogsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(BalanceLogsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, BalanceLogsTable, BalanceLogsColumn),
+	)
+}
+func newIdentitiesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(IdentitiesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, IdentitiesTable, IdentitiesColumn),
 	)
 }

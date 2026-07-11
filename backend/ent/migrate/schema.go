@@ -453,6 +453,36 @@ var (
 		Columns:    UsersColumns,
 		PrimaryKey: []*schema.Column{UsersColumns[0]},
 	}
+	// UserIdentitiesColumns holds the columns for the "user_identities" table.
+	UserIdentitiesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "provider", Type: field.TypeString},
+		{Name: "provider_user_id", Type: field.TypeString},
+		{Name: "email", Type: field.TypeString, Default: ""},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "user_identities", Type: field.TypeInt},
+	}
+	// UserIdentitiesTable holds the schema information for the "user_identities" table.
+	UserIdentitiesTable = &schema.Table{
+		Name:       "user_identities",
+		Columns:    UserIdentitiesColumns,
+		PrimaryKey: []*schema.Column{UserIdentitiesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "user_identities_users_identities",
+				Columns:    []*schema.Column{UserIdentitiesColumns[5]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "useridentity_provider_provider_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{UserIdentitiesColumns[1], UserIdentitiesColumns[2]},
+			},
+		},
+	}
 	// UserSubscriptionsColumns holds the columns for the "user_subscriptions" table.
 	UserSubscriptionsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -555,6 +585,7 @@ var (
 		TasksTable,
 		UsageLogsTable,
 		UsersTable,
+		UserIdentitiesTable,
 		UserSubscriptionsTable,
 		AccountGroupsTable,
 		UserAllowedGroupsTable,
@@ -570,6 +601,7 @@ func init() {
 	UsageLogsTable.ForeignKeys[1].RefTable = AccountsTable
 	UsageLogsTable.ForeignKeys[2].RefTable = GroupsTable
 	UsageLogsTable.ForeignKeys[3].RefTable = UsersTable
+	UserIdentitiesTable.ForeignKeys[0].RefTable = UsersTable
 	UserSubscriptionsTable.ForeignKeys[0].RefTable = GroupsTable
 	UserSubscriptionsTable.ForeignKeys[1].RefTable = UsersTable
 	AccountGroupsTable.ForeignKeys[0].RefTable = AccountsTable

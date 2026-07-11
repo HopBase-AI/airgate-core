@@ -17,6 +17,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
+	"github.com/DouDOU-start/airgate-core/ent/useridentity"
 	"github.com/DouDOU-start/airgate-core/ent/usersubscription"
 )
 
@@ -319,6 +320,21 @@ func (uu *UserUpdate) AddBalanceLogs(b ...*BalanceLog) *UserUpdate {
 	return uu.AddBalanceLogIDs(ids...)
 }
 
+// AddIdentityIDs adds the "identities" edge to the UserIdentity entity by IDs.
+func (uu *UserUpdate) AddIdentityIDs(ids ...int) *UserUpdate {
+	uu.mutation.AddIdentityIDs(ids...)
+	return uu
+}
+
+// AddIdentities adds the "identities" edges to the UserIdentity entity.
+func (uu *UserUpdate) AddIdentities(u ...*UserIdentity) *UserUpdate {
+	ids := make([]int, len(u))
+	for i := range u {
+		ids[i] = u[i].ID
+	}
+	return uu.AddIdentityIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (uu *UserUpdate) Mutation() *UserMutation {
 	return uu.mutation
@@ -427,6 +443,27 @@ func (uu *UserUpdate) RemoveBalanceLogs(b ...*BalanceLog) *UserUpdate {
 		ids[i] = b[i].ID
 	}
 	return uu.RemoveBalanceLogIDs(ids...)
+}
+
+// ClearIdentities clears all "identities" edges to the UserIdentity entity.
+func (uu *UserUpdate) ClearIdentities() *UserUpdate {
+	uu.mutation.ClearIdentities()
+	return uu
+}
+
+// RemoveIdentityIDs removes the "identities" edge to UserIdentity entities by IDs.
+func (uu *UserUpdate) RemoveIdentityIDs(ids ...int) *UserUpdate {
+	uu.mutation.RemoveIdentityIDs(ids...)
+	return uu
+}
+
+// RemoveIdentities removes "identities" edges to UserIdentity entities.
+func (uu *UserUpdate) RemoveIdentities(u ...*UserIdentity) *UserUpdate {
+	ids := make([]int, len(u))
+	for i := range u {
+		ids[i] = u[i].ID
+	}
+	return uu.RemoveIdentityIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -797,6 +834,51 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if uu.mutation.IdentitiesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.IdentitiesTable,
+			Columns: []string{user.IdentitiesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(useridentity.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.RemovedIdentitiesIDs(); len(nodes) > 0 && !uu.mutation.IdentitiesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.IdentitiesTable,
+			Columns: []string{user.IdentitiesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(useridentity.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.IdentitiesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.IdentitiesTable,
+			Columns: []string{user.IdentitiesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(useridentity.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if n, err = sqlgraph.UpdateNodes(ctx, uu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{user.Label}
@@ -1103,6 +1185,21 @@ func (uuo *UserUpdateOne) AddBalanceLogs(b ...*BalanceLog) *UserUpdateOne {
 	return uuo.AddBalanceLogIDs(ids...)
 }
 
+// AddIdentityIDs adds the "identities" edge to the UserIdentity entity by IDs.
+func (uuo *UserUpdateOne) AddIdentityIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.AddIdentityIDs(ids...)
+	return uuo
+}
+
+// AddIdentities adds the "identities" edges to the UserIdentity entity.
+func (uuo *UserUpdateOne) AddIdentities(u ...*UserIdentity) *UserUpdateOne {
+	ids := make([]int, len(u))
+	for i := range u {
+		ids[i] = u[i].ID
+	}
+	return uuo.AddIdentityIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (uuo *UserUpdateOne) Mutation() *UserMutation {
 	return uuo.mutation
@@ -1211,6 +1308,27 @@ func (uuo *UserUpdateOne) RemoveBalanceLogs(b ...*BalanceLog) *UserUpdateOne {
 		ids[i] = b[i].ID
 	}
 	return uuo.RemoveBalanceLogIDs(ids...)
+}
+
+// ClearIdentities clears all "identities" edges to the UserIdentity entity.
+func (uuo *UserUpdateOne) ClearIdentities() *UserUpdateOne {
+	uuo.mutation.ClearIdentities()
+	return uuo
+}
+
+// RemoveIdentityIDs removes the "identities" edge to UserIdentity entities by IDs.
+func (uuo *UserUpdateOne) RemoveIdentityIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.RemoveIdentityIDs(ids...)
+	return uuo
+}
+
+// RemoveIdentities removes "identities" edges to UserIdentity entities.
+func (uuo *UserUpdateOne) RemoveIdentities(u ...*UserIdentity) *UserUpdateOne {
+	ids := make([]int, len(u))
+	for i := range u {
+		ids[i] = u[i].ID
+	}
+	return uuo.RemoveIdentityIDs(ids...)
 }
 
 // Where appends a list predicates to the UserUpdate builder.
@@ -1604,6 +1722,51 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(balancelog.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if uuo.mutation.IdentitiesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.IdentitiesTable,
+			Columns: []string{user.IdentitiesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(useridentity.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.RemovedIdentitiesIDs(); len(nodes) > 0 && !uuo.mutation.IdentitiesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.IdentitiesTable,
+			Columns: []string{user.IdentitiesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(useridentity.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.IdentitiesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.IdentitiesTable,
+			Columns: []string{user.IdentitiesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(useridentity.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

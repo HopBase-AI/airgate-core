@@ -65,6 +65,9 @@ func (s *Server) registerRoutes() {
 		authGroup.POST("/register", handlers.Auth.Register)
 		authGroup.POST("/send-verify-code", handlers.Auth.SendVerifyCode)
 		authGroup.POST("/verify-code", handlers.Auth.VerifyCode)
+		// 第三方登录（Google / GitHub）：浏览器导航端点，走重定向
+		authGroup.GET("/oauth/:provider/authorize", handlers.Auth.OAuthAuthorize)
+		authGroup.GET("/oauth/:provider/callback", handlers.Auth.OAuthCallback)
 	}
 
 	// Token 刷新（独立于 JWT 中间件，允许过期 token 刷新）

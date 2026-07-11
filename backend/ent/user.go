@@ -66,9 +66,11 @@ type UserEdges struct {
 	AllowedGroups []*Group `json:"allowed_groups,omitempty"`
 	// BalanceLogs holds the value of the balance_logs edge.
 	BalanceLogs []*BalanceLog `json:"balance_logs,omitempty"`
+	// Identities holds the value of the identities edge.
+	Identities []*UserIdentity `json:"identities,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [5]bool
+	loadedTypes [6]bool
 }
 
 // APIKeysOrErr returns the APIKeys value or an error if the edge
@@ -114,6 +116,15 @@ func (e UserEdges) BalanceLogsOrErr() ([]*BalanceLog, error) {
 		return e.BalanceLogs, nil
 	}
 	return nil, &NotLoadedError{edge: "balance_logs"}
+}
+
+// IdentitiesOrErr returns the Identities value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) IdentitiesOrErr() ([]*UserIdentity, error) {
+	if e.loadedTypes[5] {
+		return e.Identities, nil
+	}
+	return nil, &NotLoadedError{edge: "identities"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -285,6 +296,11 @@ func (u *User) QueryAllowedGroups() *GroupQuery {
 // QueryBalanceLogs queries the "balance_logs" edge of the User entity.
 func (u *User) QueryBalanceLogs() *BalanceLogQuery {
 	return NewUserClient(u.config).QueryBalanceLogs(u)
+}
+
+// QueryIdentities queries the "identities" edge of the User entity.
+func (u *User) QueryIdentities() *UserIdentityQuery {
+	return NewUserClient(u.config).QueryIdentities(u)
 }
 
 // Update returns a builder for updating this User.

@@ -42,6 +42,8 @@ type Service struct {
 	settings      SettingsLister
 	codeStore     VerifyCodeStore
 	mailerFactory MailSenderFactory
+	// oauthEndpointOverride 测试注入的第三方端点覆盖（生产为 nil，用默认端点表）。
+	oauthEndpointOverride map[string]oauthEndpoints
 }
 
 // NewService 创建认证服务。

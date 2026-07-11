@@ -17,6 +17,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/task"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
+	"github.com/DouDOU-start/airgate-core/ent/useridentity"
 	"github.com/DouDOU-start/airgate-core/ent/usersubscription"
 )
 
@@ -600,6 +601,24 @@ func init() {
 	user.DefaultUpdatedAt = userDescUpdatedAt.Default.(func() time.Time)
 	// user.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	user.UpdateDefaultUpdatedAt = userDescUpdatedAt.UpdateDefault.(func() time.Time)
+	useridentityFields := schema.UserIdentity{}.Fields()
+	_ = useridentityFields
+	// useridentityDescProvider is the schema descriptor for provider field.
+	useridentityDescProvider := useridentityFields[0].Descriptor()
+	// useridentity.ProviderValidator is a validator for the "provider" field. It is called by the builders before save.
+	useridentity.ProviderValidator = useridentityDescProvider.Validators[0].(func(string) error)
+	// useridentityDescProviderUserID is the schema descriptor for provider_user_id field.
+	useridentityDescProviderUserID := useridentityFields[1].Descriptor()
+	// useridentity.ProviderUserIDValidator is a validator for the "provider_user_id" field. It is called by the builders before save.
+	useridentity.ProviderUserIDValidator = useridentityDescProviderUserID.Validators[0].(func(string) error)
+	// useridentityDescEmail is the schema descriptor for email field.
+	useridentityDescEmail := useridentityFields[2].Descriptor()
+	// useridentity.DefaultEmail holds the default value on creation for the email field.
+	useridentity.DefaultEmail = useridentityDescEmail.Default.(string)
+	// useridentityDescCreatedAt is the schema descriptor for created_at field.
+	useridentityDescCreatedAt := useridentityFields[3].Descriptor()
+	// useridentity.DefaultCreatedAt holds the default value on creation for the created_at field.
+	useridentity.DefaultCreatedAt = useridentityDescCreatedAt.Default.(func() time.Time)
 	usersubscriptionFields := schema.UserSubscription{}.Fields()
 	_ = usersubscriptionFields
 	// usersubscriptionDescCreatedAt is the schema descriptor for created_at field.

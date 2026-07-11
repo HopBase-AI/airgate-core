@@ -26,6 +26,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/task"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
+	"github.com/DouDOU-start/airgate-core/ent/useridentity"
 	"github.com/DouDOU-start/airgate-core/ent/usersubscription"
 )
 
@@ -56,6 +57,8 @@ type Client struct {
 	UsageLog *UsageLogClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
+	// UserIdentity is the client for interacting with the UserIdentity builders.
+	UserIdentity *UserIdentityClient
 	// UserSubscription is the client for interacting with the UserSubscription builders.
 	UserSubscription *UserSubscriptionClient
 }
@@ -80,6 +83,7 @@ func (c *Client) init() {
 	c.Task = NewTaskClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
 	c.User = NewUserClient(c.config)
+	c.UserIdentity = NewUserIdentityClient(c.config)
 	c.UserSubscription = NewUserSubscriptionClient(c.config)
 }
 
@@ -184,6 +188,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		Task:             NewTaskClient(cfg),
 		UsageLog:         NewUsageLogClient(cfg),
 		User:             NewUserClient(cfg),
+		UserIdentity:     NewUserIdentityClient(cfg),
 		UserSubscription: NewUserSubscriptionClient(cfg),
 	}, nil
 }
@@ -215,6 +220,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		Task:             NewTaskClient(cfg),
 		UsageLog:         NewUsageLogClient(cfg),
 		User:             NewUserClient(cfg),
+		UserIdentity:     NewUserIdentityClient(cfg),
 		UserSubscription: NewUserSubscriptionClient(cfg),
 	}, nil
 }
@@ -246,7 +252,7 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.APIKey, c.Account, c.BalanceLog, c.Group, c.Plugin, c.PluginSource, c.Proxy,
-		c.Setting, c.Task, c.UsageLog, c.User, c.UserSubscription,
+		c.Setting, c.Task, c.UsageLog, c.User, c.UserIdentity, c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -257,7 +263,7 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.APIKey, c.Account, c.BalanceLog, c.Group, c.Plugin, c.PluginSource, c.Proxy,
-		c.Setting, c.Task, c.UsageLog, c.User, c.UserSubscription,
+		c.Setting, c.Task, c.UsageLog, c.User, c.UserIdentity, c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -288,6 +294,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.UsageLog.mutate(ctx, m)
 	case *UserMutation:
 		return c.User.mutate(ctx, m)
+	case *UserIdentityMutation:
+		return c.UserIdentity.mutate(ctx, m)
 	case *UserSubscriptionMutation:
 		return c.UserSubscription.mutate(ctx, m)
 	default:
@@ -2085,6 +2093,22 @@ func (c *UserClient) QueryBalanceLogs(u *User) *BalanceLogQuery {
 	return query
 }
 
+// QueryIdentities queries the identities edge of a User.
+func (c *UserClient) QueryIdentities(u *User) *UserIdentityQuery {
+	query := (&UserIdentityClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := u.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(useridentity.Table, useridentity.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.IdentitiesTable, user.IdentitiesColumn),
+		)
+		fromV = sqlgraph.Neighbors(u.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *UserClient) Hooks() []Hook {
 	return c.hooks.User
@@ -2107,6 +2131,155 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 		return (&UserDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown User mutation op: %q", m.Op())
+	}
+}
+
+// UserIdentityClient is a client for the UserIdentity schema.
+type UserIdentityClient struct {
+	config
+}
+
+// NewUserIdentityClient returns a client for the UserIdentity from the given config.
+func NewUserIdentityClient(c config) *UserIdentityClient {
+	return &UserIdentityClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `useridentity.Hooks(f(g(h())))`.
+func (c *UserIdentityClient) Use(hooks ...Hook) {
+	c.hooks.UserIdentity = append(c.hooks.UserIdentity, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `useridentity.Intercept(f(g(h())))`.
+func (c *UserIdentityClient) Intercept(interceptors ...Interceptor) {
+	c.inters.UserIdentity = append(c.inters.UserIdentity, interceptors...)
+}
+
+// Create returns a builder for creating a UserIdentity entity.
+func (c *UserIdentityClient) Create() *UserIdentityCreate {
+	mutation := newUserIdentityMutation(c.config, OpCreate)
+	return &UserIdentityCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of UserIdentity entities.
+func (c *UserIdentityClient) CreateBulk(builders ...*UserIdentityCreate) *UserIdentityCreateBulk {
+	return &UserIdentityCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UserIdentityClient) MapCreateBulk(slice any, setFunc func(*UserIdentityCreate, int)) *UserIdentityCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UserIdentityCreateBulk{err: fmt.Errorf("calling to UserIdentityClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UserIdentityCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UserIdentityCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for UserIdentity.
+func (c *UserIdentityClient) Update() *UserIdentityUpdate {
+	mutation := newUserIdentityMutation(c.config, OpUpdate)
+	return &UserIdentityUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UserIdentityClient) UpdateOne(ui *UserIdentity) *UserIdentityUpdateOne {
+	mutation := newUserIdentityMutation(c.config, OpUpdateOne, withUserIdentity(ui))
+	return &UserIdentityUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UserIdentityClient) UpdateOneID(id int) *UserIdentityUpdateOne {
+	mutation := newUserIdentityMutation(c.config, OpUpdateOne, withUserIdentityID(id))
+	return &UserIdentityUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for UserIdentity.
+func (c *UserIdentityClient) Delete() *UserIdentityDelete {
+	mutation := newUserIdentityMutation(c.config, OpDelete)
+	return &UserIdentityDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UserIdentityClient) DeleteOne(ui *UserIdentity) *UserIdentityDeleteOne {
+	return c.DeleteOneID(ui.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UserIdentityClient) DeleteOneID(id int) *UserIdentityDeleteOne {
+	builder := c.Delete().Where(useridentity.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UserIdentityDeleteOne{builder}
+}
+
+// Query returns a query builder for UserIdentity.
+func (c *UserIdentityClient) Query() *UserIdentityQuery {
+	return &UserIdentityQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUserIdentity},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a UserIdentity entity by its id.
+func (c *UserIdentityClient) Get(ctx context.Context, id int) (*UserIdentity, error) {
+	return c.Query().Where(useridentity.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UserIdentityClient) GetX(ctx context.Context, id int) *UserIdentity {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a UserIdentity.
+func (c *UserIdentityClient) QueryUser(ui *UserIdentity) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := ui.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(useridentity.Table, useridentity.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, useridentity.UserTable, useridentity.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(ui.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *UserIdentityClient) Hooks() []Hook {
+	return c.hooks.UserIdentity
+}
+
+// Interceptors returns the client interceptors.
+func (c *UserIdentityClient) Interceptors() []Interceptor {
+	return c.inters.UserIdentity
+}
+
+func (c *UserIdentityClient) mutate(ctx context.Context, m *UserIdentityMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UserIdentityCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UserIdentityUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UserIdentityUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UserIdentityDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown UserIdentity mutation op: %q", m.Op())
 	}
 }
 
@@ -2279,10 +2452,10 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 type (
 	hooks struct {
 		APIKey, Account, BalanceLog, Group, Plugin, PluginSource, Proxy, Setting, Task,
-		UsageLog, User, UserSubscription []ent.Hook
+		UsageLog, User, UserIdentity, UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, BalanceLog, Group, Plugin, PluginSource, Proxy, Setting, Task,
-		UsageLog, User, UserSubscription []ent.Interceptor
+		UsageLog, User, UserIdentity, UserSubscription []ent.Interceptor
 	}
 )

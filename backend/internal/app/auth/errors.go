@@ -29,4 +29,16 @@ var (
 	ErrMailerNotConfigured = errors.New("邮件服务未配置")
 	// ErrSendMailFailed 发送邮件失败。
 	ErrSendMailFailed = errors.New("发送邮件失败")
+	// ErrOAuthProviderUnknown 不支持的第三方登录平台。
+	ErrOAuthProviderUnknown = errors.New("不支持的第三方登录平台")
+	// ErrOAuthProviderDisabled 第三方登录未启用或未配置。
+	ErrOAuthProviderDisabled = errors.New("该第三方登录方式未启用")
+	// ErrOAuthNotConfigured 站点 api_base_url 未配置，无法构造回调地址。
+	ErrOAuthNotConfigured = errors.New("第三方登录未完成配置")
+	// ErrOAuthStateInvalid state 校验失败（可能为 CSRF 或授权页停留超时）。
+	ErrOAuthStateInvalid = errors.New("登录状态已失效，请重新发起登录")
+	// ErrOAuthExchangeFailed 与第三方交换凭证失败。
+	ErrOAuthExchangeFailed = errors.New("第三方登录验证失败，请稍后重试")
+	// ErrOAuthEmailRequired 第三方账号缺少已验证邮箱。
+	ErrOAuthEmailRequired = errors.New("第三方账号未提供已验证邮箱，无法登录")
 )

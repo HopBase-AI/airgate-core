@@ -9,6 +9,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent"
 	entapikey "github.com/DouDOU-start/airgate-core/ent/apikey"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
+	entuseridentity "github.com/DouDOU-start/airgate-core/ent/useridentity"
 	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
 )
 
@@ -157,6 +158,51 @@ func (s *AuthStore) GetAPIKeyBrief(ctx context.Context, keyID int) (appauth.APIK
 		brief.GroupRate = g.RateMultiplier
 	}
 	return brief, nil
+}
+
+// FindUserByIdentity 按第三方身份查用户；未绑定返回 ErrUserNotFound。
+func (s *AuthStore) FindUserByIdentity(ctx context.Context, provider, providerUserID string) (appauth.User, error) {
+	item, err := s.db.UserIdentity.Query().
+		Where(
+			entuseridentity.ProviderEQ(provider),
+			entuseridentity.ProviderUserIDEQ(providerUserID),
+		).
+		QueryUser().
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return appauth.User{}, appauth.ErrUserNotFound
+		}
+		return appauth.User{}, err
+	}
+	return mapAuthUser(item), nil
+}
+
+// LinkIdentity 绑定第三方身份；同一身份已绑定同一用户时幂等返回成功。
+func (s *AuthStore) LinkIdentity(ctx context.Context, userID int, identity appauth.IdentityInput) error {
+	err := s.db.UserIdentity.Create().
+		SetProvider(identity.Provider).
+		SetProviderUserID(identity.ProviderUserID).
+		SetEmail(identity.Email).
+		SetUserID(userID).
+		Exec(ctx)
+	if err == nil {
+		return nil
+	}
+	// 唯一约束冲突：并发回调或重复绑定。同一用户视为幂等成功，不同用户报错。
+	if ent.IsConstraintError(err) {
+		existing, findErr := s.db.UserIdentity.Query().
+			Where(
+				entuseridentity.ProviderEQ(identity.Provider),
+				entuseridentity.ProviderUserIDEQ(identity.ProviderUserID),
+			).
+			QueryUser().
+			Only(ctx)
+		if findErr == nil && existing.ID == userID {
+			return nil
+		}
+	}
+	return err
 }
 
 // hashAPIKey 对 API Key 进行 SHA256 哈希（与 auth 包的 HashAPIKey 逻辑一致）。

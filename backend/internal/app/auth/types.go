@@ -106,6 +106,13 @@ type Setting struct {
 	Value string
 }
 
+// IdentityInput 第三方身份绑定输入。
+type IdentityInput struct {
+	Provider       string
+	ProviderUserID string
+	Email          string
+}
+
 // Repository 认证域仓储接口。
 type Repository interface {
 	FindByEmail(context.Context, string) (User, error)
@@ -117,4 +124,8 @@ type Repository interface {
 	ValidateAPIKeyForLogin(ctx context.Context, key string) (APIKeyLoginInfo, error)
 	// GetAPIKeyBrief 获取 API Key 概要信息（额度/已用/到期/倍率）。
 	GetAPIKeyBrief(ctx context.Context, keyID int) (APIKeyBrief, error)
+	// FindUserByIdentity 按第三方身份查用户；未绑定返回 ErrUserNotFound。
+	FindUserByIdentity(ctx context.Context, provider, providerUserID string) (User, error)
+	// LinkIdentity 绑定第三方身份到用户（同一身份重复绑定同一用户应幂等）。
+	LinkIdentity(ctx context.Context, userID int, identity IdentityInput) error
 }
