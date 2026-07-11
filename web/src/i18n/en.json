@@ -122,7 +122,10 @@
     "docs": "Docs",
     "contact": "Contact",
     "status": "Status",
-    "back_to_console": "Back to Console"
+    "back_to_console": "Back to Console",
+    "recharge": "Recharge",
+    "recharge_records": "Recharge records",
+    "payment_orders": "Payment orders"
   },
   "plugin_shell": {
     "breadcrumbs": "Breadcrumbs",

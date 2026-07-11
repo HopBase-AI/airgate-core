@@ -122,7 +122,10 @@
     "docs": "ドキュメント",
     "contact": "お問い合わせ",
     "status": "サービスステータス",
-    "back_to_console": "コンソールに戻る"
+    "back_to_console": "コンソールに戻る",
+    "recharge": "チャージ",
+    "recharge_records": "チャージ履歴",
+    "payment_orders": "決済注文"
   },
   "plugin_shell": {
     "breadcrumbs": "パンくずリスト",
