@@ -101,6 +101,21 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 	accountEventStore := store.NewAccountEventStore(dep.DB)
 	accountEventService := appaccountevent.NewService(accountEventStore)
 
+	// 公开定价投影需要读模型目录覆盖层（settings group=models 的 models.catalog.<platform>）
+	pluginAdminService.SetModelOverlayReader(func(ctx context.Context, platform string) (string, error) {
+		items, err := settingsService.List(ctx, "models")
+		if err != nil {
+			return "", err
+		}
+		wanted := "models.catalog." + platform
+		for _, item := range items {
+			if item.Key == wanted {
+				return item.Value, nil
+			}
+		}
+		return "", nil
+	})
+
 	// 注入 auth 服务的设置/验证码/邮件依赖
 	authService.SetSettingsLister(&settingsAdapter{settingsService})
 	authService.SetVerifyCodeStore(verifyCodeStore)

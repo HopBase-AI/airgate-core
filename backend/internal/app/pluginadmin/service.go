@@ -12,6 +12,8 @@ import (
 type Service struct {
 	manager     Manager
 	marketplace MarketplaceReader
+	// overlayReader 读取模型目录覆盖层（公开定价投影用），经 SetModelOverlayReader 注入。
+	overlayReader OverlayReader
 }
 
 // NewService 创建插件管理服务。

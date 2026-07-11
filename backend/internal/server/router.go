@@ -50,6 +50,8 @@ func (s *Server) registerRoutes() {
 
 	// === 公共路由（无需认证） ===
 	v1.GET("/settings/public", handlers.Settings.GetPublicSettings)
+	// 公开模型定价：官网价格页数据源（模型目录 price.* + 覆盖层合并，仅公开字段）
+	v1.GET("/models/pricing", handlers.Plugin.PublicModelPricing)
 
 	// === 认证路由（无需 JWT） ===
 	//

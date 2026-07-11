@@ -79,3 +79,32 @@ func toBuiltinPlatformModelsResp(items []apppluginadmin.PlatformModels) []dto.Bu
 	}
 	return result
 }
+
+func toPublicModelPricingResp(items []apppluginadmin.PublicPlatformPricing) []dto.PublicModelPricingResp {
+	result := make([]dto.PublicModelPricingResp, 0, len(items))
+	for _, item := range items {
+		models := make([]dto.PublicPricingModelResp, 0, len(item.Models))
+		for _, m := range item.Models {
+			resp := dto.PublicPricingModelResp{
+				ID:            m.ID,
+				Name:          m.Name,
+				ContextWindow: m.ContextWindow,
+				Capabilities:  m.Capabilities,
+				Input:         m.Input,
+				CachedInput:   m.CachedInput,
+				Output:        m.Output,
+			}
+			if m.LongContextThreshold > 0 {
+				resp.LongContext = &dto.PublicLongContextResp{
+					Threshold:        m.LongContextThreshold,
+					InputMultiplier:  m.LongContextInputMultiplier,
+					CachedMultiplier: m.LongContextCachedMultiplier,
+					OutputMultiplier: m.LongContextOutputMultiplier,
+				}
+			}
+			models = append(models, resp)
+		}
+		result = append(result, dto.PublicModelPricingResp{Platform: item.Platform, Models: models})
+	}
+	return result
+}

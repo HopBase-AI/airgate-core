@@ -282,3 +282,12 @@ func (h *PluginHandler) ListMarketplace(c *gin.Context) {
 func (h *PluginHandler) BuiltinModelCatalog(c *gin.Context) {
 	response.Success(c, toBuiltinPlatformModelsResp(h.service.BuiltinModelCatalog()))
 }
+
+// PublicModelPricing 公开模型定价（无需认证，官网价格页数据源）。
+// 数据 = 插件内置目录 price.* 提示 + models.catalog 覆盖层合并，只含公开字段。
+// 官网与 API 不同源，显式放开只读 CORS；配 5 分钟缓存减轻回源。
+func (h *PluginHandler) PublicModelPricing(c *gin.Context) {
+	c.Header("Access-Control-Allow-Origin", "*")
+	c.Header("Cache-Control", "public, max-age=300")
+	response.Success(c, toPublicModelPricingResp(h.service.PublicModelPricing(c.Request.Context())))
+}
