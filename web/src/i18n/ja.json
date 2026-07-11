@@ -83,7 +83,8 @@
     "user": "ユーザー",
     "network_error": "サーバーに接続できません。ネットワークまたはサービスの状態をご確認ください",
     "server_error": "サーバーの応答に異常があります (HTTP {{status}})",
-    "view_all": "すべて表示"
+    "view_all": "すべて表示",
+    "language": "言語"
   },
   "status": {
     "active": "アクティブ",
@@ -157,6 +158,11 @@
     "feature_2_desc": "マルチアカウントの自動スケジューリングとフェイルオーバー",
     "feature_3": "使用量トラッキング",
     "feature_3_desc": "トークン単位の使用量とコストをリアルタイム表示",
+    "oauth_google": "Google でログイン",
+    "oauth_github": "GitHub でログイン",
+    "oauth_divider": "または",
+    "oauth_signing_in": "サードパーティログインを処理中…",
+    "oauth_failed": "サードパーティログインに失敗しました。再試行してください",
     "sign_in_title": "おかえりなさい",
     "sign_in_subtitle": "アカウントにログインして続行してください",
     "sign_up_title": "アカウントを作成",

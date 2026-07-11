@@ -42,6 +42,7 @@ import {
   Radar,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
 } from 'lucide-react';
 
 interface AppShellProps {
@@ -490,13 +491,14 @@ export function AppShell({ children }: AppShellProps) {
             {/* Language selector */}
             <Dropdown>
               <Dropdown.Trigger
-                aria-label="选择语言"
-                className="button button--sm button--ghost h-10 px-3"
+                aria-label={t('common.language') || '选择语言'}
+                className="button button--sm button--ghost h-10 gap-1.5 px-2.5"
               >
                 <Languages className="h-5 w-5" />
-                <span className="hidden min-w-8 text-center font-mono text-xs uppercase sm:inline-block">
+                <span className="min-w-6 text-center font-mono text-xs font-medium uppercase">
                   {currentLanguageOption.shortLabel}
                 </span>
+                <ChevronDown className="h-3.5 w-3.5 opacity-60" />
               </Dropdown.Trigger>
               <Dropdown.Popover placement="bottom end">
                 <Dropdown.Menu

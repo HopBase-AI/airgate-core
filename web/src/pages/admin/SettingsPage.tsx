@@ -12,7 +12,7 @@ import { queryKeys } from '../../shared/queryKeys';
 import { useToast } from '../../shared/ui';
 import {
   Save, Loader2, Globe, Mail, MailSearch, Send, Upload, X, RotateCcw,
-  ShieldCheck, Copy, Trash2, KeyRound, Zap, Download, Database, Boxes, Plus,
+  ShieldCheck, Copy, Trash2, KeyRound, Zap, Download, Database, Boxes, Plus, ChevronDown,
 } from 'lucide-react';
 import type { SettingItem, TestSMTPReq } from '../../shared/types';
 import { SystemUpdatePanel } from './SystemUpdatePanel';
@@ -1545,7 +1545,14 @@ function LogoUpload({ value, onChange }: { value: string; onChange: (url: string
 // 序列化以条目原始 JSON(raw)为底做合并:表单没有呈现的字段原样保留,
 // 防止"打开设置页保存一次"就把三档价/长上下文等高级字段静默抹掉。
 
+// 每行分配一个稳定 uid，作 React key 与折叠态的身份锚点，
+// 避免用数组下标当 key 时"删中间一行→下面行的展开态错位"。
+// 序列化只认已知业务字段 + raw，uid 不落库。
+let catalogUidSeq = 1;
+function nextCatalogUid(): number { return catalogUidSeq++; }
+
 interface CatalogRow {
+  uid: number;
   id: string;
   upstreamID: string;
   name: string;
@@ -1574,6 +1581,7 @@ interface CatalogRow {
 
 function emptyCatalogRow(): CatalogRow {
   return {
+    uid: nextCatalogUid(),
     id: '', upstreamID: '', name: '', contextWindow: '', maxOutput: '', enabled: true,
     input: '', cachedInput: '', cacheWrite5m: '', cacheWrite1h: '', output: '',
     prioInput: '', prioCached: '', prioOutput: '', flexInput: '', flexCached: '', flexOutput: '',
@@ -1597,6 +1605,7 @@ function parseCatalogRows(raw: string): CatalogRow[] {
     const p = asObj(e.pricing);
     const lc = asObj(e.long_context);
     return {
+      uid: nextCatalogUid(),
       id: typeof e.id === 'string' ? e.id : '',
       upstreamID: typeof e.upstream_id === 'string' ? e.upstream_id : (typeof e.kiro_id === 'string' ? e.kiro_id : ''),
       name: typeof e.name === 'string' ? e.name : '',
@@ -1743,6 +1752,15 @@ function ModelCatalogEditor({ label, settingKey, set, value, onValidationChange 
   // 本地 state 保证数字输入流畅(避免每键 parse→serialize 丢失尾字符);挂载时从 setting 初始化。
   // 页面在 settings 加载完成前显示全局 spinner,故挂载时 values 已就绪。
   const [rows, setRows] = useState<CatalogRow[]>(() => parseCatalogRows(value));
+  // Provider 分区可折叠：默认只展开"有覆盖条目"的平台，空平台收起省地方。
+  const [sectionOpen, setSectionOpen] = useState<boolean>(() => rows.length > 0);
+  // 每行展开态按 uid 记（不用下标，删中间行不会错位）；默认仅展开尚未填 id 的新行。
+  const [openUids, setOpenUids] = useState<Set<number>>(() => new Set(rows.filter((r) => !r.id.trim()).map((r) => r.uid)));
+  const toggleRow = (uid: number) => setOpenUids((s) => {
+    const next = new Set(s);
+    if (next.has(uid)) next.delete(uid); else next.add(uid);
+    return next;
+  });
 
   function commit(next: CatalogRow[]) {
     setRows(next);
@@ -1750,7 +1768,12 @@ function ModelCatalogEditor({ label, settingKey, set, value, onValidationChange 
   }
   const update = (i: number, patch: Partial<CatalogRow>) =>
     commit(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
-  const addRow = () => commit([...rows, emptyCatalogRow()]);
+  const addRow = () => {
+    const row = emptyCatalogRow();
+    setSectionOpen(true);
+    setOpenUids((s) => new Set(s).add(row.uid));
+    commit([...rows, row]);
+  };
   const removeRow = (i: number) => commit(rows.filter((_, idx) => idx !== i));
 
   const errors = validateCatalogRows(rows, isOpenAI, t);
@@ -1761,8 +1784,15 @@ function ModelCatalogEditor({ label, settingKey, set, value, onValidationChange 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingKey, errorKey, onValidationChange]);
 
+  // 有校验错误时强制展开，保证"保存被禁用"的原因（错误列表）不被折叠藏掉。
+  const effectiveOpen = sectionOpen || errors.length > 0;
+
   return (
     <SettingsSection
+      collapsible
+      open={effectiveOpen}
+      onToggleOpen={() => setSectionOpen((v) => !v)}
+      badge={rows.length > 0 ? rows.length : undefined}
       action={(
         <Button size="sm" variant="ghost" onPress={addRow}>
           <Plus className="w-3.5 h-3.5" />
@@ -1775,10 +1805,31 @@ function ModelCatalogEditor({ label, settingKey, set, value, onValidationChange 
       {rows.length === 0 ? (
         <p className="text-[12px] leading-5 text-text-tertiary">{t('settings.models_empty')}</p>
       ) : (
-        <div className="space-y-4">
-          {rows.map((r, i) => (
-            <div key={i} className="rounded-lg border border-glass-border p-4 space-y-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          {rows.map((r, i) => {
+            const rowOpen = openUids.has(r.uid);
+            return (
+            <div key={r.uid} className="rounded-lg border border-glass-border">
+              <div className="flex items-center gap-2 px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => toggleRow(r.uid)}
+                  aria-expanded={rowOpen}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                >
+                  <ChevronDown className={`h-4 w-4 shrink-0 text-text-tertiary transition-transform ${rowOpen ? '' : '-rotate-90'}`} />
+                  <span className="truncate font-mono text-[13px] text-text">{r.id.trim() || '—'}</span>
+                  {r.name.trim() ? <span className="truncate text-[12px] text-text-tertiary">{r.name.trim()}</span> : null}
+                  {!r.enabled ? <span className="shrink-0 text-[10px] font-medium uppercase text-text-tertiary">off</span> : null}
+                  <span className="ml-auto shrink-0 font-mono text-[12px] tabular-nums text-text-tertiary">{`$${r.input.trim() || '—'} / $${r.output.trim() || '—'}`}</span>
+                </button>
+                <Button size="sm" variant="ghost" onPress={() => removeRow(i)} aria-label={t('common.delete')}>
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+              {rowOpen ? (
+              <div className="border-t border-glass-border p-3 space-y-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <Field label={t('settings.models_field_id')}>
                   <Input value={r.id} onChange={(e) => update(i, { id: e.target.value })} placeholder="claude-xxx / gpt-xxx" />
                 </Field>
@@ -1878,19 +1929,18 @@ function ModelCatalogEditor({ label, settingKey, set, value, onValidationChange 
                   </div>
                 </div>
               )}
-              <div className="flex items-center justify-between">
+              <div className="pt-1">
                 <NativeSwitch
                   isSelected={r.enabled}
                   label={<span className="text-[13px] text-text-secondary">{t('settings.models_field_enabled')}</span>}
                   onChange={(v) => update(i, { enabled: v })}
                 />
-                <Button size="sm" variant="ghost" onPress={() => removeRow(i)}>
-                  <Trash2 className="w-3.5 h-3.5" />
-                  {t('common.delete')}
-                </Button>
               </div>
+              </div>
+              ) : null}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
       {errors.length > 0 && (
@@ -1909,24 +1959,54 @@ function SettingsSection({
   children,
   description,
   title,
+  collapsible = false,
+  open = true,
+  onToggleOpen,
+  badge,
 }: {
   action?: React.ReactNode;
   children: React.ReactNode;
   description?: React.ReactNode;
   title: React.ReactNode;
+  collapsible?: boolean;
+  open?: boolean;
+  onToggleOpen?: () => void;
+  badge?: React.ReactNode;
 }) {
+  const heading = (
+    <div className="min-w-0">
+      <h3 className="flex items-center gap-2 text-sm font-semibold text-text">
+        {collapsible ? (
+          <ChevronDown className={`h-4 w-4 shrink-0 text-text-tertiary transition-transform ${open ? '' : '-rotate-90'}`} />
+        ) : null}
+        <span className="truncate">{title}</span>
+        {badge != null ? (
+          <span className="shrink-0 rounded-full border border-glass-border px-2 py-0.5 text-[11px] font-normal text-text-tertiary">{badge}</span>
+        ) : null}
+      </h3>
+      {description && open ? (
+        <p className="mt-1 text-[12px] leading-5 text-text-tertiary">{description}</p>
+      ) : null}
+    </div>
+  );
   return (
     <section className="ag-settings-section">
       <div className="ag-settings-section-heading">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-text">{title}</h3>
-          {description ? (
-            <p className="mt-1 text-[12px] leading-5 text-text-tertiary">{description}</p>
-          ) : null}
-        </div>
+        {collapsible ? (
+          <button
+            type="button"
+            onClick={onToggleOpen}
+            aria-expanded={open}
+            className="flex min-w-0 flex-1 items-center text-left"
+          >
+            {heading}
+          </button>
+        ) : (
+          heading
+        )}
         {action ? <div className="shrink-0">{action}</div> : null}
       </div>
-      <div className="ag-settings-section-body">{children}</div>
+      {open ? <div className="ag-settings-section-body">{children}</div> : null}
     </section>
   );
 }

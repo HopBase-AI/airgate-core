@@ -83,7 +83,8 @@
     "user": "用戶",
     "network_error": "無法連接到伺服器，請檢查網絡或服務是否正常",
     "server_error": "伺服器端回應異常 (HTTP {{status}})",
-    "view_all": "查看全部"
+    "view_all": "查看全部",
+    "language": "語言"
   },
   "status": {
     "active": "活跃",
@@ -157,6 +158,11 @@
     "feature_2_desc": "多帳號智能調度，故障自動切換",
     "feature_3": "用量追蹤",
     "feature_3_desc": "Token 級用量與成本實時可見",
+    "oauth_google": "使用 Google 登入",
+    "oauth_github": "使用 GitHub 登入",
+    "oauth_divider": "或",
+    "oauth_signing_in": "正在完成第三方登入…",
+    "oauth_failed": "第三方登入失敗，請重試",
     "sign_in_title": "歡迎回來",
     "sign_in_subtitle": "登入您的帳戶以繼續",
     "sign_up_title": "建立帳戶",

@@ -83,7 +83,8 @@
     "user": "用户",
     "network_error": "无法连接到服务器，请检查网络或服务是否正常",
     "server_error": "服务端响应异常 (HTTP {{status}})",
-    "view_all": "查看全部"
+    "view_all": "查看全部",
+    "language": "语言"
   },
   "status": {
     "active": "活跃",
@@ -157,6 +158,11 @@
     "feature_2_desc": "多账号智能调度，故障自动切换",
     "feature_3": "用量追踪",
     "feature_3_desc": "Token 级用量与成本实时可见",
+    "oauth_google": "使用 Google 登录",
+    "oauth_github": "使用 GitHub 登录",
+    "oauth_divider": "或",
+    "oauth_signing_in": "正在完成第三方登录…",
+    "oauth_failed": "第三方登录失败，请重试",
     "sign_in_title": "欢迎回来",
     "sign_in_subtitle": "登录您的账户以继续",
     "sign_up_title": "创建账户",
