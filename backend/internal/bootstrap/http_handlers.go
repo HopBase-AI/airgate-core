@@ -18,6 +18,7 @@ import (
 	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
 	appdashboard "github.com/DouDOU-start/airgate-core/internal/app/dashboard"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
+	apponeclick "github.com/DouDOU-start/airgate-core/internal/app/oneclick"
 	appopenclaw "github.com/DouDOU-start/airgate-core/internal/app/openclaw"
 	apppluginadmin "github.com/DouDOU-start/airgate-core/internal/app/pluginadmin"
 	appproxy "github.com/DouDOU-start/airgate-core/internal/app/proxy"
@@ -62,6 +63,7 @@ type HTTPHandlers struct {
 	Dashboard      *handler.DashboardHandler
 	Plugin         *handler.PluginHandler
 	OpenClaw       *handler.OpenClawHandler
+	OneClick       *handler.OneClickHandler
 	Version        *handler.VersionHandler
 	Upgrade        *handler.UpgradeHandler
 	RelayDetection *handler.RelayDetectionHandler
@@ -94,6 +96,7 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 	settingsStore := store.NewSettingsStore(dep.DB)
 	settingsService := appsettings.NewService(settingsStore, dep.Config.APIKeySecret())
 	openclawService := appopenclaw.NewService(settingsService)
+	oneclickService := apponeclick.NewService(dep.Redis, apiKeyService, settingsService)
 	relayDetectionService := apprelaydetect.NewService(dep.DB)
 	accountEventStore := store.NewAccountEventStore(dep.DB)
 	accountEventService := appaccountevent.NewService(accountEventStore)
@@ -128,6 +131,7 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 		Dashboard:      handler.NewDashboardHandler(dashboardService),
 		Plugin:         handler.NewPluginHandler(pluginAdminService),
 		OpenClaw:       handler.NewOpenClawHandler(openclawService),
+		OneClick:       handler.NewOneClickHandler(oneclickService),
 		Version:        handler.NewVersionHandler(),
 		Upgrade:        handler.NewUpgradeHandler(upgradeService),
 		RelayDetection: handler.NewRelayDetectionHandler(relayDetectionService),

@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Alert, AlertDialog, Button, Card, Form, Input, Label, Modal, Spinner, Tabs, TextArea, useOverlayState } from '@heroui/react';
 import { DialogTriggerShim } from '../../shared/components/DialogTriggerShim';
 import { settingsApi } from '../../shared/api/settings';
+import { modelsApi, type BuiltinModel } from '../../shared/api/models';
 import { adminApiKeyApi, type AdminAPIKeyResp } from '../../shared/api/adminApiKey';
 import { defaultLogoUrl } from '../../app/providers/SiteSettingsProvider';
 import { useCrudMutation } from '../../shared/hooks/useCrudMutation';
@@ -148,7 +149,24 @@ const DEFAULT_LANDING_PRICING_JSON = `{
       {"cells":[{"model":"gpt-5.3-codex-spark"},{"strike":"¥11.9 / ¥95.2","note":"官方 $1.75 / $14 · 缓存 $0.175"},{"deal":true,"strong":"¥0.787 / ¥6.30","save":"约 0.66 折 · 缓存 ¥0.079"},{"strong":"¥1.05 / ¥8.40","note":"约 0.88 折 · 缓存 ¥0.105"},{"text":"Codex 轻量任务"}]},
       {"cells":[{"model":"gpt-image-1 / 1.5 / 2","tag":"图像","tagStyle":"img"},{"strike":"¥34 / ¥204","note":"官方 $5 / $30 · 缓存 $0.5"},{"deal":true,"strong":"¥2.25 / ¥13.50","save":"约 0.66 折 · 缓存 ¥0.225"},{"strong":"¥3.00 / ¥18.00","note":"约 0.88 折 · 缓存 ¥0.30"},{"text":"图像接口 Token 计费；固定图价见「图像生成」"}]}
     ]
-  }
+  },
+  "panels": [
+    {
+      "key": "glm",
+      "tab": "GLM",
+      "insertBefore": "image",
+      "title": "GLM 模型",
+      "tag": "OpenAI 兼容",
+      "tagStyle": "key",
+      "lead": "GLM 5.2 通过 OpenAI 兼容协议接入，按 5.5 折对外结算（销售倍率 0.55x），适合中文推理、长上下文和高并发文本任务。",
+      "minWidth": "900px",
+      "headers": ["模型 ID", "折前参考价（¥）", {"deal":true,"badge":"新品特惠","text":"GLM · 0.55x"}, "折扣", "说明"],
+      "rows": [
+        {"hl":true,"cells":[{"model":"glm-5.2","tag":"1M 上下文","tagStyle":"key"},{"strike":"¥8.00 / ¥28.00","note":"折前参考 · 缓存 ¥2.00"},{"deal":true,"strong":"¥4.40 / ¥15.40","save":"5.5 折 · 缓存 ¥1.10"},{"pill":"省约 45%"},{"text":"OpenAI 兼容 /v1/chat/completions"}]}
+      ],
+      "units": "› 价格单位：人民币 / 百万 Token（输入 / 输出）。缓存为 Prompt Cache 命中读取价；价格会因汇率和渠道成本波动略有差异，实际可用模型与扣费以控制台为准。"
+    }
+  ]
 }`;
 
 const DEFAULT_EMAIL_SUBJECT = '{{site_name}} - 邮箱验证码';
@@ -420,8 +438,11 @@ export default function SettingsPage() {
       const parsed = JSON.parse(landingPricingRaw);
       // 注意：typeof null === 'object'，不能只用 typeof 判断，否则 {"tables": null}
       // 会被判定为合法（保存后 pricing-render.js 静默保留旧的硬编码表，管理员毫无提示）。
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
-        !parsed.tables || typeof parsed.tables !== 'object' || Array.isArray(parsed.tables)) {
+      const hasTables = parsed && typeof parsed === 'object' && !Array.isArray(parsed) &&
+        parsed.tables && typeof parsed.tables === 'object' && !Array.isArray(parsed.tables);
+      const hasPanels = parsed && typeof parsed === 'object' && !Array.isArray(parsed) &&
+        Array.isArray(parsed.panels);
+      if (!hasTables && !hasPanels) {
         landingPricingError = t('settings.landing_pricing_invalid');
       }
     } catch (e) {
@@ -1757,7 +1778,8 @@ function catalogPriceFields(r: CatalogRow, isOpenAI: boolean): string[] {
 function validateCatalogRows(rows: CatalogRow[], isOpenAI: boolean, t: (k: string, o?: Record<string, unknown>) => string): string[] {
   const errs: string[] = [];
   const seen = new Set<string>();
-  const idRe = /^[a-zA-Z0-9._-]+$/;
+  // 允许 org/model 形式(如 zai-org/glm-5.2-fp8)——上游标准命名带斜杠,插件侧 normalizeID 原样匹配
+  const idRe = /^[a-zA-Z0-9._/-]+$/;
   rows.forEach((r, i) => {
     const id = r.id.trim();
     if (!id) { errs.push(t('settings.models_err_id_empty', { n: i + 1 })); return; }
@@ -1781,6 +1803,15 @@ function ModelCatalogPanel({ values, set, footer, onValidationChange }: {
   onValidationChange: (key: ModelCatalogSettingKey, errors: string[]) => void;
 }) {
   const { t } = useTranslation();
+  // 各平台内置模型目录（插件上报,含 price.* 内置价提示）,给每个编辑器铺全量种子行。
+  const { data: builtinCatalog } = useQuery({
+    queryKey: queryKeys.builtinModels(),
+    queryFn: modelsApi.builtin,
+    staleTime: 60_000,
+  });
+  const builtinByPlatform = new Map<string, BuiltinModel[]>(
+    (builtinCatalog ?? []).map((p) => [p.platform, p.models]),
+  );
   return (
     <Card>
       <Card.Header>
@@ -1795,6 +1826,7 @@ function ModelCatalogPanel({ values, set, footer, onValidationChange }: {
               settingKey={platform.key}
               set={set}
               value={values[platform.key] ?? ''}
+              builtinModels={builtinByPlatform.get(platform.key.split('.').pop() ?? '') ?? []}
               onValidationChange={onValidationChange}
             />
           ))}
@@ -1805,11 +1837,33 @@ function ModelCatalogPanel({ values, set, footer, onValidationChange }: {
   );
 }
 
-function ModelCatalogEditor({ label, settingKey, set, value, onValidationChange }: {
+// formatContextWindow 200000 → "200K"、1050000 → "1.05M"。
+function formatContextWindow(n: number): string {
+  if (!n || n <= 0) return '';
+  if (n >= 1_000_000) {
+    const m = n / 1_000_000;
+    return `${Number.isInteger(m) ? m : m.toFixed(2)}M`;
+  }
+  return `${Math.round(n / 1000)}K`;
+}
+
+// builtinPriceSummary 从 metadata 的 price.* 提示键拼一行内置价摘要。
+function builtinPriceSummary(meta: Record<string, string> | undefined, cachedLabel: string): string {
+  if (!meta) return '';
+  const input = meta['price.input'];
+  const output = meta['price.output'];
+  if (!input && !output) return '';
+  let s = `$${input ?? '—'} / $${output ?? '—'}`;
+  if (meta['price.cached_input']) s += ` · ${cachedLabel} $${meta['price.cached_input']}`;
+  return s;
+}
+
+function ModelCatalogEditor({ label, settingKey, set, value, builtinModels, onValidationChange }: {
   label: string;
   settingKey: ModelCatalogSettingKey;
   set: (key: string, value: string) => void;
   value: string;
+  builtinModels: BuiltinModel[];
   onValidationChange: (key: ModelCatalogSettingKey, errors: string[]) => void;
 }) {
   const { t } = useTranslation();
@@ -1840,6 +1894,16 @@ function ModelCatalogEditor({ label, settingKey, set, value, onValidationChange 
     commit([...rows, row]);
   };
   const removeRow = (i: number) => commit(rows.filter((_, idx) => idx !== i));
+
+  // 内置模型铺底：过滤掉已有覆盖条目的,剩下的展示为只读行,点「覆盖」转成可编辑条目。
+  const coveredIds = new Set(rows.map((r) => r.id.trim().toLowerCase()).filter(Boolean));
+  const uncoveredBuiltin = builtinModels.filter((m) => !coveredIds.has(m.id.toLowerCase()));
+  const overrideBuiltin = (m: BuiltinModel) => {
+    const row = { ...emptyCatalogRow(), id: m.id, name: m.name };
+    setSectionOpen(true);
+    setOpenUids((s) => new Set(s).add(row.uid));
+    commit([...rows, row]);
+  };
 
   const errors = validateCatalogRows(rows, isOpenAI, t);
   const errorKey = errors.join('\n');
@@ -2006,6 +2070,32 @@ function ModelCatalogEditor({ label, settingKey, set, value, onValidationChange 
             </div>
             );
           })}
+        </div>
+      )}
+      {uncoveredBuiltin.length > 0 && (
+        <div className="mt-4">
+          <p className="mb-1.5 text-[12px] font-medium text-text-secondary">
+            {t('settings.models_builtin_title')}
+            <span className="ml-1.5 rounded-full border border-glass-border px-1.5 py-0.5 text-[10px] font-normal text-text-tertiary">{uncoveredBuiltin.length}</span>
+          </p>
+          <p className="mb-2 text-[11px] leading-4 text-text-tertiary">{t('settings.models_builtin_hint')}</p>
+          <div className="divide-y divide-glass-border rounded-lg border border-glass-border">
+            {uncoveredBuiltin.map((m) => {
+              const price = builtinPriceSummary(m.metadata, t('settings.models_price_cached'));
+              const ctx = formatContextWindow(m.context_window);
+              return (
+                <div key={m.id} className="flex items-center gap-2 px-3 py-1.5">
+                  <span className="truncate font-mono text-[13px] text-text">{m.id}</span>
+                  {m.name ? <span className="truncate text-[12px] text-text-tertiary">{m.name}</span> : null}
+                  {ctx ? <span className="shrink-0 rounded border border-glass-border px-1 text-[10px] text-text-tertiary">{ctx}</span> : null}
+                  <span className="ml-auto shrink-0 font-mono text-[12px] tabular-nums text-text-tertiary">{price}</span>
+                  <Button size="sm" variant="ghost" onPress={() => overrideBuiltin(m)}>
+                    {t('settings.models_builtin_override')}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
       {errors.length > 0 && (

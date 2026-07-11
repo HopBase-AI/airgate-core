@@ -851,8 +851,8 @@
     "models_ph_auto_w5m": "輸入×1.25",
     "models_ph_auto_w1h": "輸入×2",
     "models_err_id_empty": "第 {{n}} 行:模型 ID 不能為空",
-    "models_err_id_invalid": "模型 ID {{id}} 含非法字符(僅允許字母、數字、. _ -)",
-    "models_err_upstream_invalid": "上游 ID {{id}} 含非法字符(僅允許字母、數字、. _ -)",
+    "models_err_id_invalid": "模型 ID {{id}} 含非法字符(僅允許字母、數字、. _ - /)",
+    "models_err_upstream_invalid": "上游 ID {{id}} 含非法字符(僅允許字母、數字、. _ - /)",
     "models_err_dup": "模型 ID {{id}} 重複",
     "models_err_price": "模型 {{id}} 的價格必須為正數",
     "models_fix_errors": "請先修正模型目錄錯誤再保存。",
@@ -1006,7 +1006,10 @@
     "openclaw_models_not_array": "預設必须是一個 JSON 數組",
     "landing_pricing": "官網價格表配置",
     "landing_pricing_desc": "JSON 對象，驅動官網首頁價格表。tables 可替換內置表（claude-max / claude-aws / claude-kiro / openai）；panels 可新增獨立模型頁籤（key/tab/title/headers/rows）。每行 cells 依次為：模型（model/tag/tagStyle）、官方劃線價（strike/note）、售價（strong/note/save，deal:true 高亮列）、省幅膠囊（pill）、說明（text）。留空則官網使用頁面內置表；保存後官網刷新即生效。",
-    "landing_pricing_invalid": "需為包含 tables 對象或 panels 數組的 JSON"
+    "landing_pricing_invalid": "需為包含 tables 對象或 panels 數組的 JSON",
+    "models_builtin_title": "內建模型（未覆蓋時按內建基礎價計費）",
+    "models_builtin_hint": "以下為插件內建模型與內建基礎價，來自插件上報。點「覆蓋」產生可編輯條目，只改你要改的欄位，留空欄位繼續沿用內建預設。",
+    "models_builtin_override": "覆蓋"
   },
   "docs": {
     "cta_hint": "准備好了吗？立即開始使用。",
@@ -1095,7 +1098,19 @@
     "ccs_codex_desc": "OpenAI Codex CLI 編碼助手",
     "ccs_not_installed": "未检測到 CC-Switch，請先安裝 CC-Switch 客戶端。",
     "ccs_session_expired": "登入會話已失效，請重新使用 API 密鑰登入後再尝試匯入",
-    "codex_config_toml_hint": "請確保以下內容位于 config.toml 檔案的開头部分"
+    "codex_config_toml_hint": "請確保以下內容位于 config.toml 檔案的開头部分",
+    "one_click": "一鍵接入",
+    "one_click_title": "一鍵接入 Claude Code",
+    "one_click_desc": "複製下面這一條命令，貼到終端機按 Enter 即可：自動安裝 Claude Code、寫入密鑰配置並驗證連線，全程無需手動設定。",
+    "one_click_expires_hint": "命令中的接入令牌 15 分鐘內有效，且只能使用一次。",
+    "one_click_status_pending": "等待終端機執行命令…",
+    "one_click_status_exchanged": "已取得配置，正在驗證連線…",
+    "one_click_status_verified": "接入成功！打開新終端機輸入 claude 即可開始使用。",
+    "one_click_status_expired": "接入令牌已過期或已被使用，請重新產生。",
+    "one_click_regenerate": "重新產生命令",
+    "one_click_issue_failed": "產生接入命令失敗",
+    "one_click_ccs_hint": "進階：需要多套配置切換？可安裝 CC Switch，再從密鑰選單使用「匯入 CCS」。",
+    "one_click_ccs_download": "下載 CC Switch"
   },
   "setup": {
     "title": "系統安裝向導",

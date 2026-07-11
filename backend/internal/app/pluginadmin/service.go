@@ -46,6 +46,32 @@ func (s *Service) List() []PluginMeta {
 	return result
 }
 
+// PlatformModels 单个网关平台当前生效的模型清单。
+type PlatformModels struct {
+	Platform string
+	Models   []sdk.ModelInfo
+}
+
+// BuiltinModelCatalog 汇总所有 gateway 插件当前生效的模型目录。
+//
+// 数据来自 manager 的 modelCache（插件启动 Models() 快照 + models.refresh 推送），
+// ModelInfo.Metadata 里的 price.* / long_context.* 键是插件编码的内置基础价提示，
+// 供后台「模型目录」编辑器铺出全量内置模型（价格展示用，计费仍在插件 Forward 内）。
+func (s *Service) BuiltinModelCatalog() []PlatformModels {
+	result := make([]PlatformModels, 0, 4)
+	for _, item := range s.manager.GetAllPluginMeta() {
+		if item.Type != "gateway" || item.Platform == "" {
+			continue
+		}
+		models := s.manager.GetModels(item.Platform)
+		if len(models) == 0 {
+			continue
+		}
+		result = append(result, PlatformModels{Platform: item.Platform, Models: models})
+	}
+	return result
+}
+
 func cloneStringMap(input map[string]string) map[string]string {
 	if len(input) == 0 {
 		return nil

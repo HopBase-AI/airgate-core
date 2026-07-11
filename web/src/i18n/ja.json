@@ -851,8 +851,8 @@
     "models_ph_auto_w5m": "入力×1.25",
     "models_ph_auto_w1h": "入力×2",
     "models_err_id_empty": "{{n}} 行目：モデル ID を空にできません",
-    "models_err_id_invalid": "モデル ID {{id}} に不正な文字が含まれています（使用可能なのは英字、数字、. _ - のみ）",
-    "models_err_upstream_invalid": "上流 ID {{id}} に不正な文字が含まれています（使用可能なのは英字、数字、. _ - のみ）",
+    "models_err_id_invalid": "モデル ID {{id}} に不正な文字が含まれています（使用可能なのは英字、数字、. _ - / のみ）",
+    "models_err_upstream_invalid": "上流 ID {{id}} に不正な文字が含まれています（使用可能なのは英字、数字、. _ - / のみ）",
     "models_err_dup": "モデル ID {{id}} が重複しています",
     "models_err_price": "モデル {{id}} の料金は正の数である必要があります",
     "models_fix_errors": "先にモデルカタログのエラーを修正してから保存してください。",
@@ -1006,7 +1006,10 @@
     "openclaw_models_not_array": "プリセットは JSON 配列である必要があります",
     "landing_pricing": "公式サイトの料金表設定",
     "landing_pricing_desc": "JSON オブジェクトで、公式サイトトップページの料金表を制御します。tables は内蔵表（claude-max / claude-aws / claude-kiro / openai）を置き換えられます。panels は独立したモデルタブ（key/tab/title/headers/rows）を追加できます。各行の cells は順に：モデル（model/tag/tagStyle）、公式の取り消し線価格（strike/note）、販売価格（strong/note/save、deal:true でハイライト列）、割引率カプセル（pill）、説明（text）です。空欄の場合、公式サイトはページ内蔵の表を使用します。保存後、公式サイトを更新すると反映されます。",
-    "landing_pricing_invalid": "tables オブジェクトまたは panels 配列を含む JSON である必要があります"
+    "landing_pricing_invalid": "tables オブジェクトまたは panels 配列を含む JSON である必要があります",
+    "models_builtin_title": "組み込みモデル（未上書き時は組み込み基本価格で課金）",
+    "models_builtin_hint": "以下はプラグインが報告した組み込みモデルと基本価格です。「上書き」をクリックすると編集可能な項目が作成されます。空欄のままのフィールドは組み込みのデフォルトを引き継ぎます。",
+    "models_builtin_override": "上書き"
   },
   "docs": {
     "cta_hint": "準備はできましたか？今すぐ利用を始めましょう。",
@@ -1095,7 +1098,19 @@
     "ccs_codex_desc": "OpenAI Codex CLI コーディングアシスタント",
     "ccs_not_installed": "CC-Switchが検出されませんでした。先にCC-Switchクライアントをインストールしてください。",
     "ccs_session_expired": "ログインセッションの有効期限が切れました。APIキーで再度ログインしてからインポートをお試しください",
-    "codex_config_toml_hint": "以下の内容が config.toml ファイルの先頭部分にあることを確認してください"
+    "codex_config_toml_hint": "以下の内容が config.toml ファイルの先頭部分にあることを確認してください",
+    "one_click": "ワンクリック接続",
+    "one_click_title": "Claude Code ワンクリック接続",
+    "one_click_desc": "以下のコマンドをコピーしてターミナルに貼り付けるだけ。Claude Code のインストール、キー設定の書き込み、接続確認まで自動で行います。",
+    "one_click_expires_hint": "コマンド内の接続トークンは 15 分間有効で、1 回のみ使用できます。",
+    "one_click_status_pending": "ターミナルでのコマンド実行を待機中…",
+    "one_click_status_exchanged": "設定を取得しました。接続を確認中…",
+    "one_click_status_verified": "接続完了！新しいターミナルで claude を実行してください。",
+    "one_click_status_expired": "接続トークンが期限切れか使用済みです。再生成してください。",
+    "one_click_regenerate": "コマンドを再生成",
+    "one_click_issue_failed": "接続コマンドの生成に失敗しました",
+    "one_click_ccs_hint": "上級者向け：複数の設定を切り替えたい場合は CC Switch をインストールし、キーメニューの「CCSをインポート」をご利用ください。",
+    "one_click_ccs_download": "CC Switch をダウンロード"
   },
   "setup": {
     "title": "システムインストールウィザード",

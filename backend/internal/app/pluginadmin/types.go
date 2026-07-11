@@ -11,6 +11,7 @@ import (
 // Manager 定义插件管理服务所需能力。
 type Manager interface {
 	GetAllPluginMeta() []plugin.PluginMeta
+	GetModels(platform string) []sdk.ModelInfo
 	InstallFromBinary(context.Context, string, []byte) error
 	InstallFromGithub(context.Context, string) error
 	Uninstall(context.Context, string) error

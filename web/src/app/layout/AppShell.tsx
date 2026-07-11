@@ -494,7 +494,7 @@ export function AppShell({ children }: AppShellProps) {
             <Dropdown>
               <Dropdown.Trigger
                 aria-label={t('common.language') || '选择语言'}
-                className="button button--sm button--ghost h-10 gap-1.5 px-2.5"
+                className="button button--sm button--ghost inline-flex h-10 items-center gap-1.5 whitespace-nowrap px-2.5"
               >
                 <Languages className="h-5 w-5" />
                 <span className="min-w-6 text-center font-mono text-xs font-medium uppercase">

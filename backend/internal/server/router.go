@@ -94,6 +94,10 @@ func (s *Server) registerRoutes() {
 		accountGroup.DELETE("/api-keys/:id", handlers.APIKey.DeleteKey)
 		accountGroup.GET("/api-keys/:id/reveal", handlers.APIKey.RevealKey)
 
+		// 一键接入（Claude Code）：签发一次性接入令牌 + 轮询接入状态
+		accountGroup.POST("/oneclick/setup-token", handlers.OneClick.IssueSetupToken)
+		accountGroup.GET("/oneclick/setup-token/:token", handlers.OneClick.SetupTokenStatus)
+
 		// 分组
 		accountGroup.GET("/groups", handlers.Group.ListAvailableGroups)
 
@@ -186,6 +190,8 @@ func (s *Server) registerRoutes() {
 
 		// 插件管理
 		adminGroup.GET("/plugins", handlers.Plugin.ListPlugins)
+		// 各网关平台当前生效的内置模型目录（模型目录编辑器种子数据）
+		adminGroup.GET("/models/builtin", handlers.Plugin.BuiltinModelCatalog)
 		adminGroup.GET("/plugins/:name/config", handlers.Plugin.GetPluginConfig)
 		adminGroup.PUT("/plugins/:name/config", handlers.Plugin.UpdatePluginConfig)
 		adminGroup.POST("/plugins/upload", handlers.Plugin.UploadPlugin)
@@ -303,6 +309,18 @@ func (s *Server) registerRoutes() {
 		openclawGroup.GET("/models.txt", handlers.OpenClaw.HandleModelsText)
 		openclawGroup.POST("/render-config", handlers.OpenClaw.HandleRenderConfig)
 		openclawGroup.GET("/info", handlers.OpenClaw.HandleInfo)
+	}
+
+	// === Claude Code 一键接入（公共路由，无需认证） ===
+	// setup.sh/.ps1 通过 `curl | bash` / `irm | iex` 分发，必须公开；
+	// exchange/verify 由脚本携带一次性 setup token 调用，令牌本身即凭证。
+	// 同 openclaw：必须注册在 NoRoute 之前，否则会被 API Key 转发逻辑吃掉。
+	oneclickGroup := r.Group("/oneclick")
+	{
+		oneclickGroup.GET("/setup.sh", handlers.OneClick.HandleSetupScript)
+		oneclickGroup.GET("/setup.ps1", handlers.OneClick.HandleSetupScriptPowerShell)
+		oneclickGroup.POST("/exchange", handlers.OneClick.HandleExchange)
+		oneclickGroup.POST("/verify", handlers.OneClick.HandleVerify)
 	}
 
 	// 上传文件静态服务（这部分仍然在磁盘上，因为是用户上传的运行时数据）

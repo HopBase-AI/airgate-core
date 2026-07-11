@@ -36,6 +36,7 @@ import {
   Upload,
   MoreHorizontal,
   RefreshCw,
+  Rocket,
 } from 'lucide-react';
 import type { APIKeyResp, CreateAPIKeyReq, UpdateAPIKeyReq, GroupResp } from '../../shared/types';
 import { useAuth } from '../../app/providers/AuthProvider';
@@ -43,6 +44,7 @@ import { EditKeyModal } from './userkeys/EditKeyModal';
 import { CreateKeyModal } from './userkeys/CreateKeyModal';
 import { UseKeyModal, useUseKeyModal } from './userkeys/UseKeyModal';
 import { CcsImportModal, useCcsImportModal } from './userkeys/CcsImportModal';
+import { OneClickModal, useOneClickModal } from './userkeys/OneClickModal';
 import { type KeyForm, emptyForm } from './userkeys/types';
 
 export default function UserKeysPage() {
@@ -251,6 +253,14 @@ export default function UserKeysPage() {
     openCcsModal,
     closeCcsModal,
   } = useCcsImportModal(groupMap);
+
+  // 一键接入弹窗
+  const {
+    oneClickTarget,
+    oneClickIssue,
+    openOneClickModal,
+    closeOneClickModal,
+  } = useOneClickModal();
 
   const saving = createMutation.isPending || updateMutation.isPending;
   const rows = data?.list ?? [];
@@ -494,6 +504,15 @@ export default function UserKeysPage() {
                         isIconOnly
                         size="sm"
                         variant="secondary"
+                        aria-label={t('user_keys.one_click')}
+                        onPress={() => openOneClickModal(row)}
+                      >
+                        <Rocket className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        isIconOnly
+                        size="sm"
+                        variant="secondary"
                         aria-label={t('user_keys.use_key')}
                         onPress={() => openUseKeyModal(row)}
                       >
@@ -653,6 +672,14 @@ export default function UserKeysPage() {
         ccsKeyValue={ccsKeyValue}
         ccsPlatform={ccsPlatform}
         onClose={closeCcsModal}
+      />
+
+      {/* 一键接入弹窗 */}
+      <OneClickModal
+        target={oneClickTarget}
+        issue={oneClickIssue}
+        onRegenerate={() => oneClickTarget && openOneClickModal(oneClickTarget)}
+        onClose={closeOneClickModal}
       />
 
       {/* 删除确认 */}

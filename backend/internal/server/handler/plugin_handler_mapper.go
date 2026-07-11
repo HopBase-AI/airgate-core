@@ -61,3 +61,21 @@ func toMarketplacePluginResp(item apppluginadmin.MarketplacePlugin) dto.Marketpl
 		HasUpdate:        item.HasUpdate,
 	}
 }
+
+func toBuiltinPlatformModelsResp(items []apppluginadmin.PlatformModels) []dto.BuiltinPlatformModelsResp {
+	result := make([]dto.BuiltinPlatformModelsResp, 0, len(items))
+	for _, item := range items {
+		models := make([]dto.BuiltinModelResp, 0, len(item.Models))
+		for _, m := range item.Models {
+			models = append(models, dto.BuiltinModelResp{
+				ID:              m.ID,
+				Name:            m.Name,
+				ContextWindow:   m.ContextWindow,
+				MaxOutputTokens: m.MaxOutputTokens,
+				Metadata:        m.Metadata,
+			})
+		}
+		result = append(result, dto.BuiltinPlatformModelsResp{Platform: item.Platform, Models: models})
+	}
+	return result
+}

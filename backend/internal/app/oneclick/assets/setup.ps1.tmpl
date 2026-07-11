@@ -1,0 +1,102 @@
+# {{.SiteName}} — Claude Code 一键接入脚本（Windows PowerShell）
+# 用法（控制台会生成带一次性令牌的完整命令）：
+#   $env:HOPBASE_SETUP_TOKEN='<setup-token>'; irm {{.BaseURL}}/oneclick/setup.ps1 | iex
+#
+# 注意：脚本经 iex 在当前会话执行，失败用 throw 终止，绝不调用 exit（会关掉用户的终端窗口）。
+
+$ErrorActionPreference = 'Stop'
+
+$BaseUrl  = '{{.BaseURL}}'
+$SiteName = '{{.SiteName}}'
+$Token    = $env:HOPBASE_SETUP_TOKEN
+
+function Write-Info($msg) { Write-Host "- $msg" -ForegroundColor Cyan }
+function Write-Ok($msg)   { Write-Host "√ $msg" -ForegroundColor Green }
+function Fail($msg)       { throw $msg }
+
+try {
+    if (-not $Token) { Fail '缺少接入令牌：请回控制台复制完整命令执行' }
+
+    Write-Host ''
+    Write-Host "$SiteName · Claude Code 一键接入" -ForegroundColor White
+    Write-Host ''
+
+    # ── 1/4 兑换接入配置（令牌只能使用一次，15 分钟内有效）────────────
+    Write-Info '获取接入配置...'
+    try {
+        $resp = Invoke-RestMethod -Method Post -Uri "$BaseUrl/oneclick/exchange" -Body @{ token = $Token }
+    } catch {
+        Fail '令牌兑换失败：令牌可能已过期或已被使用，请回控制台重新生成命令'
+    }
+    $cfg = @{}
+    foreach ($line in ($resp -split "`r?`n")) {
+        $i = $line.IndexOf('=')
+        if ($i -gt 0) { $cfg[$line.Substring(0, $i)] = $line.Substring($i + 1).Trim() }
+    }
+    $ApiKey = $cfg['api_key']
+    if (-not $ApiKey) { Fail '兑换响应异常，请联系管理员' }
+    if ($cfg['base_url']) { $BaseUrl = $cfg['base_url'] }
+    Write-Ok '已获取密钥'
+
+    # ── 2/4 检测 / 安装 Claude Code ──────────────────────────────────
+    if (Get-Command claude -ErrorAction SilentlyContinue) {
+        Write-Ok '已检测到 Claude Code'
+    } else {
+        Write-Info '未检测到 Claude Code，正在通过官方脚本安装...'
+        try {
+            Invoke-RestMethod -Uri 'https://claude.ai/install.ps1' | Invoke-Expression
+        } catch {
+            Fail 'Claude Code 安装失败：可先手动安装（npm install -g @anthropic-ai/claude-code）后重跑本命令'
+        }
+        Write-Ok 'Claude Code 安装完成（若终端提示找不到 claude 命令，请重新打开终端）'
+    }
+
+    # ── 3/4 写入配置（只合并 env 两个键，settings.json 其余内容原样保留）──
+    $claudeDir = Join-Path $env:USERPROFILE '.claude'
+    $settingsPath = Join-Path $claudeDir 'settings.json'
+    New-Item -ItemType Directory -Force -Path $claudeDir | Out-Null
+
+    $json = $null
+    $existing = (Test-Path $settingsPath) -and ((Get-Content $settingsPath -Raw).Trim())
+    if ($existing) {
+        $backup = "$settingsPath.bak.$(Get-Date -Format yyyyMMddHHmmss)"
+        Copy-Item $settingsPath $backup
+        Write-Info "已备份原配置到 $backup"
+        try {
+            $json = Get-Content $settingsPath -Raw | ConvertFrom-Json
+        } catch {
+            Fail "现有 $settingsPath 不是合法 JSON，请手动修正后重试（原文件已备份）"
+        }
+    } else {
+        $json = New-Object PSObject
+    }
+    if (-not $json.PSObject.Properties['env']) {
+        $json | Add-Member -MemberType NoteProperty -Name env -Value (New-Object PSObject)
+    }
+    foreach ($pair in @(@('ANTHROPIC_BASE_URL', $BaseUrl), @('ANTHROPIC_AUTH_TOKEN', $ApiKey))) {
+        $name = $pair[0]; $value = $pair[1]
+        if ($json.env.PSObject.Properties[$name]) { $json.env.$name = $value }
+        else { $json.env | Add-Member -MemberType NoteProperty -Name $name -Value $value }
+    }
+    $json | ConvertTo-Json -Depth 32 | Set-Content -Path $settingsPath -Encoding UTF8
+    Write-Ok "已更新 $settingsPath（原有配置已保留）"
+
+    # ── 4/4 验证连接并回执 ────────────────────────────────────────────
+    Write-Info '验证网关连接...'
+    try {
+        Invoke-RestMethod -Uri "$BaseUrl/v1/usage" -Headers @{ Authorization = "Bearer $ApiKey" } | Out-Null
+        Write-Ok '网关连接验证通过'
+        try { Invoke-RestMethod -Method Post -Uri "$BaseUrl/oneclick/verify" -Body @{ token = $Token } | Out-Null } catch {}
+    } catch {
+        Fail '网关连接验证失败：配置已写入，但用密钥请求网关未成功。请检查网络后直接运行 claude 重试，或联系管理员'
+    }
+
+    Write-Host ''
+    Write-Ok '接入完成！打开一个新终端，输入 claude 即可开始使用'
+    Write-Host "  · 网关地址：$BaseUrl"
+    Write-Host "  · 配置文件：$settingsPath"
+} catch {
+    Write-Host "× $($_.Exception.Message)" -ForegroundColor Red
+} finally {
+    Remove-Item Env:HOPBASE_SETUP_TOKEN -ErrorAction SilentlyContinue
+}

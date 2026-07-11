@@ -276,3 +276,9 @@ func (h *PluginHandler) ListMarketplace(c *gin.Context) {
 	}
 	response.Success(c, response.PagedData(resp, int64(len(resp)), 1, len(resp)))
 }
+
+// BuiltinModelCatalog 返回各网关平台当前生效的内置模型目录（含 metadata 的
+// price.* 内置价提示键），供后台「模型目录」编辑器铺出全量模型行。
+func (h *PluginHandler) BuiltinModelCatalog(c *gin.Context) {
+	response.Success(c, toBuiltinPlatformModelsResp(h.service.BuiltinModelCatalog()))
+}

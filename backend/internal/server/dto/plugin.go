@@ -29,6 +29,22 @@ type ConfigFieldResp struct {
 }
 
 // PluginConfigResp 插件持久化配置
+// BuiltinModelResp 单个内置模型（后台「模型目录」编辑器的种子行）。
+// Metadata 里的 price.* / long_context.* 键是插件编码的内置基础价提示。
+type BuiltinModelResp struct {
+	ID              string            `json:"id"`
+	Name            string            `json:"name"`
+	ContextWindow   int               `json:"context_window"`
+	MaxOutputTokens int               `json:"max_output_tokens"`
+	Metadata        map[string]string `json:"metadata,omitempty"`
+}
+
+// BuiltinPlatformModelsResp 按网关平台分组的内置模型清单。
+type BuiltinPlatformModelsResp struct {
+	Platform string             `json:"platform"`
+	Models   []BuiltinModelResp `json:"models"`
+}
+
 type PluginConfigResp struct {
 	Config map[string]string `json:"config"`
 }
