@@ -57,6 +57,9 @@ type StateMachine struct {
 
 	// eventWG 追踪异步事件写入（recordEvent 的 goroutine），测试经 waitEvents 同步。
 	eventWG sync.WaitGroup
+	// eventSlots 限制在飞的事件写入并发（见 recordEvent）：DB 连接池要优先
+	// 服务转发主链路，事件写入最多占少量连接，槽位满直接丢弃。
+	eventSlots chan struct{}
 
 	// onCriticalTransition Active ↔ Disabled 转移后的回调（由 Scheduler 注入）。
 	// 用来清 route 缓存，让下次 SelectAccount 立刻看到新状态；
@@ -67,7 +70,7 @@ type StateMachine struct {
 // NewStateMachine 构造状态机。fc 提供 (account, family) 维度的限流冷却，
 // nil 时退化为旧行为：所有 RateLimited 都写账号级 DB state。
 func NewStateMachine(db *ent.Client, rdb *redis.Client, fc *FamilyCooldown) *StateMachine {
-	return &StateMachine{db: db, rdb: rdb, familyCooldown: fc}
+	return &StateMachine{db: db, rdb: rdb, familyCooldown: fc, eventSlots: make(chan struct{}, eventWriteConcurrency)}
 }
 
 // notifyCritical 发出关键状态变更事件。nil 回调时安静跳过。

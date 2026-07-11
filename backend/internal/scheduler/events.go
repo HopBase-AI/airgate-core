@@ -27,8 +27,16 @@ const eventCleanupInterval = time.Hour
 // eventCleanupRunTimeout 单轮清理超时。
 const eventCleanupRunTimeout = 2 * time.Minute
 
-// recordEvent 落一条账号异常事件。事件流是观测数据：异步写入不阻塞
-// 转发/failover 路径，写失败只记日志，绝不影响状态机主流程。
+// eventWriteConcurrency 事件写入并发上限。DB 连接池默认 50，
+// 观测数据最多占用少量连接，其余留给转发主链路。
+const eventWriteConcurrency = 8
+
+// recordEvent 落一条账号异常事件。事件流是观测数据，对主流程零反噬是硬约束：
+//   - 异步写入，不阻塞转发/failover 路径；
+//   - 并发受 eventSlots 限制，故障风暴时槽位满直接丢弃（丢观测数据保客户请求）；
+//   - goroutine 内 recover，任何写入 panic 不得带崩 core 进程；
+//   - 写失败只记日志。
+//
 // until 为冷却到期时间（无则 nil）。
 func (sm *StateMachine) recordEvent(
 	accountID int,
@@ -37,9 +45,25 @@ func (sm *StateMachine) recordEvent(
 	upstreamStatus int,
 	until *time.Time,
 ) {
+	select {
+	case sm.eventSlots <- struct{}{}:
+	default:
+		slog.Warn("scheduler_account_event_dropped",
+			sdk.LogFieldAccountID, accountID,
+			"event_type", eventType,
+			sdk.LogFieldReason, truncateReason(reason))
+		return
+	}
 	sm.eventWG.Add(1)
 	go func() {
-		defer sm.eventWG.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("scheduler_account_event_panic",
+					sdk.LogFieldAccountID, accountID, "panic", r)
+			}
+			<-sm.eventSlots
+			sm.eventWG.Done()
+		}()
 		dbCtx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 		defer cancel()
 
@@ -94,6 +118,12 @@ func StartAccountEventCleanupLoop(ctx context.Context, db *ent.Client, isLeader 
 }
 
 func runAccountEventCleanupOnce(parent context.Context, db *ent.Client) {
+	// 清理跑在独立后台 goroutine：panic 必须就地吞掉，不能带崩 core 进程。
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("scheduler_account_event_cleanup_panic", "panic", r)
+		}
+	}()
 	if err := parent.Err(); err != nil {
 		return
 	}

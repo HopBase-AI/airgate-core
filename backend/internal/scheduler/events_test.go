@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -216,6 +217,33 @@ func TestProbeMarksDeduplicateEvents(t *testing.T) {
 
 	if n := db.AccountEvent.Query().CountX(ctx); n != 1 {
 		t.Fatalf("重复 MarkRateLimited 事件数 = %d, want 1（仅进入时记录）", n)
+	}
+}
+
+// TestRecordEventBurstDoesNotBlockOrLeak 故障风暴仿真：大量并发判决下
+// 事件写入受槽位限制（超出丢弃），waitEvents 不得死锁，计数不得泄漏。
+func TestRecordEventBurstDoesNotBlockOrLeak(t *testing.T) {
+	db := enttestOpenEvents(t)
+	ctx := context.Background()
+	acc := createEventTestAccount(t, db, entaccount.StateActive)
+	sm := NewStateMachine(db, nil, nil)
+
+	const burst = 100
+	var wg sync.WaitGroup
+	for i := 0; i < burst; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// upstream_error 分支：不改状态、只记事件，是风暴期最高频路径。
+			sm.Apply(ctx, acc.ID, Judgment{Kind: sdk.OutcomeUpstreamTransient, Reason: "502 upstream_error", UpstreamStatus: 502})
+		}()
+	}
+	wg.Wait()
+	sm.waitEvents()
+
+	n := db.AccountEvent.Query().CountX(ctx)
+	if n < 1 || n > burst {
+		t.Fatalf("事件数 = %d, want 1..%d（超出槽位的部分允许丢弃）", n, burst)
 	}
 }
 
