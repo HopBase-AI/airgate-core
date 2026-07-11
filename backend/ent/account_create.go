@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/DouDOU-start/airgate-core/ent/account"
+	"github.com/DouDOU-start/airgate-core/ent/accountevent"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/proxy"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
@@ -248,6 +249,21 @@ func (ac *AccountCreate) AddUsageLogs(u ...*UsageLog) *AccountCreate {
 		ids[i] = u[i].ID
 	}
 	return ac.AddUsageLogIDs(ids...)
+}
+
+// AddEventIDs adds the "events" edge to the AccountEvent entity by IDs.
+func (ac *AccountCreate) AddEventIDs(ids ...int) *AccountCreate {
+	ac.mutation.AddEventIDs(ids...)
+	return ac
+}
+
+// AddEvents adds the "events" edges to the AccountEvent entity.
+func (ac *AccountCreate) AddEvents(a ...*AccountEvent) *AccountCreate {
+	ids := make([]int, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return ac.AddEventIDs(ids...)
 }
 
 // Mutation returns the AccountMutation object of the builder.
@@ -514,6 +530,22 @@ func (ac *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(usagelog.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := ac.mutation.EventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   account.EventsTable,
+			Columns: []string{account.EventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(accountevent.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

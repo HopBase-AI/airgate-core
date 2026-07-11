@@ -2,6 +2,7 @@ package schema
 
 import (
 	"entgo.io/ent"
+	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
@@ -59,5 +60,9 @@ func (Account) Edges() []ent.Edge {
 		edge.To("groups", Group.Type),
 		edge.To("proxy", Proxy.Type).Unique(),
 		edge.To("usage_logs", UsageLog.Type),
+		// 级联删除：事件是账号的观测数据，账号删除时随之清掉；
+		// 不级联的话 Required 反向边生成非空 FK（NoAction），删有事件的账号会外键冲突失败。
+		edge.To("events", AccountEvent.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
 	}
 }

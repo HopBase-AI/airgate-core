@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from '@tanstack/react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import {
   Plus,
@@ -31,7 +32,17 @@ import type { GroupResp, CreateGroupReq, UpdateGroupReq } from '../../shared/typ
 
 export default function GroupsPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { platforms, platformName, instructionPresets } = usePlatforms();
+
+  // 下钻到账号页：带上分组筛选。
+  const goToGroupAccounts = (groupId: number) => {
+    navigate({ to: '/admin/accounts', search: { group_id: groupId } });
+  };
+  // 下钻到异常监控页：查看该分组账号的异常事件流（哪个账号、什么时候、什么原因）。
+  const goToGroupEvents = (groupId: number) => {
+    navigate({ to: '/admin/account-events', search: { group_id: groupId } });
+  };
 
   const PLATFORM_OPTIONS = [
     { value: '', label: t('groups.all_platforms') },
@@ -246,11 +257,14 @@ export default function GroupsPage() {
                             color: 'default' as const,
                             label: `${t('groups.account_available')}/${t('groups.account_total')}`,
                             value: `${row.account_active}/${row.account_total}`,
+                            onClick: () => goToGroupAccounts(row.id),
                           },
                           {
                             color: row.account_error > 0 ? 'danger' as const : 'default' as const,
                             label: t('groups.account_error'),
                             value: String(row.account_error),
+                            // 点击跳异常监控页看该分组的事件明细（哪个账号、什么原因）。
+                            onClick: () => goToGroupEvents(row.id),
                           },
                         ]}
                       />

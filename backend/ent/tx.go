@@ -16,6 +16,8 @@ type Tx struct {
 	APIKey *APIKeyClient
 	// Account is the client for interacting with the Account builders.
 	Account *AccountClient
+	// AccountEvent is the client for interacting with the AccountEvent builders.
+	AccountEvent *AccountEventClient
 	// BalanceLog is the client for interacting with the BalanceLog builders.
 	BalanceLog *BalanceLogClient
 	// Group is the client for interacting with the Group builders.
@@ -171,6 +173,7 @@ func (tx *Tx) Client() *Client {
 func (tx *Tx) init() {
 	tx.APIKey = NewAPIKeyClient(tx.config)
 	tx.Account = NewAccountClient(tx.config)
+	tx.AccountEvent = NewAccountEventClient(tx.config)
 	tx.BalanceLog = NewBalanceLogClient(tx.config)
 	tx.Group = NewGroupClient(tx.config)
 	tx.Plugin = NewPluginClient(tx.config)

@@ -7,6 +7,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/DouDOU-start/airgate-core/ent"
+	entaccount "github.com/DouDOU-start/airgate-core/ent/account"
 	"github.com/DouDOU-start/airgate-core/ent/enttest"
 	"github.com/DouDOU-start/airgate-core/ent/migrate"
 	"github.com/DouDOU-start/airgate-core/internal/app/account"
@@ -162,6 +163,60 @@ func TestAccountStoreCredentialStringFilterMatchesPluginDeclaredPlan(t *testing.
 	}
 	if len(all) != 1 || all[0].Name != "OpenAI OAuth Free" {
 		t.Fatalf("ListAll credential filter items = %+v, want only OpenAI OAuth Free", all)
+	}
+}
+
+func TestAccountStoreStateFilterErrorMatchesDisabledWithErrorMsg(t *testing.T) {
+	db := enttestOpen(t)
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close db: %v", err)
+		}
+	}()
+
+	ctx := context.Background()
+	cases := []struct {
+		name     string
+		state    entaccount.State
+		errorMsg string
+	}{
+		{name: "活跃账号", state: entaccount.StateActive},
+		{name: "异常账号", state: entaccount.StateDisabled, errorMsg: "OAuth token 刷新失败"},
+		{name: "手动禁用无原因", state: entaccount.StateDisabled},
+	}
+	for _, item := range cases {
+		builder := db.Account.Create().
+			SetName(item.name).
+			SetPlatform("claude").
+			SetType("oauth").
+			SetCredentials(map[string]string{}).
+			SetState(item.state)
+		if item.errorMsg != "" {
+			builder = builder.SetErrorMsg(item.errorMsg)
+		}
+		if _, err := builder.Save(ctx); err != nil {
+			t.Fatalf("create account %q: %v", item.name, err)
+		}
+	}
+
+	store := NewAccountStore(db)
+
+	// 伪状态 error：只命中 disabled 且 error_msg 非空的账号。
+	items, total, err := store.List(ctx, account.ListFilter{Page: 1, PageSize: 20, State: account.StateFilterError})
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	if total != 1 || len(items) != 1 || items[0].Name != "异常账号" {
+		t.Fatalf("state=error items = %+v total = %d, want only 异常账号", items, total)
+	}
+
+	// 普通 disabled：两个禁用账号都命中。
+	items, total, err = store.List(ctx, account.ListFilter{Page: 1, PageSize: 20, State: "disabled"})
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	if total != 2 || len(items) != 2 {
+		t.Fatalf("state=disabled total = %d len = %d, want both disabled accounts", total, len(items))
 	}
 }
 

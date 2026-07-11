@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/DouDOU-start/airgate-core/ent/account"
+	"github.com/DouDOU-start/airgate-core/ent/accountevent"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
 	"github.com/DouDOU-start/airgate-core/ent/group"
@@ -39,6 +40,7 @@ const (
 	// Node types.
 	TypeAPIKey           = "APIKey"
 	TypeAccount          = "Account"
+	TypeAccountEvent     = "AccountEvent"
 	TypeBalanceLog       = "BalanceLog"
 	TypeGroup            = "Group"
 	TypePlugin           = "Plugin"
@@ -1659,6 +1661,9 @@ type AccountMutation struct {
 	usage_logs         map[int]struct{}
 	removedusage_logs  map[int]struct{}
 	clearedusage_logs  bool
+	events             map[int]struct{}
+	removedevents      map[int]struct{}
+	clearedevents      bool
 	done               bool
 	oldValue           func(context.Context) (*Account, error)
 	predicates         []predicate.Account
@@ -2561,6 +2566,60 @@ func (m *AccountMutation) ResetUsageLogs() {
 	m.removedusage_logs = nil
 }
 
+// AddEventIDs adds the "events" edge to the AccountEvent entity by ids.
+func (m *AccountMutation) AddEventIDs(ids ...int) {
+	if m.events == nil {
+		m.events = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.events[ids[i]] = struct{}{}
+	}
+}
+
+// ClearEvents clears the "events" edge to the AccountEvent entity.
+func (m *AccountMutation) ClearEvents() {
+	m.clearedevents = true
+}
+
+// EventsCleared reports if the "events" edge to the AccountEvent entity was cleared.
+func (m *AccountMutation) EventsCleared() bool {
+	return m.clearedevents
+}
+
+// RemoveEventIDs removes the "events" edge to the AccountEvent entity by IDs.
+func (m *AccountMutation) RemoveEventIDs(ids ...int) {
+	if m.removedevents == nil {
+		m.removedevents = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.events, ids[i])
+		m.removedevents[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedEvents returns the removed IDs of the "events" edge to the AccountEvent entity.
+func (m *AccountMutation) RemovedEventsIDs() (ids []int) {
+	for id := range m.removedevents {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// EventsIDs returns the "events" edge IDs in the mutation.
+func (m *AccountMutation) EventsIDs() (ids []int) {
+	for id := range m.events {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetEvents resets all changes to the "events" edge.
+func (m *AccountMutation) ResetEvents() {
+	m.events = nil
+	m.clearedevents = false
+	m.removedevents = nil
+}
+
 // Where appends a list predicates to the AccountMutation builder.
 func (m *AccountMutation) Where(ps ...predicate.Account) {
 	m.predicates = append(m.predicates, ps...)
@@ -2998,7 +3057,7 @@ func (m *AccountMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *AccountMutation) AddedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.groups != nil {
 		edges = append(edges, account.EdgeGroups)
 	}
@@ -3007,6 +3066,9 @@ func (m *AccountMutation) AddedEdges() []string {
 	}
 	if m.usage_logs != nil {
 		edges = append(edges, account.EdgeUsageLogs)
+	}
+	if m.events != nil {
+		edges = append(edges, account.EdgeEvents)
 	}
 	return edges
 }
@@ -3031,18 +3093,27 @@ func (m *AccountMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case account.EdgeEvents:
+		ids := make([]ent.Value, 0, len(m.events))
+		for id := range m.events {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *AccountMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.removedgroups != nil {
 		edges = append(edges, account.EdgeGroups)
 	}
 	if m.removedusage_logs != nil {
 		edges = append(edges, account.EdgeUsageLogs)
+	}
+	if m.removedevents != nil {
+		edges = append(edges, account.EdgeEvents)
 	}
 	return edges
 }
@@ -3063,13 +3134,19 @@ func (m *AccountMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case account.EdgeEvents:
+		ids := make([]ent.Value, 0, len(m.removedevents))
+		for id := range m.removedevents {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *AccountMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.clearedgroups {
 		edges = append(edges, account.EdgeGroups)
 	}
@@ -3078,6 +3155,9 @@ func (m *AccountMutation) ClearedEdges() []string {
 	}
 	if m.clearedusage_logs {
 		edges = append(edges, account.EdgeUsageLogs)
+	}
+	if m.clearedevents {
+		edges = append(edges, account.EdgeEvents)
 	}
 	return edges
 }
@@ -3092,6 +3172,8 @@ func (m *AccountMutation) EdgeCleared(name string) bool {
 		return m.clearedproxy
 	case account.EdgeUsageLogs:
 		return m.clearedusage_logs
+	case account.EdgeEvents:
+		return m.clearedevents
 	}
 	return false
 }
@@ -3120,8 +3202,786 @@ func (m *AccountMutation) ResetEdge(name string) error {
 	case account.EdgeUsageLogs:
 		m.ResetUsageLogs()
 		return nil
+	case account.EdgeEvents:
+		m.ResetEvents()
+		return nil
 	}
 	return fmt.Errorf("unknown Account edge %s", name)
+}
+
+// AccountEventMutation represents an operation that mutates the AccountEvent nodes in the graph.
+type AccountEventMutation struct {
+	config
+	op                 Op
+	typ                string
+	id                 *int
+	event_type         *accountevent.EventType
+	reason             *string
+	family             *string
+	source             *string
+	upstream_status    *int
+	addupstream_status *int
+	state_until        *time.Time
+	created_at         *time.Time
+	clearedFields      map[string]struct{}
+	account            *int
+	clearedaccount     bool
+	done               bool
+	oldValue           func(context.Context) (*AccountEvent, error)
+	predicates         []predicate.AccountEvent
+}
+
+var _ ent.Mutation = (*AccountEventMutation)(nil)
+
+// accounteventOption allows management of the mutation configuration using functional options.
+type accounteventOption func(*AccountEventMutation)
+
+// newAccountEventMutation creates new mutation for the AccountEvent entity.
+func newAccountEventMutation(c config, op Op, opts ...accounteventOption) *AccountEventMutation {
+	m := &AccountEventMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAccountEvent,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAccountEventID sets the ID field of the mutation.
+func withAccountEventID(id int) accounteventOption {
+	return func(m *AccountEventMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AccountEvent
+		)
+		m.oldValue = func(ctx context.Context) (*AccountEvent, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AccountEvent.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAccountEvent sets the old AccountEvent of the mutation.
+func withAccountEvent(node *AccountEvent) accounteventOption {
+	return func(m *AccountEventMutation) {
+		m.oldValue = func(context.Context) (*AccountEvent, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AccountEventMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AccountEventMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AccountEventMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AccountEventMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AccountEvent.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetEventType sets the "event_type" field.
+func (m *AccountEventMutation) SetEventType(at accountevent.EventType) {
+	m.event_type = &at
+}
+
+// EventType returns the value of the "event_type" field in the mutation.
+func (m *AccountEventMutation) EventType() (r accountevent.EventType, exists bool) {
+	v := m.event_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEventType returns the old "event_type" field's value of the AccountEvent entity.
+// If the AccountEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountEventMutation) OldEventType(ctx context.Context) (v accountevent.EventType, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEventType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEventType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEventType: %w", err)
+	}
+	return oldValue.EventType, nil
+}
+
+// ResetEventType resets all changes to the "event_type" field.
+func (m *AccountEventMutation) ResetEventType() {
+	m.event_type = nil
+}
+
+// SetReason sets the "reason" field.
+func (m *AccountEventMutation) SetReason(s string) {
+	m.reason = &s
+}
+
+// Reason returns the value of the "reason" field in the mutation.
+func (m *AccountEventMutation) Reason() (r string, exists bool) {
+	v := m.reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReason returns the old "reason" field's value of the AccountEvent entity.
+// If the AccountEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountEventMutation) OldReason(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReason: %w", err)
+	}
+	return oldValue.Reason, nil
+}
+
+// ResetReason resets all changes to the "reason" field.
+func (m *AccountEventMutation) ResetReason() {
+	m.reason = nil
+}
+
+// SetFamily sets the "family" field.
+func (m *AccountEventMutation) SetFamily(s string) {
+	m.family = &s
+}
+
+// Family returns the value of the "family" field in the mutation.
+func (m *AccountEventMutation) Family() (r string, exists bool) {
+	v := m.family
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFamily returns the old "family" field's value of the AccountEvent entity.
+// If the AccountEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountEventMutation) OldFamily(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFamily is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFamily requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFamily: %w", err)
+	}
+	return oldValue.Family, nil
+}
+
+// ResetFamily resets all changes to the "family" field.
+func (m *AccountEventMutation) ResetFamily() {
+	m.family = nil
+}
+
+// SetSource sets the "source" field.
+func (m *AccountEventMutation) SetSource(s string) {
+	m.source = &s
+}
+
+// Source returns the value of the "source" field in the mutation.
+func (m *AccountEventMutation) Source() (r string, exists bool) {
+	v := m.source
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSource returns the old "source" field's value of the AccountEvent entity.
+// If the AccountEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountEventMutation) OldSource(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSource is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSource requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSource: %w", err)
+	}
+	return oldValue.Source, nil
+}
+
+// ResetSource resets all changes to the "source" field.
+func (m *AccountEventMutation) ResetSource() {
+	m.source = nil
+}
+
+// SetUpstreamStatus sets the "upstream_status" field.
+func (m *AccountEventMutation) SetUpstreamStatus(i int) {
+	m.upstream_status = &i
+	m.addupstream_status = nil
+}
+
+// UpstreamStatus returns the value of the "upstream_status" field in the mutation.
+func (m *AccountEventMutation) UpstreamStatus() (r int, exists bool) {
+	v := m.upstream_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamStatus returns the old "upstream_status" field's value of the AccountEvent entity.
+// If the AccountEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountEventMutation) OldUpstreamStatus(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamStatus: %w", err)
+	}
+	return oldValue.UpstreamStatus, nil
+}
+
+// AddUpstreamStatus adds i to the "upstream_status" field.
+func (m *AccountEventMutation) AddUpstreamStatus(i int) {
+	if m.addupstream_status != nil {
+		*m.addupstream_status += i
+	} else {
+		m.addupstream_status = &i
+	}
+}
+
+// AddedUpstreamStatus returns the value that was added to the "upstream_status" field in this mutation.
+func (m *AccountEventMutation) AddedUpstreamStatus() (r int, exists bool) {
+	v := m.addupstream_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUpstreamStatus resets all changes to the "upstream_status" field.
+func (m *AccountEventMutation) ResetUpstreamStatus() {
+	m.upstream_status = nil
+	m.addupstream_status = nil
+}
+
+// SetStateUntil sets the "state_until" field.
+func (m *AccountEventMutation) SetStateUntil(t time.Time) {
+	m.state_until = &t
+}
+
+// StateUntil returns the value of the "state_until" field in the mutation.
+func (m *AccountEventMutation) StateUntil() (r time.Time, exists bool) {
+	v := m.state_until
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStateUntil returns the old "state_until" field's value of the AccountEvent entity.
+// If the AccountEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountEventMutation) OldStateUntil(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStateUntil is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStateUntil requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStateUntil: %w", err)
+	}
+	return oldValue.StateUntil, nil
+}
+
+// ClearStateUntil clears the value of the "state_until" field.
+func (m *AccountEventMutation) ClearStateUntil() {
+	m.state_until = nil
+	m.clearedFields[accountevent.FieldStateUntil] = struct{}{}
+}
+
+// StateUntilCleared returns if the "state_until" field was cleared in this mutation.
+func (m *AccountEventMutation) StateUntilCleared() bool {
+	_, ok := m.clearedFields[accountevent.FieldStateUntil]
+	return ok
+}
+
+// ResetStateUntil resets all changes to the "state_until" field.
+func (m *AccountEventMutation) ResetStateUntil() {
+	m.state_until = nil
+	delete(m.clearedFields, accountevent.FieldStateUntil)
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AccountEventMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AccountEventMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AccountEvent entity.
+// If the AccountEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountEventMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AccountEventMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetAccountID sets the "account" edge to the Account entity by id.
+func (m *AccountEventMutation) SetAccountID(id int) {
+	m.account = &id
+}
+
+// ClearAccount clears the "account" edge to the Account entity.
+func (m *AccountEventMutation) ClearAccount() {
+	m.clearedaccount = true
+}
+
+// AccountCleared reports if the "account" edge to the Account entity was cleared.
+func (m *AccountEventMutation) AccountCleared() bool {
+	return m.clearedaccount
+}
+
+// AccountID returns the "account" edge ID in the mutation.
+func (m *AccountEventMutation) AccountID() (id int, exists bool) {
+	if m.account != nil {
+		return *m.account, true
+	}
+	return
+}
+
+// AccountIDs returns the "account" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// AccountID instead. It exists only for internal usage by the builders.
+func (m *AccountEventMutation) AccountIDs() (ids []int) {
+	if id := m.account; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetAccount resets all changes to the "account" edge.
+func (m *AccountEventMutation) ResetAccount() {
+	m.account = nil
+	m.clearedaccount = false
+}
+
+// Where appends a list predicates to the AccountEventMutation builder.
+func (m *AccountEventMutation) Where(ps ...predicate.AccountEvent) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AccountEventMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AccountEventMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AccountEvent, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AccountEventMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AccountEventMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AccountEvent).
+func (m *AccountEventMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AccountEventMutation) Fields() []string {
+	fields := make([]string, 0, 7)
+	if m.event_type != nil {
+		fields = append(fields, accountevent.FieldEventType)
+	}
+	if m.reason != nil {
+		fields = append(fields, accountevent.FieldReason)
+	}
+	if m.family != nil {
+		fields = append(fields, accountevent.FieldFamily)
+	}
+	if m.source != nil {
+		fields = append(fields, accountevent.FieldSource)
+	}
+	if m.upstream_status != nil {
+		fields = append(fields, accountevent.FieldUpstreamStatus)
+	}
+	if m.state_until != nil {
+		fields = append(fields, accountevent.FieldStateUntil)
+	}
+	if m.created_at != nil {
+		fields = append(fields, accountevent.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AccountEventMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case accountevent.FieldEventType:
+		return m.EventType()
+	case accountevent.FieldReason:
+		return m.Reason()
+	case accountevent.FieldFamily:
+		return m.Family()
+	case accountevent.FieldSource:
+		return m.Source()
+	case accountevent.FieldUpstreamStatus:
+		return m.UpstreamStatus()
+	case accountevent.FieldStateUntil:
+		return m.StateUntil()
+	case accountevent.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AccountEventMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case accountevent.FieldEventType:
+		return m.OldEventType(ctx)
+	case accountevent.FieldReason:
+		return m.OldReason(ctx)
+	case accountevent.FieldFamily:
+		return m.OldFamily(ctx)
+	case accountevent.FieldSource:
+		return m.OldSource(ctx)
+	case accountevent.FieldUpstreamStatus:
+		return m.OldUpstreamStatus(ctx)
+	case accountevent.FieldStateUntil:
+		return m.OldStateUntil(ctx)
+	case accountevent.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown AccountEvent field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountEventMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case accountevent.FieldEventType:
+		v, ok := value.(accountevent.EventType)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEventType(v)
+		return nil
+	case accountevent.FieldReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReason(v)
+		return nil
+	case accountevent.FieldFamily:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFamily(v)
+		return nil
+	case accountevent.FieldSource:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSource(v)
+		return nil
+	case accountevent.FieldUpstreamStatus:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamStatus(v)
+		return nil
+	case accountevent.FieldStateUntil:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStateUntil(v)
+		return nil
+	case accountevent.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AccountEvent field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AccountEventMutation) AddedFields() []string {
+	var fields []string
+	if m.addupstream_status != nil {
+		fields = append(fields, accountevent.FieldUpstreamStatus)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AccountEventMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case accountevent.FieldUpstreamStatus:
+		return m.AddedUpstreamStatus()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountEventMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case accountevent.FieldUpstreamStatus:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUpstreamStatus(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AccountEvent numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AccountEventMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(accountevent.FieldStateUntil) {
+		fields = append(fields, accountevent.FieldStateUntil)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AccountEventMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AccountEventMutation) ClearField(name string) error {
+	switch name {
+	case accountevent.FieldStateUntil:
+		m.ClearStateUntil()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountEvent nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AccountEventMutation) ResetField(name string) error {
+	switch name {
+	case accountevent.FieldEventType:
+		m.ResetEventType()
+		return nil
+	case accountevent.FieldReason:
+		m.ResetReason()
+		return nil
+	case accountevent.FieldFamily:
+		m.ResetFamily()
+		return nil
+	case accountevent.FieldSource:
+		m.ResetSource()
+		return nil
+	case accountevent.FieldUpstreamStatus:
+		m.ResetUpstreamStatus()
+		return nil
+	case accountevent.FieldStateUntil:
+		m.ResetStateUntil()
+		return nil
+	case accountevent.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountEvent field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AccountEventMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.account != nil {
+		edges = append(edges, accountevent.EdgeAccount)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AccountEventMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case accountevent.EdgeAccount:
+		if id := m.account; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AccountEventMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AccountEventMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AccountEventMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedaccount {
+		edges = append(edges, accountevent.EdgeAccount)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AccountEventMutation) EdgeCleared(name string) bool {
+	switch name {
+	case accountevent.EdgeAccount:
+		return m.clearedaccount
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AccountEventMutation) ClearEdge(name string) error {
+	switch name {
+	case accountevent.EdgeAccount:
+		m.ClearAccount()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountEvent unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AccountEventMutation) ResetEdge(name string) error {
+	switch name {
+	case accountevent.EdgeAccount:
+		m.ResetAccount()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountEvent edge %s", name)
 }
 
 // BalanceLogMutation represents an operation that mutates the BalanceLog nodes in the graph.

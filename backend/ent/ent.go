@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/DouDOU-start/airgate-core/ent/account"
+	"github.com/DouDOU-start/airgate-core/ent/accountevent"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
 	"github.com/DouDOU-start/airgate-core/ent/group"
@@ -87,6 +88,7 @@ func checkColumn(table, column string) error {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
 			apikey.Table:           apikey.ValidColumn,
 			account.Table:          account.ValidColumn,
+			accountevent.Table:     accountevent.ValidColumn,
 			balancelog.Table:       balancelog.ValidColumn,
 			group.Table:            group.ValidColumn,
 			plugin.Table:           plugin.ValidColumn,

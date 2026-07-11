@@ -102,6 +102,44 @@ var (
 			},
 		},
 	}
+	// AccountEventsColumns holds the columns for the "account_events" table.
+	AccountEventsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "event_type", Type: field.TypeEnum, Enums: []string{"rate_limited", "degraded", "disabled", "recovered", "upstream_error", "manual_disabled", "manual_recovered"}},
+		{Name: "reason", Type: field.TypeString, Default: ""},
+		{Name: "family", Type: field.TypeString, Default: ""},
+		{Name: "source", Type: field.TypeString, Default: ""},
+		{Name: "upstream_status", Type: field.TypeInt, Default: 0},
+		{Name: "state_until", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "account_events", Type: field.TypeInt},
+	}
+	// AccountEventsTable holds the schema information for the "account_events" table.
+	AccountEventsTable = &schema.Table{
+		Name:       "account_events",
+		Columns:    AccountEventsColumns,
+		PrimaryKey: []*schema.Column{AccountEventsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "account_events_accounts_events",
+				Columns:    []*schema.Column{AccountEventsColumns[8]},
+				RefColumns: []*schema.Column{AccountsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "accountevent_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{AccountEventsColumns[7]},
+			},
+			{
+				Name:    "accountevent_account_events",
+				Unique:  false,
+				Columns: []*schema.Column{AccountEventsColumns[8]},
+			},
+		},
+	}
 	// BalanceLogsColumns holds the columns for the "balance_logs" table.
 	BalanceLogsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -576,6 +614,7 @@ var (
 	Tables = []*schema.Table{
 		APIKeysTable,
 		AccountsTable,
+		AccountEventsTable,
 		BalanceLogsTable,
 		GroupsTable,
 		PluginsTable,
@@ -596,6 +635,7 @@ func init() {
 	APIKeysTable.ForeignKeys[0].RefTable = GroupsTable
 	APIKeysTable.ForeignKeys[1].RefTable = UsersTable
 	AccountsTable.ForeignKeys[0].RefTable = ProxiesTable
+	AccountEventsTable.ForeignKeys[0].RefTable = AccountsTable
 	BalanceLogsTable.ForeignKeys[0].RefTable = UsersTable
 	UsageLogsTable.ForeignKeys[0].RefTable = APIKeysTable
 	UsageLogsTable.ForeignKeys[1].RefTable = AccountsTable

@@ -176,6 +176,34 @@ export interface AccountResp {
   updated_at: string;
 }
 
+/** 账号异常事件类型（后端 account_events.event_type 枚举）。 */
+export type AccountEventType =
+  | 'rate_limited'
+  | 'degraded'
+  | 'disabled'
+  | 'recovered'
+  | 'upstream_error'
+  | 'manual_disabled'
+  | 'manual_recovered';
+
+export interface AccountEventResp {
+  id: number;
+  account_id: number;
+  account_name: string;
+  platform: string;
+  event_type: AccountEventType;
+  reason?: string;
+  /** 家族级限流冷却时的模型家族键（如 gpt-image）；账号级事件缺省。 */
+  family?: string;
+  /** forward（转发判决）/ probe（后台巡检）/ manual（管理员操作）。 */
+  source?: string;
+  upstream_status?: number;
+  /** RFC3339 UTC，rate_limited / degraded 的冷却到期时间。 */
+  state_until?: string;
+  /** RFC3339 UTC */
+  created_at: string;
+}
+
 export interface CreateAccountReq {
   name: string;
   platform: string;

@@ -12,6 +12,9 @@ type APIKey func(*sql.Selector)
 // Account is the predicate function for account builders.
 type Account func(*sql.Selector)
 
+// AccountEvent is the predicate function for accountevent builders.
+type AccountEvent func(*sql.Selector)
+
 // BalanceLog is the predicate function for balancelog builders.
 type BalanceLog func(*sql.Selector)
 

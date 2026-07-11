@@ -46,7 +46,10 @@ func applyAccountListFilters(query *ent.AccountQuery, filter appaccount.ListFilt
 	if filter.Platform != "" {
 		query = query.Where(entaccount.PlatformEQ(filter.Platform))
 	}
-	if filter.State != "" {
+	if filter.State == appaccount.StateFilterError {
+		// "异常"伪状态：与分组统计 AccountError 口径一致（disabled 且有错误原因）。
+		query = query.Where(entaccount.StateEQ(entaccount.StateDisabled), entaccount.ErrorMsgNEQ(""))
+	} else if filter.State != "" {
 		query = query.Where(entaccount.StateEQ(entaccount.State(filter.State)))
 	}
 	if filter.AccountType != "" {

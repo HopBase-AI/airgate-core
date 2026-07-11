@@ -10,6 +10,8 @@ export type MetricChipItem = {
   highlightDollar?: boolean;
   label: string;
   mutedWhenZero?: boolean;
+  // 提供 onClick 时整个 chip 渲染为可点击按钮（用于数字下钻，如分组"异常"跳账号明细）。
+  onClick?: () => void;
   value?: string;
 };
 
@@ -22,7 +24,7 @@ function formatMetricTitleValue(item: MetricChipItem) {
   return item.value ?? '';
 }
 
-function MetricChip({ amount, color, decimals, dollarTone, highlightDollar, label, mutedWhenZero, value }: MetricChipItem) {
+function MetricChip({ amount, color, decimals, dollarTone, highlightDollar, label, mutedWhenZero, onClick, value }: MetricChipItem) {
   const amountText = amount == null ? null : formatMoneyAmount(amount, decimals);
   const isMutedZero = mutedWhenZero && amount === 0;
   const chipClassName = [
@@ -35,7 +37,7 @@ function MetricChip({ amount, color, decimals, dollarTone, highlightDollar, labe
     effectiveDollarTone ? `ag-metric-dollar--${effectiveDollarTone}` : '',
   ].filter(Boolean).join(' ');
 
-  return (
+  const chip = (
     <Chip className={chipClassName} color={isMutedZero ? 'default' : color} size="sm" variant="soft">
       <span className="ag-metric-chip-label">{label}</span>
       <span className="ag-metric-chip-value">
@@ -49,6 +51,18 @@ function MetricChip({ amount, color, decimals, dollarTone, highlightDollar, labe
         )}
       </span>
     </Chip>
+  );
+
+  if (!onClick) return chip;
+
+  return (
+    <button
+      type="button"
+      className="inline-flex cursor-pointer appearance-none border-0 bg-transparent p-0 text-left transition-opacity hover:opacity-75"
+      onClick={onClick}
+    >
+      {chip}
+    </button>
   );
 }
 

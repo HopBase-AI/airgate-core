@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/DouDOU-start/airgate-core/ent/account"
+	"github.com/DouDOU-start/airgate-core/ent/accountevent"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
 	"github.com/DouDOU-start/airgate-core/ent/proxy"
@@ -28,6 +29,7 @@ type AccountQuery struct {
 	withGroups    *GroupQuery
 	withProxy     *ProxyQuery
 	withUsageLogs *UsageLogQuery
+	withEvents    *AccountEventQuery
 	withFKs       bool
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -124,6 +126,28 @@ func (aq *AccountQuery) QueryUsageLogs() *UsageLogQuery {
 			sqlgraph.From(account.Table, account.FieldID, selector),
 			sqlgraph.To(usagelog.Table, usagelog.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, account.UsageLogsTable, account.UsageLogsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(aq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryEvents chains the current query on the "events" edge.
+func (aq *AccountQuery) QueryEvents() *AccountEventQuery {
+	query := (&AccountEventClient{config: aq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := aq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := aq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(account.Table, account.FieldID, selector),
+			sqlgraph.To(accountevent.Table, accountevent.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, account.EventsTable, account.EventsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(aq.driver.Dialect(), step)
 		return fromU, nil
@@ -326,6 +350,7 @@ func (aq *AccountQuery) Clone() *AccountQuery {
 		withGroups:    aq.withGroups.Clone(),
 		withProxy:     aq.withProxy.Clone(),
 		withUsageLogs: aq.withUsageLogs.Clone(),
+		withEvents:    aq.withEvents.Clone(),
 		// clone intermediate query.
 		sql:  aq.sql.Clone(),
 		path: aq.path,
@@ -362,6 +387,17 @@ func (aq *AccountQuery) WithUsageLogs(opts ...func(*UsageLogQuery)) *AccountQuer
 		opt(query)
 	}
 	aq.withUsageLogs = query
+	return aq
+}
+
+// WithEvents tells the query-builder to eager-load the nodes that are connected to
+// the "events" edge. The optional arguments are used to configure the query builder of the edge.
+func (aq *AccountQuery) WithEvents(opts ...func(*AccountEventQuery)) *AccountQuery {
+	query := (&AccountEventClient{config: aq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	aq.withEvents = query
 	return aq
 }
 
@@ -444,10 +480,11 @@ func (aq *AccountQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Acco
 		nodes       = []*Account{}
 		withFKs     = aq.withFKs
 		_spec       = aq.querySpec()
-		loadedTypes = [3]bool{
+		loadedTypes = [4]bool{
 			aq.withGroups != nil,
 			aq.withProxy != nil,
 			aq.withUsageLogs != nil,
+			aq.withEvents != nil,
 		}
 	)
 	if aq.withProxy != nil {
@@ -491,6 +528,13 @@ func (aq *AccountQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Acco
 		if err := aq.loadUsageLogs(ctx, query, nodes,
 			func(n *Account) { n.Edges.UsageLogs = []*UsageLog{} },
 			func(n *Account, e *UsageLog) { n.Edges.UsageLogs = append(n.Edges.UsageLogs, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := aq.withEvents; query != nil {
+		if err := aq.loadEvents(ctx, query, nodes,
+			func(n *Account) { n.Edges.Events = []*AccountEvent{} },
+			func(n *Account, e *AccountEvent) { n.Edges.Events = append(n.Edges.Events, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -616,6 +660,37 @@ func (aq *AccountQuery) loadUsageLogs(ctx context.Context, query *UsageLogQuery,
 		node, ok := nodeids[*fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "account_usage_logs" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (aq *AccountQuery) loadEvents(ctx context.Context, query *AccountEventQuery, nodes []*Account, init func(*Account), assign func(*Account, *AccountEvent)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*Account)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	query.withFKs = true
+	query.Where(predicate.AccountEvent(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(account.EventsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.account_events
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "account_events" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "account_events" returned %v for node %v`, *fk, n.ID)
 		}
 		assign(node, n)
 	}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	appaccount "github.com/DouDOU-start/airgate-core/internal/app/account"
+	appaccountevent "github.com/DouDOU-start/airgate-core/internal/app/accountevent"
 	appapikey "github.com/DouDOU-start/airgate-core/internal/app/apikey"
 	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
 	appdashboard "github.com/DouDOU-start/airgate-core/internal/app/dashboard"
@@ -64,6 +65,7 @@ type HTTPHandlers struct {
 	Version        *handler.VersionHandler
 	Upgrade        *handler.UpgradeHandler
 	RelayDetection *handler.RelayDetectionHandler
+	AccountEvent   *handler.AccountEventHandler
 
 	AccountService *appaccount.Service
 }
@@ -93,6 +95,8 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 	settingsService := appsettings.NewService(settingsStore, dep.Config.APIKeySecret())
 	openclawService := appopenclaw.NewService(settingsService)
 	relayDetectionService := apprelaydetect.NewService(dep.DB)
+	accountEventStore := store.NewAccountEventStore(dep.DB)
+	accountEventService := appaccountevent.NewService(accountEventStore)
 
 	// 注入 auth 服务的设置/验证码/邮件依赖
 	authService.SetSettingsLister(&settingsAdapter{settingsService})
@@ -127,6 +131,7 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 		Version:        handler.NewVersionHandler(),
 		Upgrade:        handler.NewUpgradeHandler(upgradeService),
 		RelayDetection: handler.NewRelayDetectionHandler(relayDetectionService),
+		AccountEvent:   handler.NewAccountEventHandler(accountEventService),
 		AccountService: accountService,
 	}
 }

@@ -64,9 +64,11 @@ type AccountEdges struct {
 	Proxy *Proxy `json:"proxy,omitempty"`
 	// UsageLogs holds the value of the usage_logs edge.
 	UsageLogs []*UsageLog `json:"usage_logs,omitempty"`
+	// Events holds the value of the events edge.
+	Events []*AccountEvent `json:"events,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [4]bool
 }
 
 // GroupsOrErr returns the Groups value or an error if the edge
@@ -96,6 +98,15 @@ func (e AccountEdges) UsageLogsOrErr() ([]*UsageLog, error) {
 		return e.UsageLogs, nil
 	}
 	return nil, &NotLoadedError{edge: "usage_logs"}
+}
+
+// EventsOrErr returns the Events value or an error if the edge
+// was not loaded in eager-loading.
+func (e AccountEdges) EventsOrErr() ([]*AccountEvent, error) {
+	if e.loadedTypes[3] {
+		return e.Events, nil
+	}
+	return nil, &NotLoadedError{edge: "events"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -267,6 +278,11 @@ func (a *Account) QueryProxy() *ProxyQuery {
 // QueryUsageLogs queries the "usage_logs" edge of the Account entity.
 func (a *Account) QueryUsageLogs() *UsageLogQuery {
 	return NewAccountClient(a.config).QueryUsageLogs(a)
+}
+
+// QueryEvents queries the "events" edge of the Account entity.
+func (a *Account) QueryEvents() *AccountEventQuery {
+	return NewAccountClient(a.config).QueryEvents(a)
 }
 
 // Update returns a builder for updating this Account.

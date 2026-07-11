@@ -98,13 +98,17 @@ type UsageLog struct {
 	CreatedAt    time.Time
 }
 
+// StateFilterError 列表筛选伪状态："异常"账号（disabled 且 error_msg 非空）。
+// 口径与分组统计 GroupStats.AccountError 一致，供分组"异常"数下钻到账号明细使用。
+const StateFilterError = "error"
+
 // ListFilter 账号列表筛选条件。
 type ListFilter struct {
 	Page        int
 	PageSize    int
 	Keyword     string
 	Platform    string
-	State       string // active / rate_limited / degraded / disabled
+	State       string // active / rate_limited / degraded / disabled，或伪状态 StateFilterError
 	AccountType string
 	Credential  *CredentialStringFilter
 	GroupID     *int

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearch } from '@tanstack/react-router';
 import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertDialog, Button, EmptyState, Input, Label, ListBox, Select, Spinner, TextField as HeroTextField } from '@heroui/react';
 import {
@@ -119,17 +120,30 @@ export default function AccountsPageContent() {
     { id: 'rate_limited', label: t('status.rate_limited', '限流中') },
     { id: 'degraded', label: t('status.degraded', '降级中') },
     { id: 'disabled', label: t('status.disabled') },
+    // 伪状态：disabled 且有错误原因，口径同分组页"异常"数（后端 state=error）。
+    { id: 'error', label: t('groups.account_error') },
   ];
 
-  // 筛选状态
+  // 筛选状态。分组页下钻会带 ?group_id=X（state 支持深链 ?state=error 只看异常账号）。
+  const search = useSearch({ strict: false }) as { group_id?: number; state?: string };
+  const searchGroupID = search.group_id;
+  const searchState = search.state;
   const { page, setPage, pageSize, setPageSize } = usePagination(20, 'admin.accounts');
   const [keyword, setKeyword] = useState('');
   const debouncedKeyword = useDebouncedValue(keyword.trim(), 250);
   const [platformFilter, setPlatformFilter] = useState('');
-  const [stateFilter, setStateFilter] = useState('');
+  const [stateFilter, setStateFilter] = useState(() => searchState ?? '');
   const [typeFilter, setTypeFilter] = useState('');
-  const [groupFilter, setGroupFilter] = useState('');
+  const [groupFilter, setGroupFilter] = useState(() => (searchGroupID != null ? String(searchGroupID) : ''));
   const [proxyFilter, setProxyFilter] = useState('');
+
+  // 同路由下 URL 变化不会重挂组件（如已在本页时点侧边栏回"账号管理"），
+  // 惰性初始化只跑一次，须显式跟随 search 同步筛选，避免残留旧筛选与 URL 不一致。
+  useEffect(() => {
+    setGroupFilter(searchGroupID != null ? String(searchGroupID) : '');
+    setStateFilter(searchState ?? '');
+    setPage(1);
+  }, [searchGroupID, searchState, setPage]);
 
   // 自动刷新
   const [autoRefresh, setAutoRefresh] = usePersistentAutoRefresh(ACCOUNT_AUTO_REFRESH_STORAGE_KEY, 0, ADMIN_AUTO_REFRESH_OPTIONS); // 秒，0=关闭

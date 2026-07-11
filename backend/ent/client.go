@@ -16,6 +16,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/DouDOU-start/airgate-core/ent/account"
+	"github.com/DouDOU-start/airgate-core/ent/accountevent"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
 	"github.com/DouDOU-start/airgate-core/ent/group"
@@ -39,6 +40,8 @@ type Client struct {
 	APIKey *APIKeyClient
 	// Account is the client for interacting with the Account builders.
 	Account *AccountClient
+	// AccountEvent is the client for interacting with the AccountEvent builders.
+	AccountEvent *AccountEventClient
 	// BalanceLog is the client for interacting with the BalanceLog builders.
 	BalanceLog *BalanceLogClient
 	// Group is the client for interacting with the Group builders.
@@ -74,6 +77,7 @@ func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.APIKey = NewAPIKeyClient(c.config)
 	c.Account = NewAccountClient(c.config)
+	c.AccountEvent = NewAccountEventClient(c.config)
 	c.BalanceLog = NewBalanceLogClient(c.config)
 	c.Group = NewGroupClient(c.config)
 	c.Plugin = NewPluginClient(c.config)
@@ -179,6 +183,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		config:           cfg,
 		APIKey:           NewAPIKeyClient(cfg),
 		Account:          NewAccountClient(cfg),
+		AccountEvent:     NewAccountEventClient(cfg),
 		BalanceLog:       NewBalanceLogClient(cfg),
 		Group:            NewGroupClient(cfg),
 		Plugin:           NewPluginClient(cfg),
@@ -211,6 +216,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		config:           cfg,
 		APIKey:           NewAPIKeyClient(cfg),
 		Account:          NewAccountClient(cfg),
+		AccountEvent:     NewAccountEventClient(cfg),
 		BalanceLog:       NewBalanceLogClient(cfg),
 		Group:            NewGroupClient(cfg),
 		Plugin:           NewPluginClient(cfg),
@@ -251,8 +257,9 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.APIKey, c.Account, c.BalanceLog, c.Group, c.Plugin, c.PluginSource, c.Proxy,
-		c.Setting, c.Task, c.UsageLog, c.User, c.UserIdentity, c.UserSubscription,
+		c.APIKey, c.Account, c.AccountEvent, c.BalanceLog, c.Group, c.Plugin,
+		c.PluginSource, c.Proxy, c.Setting, c.Task, c.UsageLog, c.User, c.UserIdentity,
+		c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -262,8 +269,9 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.APIKey, c.Account, c.BalanceLog, c.Group, c.Plugin, c.PluginSource, c.Proxy,
-		c.Setting, c.Task, c.UsageLog, c.User, c.UserIdentity, c.UserSubscription,
+		c.APIKey, c.Account, c.AccountEvent, c.BalanceLog, c.Group, c.Plugin,
+		c.PluginSource, c.Proxy, c.Setting, c.Task, c.UsageLog, c.User, c.UserIdentity,
+		c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -276,6 +284,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.APIKey.mutate(ctx, m)
 	case *AccountMutation:
 		return c.Account.mutate(ctx, m)
+	case *AccountEventMutation:
+		return c.AccountEvent.mutate(ctx, m)
 	case *BalanceLogMutation:
 		return c.BalanceLog.mutate(ctx, m)
 	case *GroupMutation:
@@ -640,6 +650,22 @@ func (c *AccountClient) QueryUsageLogs(a *Account) *UsageLogQuery {
 	return query
 }
 
+// QueryEvents queries the events edge of a Account.
+func (c *AccountClient) QueryEvents(a *Account) *AccountEventQuery {
+	query := (&AccountEventClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := a.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(account.Table, account.FieldID, id),
+			sqlgraph.To(accountevent.Table, accountevent.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, account.EventsTable, account.EventsColumn),
+		)
+		fromV = sqlgraph.Neighbors(a.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *AccountClient) Hooks() []Hook {
 	return c.hooks.Account
@@ -662,6 +688,155 @@ func (c *AccountClient) mutate(ctx context.Context, m *AccountMutation) (Value, 
 		return (&AccountDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Account mutation op: %q", m.Op())
+	}
+}
+
+// AccountEventClient is a client for the AccountEvent schema.
+type AccountEventClient struct {
+	config
+}
+
+// NewAccountEventClient returns a client for the AccountEvent from the given config.
+func NewAccountEventClient(c config) *AccountEventClient {
+	return &AccountEventClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `accountevent.Hooks(f(g(h())))`.
+func (c *AccountEventClient) Use(hooks ...Hook) {
+	c.hooks.AccountEvent = append(c.hooks.AccountEvent, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `accountevent.Intercept(f(g(h())))`.
+func (c *AccountEventClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AccountEvent = append(c.inters.AccountEvent, interceptors...)
+}
+
+// Create returns a builder for creating a AccountEvent entity.
+func (c *AccountEventClient) Create() *AccountEventCreate {
+	mutation := newAccountEventMutation(c.config, OpCreate)
+	return &AccountEventCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AccountEvent entities.
+func (c *AccountEventClient) CreateBulk(builders ...*AccountEventCreate) *AccountEventCreateBulk {
+	return &AccountEventCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AccountEventClient) MapCreateBulk(slice any, setFunc func(*AccountEventCreate, int)) *AccountEventCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AccountEventCreateBulk{err: fmt.Errorf("calling to AccountEventClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AccountEventCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AccountEventCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AccountEvent.
+func (c *AccountEventClient) Update() *AccountEventUpdate {
+	mutation := newAccountEventMutation(c.config, OpUpdate)
+	return &AccountEventUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AccountEventClient) UpdateOne(ae *AccountEvent) *AccountEventUpdateOne {
+	mutation := newAccountEventMutation(c.config, OpUpdateOne, withAccountEvent(ae))
+	return &AccountEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AccountEventClient) UpdateOneID(id int) *AccountEventUpdateOne {
+	mutation := newAccountEventMutation(c.config, OpUpdateOne, withAccountEventID(id))
+	return &AccountEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AccountEvent.
+func (c *AccountEventClient) Delete() *AccountEventDelete {
+	mutation := newAccountEventMutation(c.config, OpDelete)
+	return &AccountEventDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AccountEventClient) DeleteOne(ae *AccountEvent) *AccountEventDeleteOne {
+	return c.DeleteOneID(ae.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AccountEventClient) DeleteOneID(id int) *AccountEventDeleteOne {
+	builder := c.Delete().Where(accountevent.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AccountEventDeleteOne{builder}
+}
+
+// Query returns a query builder for AccountEvent.
+func (c *AccountEventClient) Query() *AccountEventQuery {
+	return &AccountEventQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAccountEvent},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AccountEvent entity by its id.
+func (c *AccountEventClient) Get(ctx context.Context, id int) (*AccountEvent, error) {
+	return c.Query().Where(accountevent.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AccountEventClient) GetX(ctx context.Context, id int) *AccountEvent {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryAccount queries the account edge of a AccountEvent.
+func (c *AccountEventClient) QueryAccount(ae *AccountEvent) *AccountQuery {
+	query := (&AccountClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := ae.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(accountevent.Table, accountevent.FieldID, id),
+			sqlgraph.To(account.Table, account.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, accountevent.AccountTable, accountevent.AccountColumn),
+		)
+		fromV = sqlgraph.Neighbors(ae.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AccountEventClient) Hooks() []Hook {
+	return c.hooks.AccountEvent
+}
+
+// Interceptors returns the client interceptors.
+func (c *AccountEventClient) Interceptors() []Interceptor {
+	return c.inters.AccountEvent
+}
+
+func (c *AccountEventClient) mutate(ctx context.Context, m *AccountEventMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AccountEventCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AccountEventUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AccountEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AccountEventDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AccountEvent mutation op: %q", m.Op())
 	}
 }
 
@@ -2451,11 +2626,11 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		APIKey, Account, BalanceLog, Group, Plugin, PluginSource, Proxy, Setting, Task,
-		UsageLog, User, UserIdentity, UserSubscription []ent.Hook
+		APIKey, Account, AccountEvent, BalanceLog, Group, Plugin, PluginSource, Proxy,
+		Setting, Task, UsageLog, User, UserIdentity, UserSubscription []ent.Hook
 	}
 	inters struct {
-		APIKey, Account, BalanceLog, Group, Plugin, PluginSource, Proxy, Setting, Task,
-		UsageLog, User, UserIdentity, UserSubscription []ent.Interceptor
+		APIKey, Account, AccountEvent, BalanceLog, Group, Plugin, PluginSource, Proxy,
+		Setting, Task, UsageLog, User, UserIdentity, UserSubscription []ent.Interceptor
 	}
 )

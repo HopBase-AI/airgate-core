@@ -212,6 +212,7 @@ func (s *Server) StartPlugins(ctx context.Context) {
 
 	go plugin.StartAssetMigrationLoop(pluginCtx, s.db, s.leader.IsLeader)
 	go plugin.StartAssetCleanupLoop(pluginCtx, s.db, s.leader.IsLeader)
+	go scheduler.StartAccountEventCleanupLoop(pluginCtx, s.db, s.leader.IsLeader)
 
 	go func() {
 		// 加载已编译的插件。后台执行，避免坏插件阻塞 core 监听端口。

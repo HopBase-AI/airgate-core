@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/DouDOU-start/airgate-core/ent/account"
+	"github.com/DouDOU-start/airgate-core/ent/accountevent"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
 	"github.com/DouDOU-start/airgate-core/ent/group"
@@ -141,6 +142,28 @@ func init() {
 	account.DefaultUpdatedAt = accountDescUpdatedAt.Default.(func() time.Time)
 	// account.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	account.UpdateDefaultUpdatedAt = accountDescUpdatedAt.UpdateDefault.(func() time.Time)
+	accounteventFields := schema.AccountEvent{}.Fields()
+	_ = accounteventFields
+	// accounteventDescReason is the schema descriptor for reason field.
+	accounteventDescReason := accounteventFields[1].Descriptor()
+	// accountevent.DefaultReason holds the default value on creation for the reason field.
+	accountevent.DefaultReason = accounteventDescReason.Default.(string)
+	// accounteventDescFamily is the schema descriptor for family field.
+	accounteventDescFamily := accounteventFields[2].Descriptor()
+	// accountevent.DefaultFamily holds the default value on creation for the family field.
+	accountevent.DefaultFamily = accounteventDescFamily.Default.(string)
+	// accounteventDescSource is the schema descriptor for source field.
+	accounteventDescSource := accounteventFields[3].Descriptor()
+	// accountevent.DefaultSource holds the default value on creation for the source field.
+	accountevent.DefaultSource = accounteventDescSource.Default.(string)
+	// accounteventDescUpstreamStatus is the schema descriptor for upstream_status field.
+	accounteventDescUpstreamStatus := accounteventFields[4].Descriptor()
+	// accountevent.DefaultUpstreamStatus holds the default value on creation for the upstream_status field.
+	accountevent.DefaultUpstreamStatus = accounteventDescUpstreamStatus.Default.(int)
+	// accounteventDescCreatedAt is the schema descriptor for created_at field.
+	accounteventDescCreatedAt := accounteventFields[6].Descriptor()
+	// accountevent.DefaultCreatedAt holds the default value on creation for the created_at field.
+	accountevent.DefaultCreatedAt = accounteventDescCreatedAt.Default.(func() time.Time)
 	balancelogFields := schema.BalanceLog{}.Fields()
 	_ = balancelogFields
 	// balancelogDescRemark is the schema descriptor for remark field.

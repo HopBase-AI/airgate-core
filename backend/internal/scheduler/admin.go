@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/DouDOU-start/airgate-core/ent/account"
+	"github.com/DouDOU-start/airgate-core/ent/accountevent"
 	entgroup "github.com/DouDOU-start/airgate-core/ent/group"
 )
 
@@ -24,6 +25,7 @@ func (s *Scheduler) ManualRecover(ctx context.Context, accountID int) error {
 	if err == nil {
 		_ = s.sanitizeModelRoutingForAccount(ctx, accountID)
 		s.routeCache.InvalidateAll()
+		s.state.recordEvent(accountID, accountevent.EventTypeManualRecovered, "", "", eventSourceManual, 0, nil)
 	}
 	return err
 }
@@ -40,18 +42,25 @@ func (s *Scheduler) ManualDisable(ctx context.Context, accountID int, reason str
 	if err == nil {
 		_ = s.sanitizeModelRoutingForAccount(ctx, accountID)
 		s.routeCache.InvalidateAll()
+		s.state.recordEvent(accountID, accountevent.EventTypeManualDisabled, reason, "", eventSourceManual, 0, nil)
 	}
 	return err
 }
 
 // MarkRateLimited 配额巡检发现额度窗口已满时打入 rate_limited 直到 until。
+// 事件只在"进入"限流态时记一条：巡检每轮都会重打 until，
+// 若每轮都落事件，持续限流的账号会把异常监控刷成同一条记录的重复噪声。
 func (s *Scheduler) MarkRateLimited(ctx context.Context, accountID int, until time.Time, reason string) {
+	alreadyIn := s.accountInState(ctx, accountID, account.StateRateLimited)
 	s.state.transition(ctx, accountID, account.StateRateLimited, &until, reason)
+	if !alreadyIn {
+		s.state.recordEvent(accountID, accountevent.EventTypeRateLimited, reason, "", eventSourceProbe, 0, &until)
+	}
 }
 
 // ClearRateLimited 配额巡检发现已恢复时清限流态回到 active。
 func (s *Scheduler) ClearRateLimited(ctx context.Context, accountID int) {
-	s.state.transitionActive(ctx, accountID)
+	s.state.transitionActive(ctx, accountID, eventSourceProbe)
 }
 
 // ClearRateLimitMarkers 清除账号上的临时限流标记，不会恢复手动禁用的账号。
@@ -64,17 +73,30 @@ func (s *Scheduler) ClearRateLimitMarkers(ctx context.Context, accountID int) in
 		return cleared
 	}
 	if item.State == account.StateRateLimited || item.State == account.StateDegraded {
-		s.state.transitionActive(ctx, accountID)
+		s.state.transitionActive(ctx, accountID, eventSourceManual)
 		cleared++
 	}
 	return cleared
 }
 
 // MarkDisabled 把账号标记为 disabled（凭证失效等确定性错误）。
+// 与 MarkRateLimited 同理，只在进入 disabled 时落事件。
 func (s *Scheduler) MarkDisabled(ctx context.Context, accountID int, reason string) {
+	alreadyIn := s.accountInState(ctx, accountID, account.StateDisabled)
 	s.state.transition(ctx, accountID, account.StateDisabled, nil, reason)
+	if !alreadyIn {
+		s.state.recordEvent(accountID, accountevent.EventTypeDisabled, reason, "", eventSourceProbe, 0, nil)
+	}
 	_ = s.sanitizeModelRoutingForAccount(ctx, accountID)
 	s.routeCache.InvalidateAll()
+}
+
+// accountInState 读取账号当前是否已处于目标状态（读失败按"不在"处理，宁多记不漏记）。
+func (s *Scheduler) accountInState(ctx context.Context, accountID int, target account.State) bool {
+	dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+	item, err := s.db.Account.Get(dbCtx, accountID)
+	return err == nil && item.State == target
 }
 
 func (s *Scheduler) sanitizeModelRoutingForAccount(ctx context.Context, accountID int) error {

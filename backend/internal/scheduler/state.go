@@ -3,12 +3,15 @@ package scheduler
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/redis/go-redis/v9"
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/ent/account"
+	"github.com/DouDOU-start/airgate-core/ent/accountevent"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
 
@@ -52,6 +55,9 @@ type StateMachine struct {
 	rdb            *redis.Client
 	familyCooldown *FamilyCooldown
 
+	// eventWG 追踪异步事件写入（recordEvent 的 goroutine），测试经 waitEvents 同步。
+	eventWG sync.WaitGroup
+
 	// onCriticalTransition Active ↔ Disabled 转移后的回调（由 Scheduler 注入）。
 	// 用来清 route 缓存，让下次 SelectAccount 立刻看到新状态；
 	// RateLimited / Degraded 这种"带 state_until 的临时状态"不走这里，由 TTL 兜底。
@@ -83,7 +89,7 @@ func (sm *StateMachine) notifyCritical() {
 func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 	switch j.Kind {
 	case sdk.OutcomeSuccess:
-		sm.transitionActive(ctx, accountID)
+		sm.transitionActive(ctx, accountID, eventSourceForward)
 
 	case sdk.OutcomeAccountRateLimited:
 		dur := j.RetryAfter
@@ -107,27 +113,34 @@ func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 				"until", until,
 				sdk.LogFieldReason, j.Reason,
 			)
+			sm.recordEvent(accountID, accountevent.EventTypeRateLimited, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, &until)
 			return
 		}
 		sm.transition(ctx, accountID, account.StateRateLimited, &until, j.Reason)
+		sm.recordEvent(accountID, accountevent.EventTypeRateLimited, j.Reason, "", eventSourceForward, j.UpstreamStatus, &until)
 
 	case sdk.OutcomeAccountDead:
 		if j.IsPool && j.UpstreamStatus != 401 {
 			// 池账号的 403 等是上游透传的错误，池子本身没问题，
-			// 不动状态，靠 failover 重试消化。
+			// 不动状态，靠 failover 重试消化。仍记一条上游侧事件供异常监控追溯。
 			// 401 表示池子自身的凭证无效，仍需禁用并说明原因。
+			sm.recordEvent(accountID, accountevent.EventTypeUpstreamError, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, nil)
 			return
 		}
 		sm.transition(ctx, accountID, account.StateDisabled, nil, j.Reason)
+		sm.recordEvent(accountID, accountevent.EventTypeDisabled, j.Reason, "", eventSourceForward, j.UpstreamStatus, nil)
 
 	case sdk.OutcomeUpstreamTransient:
 		// 按定义，UpstreamTransient 是"上游侧瞬时故障"（SSE 提前断流、网络抖动、上游 5xx 等），
 		// 账号本身没问题——不动 state，让 failover 切到下一账号就够了。
+		// 但事件要留痕：异常监控靠它回答"是不是上游不稳定"。
 		//
 		// 池账号（IsPool）保留软降级：pool 资源共享，一个账号抖起来可能拖垮整个 pool，
 		// 短时间 degraded 让调度器优先选其它账号，到期自动恢复。
 		if j.IsPool {
-			sm.applyDegraded(ctx, accountID, j.Reason)
+			sm.applyDegraded(ctx, accountID, j)
+		} else {
+			sm.recordEvent(accountID, accountevent.EventTypeUpstreamError, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, nil)
 		}
 
 	case sdk.OutcomeClientError, sdk.OutcomeStreamAborted, sdk.OutcomeUnknown:
@@ -136,20 +149,22 @@ func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 }
 
 // applyDegraded 池账号软降级。state_until 到期后调度器看到就恢复 active。
-func (sm *StateMachine) applyDegraded(ctx context.Context, accountID int, reason string) {
+func (sm *StateMachine) applyDegraded(ctx context.Context, accountID int, j Judgment) {
 	dur := degradedDefault
 	if dur > degradedMax {
 		dur = degradedMax
 	}
 	until := time.Now().Add(dur)
-	sm.transition(ctx, accountID, account.StateDegraded, &until, reason)
+	sm.transition(ctx, accountID, account.StateDegraded, &until, j.Reason)
+	sm.recordEvent(accountID, accountevent.EventTypeDegraded, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, &until)
 }
 
 // transitionActive 成功时回到 active：清 state_until、清 reason、清失败计数、更新 last_used_at。
+// source 标记恢复的触发方（转发成功 / 巡检 / 管理员清标记），仅用于事件留痕。
 //
 // disabled 状态受保护：只有管理员操作（ManualRecover / ToggleScheduling）才能解除，
 // forwarder 的 Success 判决不会覆盖它——防止在飞请求的成功回调把手动禁用的账号重新激活。
-func (sm *StateMachine) transitionActive(ctx context.Context, accountID int) {
+func (sm *StateMachine) transitionActive(ctx context.Context, accountID int, source string) {
 	now := time.Now()
 	dbCtx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
@@ -179,6 +194,11 @@ func (sm *StateMachine) transitionActive(ctx context.Context, accountID int) {
 	}
 	if prevState != account.StateActive {
 		sm.notifyCritical()
+	}
+	// 只有从异常态（rate_limited / degraded）回来才留"已恢复"事件，
+	// active → active 的常规成功不落事件（避免每次请求都写一条）。
+	if prevState == account.StateRateLimited || prevState == account.StateDegraded {
+		sm.recordEvent(accountID, accountevent.EventTypeRecovered, "", "", source, 0, nil)
 	}
 }
 
@@ -245,10 +265,16 @@ func SchedulabilityOf(acc *ent.Account, now time.Time) Schedulability {
 }
 
 // truncateReason 限制 error_msg 长度，防止异常文本把列撑爆。
+// 按字节截断后回退到合法 UTF-8 边界：中文/emoji 被从 rune 中间切断会产生非法
+// UTF-8，Postgres 直接拒绝写入，导致最需要留痕的长报错反而丢失。
 func truncateReason(s string) string {
 	const maxLen = 500
-	if len(s) > maxLen {
-		return s[:maxLen]
+	if len(s) <= maxLen {
+		return s
 	}
-	return s
+	cut := s[:maxLen]
+	for len(cut) > 0 && !utf8.ValidString(cut) {
+		cut = cut[:len(cut)-1]
+	}
+	return cut
 }

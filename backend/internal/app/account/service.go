@@ -284,6 +284,22 @@ func (s *Service) Import(ctx context.Context, items []CreateInput) ImportSummary
 // Update 更新账号。
 func (s *Service) Update(ctx context.Context, id int, input UpdateInput) (Account, error) {
 	logger := sdk.LoggerFromContext(ctx)
+	stateRequested := input.State != nil
+	// state 变更从 repo 补丁中剥离、统一走状态机（同 ToggleScheduling 路径）：
+	// 直接写 repo 会绕过路由缓存失效（缓存里的旧快照让禁用账号继续被调度）
+	// 和异常监控的 manual_* 事件留痕。stateWriter 为 nil（测试）时保留旧行为。
+	manualState := ""
+	if stateRequested && s.stateWriter != nil {
+		target := *input.State
+		input.State = nil
+		changed := true
+		if existing, err := s.repo.FindByID(ctx, id, LoadOptions{}); err == nil {
+			changed = existing.State != target
+		}
+		if changed {
+			manualState = target
+		}
+	}
 	updated, err := s.repo.Update(ctx, id, input)
 	if err != nil {
 		logger.Error("account_credential_persist_failed",
@@ -291,19 +307,47 @@ func (s *Service) Update(ctx context.Context, id int, input UpdateInput) (Accoun
 			sdk.LogFieldError, err)
 		return updated, err
 	}
+	if manualState != "" {
+		if err := s.applyManualState(ctx, id, manualState); err != nil {
+			logger.Error("account_state_apply_failed",
+				sdk.LogFieldAccountID, id,
+				"state", manualState,
+				sdk.LogFieldError, err)
+			return updated, err
+		}
+		// 状态机已清 state_until / 重写 error_msg，返回快照同步回填，避免响应携带幻影冷却。
+		updated.State = manualState
+		updated.StateUntil = nil
+		if manualState == "active" {
+			updated.ErrorMsg = ""
+		} else {
+			updated.ErrorMsg = manualDisableReason
+		}
+	}
 	switch {
-	case input.State != nil:
+	case stateRequested:
 		logger.Info("account_status_changed",
 			sdk.LogFieldAccountID, id,
-			"state", *input.State)
+			"state", updated.State)
 	case input.MaxConcurrency != nil || input.RateMultiplier != nil:
 		logger.Info("account_quota_updated",
 			sdk.LogFieldAccountID, id)
 	}
-	if input.Type != nil || input.Credentials != nil || input.State != nil {
+	if input.Type != nil || input.Credentials != nil || stateRequested {
 		s.InvalidateUsageCache(updated.Platform)
 	}
 	return updated, err
+}
+
+// manualDisableReason 手动禁用的统一原因文案（toggle / 编辑 / 批量共用）。
+const manualDisableReason = "手动关闭"
+
+// applyManualState 把管理接口的 state 变更施加到状态机。
+func (s *Service) applyManualState(ctx context.Context, id int, target string) error {
+	if target == "active" {
+		return s.stateWriter.ManualRecover(ctx, id)
+	}
+	return s.stateWriter.ManualDisable(ctx, id, manualDisableReason)
 }
 
 // Delete 删除账号。
@@ -324,6 +368,7 @@ func (s *Service) Delete(ctx context.Context, id int) error {
 
 // BulkUpdate 批量更新账号。逐条执行并收集每个账号的成功/失败信息，允许部分成功。
 // group_ids 为整体替换：若提供则覆盖账号原有分组，未提供则不触碰。
+// state 变更复用 Update 的状态机路径（缓存失效 + 异常监控事件留痕）。
 func (s *Service) BulkUpdate(ctx context.Context, input BulkUpdateInput) BulkResult {
 	result := BulkResult{Results: make([]BulkResultItem, 0, len(input.IDs))}
 	for _, id := range input.IDs {
@@ -341,7 +386,7 @@ func (s *Service) BulkUpdate(ctx context.Context, input BulkUpdateInput) BulkRes
 			patch.GroupIDs = input.GroupIDs
 			patch.HasGroupIDs = true
 		}
-		if _, err := s.repo.Update(ctx, id, patch); err != nil {
+		if _, err := s.Update(ctx, id, patch); err != nil {
 			result.appendFailure(id, err)
 			continue
 		}

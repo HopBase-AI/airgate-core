@@ -147,6 +147,9 @@ func (s *Server) registerRoutes() {
 		adminGroup.POST("/accounts/:id/refresh-quota", handlers.Account.RefreshQuota)
 		adminGroup.GET("/accounts/:id/stats", handlers.Account.GetAccountStats)
 
+		// 账号异常事件（异常监控页）
+		adminGroup.GET("/account-events", handlers.AccountEvent.ListAccountEvents)
+
 		// 分组管理
 		adminGroup.GET("/groups", handlers.Group.ListGroups)
 		adminGroup.POST("/groups", handlers.Group.CreateGroup)

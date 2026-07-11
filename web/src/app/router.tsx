@@ -14,6 +14,7 @@ import { getToken, getTokenRole } from '../shared/api/client';
 import { ChatPageLoading, FullPageLoading, PageLoading } from '../shared/components/PageLoading';
 import { checkAdmin, withSetupCheck } from './routeGuards';
 import {
+  AccountEventsPage,
   AccountsPage,
   ADMIN_IDLE_PRELOADS,
   DashboardPage,
@@ -256,8 +257,26 @@ function renderPage(Page: ElementType) {
 }
 
 const adminUsersRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/users', component: renderPage(UsersPage) });
-const adminAccountsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/accounts', component: renderPage(AccountsPage) });
+// 账号页支持从分组页"异常"数下钻：?group_id=X&state=error 预置筛选。
+const adminAccountsRoute = createRoute({
+  getParentRoute: () => adminLayout,
+  path: '/admin/accounts',
+  component: renderPage(AccountsPage),
+  validateSearch: (search: Record<string, unknown>): { group_id?: number; state?: string } => ({
+    group_id: typeof search.group_id === 'number' ? search.group_id : undefined,
+    state: typeof search.state === 'string' ? search.state : undefined,
+  }),
+});
 const adminGroupsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/groups', component: renderPage(GroupsPage) });
+// 异常监控页：分组页"异常"数下钻会带 ?group_id=X 预置分组筛选。
+const adminAccountEventsRoute = createRoute({
+  getParentRoute: () => adminLayout,
+  path: '/admin/account-events',
+  component: renderPage(AccountEventsPage),
+  validateSearch: (search: Record<string, unknown>): { group_id?: number } => ({
+    group_id: typeof search.group_id === 'number' ? search.group_id : undefined,
+  }),
+});
 const adminSubscriptionsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/subscriptions', component: renderPage(SubscriptionsPage) });
 const adminProxiesRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/proxies', component: renderPage(ProxiesPage) });
 const adminUsageRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/usage', component: renderPage(UsagePage) });
@@ -351,6 +370,7 @@ const routeTree = rootRoute.addChildren([
       adminUsersRoute,
       adminAccountsRoute,
       adminGroupsRoute,
+      adminAccountEventsRoute,
       adminSubscriptionsRoute,
       adminProxiesRoute,
       adminUsageRoute,
