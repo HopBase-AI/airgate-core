@@ -8,7 +8,7 @@ import { authApi } from '../shared/api/auth';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { useStatusPageEnabled } from '../shared/hooks/useStatusPageEnabled';
 import { ApiError, setSessionAPIKey } from '../shared/api/client';
-import { Mail, Lock, User, ArrowRight, Sun, Moon, ShieldCheck, Key, Activity } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, Sun, Moon, ShieldCheck, Key, Activity, Layers, Gauge, BarChart3 } from 'lucide-react';
 
 type TabKey = 'login' | 'register' | 'apikey';
 
@@ -547,45 +547,72 @@ export default function LoginPage() {
           color: 'oklch(96% 0.004 250)',
         }}
       >
+        {/* 细网格纹理：填补大面积纯色的空洞感 */}
         <div
-          className="pointer-events-none absolute -left-28 -top-28 h-72 w-72 rounded-full blur-3xl"
-          style={{ background: theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.07)' }}
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage:
+              'linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)',
+            backgroundSize: '44px 44px',
+            maskImage: 'radial-gradient(ellipse 90% 80% at 35% 40%, black 30%, transparent 75%)',
+            WebkitMaskImage: 'radial-gradient(ellipse 90% 80% at 35% 40%, black 30%, transparent 75%)',
+          }}
+        />
+        {/* 柔光（面板恒为深色，用固定色，不随主题的黑白 primary 反转） */}
+        <div
+          className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full blur-3xl"
+          style={{ background: 'rgba(255,255,255,0.07)' }}
         />
         <div
-          className="pointer-events-none absolute -bottom-32 right-10 h-80 w-80 rounded-full blur-3xl"
-          style={{ background: theme === 'dark' ? 'rgba(255,255,255,0.035)' : 'rgba(255,255,255,0.05)' }}
+          className="pointer-events-none absolute -bottom-32 right-6 h-80 w-80 rounded-full blur-3xl"
+          style={{ background: theme === 'dark' ? 'rgba(255,255,255,0.045)' : 'rgba(255,255,255,0.06)' }}
         />
         {/* 内容 */}
         <div className="relative z-10 px-12 max-w-md">
-          <div className="flex items-center gap-3 mb-8">
+          <div className="flex items-center gap-3 mb-10">
             <img src={site.site_logo || defaultLogoUrl} alt="" className="w-10 h-10 rounded-sm object-cover" />
-            <span className="text-xl font-bold">{site.site_name || 'HopBase'}</span>
+            <span className="text-xl font-bold tracking-tight">{site.site_name || 'HopBase'}</span>
           </div>
-          <h2 className="text-3xl font-bold leading-snug mb-4">
+          <h2 className="text-[34px] font-bold leading-snug tracking-tight mb-4">
             {t('auth.welcome_title')}
           </h2>
-          <p className="text-sm leading-relaxed opacity-65">
+          <p className="text-sm leading-relaxed opacity-65 max-w-sm">
             {t('auth.welcome_desc')}
           </p>
-          <div className="flex gap-3 mt-10">
-            {[t('auth.feature_1'), t('auth.feature_2'), t('auth.feature_3')].map((f) => (
-              <span
-                key={f}
-                className="text-[11px] px-3 py-1.5 rounded-[var(--radius)] font-medium border"
-                style={{
-                  background: 'rgba(255,255,255,0.08)',
-                  borderColor: 'rgba(255,255,255,0.10)',
-                }}
-              >
-                {f}
-              </span>
+          {/* 特性列表：图标 + 标题 + 一行说明 */}
+          <div className="mt-11 space-y-5">
+            {[
+              { icon: Layers, title: t('auth.feature_1'), desc: t('auth.feature_1_desc', { defaultValue: 'Unified access to OpenAI, Claude, Gemini and more' }) },
+              { icon: Gauge, title: t('auth.feature_2'), desc: t('auth.feature_2_desc', { defaultValue: 'Smart multi-account scheduling with auto failover' }) },
+              { icon: BarChart3, title: t('auth.feature_3'), desc: t('auth.feature_3_desc', { defaultValue: 'Real-time token-level usage and cost' }) },
+            ].map(({ icon: Icon, title, desc }) => (
+              <div key={title} className="flex items-start gap-3.5">
+                <span
+                  className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border"
+                  style={{
+                    background: 'rgba(255,255,255,0.09)',
+                    borderColor: 'rgba(255,255,255,0.14)',
+                  }}
+                >
+                  <Icon className="h-4 w-4" style={{ color: 'rgba(255,255,255,0.92)' }} />
+                </span>
+                <span>
+                  <span className="block text-[13.5px] font-semibold leading-tight">{title}</span>
+                  <span className="mt-1 block text-xs leading-relaxed opacity-55">{desc}</span>
+                </span>
+              </div>
             ))}
           </div>
         </div>
       </div>
 
       {/* ===== 右侧表单区 ===== */}
-      <div className="flex-1 flex items-center justify-center p-6 sm:p-8 bg-bg-deep relative">
+      <div className="flex-1 flex items-center justify-center p-6 sm:p-8 bg-bg-deep relative overflow-hidden">
+        {/* 表单区背景：卡片上方一团极淡的柔光，避免整面死黑/死白 */}
+        <div
+          className="pointer-events-none absolute left-1/2 top-[12%] h-[420px] w-[560px] -translate-x-1/2 rounded-full blur-3xl"
+          style={{ background: theme === 'dark' ? 'rgba(255,255,255,0.045)' : 'rgba(0,0,0,0.028)' }}
+        />
         {/* 主题切换按钮 */}
         <Button
           aria-label={theme === 'dark' ? 'Light mode' : 'Dark mode'}
@@ -626,8 +653,11 @@ export default function LoginPage() {
           </Tabs>
 
           {/* 表单 */}
-          <Card>
-            <Card.Content className="p-6">
+          <Card
+            className="border border-glass-border shadow-xl backdrop-blur-sm"
+            style={{ boxShadow: '0 20px 50px -18px rgba(0,0,0,0.35), 0 0 0 1px color-mix(in oklab, var(--ag-primary) 5%, transparent)' }}
+          >
+            <Card.Content className="p-6 sm:p-7">
             {registerSuccess && activeTab === 'login' && (
               <Alert status="success" className="mb-5">
                 <Alert.Content>
