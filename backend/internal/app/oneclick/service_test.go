@@ -182,6 +182,8 @@ func TestRenderScripts(t *testing.T) {
 	}{
 		{"bash", svc.RenderSetupScript, `BASE_URL="https://api.example.com"`},
 		{"powershell", svc.RenderSetupScriptPowerShell, `$BaseUrl  = 'https://api.example.com'`},
+		{"codex-bash", svc.RenderSetupCodexScript, `BASE_URL="https://api.example.com"`},
+		{"codex-powershell", svc.RenderSetupCodexScriptPowerShell, `$BaseUrl  = 'https://api.example.com'`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			out, err := tc.render(cfg)

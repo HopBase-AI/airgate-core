@@ -319,6 +319,8 @@ func (s *Server) registerRoutes() {
 	{
 		oneclickGroup.GET("/setup.sh", handlers.OneClick.HandleSetupScript)
 		oneclickGroup.GET("/setup.ps1", handlers.OneClick.HandleSetupScriptPowerShell)
+		oneclickGroup.GET("/setup-codex.sh", handlers.OneClick.HandleSetupCodexScript)
+		oneclickGroup.GET("/setup-codex.ps1", handlers.OneClick.HandleSetupCodexScriptPowerShell)
 		oneclickGroup.POST("/exchange", handlers.OneClick.HandleExchange)
 		oneclickGroup.POST("/verify", handlers.OneClick.HandleVerify)
 	}

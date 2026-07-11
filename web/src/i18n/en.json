@@ -768,7 +768,8 @@
     "auto_update": "Auto update",
     "auto_update_off": "Auto update off",
     "granularity_hour": "Hourly",
-    "granularity_day": "Daily"
+    "granularity_day": "Daily",
+    "unattributed": "Unattributed (historical)"
   },
   "plugins": {
     "title": "Plugins",
@@ -1111,8 +1112,14 @@
     "one_click_status_expired": "The setup token has expired or been used. Please regenerate.",
     "one_click_regenerate": "Regenerate Command",
     "one_click_issue_failed": "Failed to generate the setup command",
-    "one_click_ccs_hint": "Advanced: need to switch between multiple configs? Install CC Switch, then use \"Import CCS\" from the key menu.",
-    "one_click_ccs_download": "Download CC Switch"
+    "one_click_ccs_hint": "Install the CC Switch desktop app (macOS / Windows / Linux), then use \"Import CCS\" from the key row menu to import this site's config in one click, with hot-switching across providers.",
+    "one_click_ccs_download": "Download CC Switch",
+    "one_click_title_codex": "One-Click Setup for Codex CLI",
+    "one_click_desc_codex": "Copy the command below and paste it into your terminal. It installs Codex CLI, writes the key configuration, and verifies the connection — no manual setup needed.",
+    "one_click_generate": "Generate Setup Command",
+    "one_click_pregen_hint": "This generates a one-time setup command for this key (valid for 15 minutes, single use). Generating changes nothing on your machine — configuration is only written when you run the command in your terminal.",
+    "one_click_status_verified_codex": "All set! Open a new terminal and run codex to get started.",
+    "one_click_ccs_title": "Switching between multiple configs?"
   },
   "setup": {
     "title": "System Setup",

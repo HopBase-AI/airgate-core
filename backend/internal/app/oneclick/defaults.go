@@ -56,3 +56,23 @@ var setupScriptPowerShellTemplate string
 func SetupScriptPowerShellTemplate() string {
 	return setupScriptPowerShellTemplate
 }
+
+// setupCodexScriptTemplate 是 /oneclick/setup-codex.sh 返回的 bash 脚本模板（Codex CLI）。
+//
+//go:embed assets/setup-codex.sh.tmpl
+var setupCodexScriptTemplate string
+
+// SetupCodexScriptTemplate 返回 Codex CLI bash 接入脚本模板原文。
+func SetupCodexScriptTemplate() string {
+	return setupCodexScriptTemplate
+}
+
+// setupCodexScriptPowerShellTemplate 是 /oneclick/setup-codex.ps1 返回的 PowerShell 脚本模板。
+//
+//go:embed assets/setup-codex.ps1.tmpl
+var setupCodexScriptPowerShellTemplate string
+
+// SetupCodexScriptPowerShellTemplate 返回 Codex CLI PowerShell 接入脚本模板原文。
+func SetupCodexScriptPowerShellTemplate() string {
+	return setupCodexScriptPowerShellTemplate
+}

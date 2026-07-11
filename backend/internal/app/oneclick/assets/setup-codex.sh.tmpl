@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+#
+# {{.SiteName}} — Codex CLI 一键接入脚本
+# 用法（控制台会生成带一次性令牌的完整命令）：
+#   curl -fsSL {{.BaseURL}}/oneclick/setup-codex.sh | bash -s -- <setup-token>
+#
+# 脚本做四件事：兑换令牌取密钥 → 检测/安装 Codex CLI →
+# 写入 ~/.codex/config.toml 与 auth.json（原文件先备份）→ 验证连接并回执。
+set -u
+
+BASE_URL="{{.BaseURL}}"
+SITE_NAME="{{.SiteName}}"
+TOKEN="${1:-${HOPBASE_SETUP_TOKEN:-}}"
+
+info() { printf '\033[1;34m•\033[0m %s\n' "$1"; }
+ok()   { printf '\033[1;32m✓\033[0m %s\n' "$1"; }
+die()  { printf '\033[1;31m✗\033[0m %s\n' "$1" >&2; exit 1; }
+
+[ -n "$TOKEN" ] || die "缺少接入令牌：请回控制台复制完整命令执行"
+command -v curl >/dev/null 2>&1 || die "未找到 curl，请先安装 curl 后重试"
+
+printf '\n\033[1m%s · Codex CLI 一键接入\033[0m\n\n' "$SITE_NAME"
+
+# ── 1/4 兑换接入配置（令牌只能使用一次，15 分钟内有效）──────────────────
+info "获取接入配置..."
+resp="$(curl -fsS -X POST --data-urlencode "token=$TOKEN" "$BASE_URL/oneclick/exchange")" \
+  || die "令牌兑换失败：令牌可能已过期或已被使用，请回控制台重新生成命令"
+
+API_KEY=""
+while IFS='=' read -r k v; do
+  case "$k" in
+    api_key)  API_KEY="$v" ;;
+    base_url) [ -n "$v" ] && BASE_URL="$v" ;;
+  esac
+done <<< "$resp"
+[ -n "$API_KEY" ] || die "兑换响应异常，请联系管理员"
+ok "已获取密钥"
+
+# ── 2/4 检测 / 安装 Codex CLI ──────────────────────────────────────────
+if command -v codex >/dev/null 2>&1; then
+  ok "已检测到 Codex CLI"
+elif command -v npm >/dev/null 2>&1; then
+  info "未检测到 Codex CLI，正在通过 npm 安装..."
+  npm install -g @openai/codex \
+    || die "Codex CLI 安装失败：可手动执行 npm install -g @openai/codex 后重跑本命令"
+  ok "Codex CLI 安装完成"
+else
+  info "未检测到 codex 与 npm，跳过自动安装（配置仍会写入）。请稍后安装 Node.js 后执行 npm install -g @openai/codex"
+fi
+
+# ── 3/4 写入配置（config.toml 整文件重写，原文件先备份；auth.json 同）────
+# TOML 无法可靠地做局部合并，与控制台「导入 CCS」保持同一策略：备份后整写。
+CODEX_DIR="$HOME/.codex"
+CONFIG_FILE="$CODEX_DIR/config.toml"
+AUTH_FILE="$CODEX_DIR/auth.json"
+mkdir -p "$CODEX_DIR"
+STAMP="$(date +%Y%m%d%H%M%S)"
+for f in "$CONFIG_FILE" "$AUTH_FILE"; do
+  if [ -s "$f" ]; then
+    cp "$f" "$f.bak.$STAMP"
+    info "已备份 $f -> $f.bak.$STAMP"
+  fi
+done
+
+# provider 键名只保留 TOML 裸键安全字符，避免站点名带空格/符号写坏配置
+PROVIDER_KEY="$(printf '%s' "$SITE_NAME" | tr -cd 'A-Za-z0-9_-')"
+[ -n "$PROVIDER_KEY" ] || PROVIDER_KEY="hopbase"
+
+cat > "$CONFIG_FILE" <<TOMLEOF
+model_provider = "$PROVIDER_KEY"
+model = "gpt-5.5"
+review_model = "gpt-5.5"
+model_reasoning_effort = "xhigh"
+disable_response_storage = true
+network_access = "enabled"
+
+[model_providers.$PROVIDER_KEY]
+name = "$SITE_NAME"
+base_url = "$BASE_URL/v1"
+wire_api = "responses"
+requires_openai_auth = true
+
+[features]
+goals = true
+TOMLEOF
+
+cat > "$AUTH_FILE" <<JSONEOF
+{
+  "OPENAI_API_KEY": "$API_KEY"
+}
+JSONEOF
+ok "已写入 $CONFIG_FILE 与 $AUTH_FILE"
+
+# ── 4/4 验证连接并回执 ────────────────────────────────────────────────
+info "验证网关连接..."
+if curl -fsS -H "Authorization: Bearer $API_KEY" "$BASE_URL/v1/usage" >/dev/null 2>&1; then
+  ok "网关连接验证通过"
+  curl -fsS -X POST --data-urlencode "token=$TOKEN" "$BASE_URL/oneclick/verify" >/dev/null 2>&1 || true
+else
+  die "网关连接验证失败：配置已写入，但用密钥请求网关未成功。请检查网络后直接运行 codex 重试，或联系管理员"
+fi
+
+printf '\n'
+ok "接入完成！打开一个新终端，输入 codex 即可开始使用"
+printf '  · 网关地址：%s/v1\n  · 配置文件：%s\n' "$BASE_URL" "$CONFIG_FILE"

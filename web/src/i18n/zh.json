@@ -766,7 +766,8 @@
     "auto_update": "自动更新",
     "auto_update_off": "关闭自动更新",
     "granularity_hour": "按小时",
-    "granularity_day": "按天"
+    "granularity_day": "按天",
+    "unattributed": "未归属(历史数据)"
   },
   "plugins": {
     "title": "插件管理",
@@ -1109,8 +1110,14 @@
     "one_click_status_expired": "接入令牌已过期或已被使用，请重新生成。",
     "one_click_regenerate": "重新生成命令",
     "one_click_issue_failed": "生成接入命令失败",
-    "one_click_ccs_hint": "进阶：需要多套配置来回切换？可安装 CC Switch，再从密钥菜单里用「导入 CCS」。",
-    "one_click_ccs_download": "下载 CC Switch"
+    "one_click_ccs_hint": "安装 CC Switch 桌面应用（macOS / Windows / Linux）后，在密钥行菜单里点「导入 CCS」即可一键导入本站配置，支持多服务商热切换。",
+    "one_click_ccs_download": "下载 CC Switch",
+    "one_click_title_codex": "一键接入 Codex CLI",
+    "one_click_desc_codex": "复制下面这一条命令，粘贴到终端回车即可：自动安装 Codex CLI、写入密钥配置并验证连接，全程无需手动设置。",
+    "one_click_generate": "生成接入命令",
+    "one_click_pregen_hint": "点击后会为该密钥生成一条一次性接入命令（15 分钟内有效、只能使用一次）。生成本身不会改动你本机任何配置，只有把命令粘贴到终端执行时才会写入。",
+    "one_click_status_verified_codex": "接入成功！打开新终端输入 codex 即可开始使用。",
+    "one_click_ccs_title": "需要多套配置来回切换？"
   },
   "setup": {
     "title": "系统安装向导",

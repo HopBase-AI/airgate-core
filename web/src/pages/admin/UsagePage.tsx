@@ -701,17 +701,20 @@ export default function UsagePage() {
   const groupStatsRows: GroupStatsRow[] = useMemo(() => {
     if (!activeStats) return [];
     const dataMap: Record<string, GroupStatsRow[]> = {
-      account: activeStats.by_account?.map((s) => ({ key: s.account_id, name: s.name, requests: s.requests, tokens: s.tokens, total_cost: s.total_cost, actual_cost: s.actual_cost })) ?? [],
+      account: activeStats.by_account?.map((s) => ({ key: s.account_id, name: s.name || (s.account_id === 0 ? t('usage.unattributed', '未归属(历史数据)') : `#${s.account_id}`), requests: s.requests, tokens: s.tokens, total_cost: s.total_cost, actual_cost: s.actual_cost })) ?? [],
       group: activeStats.by_group?.map((s) => ({ key: s.group_id, name: s.name || `#${s.group_id}`, requests: s.requests, tokens: s.tokens, total_cost: s.total_cost, actual_cost: s.actual_cost })) ?? [],
       model: activeStats.by_model?.map((s) => ({ key: s.model, name: s.model, requests: s.requests, tokens: s.tokens, total_cost: s.total_cost, actual_cost: s.actual_cost })) ?? [],
       user: activeStats.by_user?.map((s) => ({ key: s.user_id, name: s.email, requests: s.requests, tokens: s.tokens, total_cost: s.total_cost, actual_cost: s.actual_cost })) ?? [],
     };
     return dataMap[statsGroupBy] ?? [];
-  }, [activeStats, statsGroupBy]);
+  }, [activeStats, statsGroupBy, t]);
 
   // 缓存健康度行：按账号算命中率/1h占比/重建成本，按重建成本降序（烧钱多的排前）。
   const cacheHealthRows = useMemo<CacheHealthRow[]>(() => {
     return (activeStats?.by_account ?? [])
+      // 缓存健康度是"按上游账号"的视图:无归属日志(account_id=0,均为 2026-06-18
+      // 账号归属字段上线前的历史数据)无法反映任何上游账号的缓存状态,直接排除。
+      .filter((s) => s.account_id > 0)
       .map((s) => {
         const cached = s.cached_input_tokens ?? 0;
         const creation = s.cache_creation_tokens ?? 0;

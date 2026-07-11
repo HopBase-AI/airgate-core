@@ -9,6 +9,8 @@ export interface OneClickIssueResp {
   base_url: string;
   command_bash: string;
   command_powershell: string;
+  command_codex_bash: string;
+  command_codex_powershell: string;
 }
 
 export type OneClickStatus = 'pending' | 'exchanged' | 'verified' | 'expired';

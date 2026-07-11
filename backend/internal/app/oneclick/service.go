@@ -224,6 +224,16 @@ func (s *Service) RenderSetupScriptPowerShell(cfg Config) (string, error) {
 	return renderScript("setup.ps1", SetupScriptPowerShellTemplate(), cfg)
 }
 
+// RenderSetupCodexScript 渲染 Codex CLI bash 接入脚本。
+func (s *Service) RenderSetupCodexScript(cfg Config) (string, error) {
+	return renderScript("setup-codex.sh", SetupCodexScriptTemplate(), cfg)
+}
+
+// RenderSetupCodexScriptPowerShell 渲染 Codex CLI PowerShell 接入脚本。
+func (s *Service) RenderSetupCodexScriptPowerShell(cfg Config) (string, error) {
+	return renderScript("setup-codex.ps1", SetupCodexScriptPowerShellTemplate(), cfg)
+}
+
 func renderScript(name, tmpl string, cfg Config) (string, error) {
 	tpl, err := template.New(name).Parse(tmpl)
 	if err != nil {

@@ -258,9 +258,12 @@ export default function UserKeysPage() {
   const {
     oneClickTarget,
     oneClickIssue,
+    oneClickGenerating,
+    oneClickPlatform,
     openOneClickModal,
+    generateOneClick,
     closeOneClickModal,
-  } = useOneClickModal();
+  } = useOneClickModal(groupMap);
 
   const saving = createMutation.isPending || updateMutation.isPending;
   const rows = data?.list ?? [];
@@ -507,7 +510,7 @@ export default function UserKeysPage() {
                         aria-label={t('user_keys.one_click')}
                         onPress={() => openOneClickModal(row)}
                       >
-                        <Rocket className="w-3.5 h-3.5" />
+                        <Rocket className="w-3.5 h-3.5" style={{ color: 'var(--ag-primary)' }} />
                       </Button>
                       <Button
                         isIconOnly
@@ -678,7 +681,9 @@ export default function UserKeysPage() {
       <OneClickModal
         target={oneClickTarget}
         issue={oneClickIssue}
-        onRegenerate={() => oneClickTarget && openOneClickModal(oneClickTarget)}
+        generating={oneClickGenerating}
+        platform={oneClickPlatform}
+        onGenerate={generateOneClick}
         onClose={closeOneClickModal}
       />
 

@@ -766,7 +766,8 @@
     "auto_update": "自動更新",
     "auto_update_off": "自動更新を停止",
     "granularity_hour": "時間単位",
-    "granularity_day": "日単位"
+    "granularity_day": "日単位",
+    "unattributed": "未帰属（履歴データ）"
   },
   "plugins": {
     "title": "プラグイン管理",
@@ -1109,8 +1110,14 @@
     "one_click_status_expired": "接続トークンが期限切れか使用済みです。再生成してください。",
     "one_click_regenerate": "コマンドを再生成",
     "one_click_issue_failed": "接続コマンドの生成に失敗しました",
-    "one_click_ccs_hint": "上級者向け：複数の設定を切り替えたい場合は CC Switch をインストールし、キーメニューの「CCSをインポート」をご利用ください。",
-    "one_click_ccs_download": "CC Switch をダウンロード"
+    "one_click_ccs_hint": "CC Switch デスクトップアプリ（macOS / Windows / Linux）をインストール後、キー行メニューの「CCSをインポート」で当サイトの設定をワンクリックで取り込めます。プロバイダー間のホット切替に対応。",
+    "one_click_ccs_download": "CC Switch をダウンロード",
+    "one_click_title_codex": "Codex CLI ワンクリック接続",
+    "one_click_desc_codex": "以下のコマンドをコピーしてターミナルに貼り付けるだけ。Codex CLI のインストール、キー設定の書き込み、接続確認まで自動で行います。",
+    "one_click_generate": "接続コマンドを生成",
+    "one_click_pregen_hint": "クリックするとこのキー用の使い捨て接続コマンドを生成します（15 分間有効・1 回のみ）。生成だけでは端末側の設定は一切変更されず、コマンドをターミナルで実行した時にのみ書き込まれます。",
+    "one_click_status_verified_codex": "接続完了！新しいターミナルで codex を実行してください。",
+    "one_click_ccs_title": "複数の設定を切り替えたい場合は？"
   },
   "setup": {
     "title": "システムインストールウィザード",

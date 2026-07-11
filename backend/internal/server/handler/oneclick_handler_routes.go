@@ -61,11 +61,13 @@ func (h *OneClickHandler) IssueSetupToken(c *gin.Context) {
 
 	cfg := h.loadConfig(c)
 	response.Success(c, dto.OneClickIssueTokenResp{
-		Token:             token,
-		ExpiresInSeconds:  int(apponeclick.SetupTokenTTL().Seconds()),
-		BaseURL:           cfg.BaseURL,
-		CommandBash:       fmt.Sprintf("curl -fsSL %s/oneclick/setup.sh | bash -s -- %s", cfg.BaseURL, token),
-		CommandPowerShell: fmt.Sprintf("$env:HOPBASE_SETUP_TOKEN='%s'; irm %s/oneclick/setup.ps1 | iex", token, cfg.BaseURL),
+		Token:                  token,
+		ExpiresInSeconds:       int(apponeclick.SetupTokenTTL().Seconds()),
+		BaseURL:                cfg.BaseURL,
+		CommandBash:            fmt.Sprintf("curl -fsSL %s/oneclick/setup.sh | bash -s -- %s", cfg.BaseURL, token),
+		CommandPowerShell:      fmt.Sprintf("$env:HOPBASE_SETUP_TOKEN='%s'; irm %s/oneclick/setup.ps1 | iex", token, cfg.BaseURL),
+		CommandCodexBash:       fmt.Sprintf("curl -fsSL %s/oneclick/setup-codex.sh | bash -s -- %s", cfg.BaseURL, token),
+		CommandCodexPowerShell: fmt.Sprintf("$env:HOPBASE_SETUP_TOKEN='%s'; irm %s/oneclick/setup-codex.ps1 | iex", token, cfg.BaseURL),
 	})
 }
 
@@ -100,6 +102,32 @@ func (h *OneClickHandler) HandleSetupScriptPowerShell(c *gin.Context) {
 	if err != nil {
 		slog.Error("oneclick: 渲染 setup.ps1 失败", "error", err)
 		c.String(http.StatusInternalServerError, "failed to render setup.ps1")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(script))
+}
+
+// HandleSetupCodexScript 返回 Codex CLI 的 bash 接入脚本（公开路由）。
+func (h *OneClickHandler) HandleSetupCodexScript(c *gin.Context) {
+	cfg := h.loadConfig(c)
+	script, err := h.service.RenderSetupCodexScript(cfg)
+	if err != nil {
+		slog.Error("oneclick: 渲染 setup-codex.sh 失败", "error", err)
+		c.String(http.StatusInternalServerError, "failed to render setup-codex script")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.Data(http.StatusOK, "text/x-shellscript; charset=utf-8", []byte(script))
+}
+
+// HandleSetupCodexScriptPowerShell 返回 Codex CLI 的 Windows PowerShell 接入脚本（公开路由）。
+func (h *OneClickHandler) HandleSetupCodexScriptPowerShell(c *gin.Context) {
+	cfg := h.loadConfig(c)
+	script, err := h.service.RenderSetupCodexScriptPowerShell(cfg)
+	if err != nil {
+		slog.Error("oneclick: 渲染 setup-codex.ps1 失败", "error", err)
+		c.String(http.StatusInternalServerError, "failed to render setup-codex.ps1")
 		return
 	}
 	c.Header("Cache-Control", "no-store")
