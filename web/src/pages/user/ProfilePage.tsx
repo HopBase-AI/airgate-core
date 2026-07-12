@@ -73,7 +73,7 @@ export default function ProfilePage() {
       toast('error', t('profile.password_mismatch'));
       return;
     }
-    if (passwords.new_password.length < 6) {
+    if (passwords.new_password.length < 8) {
       toast('error', t('profile.password_too_short'));
       return;
     }
