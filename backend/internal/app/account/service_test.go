@@ -170,8 +170,8 @@ func TestBuildConnectivityForwardRequestDefaultModeKeepsExistingTestHeaders(t *t
 	if got := body["stream"]; got != true {
 		t.Fatalf("body stream = %#v, want true", got)
 	}
-	if got := body["max_tokens"]; got != float64(16) {
-		t.Fatalf("body max_tokens = %#v, want 16", got)
+	if got := body["max_tokens"]; got != float64(128) {
+		t.Fatalf("body max_tokens = %#v, want 128", got)
 	}
 	if req.Model != "claude-opus-4-5-20251101" {
 		t.Fatalf("Model = %q", req.Model)
@@ -206,8 +206,8 @@ func TestBuildConnectivityForwardRequestAWSBedrockMinimalModeAddsExplicitModeHea
 	if _, ok := body["stream"]; ok {
 		t.Fatalf("body should not include stream in AWS Bedrock minimal mode: %v", body)
 	}
-	if got := body["max_tokens"]; got != float64(16) {
-		t.Fatalf("body max_tokens = %#v, want 16", got)
+	if got := body["max_tokens"]; got != float64(128) {
+		t.Fatalf("body max_tokens = %#v, want 128", got)
 	}
 	if got := body["model"]; got != "claude-sonnet-4-5-20250929" {
 		t.Fatalf("body model = %#v", got)

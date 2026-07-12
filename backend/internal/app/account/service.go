@@ -553,7 +553,7 @@ func (s *Service) PrepareConnectivityTest(ctx context.Context, id int, modelID s
 func buildConnectivityForwardRequest(item Account, modelID string, mode ConnectivityTestMode) *sdk.ForwardRequest {
 	body := map[string]any{
 		"model":      modelID,
-		"max_tokens": 16,
+		"max_tokens": 128,
 		"messages":   []map[string]string{{"role": "user", "content": "Reply with exactly: ok"}},
 	}
 	stream := mode != ConnectivityTestModeAWSBedrockMinimal
