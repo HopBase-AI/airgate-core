@@ -83,6 +83,25 @@ function OAuthButtons({
 
 type TabKey = 'login' | 'register';
 
+// 后端错误文案是简体中文硬编码;登录/注册是匿名用户第一触点(ToC 多落地页繁体/英文受众),
+// 已知消息按界面语言本地化,未命中映射的消息原样展示(后端新增错误时自然回退)。
+const SERVER_MESSAGE_KEYS: Record<string, string> = {
+  '邮箱或密码错误': 'auth.be_invalid_credentials',
+  '账户已禁用': 'auth.be_user_disabled',
+  '邮箱已注册': 'auth.be_email_exists',
+  '注册功能已关闭': 'auth.be_registration_disabled',
+  '请输入验证码': 'auth.be_verify_code_required',
+  '验证码无效或已过期': 'auth.be_verify_code_invalid',
+  '请求参数格式不正确，请检查输入': 'auth.be_bad_request',
+  '发送邮件失败': 'auth.be_send_mail_failed',
+  '邮件服务未配置': 'auth.be_mailer_not_configured',
+};
+
+function localizeServerMessage(t: (key: string) => string, message: string): string {
+  const key = SERVER_MESSAGE_KEYS[message];
+  return key ? t(key) : message;
+}
+
 function AgreementCheckbox({
   checked,
   onChange,
@@ -149,7 +168,7 @@ function LoginForm() {
       navigate({ to: '/' });
     } catch (err) {
       if (err instanceof ApiError) {
-        setError(err.message);
+        setError(localizeServerMessage(t, err.message));
       } else {
         setError(t('auth.login_failed'));
       }
@@ -278,7 +297,7 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
       setCodeSent(true);
       setCountdown(60);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t('auth.send_code_failed'));
+      setError(err instanceof ApiError ? localizeServerMessage(t, err.message) : t('auth.send_code_failed'));
     } finally {
       setSendingCode(false);
     }
@@ -311,7 +330,7 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
       setStep(2);
     } catch (err) {
       resetVerifiedEmail();
-      setError(err instanceof ApiError ? err.message : t('auth.register_failed'));
+      setError(err instanceof ApiError ? localizeServerMessage(t, err.message) : t('auth.register_failed'));
     } finally {
       setLoading(false);
     }
@@ -343,13 +362,13 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
       onSuccess();
     } catch (err) {
       if (err instanceof ApiError) {
-        // 验证码错误则回到第一步
+        // 验证码错误则回到第一步(判断用后端原文,展示用本地化文案)
         if (err.message.includes('验证码')) {
           setStep(1);
           setVerifyCode('');
           resetVerifiedEmail();
         }
-        setError(err.message);
+        setError(localizeServerMessage(t, err.message));
       } else {
         setError(t('auth.register_failed'));
       }
