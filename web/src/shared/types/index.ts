@@ -48,6 +48,8 @@ export interface RegisterReq {
   password: string;
   username?: string;
   verify_code?: string;
+  /** 注册来源站点 ID（ToC 落地页 ?site= 归因） */
+  source_site?: string;
 }
 
 export interface RefreshResp {

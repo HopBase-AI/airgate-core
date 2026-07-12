@@ -8,6 +8,7 @@ import { authApi } from '../shared/api/auth';
 import { usersApi } from '../shared/api/users';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { useStatusPageEnabled } from '../shared/hooks/useStatusPageEnabled';
+import { getOriginSite } from '../shared/originSite';
 import { ApiError, setToken } from '../shared/api/client';
 import { Mail, Lock, User, ArrowRight, Sun, Moon, ShieldCheck, Activity, Layers, Gauge, BarChart3 } from 'lucide-react';
 
@@ -337,6 +338,7 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
         password,
         username: username || undefined,
         verify_code: needVerify ? verifiedCode : undefined,
+        source_site: getOriginSite() || undefined,
       });
       onSuccess();
     } catch (err) {

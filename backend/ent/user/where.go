@@ -100,6 +100,11 @@ func BalanceAlertNotified(v bool) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldBalanceAlertNotified, v))
 }
 
+// SignupSource applies equality check predicate on the "signup_source" field. It's identical to SignupSourceEQ.
+func SignupSource(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldSignupSource, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldCreatedAt, v))
@@ -633,6 +638,71 @@ func StatusIn(vs ...Status) predicate.User {
 // StatusNotIn applies the NotIn predicate on the "status" field.
 func StatusNotIn(vs ...Status) predicate.User {
 	return predicate.User(sql.FieldNotIn(FieldStatus, vs...))
+}
+
+// SignupSourceEQ applies the EQ predicate on the "signup_source" field.
+func SignupSourceEQ(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldSignupSource, v))
+}
+
+// SignupSourceNEQ applies the NEQ predicate on the "signup_source" field.
+func SignupSourceNEQ(v string) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldSignupSource, v))
+}
+
+// SignupSourceIn applies the In predicate on the "signup_source" field.
+func SignupSourceIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldIn(FieldSignupSource, vs...))
+}
+
+// SignupSourceNotIn applies the NotIn predicate on the "signup_source" field.
+func SignupSourceNotIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldSignupSource, vs...))
+}
+
+// SignupSourceGT applies the GT predicate on the "signup_source" field.
+func SignupSourceGT(v string) predicate.User {
+	return predicate.User(sql.FieldGT(FieldSignupSource, v))
+}
+
+// SignupSourceGTE applies the GTE predicate on the "signup_source" field.
+func SignupSourceGTE(v string) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldSignupSource, v))
+}
+
+// SignupSourceLT applies the LT predicate on the "signup_source" field.
+func SignupSourceLT(v string) predicate.User {
+	return predicate.User(sql.FieldLT(FieldSignupSource, v))
+}
+
+// SignupSourceLTE applies the LTE predicate on the "signup_source" field.
+func SignupSourceLTE(v string) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldSignupSource, v))
+}
+
+// SignupSourceContains applies the Contains predicate on the "signup_source" field.
+func SignupSourceContains(v string) predicate.User {
+	return predicate.User(sql.FieldContains(FieldSignupSource, v))
+}
+
+// SignupSourceHasPrefix applies the HasPrefix predicate on the "signup_source" field.
+func SignupSourceHasPrefix(v string) predicate.User {
+	return predicate.User(sql.FieldHasPrefix(FieldSignupSource, v))
+}
+
+// SignupSourceHasSuffix applies the HasSuffix predicate on the "signup_source" field.
+func SignupSourceHasSuffix(v string) predicate.User {
+	return predicate.User(sql.FieldHasSuffix(FieldSignupSource, v))
+}
+
+// SignupSourceEqualFold applies the EqualFold predicate on the "signup_source" field.
+func SignupSourceEqualFold(v string) predicate.User {
+	return predicate.User(sql.FieldEqualFold(FieldSignupSource, v))
+}
+
+// SignupSourceContainsFold applies the ContainsFold predicate on the "signup_source" field.
+func SignupSourceContainsFold(v string) predicate.User {
+	return predicate.User(sql.FieldContainsFold(FieldSignupSource, v))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

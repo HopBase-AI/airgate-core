@@ -20,6 +20,7 @@ func toUserRespFromDomain(item appuser.User) dto.UserResp {
 		AllowedGroupIDs:       item.AllowedGroupIDs,
 		BalanceAlertThreshold: item.BalanceAlertThreshold,
 		Status:                item.Status,
+		SignupSource:          item.SignupSource,
 		TimeMixin: dto.TimeMixin{
 			CreatedAt: item.CreatedAt,
 			UpdatedAt: item.UpdatedAt,

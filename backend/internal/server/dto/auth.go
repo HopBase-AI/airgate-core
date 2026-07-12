@@ -25,6 +25,8 @@ type RegisterReq struct {
 	Password   string `json:"password" binding:"required,min=6"`
 	Username   string `json:"username"`
 	VerifyCode string `json:"verify_code"`
+	// SourceSite 注册来源站点 ID（ToC 落地页 ?site= 归因），可选。
+	SourceSite string `json:"source_site" binding:"omitempty,max=64"`
 }
 
 // SendVerifyCodeReq 发送验证码请求

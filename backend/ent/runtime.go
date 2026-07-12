@@ -622,12 +622,18 @@ func init() {
 	userDescBalanceAlertNotified := userFields[11].Descriptor()
 	// user.DefaultBalanceAlertNotified holds the default value on creation for the balance_alert_notified field.
 	user.DefaultBalanceAlertNotified = userDescBalanceAlertNotified.Default.(bool)
+	// userDescSignupSource is the schema descriptor for signup_source field.
+	userDescSignupSource := userFields[13].Descriptor()
+	// user.DefaultSignupSource holds the default value on creation for the signup_source field.
+	user.DefaultSignupSource = userDescSignupSource.Default.(string)
+	// user.SignupSourceValidator is a validator for the "signup_source" field. It is called by the builders before save.
+	user.SignupSourceValidator = userDescSignupSource.Validators[0].(func(string) error)
 	// userDescCreatedAt is the schema descriptor for created_at field.
-	userDescCreatedAt := userFields[13].Descriptor()
+	userDescCreatedAt := userFields[14].Descriptor()
 	// user.DefaultCreatedAt holds the default value on creation for the created_at field.
 	user.DefaultCreatedAt = userDescCreatedAt.Default.(func() time.Time)
 	// userDescUpdatedAt is the schema descriptor for updated_at field.
-	userDescUpdatedAt := userFields[14].Descriptor()
+	userDescUpdatedAt := userFields[15].Descriptor()
 	// user.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	user.DefaultUpdatedAt = userDescUpdatedAt.Default.(func() time.Time)
 	// user.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

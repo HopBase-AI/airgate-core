@@ -25,6 +25,8 @@ import { CommonModal } from '../../shared/components/CommonModal';
 const SITE_KEYS = [
   'site_name', 'site_subtitle', 'site_logo', 'api_base_url',
   'contact_info', 'doc_url', 'landing_pricing_json',
+  // 多落地页品牌覆盖（siteId → { name, logo }）：登录页/控制台按 ?site= 来源站切换品牌
+  'sites_branding',
   // 整站通知横幅（放 site 组：随站点 tab 保存，且 site 组全量走公开设置接口）
   'announcement_enabled', 'announcement_level', 'announcement_content',
 ] as const;
@@ -452,6 +454,20 @@ export default function SettingsPage() {
     }
   }
 
+  // 多落地页品牌 JSON 的客户端校验：只提示不阻塞保存（留空 = 所有来源统一用 site_name/site_logo）。
+  const sitesBrandingRaw = values['sites_branding'] ?? '';
+  let sitesBrandingError = '';
+  if (sitesBrandingRaw.trim() !== '') {
+    try {
+      const parsed = JSON.parse(sitesBrandingRaw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        sitesBrandingError = t('settings.sites_branding_invalid');
+      }
+    } catch (e) {
+      sitesBrandingError = (e as Error).message;
+    }
+  }
+
   return (
     <div className="max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 md:py-8 flex flex-col gap-6 min-h-screen">
       <div className="mx-auto w-full max-w-full overflow-x-auto hide-scrollbar pb-1">
@@ -528,6 +544,22 @@ export default function SettingsPage() {
                   />
                   {landingPricingError && (
                     <p className="text-[11px] text-danger mt-1.5">{landingPricingError}</p>
+                  )}
+                </SettingsSection>
+
+                <SettingsSection
+                  description={t('settings.sites_branding_desc')}
+                  title={t('settings.sites_branding')}
+                >
+                  <TextArea
+                    aria-label={t('settings.sites_branding')}
+                    value={sitesBrandingRaw}
+                    onChange={(e) => set('sites_branding', e.target.value)}
+                    className="h-40 w-full font-mono text-xs leading-5"
+                    placeholder={'{\n  "ink": { "name": "Essevin", "logo": "https://essevin.com/logo.svg" },\n  "kite": { "name": "KITE", "logo": "data:image/svg+xml;base64,..." }\n}'}
+                  />
+                  {sitesBrandingError && (
+                    <p className="text-[11px] text-danger mt-1.5">{sitesBrandingError}</p>
                   )}
                 </SettingsSection>
 

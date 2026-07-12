@@ -15,8 +15,12 @@ import { SiteSettingsProvider } from './app/providers/SiteSettingsProvider';
 import { ToastProvider, useToast } from './shared/ui';
 import { DialogTriggerShim } from './shared/components/DialogTriggerShim';
 import { router } from './app/router';
+import { captureOriginSite } from './shared/originSite';
 import './i18n';
 import './index.css';
+
+// 尽早捕获落地页来源参数（?site=/?ref=），保证任意入口路由都不漏归因。
+captureOriginSite();
 
 // 将 React 暴露到全局，供插件前端模块通过 shim 引用
 (window as unknown as Record<string, unknown>).__airgate_shared = {

@@ -484,6 +484,7 @@ var (
 		{Name: "balance_alert_threshold", Type: field.TypeFloat64, Default: 0},
 		{Name: "balance_alert_notified", Type: field.TypeBool, Default: false},
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "disabled"}, Default: "active"},
+		{Name: "signup_source", Type: field.TypeString, Size: 64, Default: ""},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 	}

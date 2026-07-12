@@ -21,8 +21,10 @@ type User struct {
 	BalanceAlertThreshold float64
 	BalanceAlertNotified  bool
 	Status                string
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
+	// SignupSource 注册来源站点 ID（ToC 落地页归因），空表示直接注册。
+	SignupSource string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // ListFilter 用户列表筛选。

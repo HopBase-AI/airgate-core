@@ -51,7 +51,8 @@ func (s *AuthStore) Create(ctx context.Context, input appauth.CreateUserInput) (
 		SetRole(entuser.Role(input.Role)).
 		SetStatus(entuser.Status(input.Status)).
 		SetBalance(input.Balance).
-		SetMaxConcurrency(input.MaxConcurrency)
+		SetMaxConcurrency(input.MaxConcurrency).
+		SetSignupSource(input.SignupSource)
 
 	item, err := builder.Save(ctx)
 	if err != nil {

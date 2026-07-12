@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -164,6 +165,18 @@ func (s *Service) LoginByAPIKey(ctx context.Context, input LoginByAPIKeyInput) (
 	return result, nil
 }
 
+// siteIDPattern 来源站点 ID 的合法形态（toc-landing manifest 站点名：字母数字开头，可含 - _）。
+var siteIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+
+// sanitizeSiteID 归一化注册来源站点 ID：统一小写，不合法输入直接置空，防脏数据入库。
+func sanitizeSiteID(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if !siteIDPattern.MatchString(trimmed) {
+		return ""
+	}
+	return strings.ToLower(trimmed)
+}
+
 // Register 用户注册（含注册开关/验证码/默认值等业务编排）。
 func (s *Service) Register(ctx context.Context, input RegisterInput) (LoginResult, error) {
 	logger := sdk.LoggerFromContext(ctx)
@@ -202,6 +215,7 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (LoginResul
 		return LoginResult{}, err
 	}
 
+	signupSource := sanitizeSiteID(input.SourceSite)
 	user, err := s.repo.Create(ctx, CreateUserInput{
 		Email:          input.Email,
 		PasswordHash:   string(hash),
@@ -210,6 +224,7 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (LoginResul
 		Status:         "active",
 		Balance:        defaultBalance,
 		MaxConcurrency: defaultConcurrency,
+		SignupSource:   signupSource,
 	})
 	if err != nil {
 		logger.Error("user_register_failed", sdk.LogFieldReason, "create_user", sdk.LogFieldError, err)
@@ -222,7 +237,7 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (LoginResul
 		return LoginResult{}, err
 	}
 
-	logger.Info("user_register_succeeded", sdk.LogFieldUserID, user.ID)
+	logger.Info("user_register_succeeded", sdk.LogFieldUserID, user.ID, "signup_source", signupSource)
 
 	return LoginResult{
 		Token: token,

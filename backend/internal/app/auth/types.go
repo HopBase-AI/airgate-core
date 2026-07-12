@@ -52,6 +52,8 @@ type RegisterInput struct {
 	Password   string
 	Username   string
 	VerifyCode string
+	// SourceSite 注册来源站点 ID（ToC 落地页 ?site= 归因），可为空。
+	SourceSite string
 }
 
 // SendVerifyCodeInput 发送验证码输入。
@@ -98,6 +100,8 @@ type CreateUserInput struct {
 	Status         string
 	Balance        float64
 	MaxConcurrency int
+	// SignupSource 注册来源站点 ID，已经过 sanitizeSiteID 归一化。
+	SignupSource string
 }
 
 // Setting 设置键值对（从设置服务透传）。

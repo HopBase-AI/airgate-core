@@ -471,6 +471,7 @@ func mapUser(item *ent.User) appuser.User {
 		BalanceAlertThreshold: item.BalanceAlertThreshold,
 		BalanceAlertNotified:  item.BalanceAlertNotified,
 		Status:                item.Status.String(),
+		SignupSource:          item.SignupSource,
 		CreatedAt:             item.CreatedAt,
 		UpdatedAt:             item.UpdatedAt,
 	}

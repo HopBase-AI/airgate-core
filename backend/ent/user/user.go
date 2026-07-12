@@ -41,6 +41,8 @@ const (
 	FieldBalanceAlertNotified = "balance_alert_notified"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
+	// FieldSignupSource holds the string denoting the signup_source field in the database.
+	FieldSignupSource = "signup_source"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
@@ -117,6 +119,7 @@ var Columns = []string{
 	FieldBalanceAlertThreshold,
 	FieldBalanceAlertNotified,
 	FieldStatus,
+	FieldSignupSource,
 	FieldCreatedAt,
 	FieldUpdatedAt,
 }
@@ -158,6 +161,10 @@ var (
 	DefaultBalanceAlertThreshold float64
 	// DefaultBalanceAlertNotified holds the default value on creation for the "balance_alert_notified" field.
 	DefaultBalanceAlertNotified bool
+	// DefaultSignupSource holds the default value on creation for the "signup_source" field.
+	DefaultSignupSource string
+	// SignupSourceValidator is a validator for the "signup_source" field. It is called by the builders before save.
+	SignupSourceValidator func(string) error
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -279,6 +286,11 @@ func ByBalanceAlertNotified(opts ...sql.OrderTermOption) OrderOption {
 // ByStatus orders the results by the status field.
 func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
+}
+
+// BySignupSource orders the results by the signup_source field.
+func BySignupSource(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSignupSource, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

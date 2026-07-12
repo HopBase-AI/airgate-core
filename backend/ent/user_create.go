@@ -176,6 +176,20 @@ func (uc *UserCreate) SetNillableStatus(u *user.Status) *UserCreate {
 	return uc
 }
 
+// SetSignupSource sets the "signup_source" field.
+func (uc *UserCreate) SetSignupSource(s string) *UserCreate {
+	uc.mutation.SetSignupSource(s)
+	return uc
+}
+
+// SetNillableSignupSource sets the "signup_source" field if the given value is not nil.
+func (uc *UserCreate) SetNillableSignupSource(s *string) *UserCreate {
+	if s != nil {
+		uc.SetSignupSource(*s)
+	}
+	return uc
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (uc *UserCreate) SetCreatedAt(t time.Time) *UserCreate {
 	uc.mutation.SetCreatedAt(t)
@@ -361,6 +375,10 @@ func (uc *UserCreate) defaults() {
 		v := user.DefaultStatus
 		uc.mutation.SetStatus(v)
 	}
+	if _, ok := uc.mutation.SignupSource(); !ok {
+		v := user.DefaultSignupSource
+		uc.mutation.SetSignupSource(v)
+	}
 	if _, ok := uc.mutation.CreatedAt(); !ok {
 		v := user.DefaultCreatedAt()
 		uc.mutation.SetCreatedAt(v)
@@ -431,6 +449,14 @@ func (uc *UserCreate) check() error {
 	if v, ok := uc.mutation.Status(); ok {
 		if err := user.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "User.status": %w`, err)}
+		}
+	}
+	if _, ok := uc.mutation.SignupSource(); !ok {
+		return &ValidationError{Name: "signup_source", err: errors.New(`ent: missing required field "User.signup_source"`)}
+	}
+	if v, ok := uc.mutation.SignupSource(); ok {
+		if err := user.SignupSourceValidator(v); err != nil {
+			return &ValidationError{Name: "signup_source", err: fmt.Errorf(`ent: validator failed for field "User.signup_source": %w`, err)}
 		}
 	}
 	if _, ok := uc.mutation.CreatedAt(); !ok {
@@ -516,6 +542,10 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := uc.mutation.Status(); ok {
 		_spec.SetField(user.FieldStatus, field.TypeEnum, value)
 		_node.Status = value
+	}
+	if value, ok := uc.mutation.SignupSource(); ok {
+		_spec.SetField(user.FieldSignupSource, field.TypeString, value)
+		_node.SignupSource = value
 	}
 	if value, ok := uc.mutation.CreatedAt(); ok {
 		_spec.SetField(user.FieldCreatedAt, field.TypeTime, value)

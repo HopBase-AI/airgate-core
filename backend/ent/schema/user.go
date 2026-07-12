@@ -31,6 +31,8 @@ func (User) Fields() []ent.Field {
 		field.Float("balance_alert_threshold").Default(0), // 0 表示关闭预警
 		field.Bool("balance_alert_notified").Default(false),
 		field.Enum("status").Values("active", "disabled").Default("active"),
+		field.String("signup_source").Default("").MaxLen(64).
+			Comment("注册来源站点 ID（ToC 落地页 ?site= 归因）；空表示直接注册或来源未知。"),
 		field.Time("created_at").Default(timeNow).Immutable(),
 		field.Time("updated_at").Default(timeNow).UpdateDefault(timeNow),
 	}

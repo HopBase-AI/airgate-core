@@ -2,9 +2,31 @@ import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'r
 import { useQuery } from '@tanstack/react-query';
 import { settingsApi } from '../../shared/api/settings';
 import { queryKeys } from '../../shared/queryKeys';
+import { getOriginSite } from '../../shared/originSite';
 import defaultLogoUrl from '../../assets/logo.svg';
 
 export { defaultLogoUrl };
+
+// 多落地页品牌覆盖：设置项 sites_branding 是 siteId → { name, logo } 的 JSON。
+// 用户从某个 ToC 落地页跳来（?site= 已入 localStorage）时，站名与 logo 按来源站覆盖，
+// 登录页/AppShell/标题/favicon 全部消费 site_name/site_logo，因此在此处合并一次即全局生效。
+interface SiteBranding {
+  name?: string;
+  logo?: string;
+}
+
+function parseSitesBranding(raw: string | undefined): Record<string, SiteBranding> {
+  if (!raw || !raw.trim()) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, SiteBranding>;
+    }
+  } catch {
+    // 配置非法 JSON 时静默回退默认品牌，不影响控制台使用
+  }
+  return {};
+}
 
 interface SiteSettings {
   site_name: string;
@@ -55,9 +77,14 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
     refetchOnWindowFocus: true,
   });
 
-  const value: SiteSettings = useMemo(() => ({
+  const value: SiteSettings = useMemo(() => {
+    const branding = parseSitesBranding(data?.sites_branding)[getOriginSite()];
+    return {
     ...defaults,
     ...data,
+    // 来源站品牌覆盖：来源站在 sites_branding 有配置时优先生效
+    site_name: branding?.name || data?.site_name || defaults.site_name,
+    site_logo: branding?.logo || data?.site_logo || defaults.site_logo,
     // Boolean 字段从字符串转换
     registration_enabled: data?.registration_enabled !== 'false',
     email_verify_enabled: data?.email_verify_enabled === 'true',
@@ -67,7 +94,8 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
     announcement_level: data?.announcement_level || 'info',
     announcement_content: data?.announcement_content || '',
     settings_loaded: !isPending,
-  }), [data, isPending]);
+    };
+  }, [data, isPending]);
 
   // Apply tenant branding before route-specific shells mount, including the login page.
   useEffect(() => {

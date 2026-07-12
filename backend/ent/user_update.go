@@ -239,6 +239,20 @@ func (uu *UserUpdate) SetNillableStatus(u *user.Status) *UserUpdate {
 	return uu
 }
 
+// SetSignupSource sets the "signup_source" field.
+func (uu *UserUpdate) SetSignupSource(s string) *UserUpdate {
+	uu.mutation.SetSignupSource(s)
+	return uu
+}
+
+// SetNillableSignupSource sets the "signup_source" field if the given value is not nil.
+func (uu *UserUpdate) SetNillableSignupSource(s *string) *UserUpdate {
+	if s != nil {
+		uu.SetSignupSource(*s)
+	}
+	return uu
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (uu *UserUpdate) SetUpdatedAt(t time.Time) *UserUpdate {
 	uu.mutation.SetUpdatedAt(t)
@@ -534,6 +548,11 @@ func (uu *UserUpdate) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "User.status": %w`, err)}
 		}
 	}
+	if v, ok := uu.mutation.SignupSource(); ok {
+		if err := user.SignupSourceValidator(v); err != nil {
+			return &ValidationError{Name: "signup_source", err: fmt.Errorf(`ent: validator failed for field "User.signup_source": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -605,6 +624,9 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := uu.mutation.Status(); ok {
 		_spec.SetField(user.FieldStatus, field.TypeEnum, value)
+	}
+	if value, ok := uu.mutation.SignupSource(); ok {
+		_spec.SetField(user.FieldSignupSource, field.TypeString, value)
 	}
 	if value, ok := uu.mutation.UpdatedAt(); ok {
 		_spec.SetField(user.FieldUpdatedAt, field.TypeTime, value)
@@ -1104,6 +1126,20 @@ func (uuo *UserUpdateOne) SetNillableStatus(u *user.Status) *UserUpdateOne {
 	return uuo
 }
 
+// SetSignupSource sets the "signup_source" field.
+func (uuo *UserUpdateOne) SetSignupSource(s string) *UserUpdateOne {
+	uuo.mutation.SetSignupSource(s)
+	return uuo
+}
+
+// SetNillableSignupSource sets the "signup_source" field if the given value is not nil.
+func (uuo *UserUpdateOne) SetNillableSignupSource(s *string) *UserUpdateOne {
+	if s != nil {
+		uuo.SetSignupSource(*s)
+	}
+	return uuo
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (uuo *UserUpdateOne) SetUpdatedAt(t time.Time) *UserUpdateOne {
 	uuo.mutation.SetUpdatedAt(t)
@@ -1412,6 +1448,11 @@ func (uuo *UserUpdateOne) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "User.status": %w`, err)}
 		}
 	}
+	if v, ok := uuo.mutation.SignupSource(); ok {
+		if err := user.SignupSourceValidator(v); err != nil {
+			return &ValidationError{Name: "signup_source", err: fmt.Errorf(`ent: validator failed for field "User.signup_source": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -1500,6 +1541,9 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 	}
 	if value, ok := uuo.mutation.Status(); ok {
 		_spec.SetField(user.FieldStatus, field.TypeEnum, value)
+	}
+	if value, ok := uuo.mutation.SignupSource(); ok {
+		_spec.SetField(user.FieldSignupSource, field.TypeString, value)
 	}
 	if value, ok := uuo.mutation.UpdatedAt(); ok {
 		_spec.SetField(user.FieldUpdatedAt, field.TypeTime, value)
