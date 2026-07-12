@@ -69,7 +69,7 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
     settings_loaded: !isPending,
   }), [data, isPending]);
 
-  // 动态设置 favicon（优先自定义 logo，否则使用默认 logo）
+  // Apply tenant branding before route-specific shells mount, including the login page.
   useEffect(() => {
     const logoHref = value.site_logo || defaultLogoUrl;
     let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
@@ -79,7 +79,8 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
       document.head.appendChild(link);
     }
     link.href = logoHref;
-  }, [value.site_logo]);
+    document.title = value.site_name || defaults.site_name;
+  }, [value.site_logo, value.site_name]);
 
   return (
     <SiteSettingsContext.Provider value={value}>
