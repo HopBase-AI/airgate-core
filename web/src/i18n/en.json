@@ -1638,5 +1638,241 @@
     "page_error": "Something went wrong",
     "unknown": "Unknown error",
     "refresh": "Refresh page"
+  },
+  "legal": {
+    "contact_title": "Contact Information",
+    "theme_to_light": "Switch to light mode",
+    "theme_to_dark": "Switch to dark mode",
+    "terms": {
+      "title": "Terms of Service",
+      "updated": "Last updated: June 16, 2026",
+      "intro1": "Important: Please read and fully understand these Terms of Service before registering, signing in, making a purchase, topping up, creating an API Key, or otherwise continuing to use {{siteName}}. You may use the Service only if you can comply with these Terms and with the laws applicable in your country or region.",
+      "intro2": "These Terms of Service constitute an agreement between you and the {{siteName}} team regarding your access to and use of the platform website, admin console, API gateway, API Keys, subscriptions, wallet, billing, and related services. By registering, signing in, making a purchase, topping up, creating an API Key, or otherwise continuing to use the Service, you acknowledge that you have read, understood, and agree to these Terms.",
+      "accept": "By continuing to use the Service, you accept the Terms above.",
+      "sections": [
+        {
+          "title": "1. Incorporated Policies",
+          "body": [
+            "These Terms, together with the product pages, pricing descriptions, top-up and refund rules, usage guidelines, and descriptions of supported models and regions, constitute the complete set of rules you must follow when using the Service. Where such pages provide more specific descriptions of particular features, quotas, billing, or restrictions, those descriptions prevail."
+          ]
+        },
+        {
+          "title": "2. Description of the Service",
+          "body": [
+            "The Service provides an AI API gateway, model access, API Key management, usage statistics, quota management, subscriptions, wallet top-ups, usage-based billing, documentation, and technical support, helping developers call different AI models or upstream services through a single entry point.",
+            "We act primarily as a gateway, routing, and billing layer. We do not directly control the generated content, response speed, success rate, moderation policies, context limits, response structure, or price changes of upstream models.",
+            "The specific models available, interface capabilities, context lengths, rate limits, prices, and service regions may change with upstream services, costs, risk controls, or product strategy. Such changes do not constitute a commitment by us to continue offering any particular model, price, or availability."
+          ]
+        },
+        {
+          "title": "3. Accounts and Security",
+          "body": [
+            "You must be a natural person at least 18 years of age with full legal capacity, or an organization duly established and validly existing under applicable law. If you do not meet these requirements, do not register for or use the Service.",
+            "You must provide true, accurate, and complete registration and contact information, and update it promptly when it changes.",
+            "You are responsible for safeguarding your account, password, API Keys, tokens, and other credentials. All requests, spending, and actions initiated through your account or credentials are deemed to have been authorized by you or to be your responsibility.",
+            "If you discover leaked credentials, abnormal calls, unauthorized sign-ins, or other security incidents, immediately disable the affected Keys in the product and notify us through the contact channels in the product interface."
+          ]
+        },
+        {
+          "title": "4. Fees, Subscriptions, and Refunds",
+          "body": [
+            "Fees, wallet balances, subscription benefits, gifted credits, coupons, invoicing service fees, and refund and cancellation rules are as shown on the product pages, order pages, payment pages, and console.",
+            "Unless otherwise required by applicable law or promised on the product pages, consumed credits, promotional credits, reward credits, and losses arising from your breach of these Terms or abuse of the Service are not refundable at cash value.",
+            "Because upstream metering, exchange rates, network retries, model routing, and risk-control policies may change, billing displays may be subject to reasonable delays. We rely on system-recorded request metadata, upstream responses, and accounting records as the basis for reconciliation."
+          ]
+        },
+        {
+          "title": "5. User Conduct",
+          "body": [
+            "You must comply with applicable laws and regulations, the policies of upstream service providers, and the platform's usage guidelines.",
+            "You must not use the Service for unlawful activity, infringement, fraud, attacks, circumventing access restrictions, bulk registration abuse, malicious resource consumption, unauthorized resale or redistribution, or generating or distributing unlawful or harmful content.",
+            "If your use creates risks for the platform, other users, upstream providers, or third parties, we may restrict, suspend, or terminate the affected accounts, API Keys, or requests."
+          ]
+        },
+        {
+          "title": "6. Regional Availability",
+          "body": [
+            "The Service is offered only in countries and regions where we can provide it lawfully and reliably. We may restrict, suspend, or refuse to provide the Service for certain regions, accounts, models, or features based on legal, sanctions, payment, risk-control, upstream, network, or business requirements."
+          ]
+        },
+        {
+          "title": "7. Intellectual Property and User Content",
+          "body": [
+            "The platform's website, interfaces, code, documentation, text, graphics, trademarks, and other content are owned by the platform or the relevant rights holders in accordance with law.",
+            "Rights in the inputs, files, and context you submit through the API, and in content returned by models, are governed by applicable law and upstream provider policies. Except for processing necessary to provide, maintain, and protect the Service, we claim no ownership of your user content."
+          ]
+        },
+        {
+          "title": "8. Third-Party Services",
+          "body": [
+            "The Service may depend on upstream AI services, cloud services, payments, email, object storage, analytics, risk control, and other infrastructure services. When you use features that rely on such services, the related data and requests may be subject to the corresponding third party's terms, privacy policies, and data processing rules.",
+            "The availability, quality, pricing, rates, response structure, and security policies of upstream models are not fully within our control; upstream services may be changed, interrupted, throttled, suspended, or restricted. Effects caused by upstream outages, interface changes, billing anomalies, model refusals, or moderation blocks do not constitute a breach by us."
+          ]
+        },
+        {
+          "title": "9. Privacy and Data Security",
+          "body": [
+            "We store only the basic information necessary to provide the Service, such as account information, order records, balance records, usage statistics, API Key metadata, sign-in and security logs, and necessary risk-control records.",
+            "We do not use your API request content to train models. In general, the prompts, context, uploaded content, and model responses you submit are used only to complete the current request and response, and are not retained long-term as platform business data.",
+            "To support billing, risk control, security, abuse prevention, troubleshooting, and compliance, the system may record necessary request metadata such as request time, model name, tokens or usage, cost, status code, error type, IP address, API Key identifier, and routing result. These records generally do not include the full text of model conversations.",
+            "Do not submit identity documents, bank card details, account passwords, private keys, medical records, trade secrets, or other highly sensitive information in API requests. You bear the risks arising from voluntarily submitting such information.",
+            "We take reasonable technical and organizational measures to protect user data, including access controls, encrypted transmission, log auditing, anomaly monitoring, and appropriate data isolation."
+          ]
+        },
+        {
+          "title": "10. Disclaimers and Limitation of Liability",
+          "body": [
+            "The Service is provided on an \"as is\" and \"as available\" basis. We do not warrant that the Service will be uninterrupted or error-free, or that it will meet your specific business goals.",
+            "We make no absolute guarantees regarding any model output, forwarding result, content moderation outcome, routing result, billing result, balance settlement, upstream or downstream latency, third-party availability, or third-party compliance decision.",
+            "Code, suggestions, analysis, or other output generated by AI models may contain factual errors, outdated information, bias, security vulnerabilities, or intellectual property risks. You should independently assess their accuracy, safety, and suitability, and verify them before actual use.",
+            "Results obtained through the Service are for development, testing, assistance, or reference only. You alone decide whether to adopt, deploy, publish, or rely on such results, and you bear all resulting risks.",
+            "AI output does not constitute professional advice in medicine, law, finance, tax, mental health, or other fields requiring professional qualifications. Do not use it directly for such decisions without review by a qualified professional.",
+            "To the extent permitted by law, we are not liable for any indirect, incidental, special, punitive, or consequential damages, including but not limited to lost profits, lost revenue, business interruption, data loss, erroneous model output, risk-control blocks, quota discrepancies, or loss of goodwill.",
+            "To the extent permitted by law, our total liability to you will not exceed the total fees you actually paid for the Service in the twelve months preceding the event giving rise to the claim."
+          ]
+        },
+        {
+          "title": "11. Changes and Termination of the Service",
+          "body": [
+            "We may modify, suspend, or terminate all or part of the Service for business, security, compliance, or technical reasons.",
+            "If we believe you have violated these Terms or related policies, or that your account presents abnormal risk, we may restrict, suspend, or terminate your account, API Keys, model access, or related features.",
+            "You may stop using the Service at any time and may request account closure through the contact channels in the product interface. Account closure does not affect fees, accounting, compliance, or security obligations incurred before closure."
+          ]
+        },
+        {
+          "title": "12. Indemnification",
+          "body": [
+            "To the extent permitted by law, you will indemnify and hold harmless the platform, its affiliates, and related personnel against claims, losses, fines, investigations, proceedings, and reasonable expenses arising from your breach of these Terms or related policies, your abuse of the Service, or content you submit that infringes third-party rights."
+          ]
+        },
+        {
+          "title": "13. Force Majeure",
+          "body": [
+            "We are not liable for interruptions, delays, or failures to perform caused by events beyond our reasonable control, including natural disasters, war, governmental or regulatory action, cyber attacks, power or infrastructure outages, or failures of upstream AI, payment, or cloud services. We will use reasonable efforts to restore the Service."
+          ]
+        },
+        {
+          "title": "14. Notices",
+          "body": [
+            "We may send notices via in-product announcements, console messages, email, in-site messages, or other contact methods you have provided. Unless otherwise stated, a notice is deemed delivered when sent or published.",
+            "You are responsible for keeping your contact information accurate, complete, and up to date. You bear any adverse consequences of failing to receive notices in a timely manner."
+          ]
+        },
+        {
+          "title": "15. Assignment",
+          "body": [
+            "You may not assign your rights or obligations under these Terms to any third party without our prior written consent. We may assign our rights and obligations under these Terms to an affiliate or successor in connection with a reorganization, merger, spin-off, acquisition, or business adjustment, and will notify you as reasonably appropriate."
+          ]
+        },
+        {
+          "title": "16. Severability",
+          "body": [
+            "If any provision of these Terms is held invalid, unlawful, or unenforceable by a court or competent authority, that provision will be modified or removed to the minimum extent necessary, and the remaining provisions will remain in effect."
+          ]
+        },
+        {
+          "title": "17. Changes to These Terms",
+          "body": [
+            "We may revise these Terms from time to time. Updated Terms will be published on the website or in the product and take effect upon publication or on a specified date. By continuing to use the Service after an update, you accept the updated Terms."
+          ]
+        },
+        {
+          "title": "18. Governing Law and Dispute Resolution",
+          "body": [
+            "These Terms are governed by the laws of the place where the platform operator is located. The parties shall first attempt to resolve disputes arising from these Terms or the Service through good-faith negotiation; failing that, disputes may be resolved through the appropriate lawful channels."
+          ]
+        },
+        {
+          "title": "19. Contact Us",
+          "body": [
+            "If you have any questions about these Terms, privacy, or data security, please contact us through the contact channels in the product interface."
+          ]
+        }
+      ]
+    },
+    "privacy": {
+      "title": "Privacy Policy",
+      "updated": "Last updated: June 16, 2026",
+      "intro": "This Privacy Policy explains how {{siteName}} handles necessary information when providing the AI API gateway, model access, accounts, billing, and technical support. By continuing to register, sign in, create API Keys, top up, or call the API, you acknowledge and agree to this Policy.",
+      "accept": "By continuing to use the Service, you accept this Privacy Policy.",
+      "sections": [
+        {
+          "title": "1. Information We Collect",
+          "body": [
+            "To provide account, gateway, billing, risk-control, and support services, we may collect necessary information that you provide or that the system generates automatically, including email address, username, account status, sign-in records, order records, balance records, subscription records, API Key metadata, usage statistics, and security logs.",
+            "When you call the API, the system may record request metadata such as request time, model name, tokens or usage, cost, status code, error type, IP address, API Key identifier, routing result, upstream response status, and latency."
+          ]
+        },
+        {
+          "title": "2. API Request Content",
+          "body": [
+            "We operate primarily as an API gateway and forwarding service. In general, the prompts, context, uploaded content, and model responses you submit are used only to complete the current request and response, and are not retained long-term as platform business data.",
+            "We do not use your API request content to train models, nor do we proactively review your full conversations manually. However, during troubleshooting, security risk control, abuse investigations, compliance processes, or when you submit a support ticket, we may need to process the necessary excerpts or logs related to the issue.",
+            "Do not submit identity documents, bank card details, account passwords, private keys, mnemonic phrases, medical records, trade secrets, unpublished source code, or other highly sensitive information in API requests. You bear the risks arising from voluntarily submitting such information."
+          ]
+        },
+        {
+          "title": "3. How We Use Information",
+          "body": [
+            "We use necessary information to create and maintain accounts, complete API forwarding, calculate usage and fees, display bills, process top-ups and refunds, provide technical support, detect abnormal calls, limit abuse, protect platform security, and meet compliance obligations.",
+            "We may analyze aggregated or de-identified data on system stability, model costs, error rates, latency, and business metrics to improve service quality."
+          ]
+        },
+        {
+          "title": "4. Third-Party Processing",
+          "body": [
+            "The Service may rely on upstream AI services, cloud services, payment providers, email services, object storage, analytics, risk control, or customer support systems. To deliver the features you request, relevant information may be transferred to the corresponding third parties for processing.",
+            "Third parties process data under their own terms, privacy policies, and data processing rules. We cannot fully control their availability, security policies, data retention rules, content moderation outcomes, or compliance decisions."
+          ]
+        },
+        {
+          "title": "5. Cookies, Local Storage, and Security Tokens",
+          "body": [
+            "We may use cookies, localStorage, sessionStorage, or similar technologies to store sign-in state, theme preference, language preference, session tokens, and security configuration so that the site functions properly.",
+            "Do not stay signed in on untrusted devices. If you suspect a token or API Key has been leaked, sign out immediately, reset your password, or disable the affected Keys."
+          ]
+        },
+        {
+          "title": "6. Data Retention and Deletion",
+          "body": [
+            "We retain information for as long as necessary to fulfill the purposes of the Service. Accounting, risk-control, security, audit, and compliance records may be kept longer as required by law or reasonable business needs.",
+            "You may request access to, export, correction, or deletion of your account information through the contact channels in the product interface. We may be unable to immediately delete data that must be retained by law or for accounting, security, or dispute resolution."
+          ]
+        },
+        {
+          "title": "7. Data Security",
+          "body": [
+            "We take reasonable technical and organizational measures to protect data, including encrypted transmission, access controls, log auditing, anomaly monitoring, access isolation, and key protection.",
+            "No internet transmission or third-party service can be guaranteed to be absolutely secure. To the extent permitted by law, we are not liable for risks caused by force majeure, upstream services, third-party systems, leaked user credentials, or sensitive information you submit voluntarily."
+          ]
+        },
+        {
+          "title": "8. Minors",
+          "body": [
+            "The Service is intended for adults at least 18 years of age with full legal capacity, developers, and organizational users. It is not offered to minors. If you are under 18, do not register for or use the Service.",
+            "We do not knowingly collect personal information from minors. If you are a guardian and discover that a minor has used the Service or provided personal information to us without your consent, please contact us through the contact channels in the product interface, and we will delete the information promptly as required by law."
+          ]
+        },
+        {
+          "title": "9. Cross-Border Transfers",
+          "body": [
+            "To enable API forwarding, model calls, payment settlement, and infrastructure functions, your request content and necessary metadata may be transferred to upstream AI providers, cloud providers, payment providers, and other third parties located outside your country or region.",
+            "We transfer data across borders only to the extent necessary for these purposes and require recipients to apply appropriate data protection measures. Where applicable law requires your separate consent for cross-border transfers or the processing of sensitive information, we will seek your consent in a prominent manner, and you may withdraw it at any time."
+          ]
+        },
+        {
+          "title": "10. Changes to This Policy",
+          "body": [
+            "We may update this Policy for business, legal, technical, or security reasons. Updated versions will be published on the website or in the product and take effect upon publication or on a specified date. By continuing to use the Service, you accept the updated Policy."
+          ]
+        },
+        {
+          "title": "11. Contact Us",
+          "body": [
+            "If you have any questions about privacy, data security, or information handling, please contact us through the contact channels in the product interface."
+          ]
+        }
+      ]
+    }
   }
 }
