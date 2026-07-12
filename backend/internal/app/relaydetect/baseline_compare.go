@@ -8,7 +8,17 @@ import (
 func compareOfficialSpecBaselines(registry ScenarioRegistry, models []ModelResult) []BaselineDiff {
 	diffs := make([]BaselineDiff, 0, len(models))
 	for _, model := range models {
-		spec, ok := registry.SpecForProtocol(model.Protocol)
+		protocol := ""
+		switch model.Family {
+		case "claude":
+			protocol = "anthropic"
+		case "gpt":
+			protocol = "openai"
+		}
+		if protocol == "" || model.Protocol != protocol {
+			continue
+		}
+		spec, ok := registry.SpecForProtocol(protocol)
 		if !ok {
 			continue
 		}

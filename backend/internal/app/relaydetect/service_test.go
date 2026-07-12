@@ -15,8 +15,13 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/ent/enttest"
 	enttask "github.com/DouDOU-start/airgate-core/ent/task"
+	"github.com/DouDOU-start/airgate-core/internal/auth"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+// relayTestSecret 是测试用加密 secret(hex，解码后 32 字节),仅供 NewService 构造,
+// 当前测试不触发 Create/Retest 的加解密路径,值本身不影响断言。
+const relayTestSecret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 func healthyConcurrency() []ConcurrencyProbe {
 	return []ConcurrencyProbe{
@@ -32,6 +37,50 @@ func stabilityWindows(summary string) []StabilityWindow {
 		{Index: 0, Label: "primary_20_rounds", Rounds: 20, Success: 10, SuccessRate: 0.5},
 		{Index: 1, Label: "retest_1_5_rounds", Rounds: 5, Success: 0, SuccessRate: 0},
 		{Index: 2, Label: "retest_2_5_rounds", Rounds: 5, Success: 0, SuccessRate: 0},
+	}
+}
+
+func newTestRelayDetectService() *Service {
+	svc := NewService(nil, relayTestSecret)
+	svc.client = newRelayHTTPClient(true)
+	return svc
+}
+
+func TestNormalizeBaseURLRejectsPrivateTargets(t *testing.T) {
+	for _, raw := range []string{
+		"http://localhost:8080/v1/models",
+		"http://api.localhost/v1/models",
+		"http://127.0.0.1:8080/v1/models",
+		"http://10.1.2.3/v1/models",
+		"http://172.16.1.10/v1/models",
+		"http://192.168.1.20/v1/models",
+		"http://[::1]/v1/models",
+		"http://[fe80::1]/v1/models",
+		"http://0.0.0.0/v1/models",
+	} {
+		if got, err := normalizeBaseURL(raw); err == nil {
+			t.Fatalf("normalizeBaseURL(%q) = %q, want private target rejection", raw, got)
+		}
+	}
+}
+
+func TestNormalizeBaseURLAllowsPublicHTTPSTarget(t *testing.T) {
+	got, err := normalizeBaseURL("https://api.example.com/v1/chat/completions?x=1#frag")
+	if err != nil {
+		t.Fatalf("normalizeBaseURL returned error: %v", err)
+	}
+	if got != "https://api.example.com" {
+		t.Fatalf("normalized URL = %q, want https://api.example.com", got)
+	}
+}
+
+func TestValidateRelayTargetHostRejectsResolvedLocalhost(t *testing.T) {
+	err := validateRelayTargetHost(context.Background(), "localhost", false)
+	if err == nil {
+		t.Fatal("localhost should be rejected")
+	}
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("error = %v, want ErrInvalidInput", err)
 	}
 }
 
@@ -52,7 +101,7 @@ func TestDiscoverModelsReportsHTMLBlockPageAsNonJSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	_, err := svc.discoverModels(context.Background(), server.URL, "sk-test", PlatformAnthropic)
 	if err == nil {
 		t.Fatal("discoverModels should fail on HTML model list response")
@@ -193,6 +242,41 @@ func TestParseProbeBodyCountsAnthropicCacheReadAsPromptUsage(t *testing.T) {
 	}
 }
 
+func TestParseProbeBodyRejectsEmptyHTTP200Completion(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		protocol string
+		body     string
+	}{
+		{name: "OpenAI empty choices", protocol: "openai", body: `{"id":"chatcmpl_empty","choices":[],"usage":{"prompt_tokens":10}}`},
+		{name: "Anthropic empty content", protocol: "anthropic", body: `{"id":"msg_empty","content":[],"usage":{"input_tokens":10}}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			result := probeResult{statusCode: http.StatusOK}
+			parseProbeBody([]byte(tt.body), tt.protocol, &result)
+			if result.basicAvailable() {
+				t.Fatalf("empty semantic response must not pass availability: %#v", result)
+			}
+		})
+	}
+}
+
+func TestClassifyResponseIDPrefix(t *testing.T) {
+	tests := map[string]string{
+		"msg_01ABC":       "msg",
+		"msg_bdrk_01ABC":  "msg_bdrk",
+		"resp_01ABC":      "resp",
+		"chatcmpl_01ABC":  "chatcmpl",
+		"chatcmpl-01ABC":  "chatcmpl",
+		"unclassified-id": "",
+	}
+	for id, want := range tests {
+		if got := classifyResponseIDPrefix(id); got != want {
+			t.Fatalf("classifyResponseIDPrefix(%q) = %q, want %q", id, got, want)
+		}
+	}
+}
+
 func TestDoJSONCapturesTransportEvidence(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") == "" {
@@ -209,7 +293,7 @@ func TestDoJSONCapturesTransportEvidence(t *testing.T) {
 	}))
 	defer server.Close()
 
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	resp := svc.doJSON(context.Background(), http.MethodPost, server.URL+"/v1/chat/completions", "sk-test", PlatformOpenAI, map[string]any{"model": "gpt-4o-mini"})
 	if resp.Err != nil {
 		t.Fatalf("doJSON error: %v", resp.Err)
@@ -354,6 +438,24 @@ func TestBuildModelResultRequiresCoreProbesForGradeA(t *testing.T) {
 	}
 }
 
+func TestCoreProbeIgnoresNonScoringHeuristicTokenMismatch(t *testing.T) {
+	probe := probeResult{
+		inputTokens:    12,
+		outputTokens:   1,
+		stream:         StreamProbe{Tested: true, OK: true},
+		cache:          CacheProbe{Tested: true, Applicable: true, OK: true},
+		injection:      InjectionProbe{Tested: true, OK: true},
+		role:           RoleProbe{Tested: true, OK: true},
+		tokenPrecision: TokenPrecision{Tested: true, OK: false, ScoreEligible: false, BaselineSource: "heuristic_prompt_estimate"},
+		stability: StabilityProbe{Tested: true, OK: true, Concurrency: []ConcurrencyProbe{
+			{Level: 20, SuccessRate: 1},
+		}},
+	}
+	if !coreProbePassed(modelMatchResult{Matched: true, Kind: "exact"}, probe) {
+		t.Fatal("a low-confidence, non-scoring token estimate must not block grade A")
+	}
+}
+
 func TestSummarizeStabilityWindows(t *testing.T) {
 	if got := summarizeStabilityWindows([]StabilityWindow{
 		{Index: 0, SuccessRate: 0.5},
@@ -472,8 +574,49 @@ func TestBuildProbeTargetsCoversAllDiscoveredModels(t *testing.T) {
 	}
 }
 
+func TestBuildProbeTargetsRoutesMixedCatalogByModelFamily(t *testing.T) {
+	targets := buildProbeTargets([]string{
+		"gpt-5.5",
+		"claude-sonnet-4-5-20250929",
+		"gemini-2.5-pro",
+	}, PlatformAnthropic)
+	want := map[string]string{
+		"gpt-5.5":                    "openai",
+		"claude-sonnet-4-5-20250929": "anthropic",
+		"gemini-2.5-pro":             "openai",
+	}
+	for _, target := range targets {
+		if target.protocol != want[target.model] {
+			t.Fatalf("target %q protocol = %q, want %q", target.model, target.protocol, want[target.model])
+		}
+	}
+}
+
+func TestRelayAuthCheckModeUsesDiscoveredModelFamilies(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform PlatformType
+		models   []string
+		want     string
+	}{
+		{name: "auto GPT catalog", platform: PlatformAuto, models: []string{"gpt-5.5", "o3"}, want: "openai"},
+		{name: "claimed Anthropic but GPT catalog", platform: PlatformAnthropic, models: []string{"gpt-5.5"}, want: "openai"},
+		{name: "auto Claude catalog", platform: PlatformAuto, models: []string{"claude-sonnet-4-5-20250929"}, want: "anthropic"},
+		{name: "mixed catalog", platform: PlatformAuto, models: []string{"gpt-5.5", "claude-sonnet-4-5-20250929"}, want: "auto"},
+		{name: "unregistered provider catalog", platform: PlatformAuto, models: []string{"gemini-2.5-pro", "glm-5.2"}, want: ""},
+		{name: "opaque AWS alias", platform: PlatformAWSBedrock, models: []string{"relay-sonnet"}, want: "anthropic"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := relayAuthCheckMode(tt.platform, tt.models); got != tt.want {
+				t.Fatalf("relayAuthCheckMode(%s, %#v) = %q, want %q", tt.platform, tt.models, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNewServiceLimitsConcurrentRelayDetectionWorkers(t *testing.T) {
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	if cap(svc.workerCh) != 2 {
 		t.Fatalf("worker capacity = %d, want 2", cap(svc.workerCh))
 	}
@@ -489,7 +632,7 @@ func TestUpdateProgressPreservesExecutionAndIsMonotonic(t *testing.T) {
 		"completed_models":     3,
 		"relay_suite_duration": 123,
 	})
-	svc := NewService(db)
+	svc := NewService(db, relayTestSecret)
 
 	if err := svc.updateProgress(ctx, task.ID, "probing_models", 20, map[string]any{
 		"current_model": "claude-sonnet-test",
@@ -520,7 +663,7 @@ func TestCompleteTaskDoesNotOverwriteCancelling(t *testing.T) {
 		"stage":               "cancelling",
 		"cancel_requested_at": "2026-06-27T00:00:00Z",
 	})
-	svc := NewService(db)
+	svc := NewService(db, relayTestSecret)
 
 	err := svc.completeTask(ctx, task.ID, map[string]interface{}{"unexpected": true}, map[string]interface{}{"overall_grade": "A"}, time.Now(), 1)
 	if err != nil {
@@ -546,7 +689,7 @@ func TestFailTaskDoesNotOverwriteCancellingOrTerminal(t *testing.T) {
 	ctx := context.Background()
 	for _, status := range []enttask.Status{enttask.StatusCancelling, enttask.StatusCompleted, enttask.StatusFailed, enttask.StatusCancelled} {
 		task := createRelayDetectTask(t, db, status, 73, map[string]interface{}{"stage": string(status)})
-		svc := NewService(db)
+		svc := NewService(db, relayTestSecret)
 		if err := svc.failTask(ctx, task.ID, Report{Summary: ReportSummary{OverallGrade: "F"}}, errors.New("should not win")); err != nil {
 			t.Fatalf("failTask(%s): %v", status, err)
 		}
@@ -569,7 +712,7 @@ func TestFinishIfCanceledDoesNotOverwriteCompleted(t *testing.T) {
 	task := createRelayDetectTask(t, db, enttask.StatusCompleted, 100, map[string]interface{}{
 		"stage": "completed",
 	})
-	svc := NewService(db)
+	svc := NewService(db, relayTestSecret)
 	cancelledCtx, cancel := context.WithCancel(ctx)
 	cancel()
 
@@ -599,7 +742,7 @@ func TestCancelTerminalTasksDoesNotOverwriteResult(t *testing.T) {
 		if err != nil {
 			t.Fatalf("seed output: %v", err)
 		}
-		svc := NewService(db)
+		svc := NewService(db, relayTestSecret)
 		summary, err := svc.Cancel(ctx, task.ID)
 		if err != nil {
 			t.Fatalf("Cancel(%s): %v", status, err)
@@ -631,7 +774,7 @@ func TestRetestRequiresTerminalTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed input: %v", err)
 	}
-	svc := NewService(db)
+	svc := NewService(db, relayTestSecret)
 	if _, err := svc.Retest(ctx, task.ID, 1); err == nil || !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("Retest should reject non-terminal task, got %v", err)
 	}
@@ -652,7 +795,7 @@ func TestProbeNegativeModelsDetectsWrapperLeak(t *testing.T) {
 	}))
 	defer server.Close()
 
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	result := svc.probeNegativeModels(context.Background(), server.URL, "sk-test", PlatformOpenAI, []probeTarget{{model: "gpt-4o-mini", protocol: "openai"}})
 	if len(result.risks) != 1 {
 		t.Fatalf("risks = %#v, want one wrapper leak", result.risks)
@@ -666,7 +809,7 @@ func TestProbeModelHappyPathAnthropic(t *testing.T) {
 	server := newMockAnthropicRelay(t, mockRelayOptions{})
 	defer server.Close()
 
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	svc.client.Timeout = 5 * time.Second
 	result := svc.probeModel(context.Background(), server.URL, "sk-test", PlatformAnthropic, probeTarget{model: "claude-sonnet-4-5-20250929", protocol: "anthropic"})
 	model := buildModelResult(probeTarget{model: "claude-sonnet-4-5-20250929", protocol: "anthropic"}, result)
@@ -679,11 +822,17 @@ func TestProbeModelHappyPathAnthropic(t *testing.T) {
 	if !model.Cache.OK {
 		t.Fatalf("cache should pass: %#v", model.Cache)
 	}
+	if !model.CacheTTL.Tested || !model.CacheTTL.Applicable || !model.CacheTTL.OK || !model.CacheTTL.Supports5M || !model.CacheTTL.Supports1H || !model.CacheTTL.RejectsInvalid {
+		t.Fatalf("cache TTL semantics should pass: %#v", model.CacheTTL)
+	}
 	if !model.Injection.OK {
 		t.Fatalf("injection should pass: %#v", model.Injection)
 	}
 	if !model.RoleProbe.OK {
 		t.Fatalf("role probe should pass: %#v", model.RoleProbe)
+	}
+	if !model.Quality.OK || model.Quality.Passed != 4 || model.Quality.Total != 4 {
+		t.Fatalf("agent quality probes should pass: %#v", model.Quality)
 	}
 	if !model.Thinking.OK {
 		t.Fatalf("thinking probe should pass: %#v", model.Thinking)
@@ -724,7 +873,7 @@ func TestProbeModelDetectsPlainSDKCacheFailure(t *testing.T) {
 	server := newMockAnthropicRelay(t, mockRelayOptions{plainSDKCacheFails: true})
 	defer server.Close()
 
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	svc.client.Timeout = 5 * time.Second
 	result := svc.probeModel(context.Background(), server.URL, "sk-test", PlatformAnthropic, probeTarget{model: "claude-sonnet-4-5-20250929", protocol: "anthropic"})
 	model := buildModelResult(probeTarget{model: "claude-sonnet-4-5-20250929", protocol: "anthropic"}, result)
@@ -743,15 +892,15 @@ func TestProbeModelDetectsAnthropicCountTokensFailure(t *testing.T) {
 	server := newMockAnthropicRelay(t, mockRelayOptions{countTokensFails: true})
 	defer server.Close()
 
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	svc.client.Timeout = 5 * time.Second
 	result := svc.probeModel(context.Background(), server.URL, "sk-test", PlatformAnthropic, probeTarget{model: "claude-sonnet-4-5-20250929", protocol: "anthropic"})
 	model := buildModelResult(probeTarget{model: "claude-sonnet-4-5-20250929", protocol: "anthropic"}, result)
 	if !containsString(model.Risks, "anthropic_count_tokens_failed") {
 		t.Fatalf("risks = %#v, want anthropic_count_tokens_failed", model.Risks)
 	}
-	if model.Grade != "D" {
-		t.Fatalf("grade = %s, want D for count_tokens failure", model.Grade)
+	if model.Grade != "C" {
+		t.Fatalf("grade = %s, want C for count_tokens capability failure", model.Grade)
 	}
 }
 
@@ -759,7 +908,7 @@ func TestProbeModelHappyPathOpenAIRunsBaselineProbes(t *testing.T) {
 	server := newMockOpenAIRelay(t, mockRelayOptions{})
 	defer server.Close()
 
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	svc.client.Timeout = 5 * time.Second
 	result := svc.probeModel(context.Background(), server.URL, "sk-test", PlatformOpenAI, probeTarget{model: "gpt-5.5", protocol: "openai"})
 	model := buildModelResult(probeTarget{model: "gpt-5.5", protocol: "openai"}, result)
@@ -771,6 +920,15 @@ func TestProbeModelHappyPathOpenAIRunsBaselineProbes(t *testing.T) {
 	}
 	if !model.Cache.Tested || !model.Cache.OK {
 		t.Fatalf("OpenAI cache baseline must pass: %#v", model.Cache)
+	}
+	if model.CacheTTL.Tested || model.CacheTTL.Applicable {
+		t.Fatalf("Claude cache TTL must be not applicable to GPT: %#v", model.CacheTTL)
+	}
+	if model.Thinking.Tested || model.AnthropicCountTokens.Tested {
+		t.Fatalf("GPT must not run Claude-only probes: thinking=%#v count_tokens=%#v", model.Thinking, model.AnthropicCountTokens)
+	}
+	if !model.Quality.OK || model.Quality.Passed != 4 {
+		t.Fatalf("OpenAI agent quality probes should pass: %#v", model.Quality)
 	}
 	if model.Cache.WarmHitRate != 1 {
 		t.Fatalf("warm hit rate = %v, want 1", model.Cache.WarmHitRate)
@@ -799,13 +957,18 @@ func TestProbeModelHappyPathOpenAIRunsBaselineProbes(t *testing.T) {
 	if hasClientProfile(model.ClientProfiles, "claude_code_interaction") || hasClientProfile(model.ClientProfiles, "claude_code_thinking") || hasClientProfile(model.ClientProfiles, "claude_code_subagents") {
 		t.Fatalf("OpenAI model should not run Claude Code profiles: %#v", model.ClientProfiles)
 	}
+	for _, notWant := range []string{"cache_ttl_control_failed", "thinking_signature_mismatch", "anthropic_count_tokens_failed", "claude_runtime_signature_presence_failed"} {
+		if containsString(model.Risks, notWant) {
+			t.Fatalf("GPT risks = %#v, must not include Claude-only risk %s", model.Risks, notWant)
+		}
+	}
 }
 
 func TestProbeModelOpenAINativeToolAndSchemaFailuresAreRisky(t *testing.T) {
 	server := newMockOpenAIRelay(t, mockRelayOptions{openAINativeDegraded: true})
 	defer server.Close()
 
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	svc.client.Timeout = 5 * time.Second
 	result := svc.probeModel(context.Background(), server.URL, "sk-test", PlatformOpenAI, probeTarget{model: "gpt-5.5", protocol: "openai"})
 	model := buildModelResult(probeTarget{model: "gpt-5.5", protocol: "openai"}, result)
@@ -838,7 +1001,7 @@ func TestProbeModelSkipsSubProbesWhenBasicCallFails(t *testing.T) {
 	}))
 	defer server.Close()
 
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	result := svc.probeModel(context.Background(), server.URL, "sk-test", PlatformAnthropic, probeTarget{model: "claude-fable-5", protocol: "anthropic"})
 	model := buildModelResult(probeTarget{model: "claude-fable-5", protocol: "anthropic"}, result)
 	if model.Available {
@@ -869,7 +1032,7 @@ func TestProbeModelDetectsBadRelay(t *testing.T) {
 	})
 	defer server.Close()
 
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	svc.client.Timeout = 5 * time.Second
 	result := svc.probeModel(context.Background(), server.URL, "sk-test", PlatformAnthropic, probeTarget{model: "claude-sonnet-4-5-20250929", protocol: "anthropic"})
 	model := buildModelResult(probeTarget{model: "claude-sonnet-4-5-20250929", protocol: "anthropic"}, result)
@@ -1013,6 +1176,60 @@ func TestMergeExternalSuiteResultsAddsOpenAICapabilityChecks(t *testing.T) {
 	}
 }
 
+func TestMergeExternalSuiteResultsIgnoresClaudeCapabilitiesForGPTOnlyReport(t *testing.T) {
+	report := Report{
+		PlatformType: string(PlatformOpenAI),
+		ModelCatalog: ModelCatalog{Route: "/v1/models", HTTPStatus: 200},
+		Models: []ModelResult{{
+			Model:        "gpt-5.5",
+			Family:       "gpt",
+			Available:    true,
+			ModelMatched: true,
+			Protocol:     "openai",
+		}},
+	}
+	mergeExternalSuiteResults(&report, []externalSuiteResult{{
+		Name:   "relay-auth-check",
+		Status: "completed",
+		Report: map[string]any{
+			"protocols": map[string]any{
+				"anthropic": map[string]any{
+					"capabilities": map[string]any{
+						"count_tokens": map[string]any{"ok": false},
+						"tool_use":     map[string]any{"ok": false},
+					},
+				},
+			},
+			"findings": []any{
+				map[string]any{"applicable": false, "code": "anthropic_tool_use_missing", "protocol": "anthropic", "severity": "high", "title": "Claude tool_use failed"},
+			},
+		},
+	}})
+	for _, code := range []string{"external_anthropic_count_tokens_failed", "external_anthropic_tool_use_failed", "external_anthropic_tool_use_missing"} {
+		if hasRisk(report.Risks, code) {
+			t.Fatalf("GPT-only risks = %#v, must not include Claude-only risk %s", report.Risks, code)
+		}
+	}
+	if findCheck(report.StandardChecks, "anthropic_count_tokens") != nil || findCheck(report.StandardChecks, "anthropic_tool_use") != nil {
+		t.Fatalf("GPT-only checks must not include Claude capabilities: %#v", report.StandardChecks)
+	}
+}
+
+func TestMergeExternalSuiteFailureDoesNotCreateScoringRisk(t *testing.T) {
+	report := Report{Raw: map[string]any{}}
+	mergeExternalSuiteResults(&report, []externalSuiteResult{{
+		Name:   "relay-auth-check",
+		Status: "failed",
+		Error:  "probe budget exhausted",
+	}})
+	if hasRisk(report.Risks, "external_suite_failed") {
+		t.Fatalf("external suite execution failure must lower coverage, not score: %#v", report.Risks)
+	}
+	if !hasEvidence(report.Evidence, "external_suite_failed") {
+		t.Fatalf("external suite failure evidence missing: %#v", report.Evidence)
+	}
+}
+
 func TestMergeExternalSuiteResultsAddsAnthropicCountTokensCheck(t *testing.T) {
 	report := Report{
 		PlatformType: string(PlatformAnthropic),
@@ -1106,7 +1323,7 @@ func TestProbeAWSBedrockRuntimeBaselineMissingConfigDoesNotAddRisk(t *testing.T)
 	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
 	t.Setenv("RELAY_DETECTION_AWS_BEDROCK_MODEL_MAP", "")
 
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	probe := svc.probeRuntimeBaseline(context.Background(), PlatformAWSBedrock, probeTarget{model: "relay-sonnet", protocol: "anthropic"}, probeResult{inputTokens: 18})
 	if !probe.Tested || probe.Configured {
 		t.Fatalf("runtime baseline probe = %#v, want tested but unconfigured", probe)
@@ -1137,7 +1354,7 @@ func TestProbeAWSBedrockRuntimeBaselineHappyPath(t *testing.T) {
 	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
 	t.Setenv("RELAY_DETECTION_AWS_BEDROCK_MODEL_MAP", `relay-sonnet=anthropic.claude-sonnet-4-5-20250929-v1:0`)
 
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	probe := svc.probeRuntimeBaseline(context.Background(), PlatformAWSBedrock, probeTarget{model: "relay-sonnet", protocol: "anthropic"}, probeResult{inputTokens: 20})
 	if !probe.Tested || !probe.Configured || !probe.OK {
 		t.Fatalf("runtime baseline probe = %#v, want configured pass", probe)
@@ -1174,7 +1391,7 @@ func TestProbeAWSBedrockRuntimeBaselineMismatchAddsRiskAndFailsCheck(t *testing.
 	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
 	t.Setenv("RELAY_DETECTION_AWS_BEDROCK_MODEL_MAP", `relay-sonnet=anthropic.claude-sonnet-4-5-20250929-v1:0`)
 
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	probe := svc.probeRuntimeBaseline(context.Background(), PlatformAWSBedrock, probeTarget{model: "relay-sonnet", protocol: "anthropic"}, probeResult{inputTokens: 120})
 	if !probe.Configured || probe.OK {
 		t.Fatalf("runtime baseline probe = %#v, want configured mismatch", probe)
@@ -1310,7 +1527,7 @@ func TestProbeThinkingPerformsRuntimeStateVerification(t *testing.T) {
 	server := newMockAnthropicRelay(t, mockRelayOptions{})
 	defer server.Close()
 
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	probe := svc.probeThinking(context.Background(), server.URL, "sk-test", PlatformAnthropic, probeTarget{model: "claude-sonnet-4-5-20250929", protocol: "anthropic"})
 	if !probe.OK {
 		t.Fatalf("thinking runtime probe should pass: %#v", probe)
@@ -1325,11 +1542,20 @@ func TestProbeThinkingPerformsRuntimeStateVerification(t *testing.T) {
 	}
 }
 
+func TestThinkingRequestsUseValidBudgetBounds(t *testing.T) {
+	if claudeThinkingBudgetTokens < 1024 {
+		t.Fatalf("thinking budget = %d, must meet the 1024-token provider minimum", claudeThinkingBudgetTokens)
+	}
+	if claudeThinkingMaxTokens <= claudeThinkingBudgetTokens {
+		t.Fatalf("max_tokens = %d, must be greater than budget_tokens = %d", claudeThinkingMaxTokens, claudeThinkingBudgetTokens)
+	}
+}
+
 func TestProbeThinkingRejectsGPTAdapterStyleSignatureForgery(t *testing.T) {
 	server := newMockAnthropicRelay(t, mockRelayOptions{gptAdapterFake: true})
 	defer server.Close()
 
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	probe := svc.probeThinking(context.Background(), server.URL, "sk-test", PlatformAnthropic, probeTarget{model: "claude-sonnet-4-5-20250929", protocol: "anthropic"})
 	if probe.OK {
 		t.Fatalf("GPT-adapter style fake should not pass runtime verification: %#v", probe)
@@ -1375,7 +1601,7 @@ func TestProbeThinkingUnsupportedIsRuntimeVerificationFailure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	probe := svc.probeThinking(context.Background(), server.URL, "sk-test", PlatformAnthropic, probeTarget{model: "claude-sonnet-4-5-20250929", protocol: "anthropic"})
 	if probe.OK || probe.Supported {
 		t.Fatalf("unsupported thinking should fail runtime verification: %#v", probe)
@@ -1555,7 +1781,8 @@ func TestBuildModelIssueMatrixQuantifiesCoreFailures(t *testing.T) {
 	models := []ModelResult{
 		{
 			Model:                 "gpt-4.1",
-			Family:                "openai",
+			Family:                "gpt",
+			Protocol:              "openai",
 			Available:             true,
 			Grade:                 "D",
 			HTTPStatus:            200,
@@ -1596,11 +1823,62 @@ func TestBuildModelIssueMatrixQuantifiesCoreFailures(t *testing.T) {
 	if availability == nil || !hasEvidenceRef(availability.EvidenceRefs, "transport.prompt_payload_hash") || !hasEvidenceRef(availability.EvidenceRefs, "transport.response_body_hash") {
 		t.Fatalf("availability evidence refs = %#v, want payload/body hashes", availability)
 	}
-	if findMatrixCell(row.Checks, "claude_runtime_state") != nil {
-		t.Fatalf("OpenAI matrix must not include Claude runtime cell: %#v", row.Checks)
+	claudeRuntime := findMatrixCell(row.Checks, "claude_runtime_state")
+	if claudeRuntime == nil || claudeRuntime.Status != "not_applicable" || claudeRuntime.Applicable || claudeRuntime.ScoreImpact != 0 {
+		t.Fatalf("OpenAI matrix Claude runtime cell must be N/A and non-scoring: %#v", claudeRuntime)
 	}
 	if findMatrixCell(row.Checks, "openai_responses_native") == nil {
 		t.Fatalf("OpenAI matrix should include native Responses cell")
+	}
+}
+
+func TestCoverageExcludesNotApplicableCells(t *testing.T) {
+	rows := []ModelMatrixRow{{Checks: []ModelMatrixCell{
+		finalizeMatrixCell(ModelMatrixCell{Status: "pass", Severity: "high"}),
+		finalizeMatrixCell(ModelMatrixCell{Status: "missing", Severity: "high"}),
+		notApplicableMatrixCell("claude_only", "Claude only", "GPT 不适用"),
+	}}}
+	coverage := coverageFromMatrix(rows)
+	if coverage.Applicable != 2 || coverage.Conclusive != 1 || coverage.NotApplicable != 1 || coverage.Ratio != 0.5 {
+		t.Fatalf("coverage = %#v, want conclusive/applicable=1/2 with N/A excluded", coverage)
+	}
+}
+
+func TestBuildReportWithoutValidCompletionIsScoreIneligible(t *testing.T) {
+	model := ModelResult{
+		Model:      "gpt-5.5",
+		Family:     "gpt",
+		Protocol:   "openai",
+		Available:  false,
+		HTTPStatus: http.StatusServiceUnavailable,
+		Grade:      "F",
+		Risks:      []string{"probe_failed"},
+	}
+	report := buildReport(
+		"https://relay.example.com",
+		PlatformOpenAI,
+		time.Now(),
+		time.Now(),
+		modelListResult{route: "/v1/models", statusCode: http.StatusOK, models: []string{model.Model}},
+		[]ModelResult{model},
+		[]RiskFinding{riskFromCode("probe_failed", model.Model, model)},
+		nil,
+	)
+	if report.Summary.ScoreEligible || report.Summary.OverallScore != 0 || report.Summary.OverallGrade != "F" {
+		t.Fatalf("unavailable report summary = %#v, want ineligible score 0 grade F", report.Summary)
+	}
+	if report.Summary.ScoreEligibilityReason == "" {
+		t.Fatal("score-ineligible report must explain the admission failure")
+	}
+}
+
+func TestDuplicateFindingsDoNotMultiplyScorePenalty(t *testing.T) {
+	model := ModelResult{Model: "gpt-5.5", Family: "gpt", Protocol: "openai", Available: true}
+	one := []RiskFinding{{Model: model.Model, Code: "openai_tool_call_native_failed", Severity: "high"}}
+	duplicates := append(append([]RiskFinding{}, one...), one...)
+	duplicates = append(duplicates, one...)
+	if got, want := scoreForModel(model, duplicates), scoreForModel(model, one); got != want {
+		t.Fatalf("duplicate finding score = %.1f, want deduplicated %.1f", got, want)
 	}
 }
 
@@ -1639,8 +1917,9 @@ func TestBuildModelIssueMatrixIncludesAWSBrokerGenerationCell(t *testing.T) {
 	if !hasEvidenceRef(cell.EvidenceRefs, "evidence[code=aws_bedrock_invalid_modelid_probe]") || !hasEvidenceRef(cell.EvidenceRefs, "transport.request_id") {
 		t.Fatalf("AWS broker evidence refs = %#v, want falsification and request id refs", cell.EvidenceRefs)
 	}
-	if findMatrixCell(matrix[0].Checks, "openai_responses_native") != nil {
-		t.Fatalf("AWS broker matrix must not include OpenAI native checks")
+	openAI := findMatrixCell(matrix[0].Checks, "openai_responses_native")
+	if openAI == nil || openAI.Status != "not_applicable" || openAI.Applicable || openAI.ScoreImpact != 0 {
+		t.Fatalf("AWS broker OpenAI native cell must be N/A and non-scoring: %#v", openAI)
 	}
 }
 
@@ -1648,7 +1927,7 @@ func TestProbeAWSBedrockBrokerFalsificationAcceptsBedrockLikeErrors(t *testing.T
 	server := newMockAWSBrokerFalsificationRelay(t, "bedrock_like")
 	defer server.Close()
 
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	result := svc.probeAWSBedrockBrokerFalsification(context.Background(), server.URL, "sk-test")
 	if len(result.risks) != 0 {
 		t.Fatalf("risks = %#v, want none for Bedrock-like errors", result.risks)
@@ -1662,7 +1941,7 @@ func TestProbeAWSBedrockBrokerFalsificationDetectsAggregatorLeak(t *testing.T) {
 	server := newMockAWSBrokerFalsificationRelay(t, "aggregator_leak")
 	defer server.Close()
 
-	svc := NewService(nil)
+	svc := newTestRelayDetectService()
 	result := svc.probeAWSBedrockBrokerFalsification(context.Background(), server.URL, "sk-test")
 	if !hasRisk(result.risks, "aws_bedrock_invalid_model_wrapper_leak") {
 		t.Fatalf("risks = %#v, want aws_bedrock_invalid_model_wrapper_leak", result.risks)
@@ -1824,14 +2103,37 @@ func newMockAnthropicRelay(t *testing.T, opts mockRelayOptions) *httptest.Server
 					writeAnthropicJSON(w, "OK", map[string]any{"input_tokens": 20, "output_tokens": 1})
 					return
 				}
+				toolName := requestedMockToolName(body, "relay_runtime_probe")
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(map[string]any{
 					"id":    "msg_tool_mock",
 					"model": "claude-sonnet-4-5-20250929",
 					"content": []map[string]any{
-						{"type": "tool_use", "id": "toolu_mock", "name": "relay_runtime_probe", "input": map[string]any{"status": "ok"}},
+						{"type": "tool_use", "id": "toolu_mock", "name": toolName, "input": map[string]any{"status": "ok"}},
 					},
 					"usage": map[string]any{"input_tokens": 28, "output_tokens": 6},
+				})
+				return
+			}
+			if strings.Contains(systemText, "ttl-case:") {
+				if strings.Contains(systemText, "ttl-case:invalid_5h") {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "cache_control.ttl must be one of 5m or 1h"}})
+					return
+				}
+				cacheCreation := map[string]any{
+					"ephemeral_5m_input_tokens": 1100,
+					"ephemeral_1h_input_tokens": 0,
+				}
+				if strings.Contains(systemText, "ttl-case:explicit_1h") {
+					cacheCreation["ephemeral_5m_input_tokens"] = 0
+					cacheCreation["ephemeral_1h_input_tokens"] = 1100
+				}
+				writeAnthropicJSON(w, "OK", map[string]any{
+					"input_tokens":   20,
+					"output_tokens":  1,
+					"cache_creation": cacheCreation,
 				})
 				return
 			}
@@ -1880,6 +2182,18 @@ func newMockAnthropicRelay(t *testing.T, opts mockRelayOptions) *httptest.Server
 			}
 			if strings.Contains(prompt, "HOPBASE_TOKEN_PRECISION_MARKER") {
 				writeAnthropicJSON(w, "OK", map[string]any{"input_tokens": 16, "output_tokens": 1})
+				return
+			}
+			if strings.Contains(prompt, "hb-json-7319") {
+				writeAnthropicJSON(w, `{"status":"ok","nonce":"hb-json-7319"}`, map[string]any{"input_tokens": 24, "output_tokens": 12})
+				return
+			}
+			if strings.Contains(prompt, "中继检测正常") {
+				writeAnthropicJSON(w, "中继检测正常", map[string]any{"input_tokens": 20, "output_tokens": 6})
+				return
+			}
+			if strings.Contains(prompt, "nonce I asked you to remember") {
+				writeAnthropicJSON(w, "HB-MEM-4821", map[string]any{"input_tokens": 40, "output_tokens": 6})
 				return
 			}
 			if strings.Contains(prompt, "底层模型提供方") {
@@ -1946,6 +2260,11 @@ func newMockOpenAIRelay(t *testing.T, opts mockRelayOptions) *httptest.Server {
 					writeOpenAIJSON(w, "tool call unsupported", map[string]any{"prompt_tokens": 28, "completion_tokens": 4})
 					return
 				}
+				toolName := requestedMockToolName(body, "relay_probe_report")
+				arguments := `{"status":"ok"}`
+				if toolName == "relay_probe_report" {
+					arguments = `{"nonce":"hb_tool_native_7319","status":"ok"}`
+				}
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(map[string]any{
 					"id":    "chatcmpl_tool_mock",
@@ -1957,8 +2276,8 @@ func newMockOpenAIRelay(t *testing.T, opts mockRelayOptions) *httptest.Server {
 								"id":   "call_mock",
 								"type": "function",
 								"function": map[string]any{
-									"name":      "relay_probe_report",
-									"arguments": `{"nonce":"hb_tool_native_7319","status":"ok"}`,
+									"name":      toolName,
+									"arguments": arguments,
 								},
 							}},
 						},
@@ -2021,6 +2340,18 @@ func newMockOpenAIRelay(t *testing.T, opts mockRelayOptions) *httptest.Server {
 				writeOpenAIJSON(w, "OK", map[string]any{"prompt_tokens": 16, "completion_tokens": 1})
 				return
 			}
+			if strings.Contains(prompt, "hb-json-7319") {
+				writeOpenAIJSON(w, `{"status":"ok","nonce":"hb-json-7319"}`, map[string]any{"prompt_tokens": 24, "completion_tokens": 12})
+				return
+			}
+			if strings.Contains(prompt, "中继检测正常") {
+				writeOpenAIJSON(w, "中继检测正常", map[string]any{"prompt_tokens": 20, "completion_tokens": 6})
+				return
+			}
+			if strings.Contains(prompt, "nonce I asked you to remember") {
+				writeOpenAIJSON(w, "HB-MEM-4821", map[string]any{"prompt_tokens": 40, "completion_tokens": 6})
+				return
+			}
 			if strings.Contains(prompt, "底层模型提供方") {
 				writeOpenAIJSON(w, "OpenAI", map[string]any{"prompt_tokens": 20, "completion_tokens": 1})
 				return
@@ -2050,6 +2381,18 @@ func extractMockPrompt(body map[string]any) string {
 	msg, _ := messages[len(messages)-1].(map[string]any)
 	text, _ := msg["content"].(string)
 	return text
+}
+
+func requestedMockToolName(body map[string]any, fallback string) string {
+	choice, _ := body["tool_choice"].(map[string]any)
+	if name := stringFromAny(choice["name"]); name != "" {
+		return name
+	}
+	function, _ := choice["function"].(map[string]any)
+	if name := stringFromAny(function["name"]); name != "" {
+		return name
+	}
+	return fallback
 }
 
 func writeAnthropicJSON(w http.ResponseWriter, text string, usage map[string]any) {
@@ -2170,4 +2513,39 @@ func createRelayDetectTask(t *testing.T, db *ent.Client, status enttask.Status, 
 		t.Fatalf("create task: %v", err)
 	}
 	return task
+}
+
+// TestHasSevereFindingBlocksProductionReady 锁定"任一 high/critical 确证问题即非 production_ready"的硬门,
+// 防止偷换模型/掉线的中转被误判为可上生产。
+func TestHasSevereFindingBlocksProductionReady(t *testing.T) {
+	if hasSevereFinding(nil) {
+		t.Fatal("nil risks must not be severe")
+	}
+	if hasSevereFinding([]RiskFinding{{Severity: "medium"}, {Severity: "low"}}) {
+		t.Fatal("medium/low must not count as severe")
+	}
+	if !hasSevereFinding([]RiskFinding{{Severity: "low"}, {Severity: "high"}}) {
+		t.Fatal("a high finding must be severe")
+	}
+	if !hasSevereFinding([]RiskFinding{{Severity: "critical"}}) {
+		t.Fatal("a critical finding must be severe")
+	}
+}
+
+// TestDecryptRetestKeyRoundTrip 锁定"重测 key 只加密落库、可解回"的安全属性(明文绝不入库)。
+func TestDecryptRetestKeyRoundTrip(t *testing.T) {
+	svc := NewService(nil, relayTestSecret)
+	enc, err := auth.EncryptAPIKey("sk-relay-secret-123456", relayTestSecret)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	if got := svc.decryptRetestKey(map[string]interface{}{"api_key_encrypted": enc}); got != "sk-relay-secret-123456" {
+		t.Fatalf("decryptRetestKey(encrypted) = %q, want plaintext", got)
+	}
+	if got := svc.decryptRetestKey(map[string]interface{}{"api_key": "sk-legacy"}); got != "sk-legacy" {
+		t.Fatalf("decryptRetestKey(legacy plaintext) = %q, want sk-legacy", got)
+	}
+	if got := svc.decryptRetestKey(map[string]interface{}{}); got != "" {
+		t.Fatalf("decryptRetestKey(no key) = %q, want empty", got)
+	}
 }

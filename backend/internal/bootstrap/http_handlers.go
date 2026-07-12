@@ -97,7 +97,7 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 	settingsService := appsettings.NewService(settingsStore, dep.Config.APIKeySecret())
 	openclawService := appopenclaw.NewService(settingsService)
 	oneclickService := apponeclick.NewService(dep.Redis, apiKeyService, settingsService)
-	relayDetectionService := apprelaydetect.NewService(dep.DB)
+	relayDetectionService := apprelaydetect.NewService(dep.DB, dep.Config.APIKeySecret())
 	accountEventStore := store.NewAccountEventStore(dep.DB)
 	accountEventService := appaccountevent.NewService(accountEventStore)
 

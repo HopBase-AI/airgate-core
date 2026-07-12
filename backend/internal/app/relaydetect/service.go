@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
@@ -22,12 +23,14 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	enttask "github.com/DouDOU-start/airgate-core/ent/task"
+	"github.com/DouDOU-start/airgate-core/internal/auth"
 )
 
 var (
@@ -35,11 +38,17 @@ var (
 	ErrNotFound     = errors.New("relay detection task not found")
 )
 
+const (
+	claudeThinkingBudgetTokens = 1024
+	claudeThinkingMaxTokens    = 2048
+)
+
 type Service struct {
-	db       *ent.Client
-	client   *http.Client
-	running  sync.Map
-	workerCh chan struct{}
+	db           *ent.Client
+	client       *http.Client
+	running      sync.Map
+	workerCh     chan struct{}
+	apiKeySecret string // 用于把上游 key 加密落库(供重测复用),明文绝不入库
 }
 
 type ListFilter struct {
@@ -69,12 +78,17 @@ type modelListResult struct {
 
 type probeResult struct {
 	statusCode               int
+	semanticChecked          bool
+	semanticCompletion       bool
 	responseID               string
 	returnedModel            string
 	inputTokens              int
 	outputTokens             int
 	cacheCreate              int
 	cacheRead                int
+	cacheCreate5M            int
+	cacheCreate1H            int
+	cacheFieldsPresent       bool
 	cacheReadIncludedInInput bool
 	usageFields              []string
 	headers                  map[string]any
@@ -86,9 +100,12 @@ type probeResult struct {
 	hiddenInjection          int
 	text                     string
 	hasToolUse               bool
+	toolName                 string
 	stream                   StreamProbe
 	cache                    CacheProbe
+	cacheTTL                 CacheTTLProbe
 	injection                InjectionProbe
+	quality                  QualityProbe
 	role                     RoleProbe
 	thinking                 ThinkingProbe
 	tokenPrecision           TokenPrecision
@@ -124,13 +141,50 @@ type negativeProbeResult struct {
 	risks    []RiskFinding
 }
 
-func NewService(db *ent.Client) *Service {
+func NewService(db *ent.Client, apiKeySecret string) *Service {
 	return &Service{
-		db: db,
-		client: &http.Client{
-			Timeout: 45 * time.Second,
+		db:           db,
+		client:       newRelayHTTPClient(false),
+		workerCh:     make(chan struct{}, 2),
+		apiKeySecret: apiKeySecret,
+	}
+}
+
+func newRelayHTTPClient(allowPrivateNetwork bool) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	dialer := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+		// Control 在 DNS 解析出具体 IP、真正 connect 之前触发,校验的正是即将连接的那个 IP。
+		// 若像旧写法那样在 DialContext 里先按 host 解析校验、再把 host 交给 dialer 重新解析,
+		// 两次解析之间存在 DNS rebinding 的 TOCTOU 窗口(校验到公网 IP,连接时被换成 169.254/内网)。
+		// 在 Control 里锁定"校验的 IP == 连接的 IP",堵住该窗口。
+		Control: func(_, address string, _ syscall.RawConn) error {
+			if allowPrivateNetwork {
+				return nil
+			}
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return err
+			}
+			ip := net.ParseIP(host)
+			if ip == nil {
+				return fmt.Errorf("%w: relay dial address is not a literal IP: %s", ErrInvalidInput, host)
+			}
+			return validateRelayTargetIP(ip, host)
 		},
-		workerCh: make(chan struct{}, 2),
+	}
+	transport.DialContext = dialer.DialContext
+	return &http.Client{
+		Timeout:   45 * time.Second,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return errors.New("stopped after 10 redirects")
+			}
+			return validateRelayTargetURL(req.Context(), req.URL, allowPrivateNetwork)
+		},
 	}
 }
 
@@ -147,6 +201,9 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (TaskSummary, e
 	if err != nil {
 		return TaskSummary{}, err
 	}
+	if err := validateRelayBaseURL(ctx, baseURL); err != nil {
+		return TaskSummary{}, err
+	}
 	apiKey := strings.TrimSpace(req.APIKey)
 	if apiKey == "" {
 		return TaskSummary{}, fmt.Errorf("%w: api_key is required", ErrInvalidInput)
@@ -161,9 +218,15 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (TaskSummary, e
 
 	input := map[string]interface{}{
 		"base_url":      baseURL,
-		"api_key":       apiKey,
 		"platform_type": string(platform),
 		"key_hint":      keyHint,
+	}
+	// 完整 key 只加密落库(供「重测」复用),明文绝不入库(仓库红线:API key 须加密存储)。
+	// 加密失败不阻断检测——检测本身用内存里的 apiKey 参数;只是这条任务日后无法一键重测。
+	if enc, encErr := auth.EncryptAPIKey(apiKey, s.apiKeySecret); encErr == nil {
+		input["api_key_encrypted"] = enc
+	} else {
+		slog.Warn("relaydetect: encrypt api_key for retest failed; key not persisted", "error", encErr)
 	}
 	attrs := map[string]interface{}{
 		"base_url":         baseURL,
@@ -282,7 +345,7 @@ func (s *Service) Retest(ctx context.Context, id int, userID int) (TaskSummary, 
 	}
 	input := item.Input
 	attrs := item.Attributes
-	apiKey, _ := input["api_key"].(string)
+	apiKey := s.decryptRetestKey(input)
 	if strings.TrimSpace(apiKey) == "" {
 		return TaskSummary{}, fmt.Errorf("%w: cannot retest because original api_key is not stored", ErrInvalidInput)
 	}
@@ -369,24 +432,12 @@ func (s *Service) runTask(taskID int, baseURL string, apiKey string, platform Pl
 		slog.Warn("relay_detection_update_failed", "task_id", taskID, "error", err)
 	}
 
-	externalSuites := []externalSuiteResult{}
-	if err := s.updateProgress(ctx, taskID, "suite_fingerprint", 12, map[string]any{
-		"stage": "suite_fingerprint",
-	}); err != nil {
-		slog.Warn("relay_detection_update_failed", "task_id", taskID, "error", err)
-	}
-	externalSuites = append(externalSuites, s.runRelayAuthCheck(ctx, baseURL, apiKey, platform))
-	if s.finishIfCanceled(ctx, taskID) {
-		return
-	}
-
 	models, err := s.discoverModels(ctx, baseURL, apiKey, platform)
 	if err != nil {
 		if s.finishIfCanceled(ctx, taskID) {
 			return
 		}
 		report := buildFailureReport(baseURL, platform, startedAt, err)
-		mergeExternalSuiteResults(&report, externalSuites)
 		_ = s.failTask(ctx, taskID, report, err)
 		return
 	}
@@ -395,8 +446,17 @@ func (s *Service) runTask(taskID int, baseURL string, apiKey string, platform Pl
 		report := buildFailureReport(baseURL, platform, startedAt, errors.New("模型列表为空，无法确认号池真实模型范围"))
 		report.ModelCatalog.Route = models.route
 		report.ModelCatalog.HTTPStatus = models.statusCode
-		mergeExternalSuiteResults(&report, externalSuites)
 		_ = s.failTask(ctx, taskID, report, errors.New("模型列表为空"))
+		return
+	}
+
+	if err := s.updateProgress(ctx, taskID, "suite_fingerprint", 12, map[string]any{
+		"stage": "suite_fingerprint",
+	}); err != nil {
+		slog.Warn("relay_detection_update_failed", "task_id", taskID, "error", err)
+	}
+	externalSuites := []externalSuiteResult{s.runRelayAuthCheck(ctx, baseURL, apiKey, platform, models.models)}
+	if s.finishIfCanceled(ctx, taskID) {
 		return
 	}
 
@@ -543,7 +603,9 @@ func (s *Service) probeModel(ctx context.Context, baseURL, apiKey string, platfo
 	}
 	result.stream = s.probeStream(ctx, baseURL, apiKey, platform, target)
 	result.cache = s.probeCache(ctx, baseURL, apiKey, platform, target)
+	result.cacheTTL = s.probeCacheTTL(ctx, baseURL, apiKey, platform, target)
 	result.injection = s.probeInjection(ctx, baseURL, apiKey, platform, target, result)
+	result.quality = s.probeQuality(ctx, baseURL, apiKey, platform, target)
 	result.role = s.probeRole(ctx, baseURL, apiKey, platform, target)
 	result.thinking = s.probeThinking(ctx, baseURL, apiKey, platform, target)
 	result.tokenPrecision = s.probeTokenPrecision(ctx, baseURL, apiKey, platform, target)
@@ -557,7 +619,10 @@ func (s *Service) probeModel(ctx context.Context, baseURL, apiKey string, platfo
 }
 
 func (p probeResult) basicAvailable() bool {
-	return p.err == nil && p.statusCode >= 200 && p.statusCode < 300
+	if p.err != nil || p.statusCode < 200 || p.statusCode >= 300 {
+		return false
+	}
+	return !p.semanticChecked || p.semanticCompletion
 }
 
 func (s *Service) probeBasic(ctx context.Context, baseURL, apiKey string, platform PlatformType, target probeTarget, prompt string) probeResult {
@@ -911,17 +976,17 @@ func extractThinkingBlocks(raw []byte) []map[string]any {
 }
 
 func (s *Service) probeThinking(ctx context.Context, baseURL, apiKey string, platform PlatformType, target probeTarget) ThinkingProbe {
-	if target.protocol != "anthropic" {
-		return ThinkingProbe{Tested: false, Supported: false, Error: "thinking signature probe only applies to Anthropic Messages compatible routes"}
+	if !isClaudeTarget(target) {
+		return ThinkingProbe{Tested: false, Supported: false, Error: "not applicable: Claude thinking signature requires a Claude model on Anthropic Messages"}
 	}
 	payload := map[string]any{
 		"model":       target.model,
-		"max_tokens":  1024,
+		"max_tokens":  claudeThinkingMaxTokens,
 		"temperature": 1,
 		"stream":      true,
 		"thinking": map[string]any{
 			"type":          "enabled",
-			"budget_tokens": 512,
+			"budget_tokens": claudeThinkingBudgetTokens,
 		},
 		"messages": []map[string]string{
 			{"role": "user", "content": "Think briefly, then answer with exactly: OK"},
@@ -1132,7 +1197,13 @@ func hashThinkingBlocks(blocks []map[string]any) string {
 func (s *Service) probeTokenPrecision(ctx context.Context, baseURL, apiKey string, platform PlatformType, target probeTarget) TokenPrecision {
 	prompt := "Count this exact marker once: HOPBASE_TOKEN_PRECISION_MARKER."
 	result := s.probeBasic(ctx, baseURL, apiKey, platform, target, prompt)
-	probe := TokenPrecision{Tested: true, ExpectedInputTokens: estimatePromptTokens(prompt)}
+	probe := TokenPrecision{
+		Tested:              true,
+		ScoreEligible:       false,
+		BaselineSource:      "heuristic_prompt_estimate",
+		Confidence:          "low",
+		ExpectedInputTokens: estimatePromptTokens(prompt),
+	}
 	if result.err != nil {
 		probe.Error = result.err.Error()
 		return probe
@@ -1160,7 +1231,7 @@ func estimatePromptTokens(prompt string) int {
 }
 
 func (s *Service) probeAnthropicCountTokens(ctx context.Context, baseURL, apiKey string, platform PlatformType, target probeTarget) AnthropicCountTokens {
-	if target.protocol != "anthropic" {
+	if !isClaudeTarget(target) {
 		return AnthropicCountTokens{}
 	}
 	prompt := "Count this exact marker once: HOPBASE_TOKEN_PRECISION_MARKER."
@@ -1229,6 +1300,9 @@ type awsBedrockRuntimeBaselineConfig struct {
 }
 
 func (s *Service) probeRuntimeBaseline(ctx context.Context, platform PlatformType, target probeTarget, observed probeResult) RuntimeBaselineProbe {
+	// Bedrock relay aliases are often opaque (for example "relay-sonnet"). The
+	// configured model map is the provider truth for this probe, while GPT
+	// targets are already routed to the OpenAI protocol and remain excluded.
 	if platform != PlatformAWSBedrock || target.protocol != "anthropic" {
 		return RuntimeBaselineProbe{}
 	}
@@ -1434,7 +1508,7 @@ func (s *Service) doAWSBedrockRuntimeJSON(ctx context.Context, method, endpoint,
 }
 
 func (s *Service) probeOpenAINative(ctx context.Context, baseURL, apiKey string, platform PlatformType, target probeTarget) OpenAINativeProbe {
-	if target.protocol != "openai" {
+	if !isOpenAITarget(target) {
 		return OpenAINativeProbe{}
 	}
 	probe := OpenAINativeProbe{}
@@ -1660,23 +1734,24 @@ func (s *Service) probeSource(ctx context.Context, baseURL, apiKey string, platf
 }
 
 func expectedSourceForModel(model, protocol string) string {
-	lower := strings.ToLower(model)
-	switch {
-	case strings.Contains(lower, "claude") || protocol == "anthropic":
+	switch modelFamily(model) {
+	case "claude":
 		return "anthropic"
-	case strings.Contains(lower, "gpt") || strings.Contains(lower, "o1") || strings.Contains(lower, "o3") || strings.Contains(lower, "o4"):
+	case "gpt":
 		return "openai"
-	case strings.Contains(lower, "gemini"):
+	case "gemini":
 		return "google"
-	case strings.Contains(lower, "deepseek"):
+	case "deepseek":
 		return "deepseek"
-	case strings.Contains(lower, "qwen"):
+	case "qwen":
 		return "qwen"
-	case strings.Contains(lower, "llama"):
+	case "llama":
 		return "meta"
-	default:
-		return ""
 	}
+	if protocol == "anthropic" {
+		return "anthropic"
+	}
+	return ""
 }
 
 func classifyClaimedSource(text string) string {
@@ -1704,6 +1779,9 @@ func (s *Service) probeCache(ctx context.Context, baseURL, apiKey string, platfo
 }
 
 func (s *Service) probeCacheWithOptions(ctx context.Context, baseURL, apiKey string, platform PlatformType, target probeTarget, opts probeRequestOptions) CacheProbe {
+	if !isCacheApplicableTarget(target) {
+		return CacheProbe{Applicable: false, Protocol: target.protocol, Error: "not applicable: no provider-specific cache contract is registered for this model family"}
+	}
 	const rounds = 4
 	prefix := buildCachePrefix()
 	results := make([]CacheRound, 0, rounds)
@@ -1714,6 +1792,7 @@ func (s *Service) probeCacheWithOptions(ctx context.Context, baseURL, apiKey str
 			Round:               i,
 			OK:                  r.err == nil && r.statusCode >= 200 && r.statusCode < 300,
 			HTTPStatus:          r.statusCode,
+			HasCacheFields:      r.cacheFieldsPresent,
 			InputTokens:         r.inputTokens,
 			CacheCreationTokens: r.cacheCreate,
 			CacheReadTokens:     r.cacheRead,
@@ -1729,7 +1808,7 @@ func (s *Service) probeCacheWithOptions(ctx context.Context, baseURL, apiKey str
 			sleepWithContext(ctx, 500*time.Millisecond)
 		}
 	}
-	return analyzeCacheProbe(results)
+	return analyzeCacheProbeForProtocol(target.protocol, results)
 }
 
 func cacheProbePayload(target probeTarget, prefix string) map[string]any {
@@ -1766,7 +1845,16 @@ func buildCachePrefix() string {
 }
 
 func analyzeCacheProbe(results []CacheRound) CacheProbe {
-	probe := CacheProbe{Tested: true, Rounds: len(results), RoundResults: results, FirstReadRound: -1}
+	return analyzeCacheProbeForProtocol("anthropic", results)
+}
+
+func analyzeCacheProbeForProtocol(protocol string, results []CacheRound) CacheProbe {
+	probe := CacheProbe{Tested: true, Applicable: true, Protocol: protocol, Rounds: len(results), RoundResults: results, FirstReadRound: -1}
+	if protocol == "anthropic" {
+		probe.CostSemantics = "anthropic_cache_create_plus_read"
+	} else {
+		probe.CostSemantics = "openai_cached_tokens_are_input_subset"
+	}
 	okRows := 0
 	warmRows := 0
 	warmHits := 0
@@ -1778,14 +1866,16 @@ func analyzeCacheProbe(results []CacheRound) CacheProbe {
 			continue
 		}
 		okRows++
-		if row.CacheCreationTokens > 0 || row.CacheReadTokens > 0 {
+		if row.HasCacheFields || row.CacheCreationTokens > 0 || row.CacheReadTokens > 0 {
 			probe.HasCacheFields = true
 		}
-		actual += float64(row.InputTokens) + float64(row.CacheCreationTokens)*1.25 + float64(row.CacheReadTokens)*0.1
-		if row.Round == 0 {
-			ideal += float64(row.InputTokens) + float64(maxInt(row.CacheCreationTokens, row.InputTokens))*1.25
-		} else {
-			ideal += float64(maxInt(row.CacheReadTokens, row.CacheCreationTokens))*0.1 + float64(row.InputTokens)
+		if protocol == "anthropic" {
+			actual += float64(row.InputTokens) + float64(row.CacheCreationTokens)*1.25 + float64(row.CacheReadTokens)*0.1
+			if row.Round == 0 {
+				ideal += float64(row.InputTokens) + float64(maxInt(row.CacheCreationTokens, row.InputTokens))*1.25
+			} else {
+				ideal += float64(maxInt(row.CacheReadTokens, row.CacheCreationTokens))*0.1 + float64(row.InputTokens)
+			}
 		}
 		if row.Round > 0 {
 			warmRows++
@@ -1808,11 +1898,92 @@ func analyzeCacheProbe(results []CacheRound) CacheProbe {
 	}
 	probe.CacheEngaged = warmHits > 0
 	probe.CollapseRounds = collapsed
-	probe.OK = okRows == len(results) && probe.HasCacheFields && probe.WarmHitRate >= 0.95 && len(collapsed) == 0
+	minimumWarmHitRate := 0.6
+	if protocol == "anthropic" {
+		minimumWarmHitRate = 0.95
+	}
+	probe.OK = okRows == len(results) && probe.HasCacheFields && probe.WarmHitRate >= minimumWarmHitRate && len(collapsed) == 0
 	if okRows == 0 {
 		probe.Error = "all cache rounds failed"
 	}
 	return probe
+}
+
+func (s *Service) probeCacheTTL(ctx context.Context, baseURL, apiKey string, platform PlatformType, target probeTarget) CacheTTLProbe {
+	if !isClaudeTarget(target) {
+		return CacheTTLProbe{Applicable: false, Error: "not applicable: explicit 5m/1h cache TTL is an Anthropic Claude capability"}
+	}
+	type ttlCase struct {
+		name     string
+		ttl      string
+		expected string
+	}
+	cases := []ttlCase{
+		{name: "implicit_default", expected: "5m_bucket"},
+		{name: "explicit_5m", ttl: "5m", expected: "5m_bucket"},
+		{name: "explicit_1h", ttl: "1h", expected: "1h_bucket"},
+		{name: "invalid_5h", ttl: "5h", expected: "4xx_rejection"},
+	}
+	probe := CacheTTLProbe{Tested: true, Applicable: true, Configurations: make([]CacheTTLResult, 0, len(cases))}
+	for _, item := range cases {
+		cacheControl := map[string]any{"type": "ephemeral"}
+		if item.ttl != "" {
+			cacheControl["ttl"] = item.ttl
+		}
+		payload := map[string]any{
+			"model":       target.model,
+			"max_tokens":  8,
+			"temperature": 0,
+			"system": []map[string]any{{
+				"type":          "text",
+				"text":          buildCachePrefix() + "\nttl-case:" + item.name,
+				"cache_control": cacheControl,
+			}},
+			"messages": []map[string]string{{"role": "user", "content": "Reply with exactly: OK"}},
+		}
+		result := s.probeWithPayloadOptions(ctx, baseURL, apiKey, platform, target, payload, probeRequestOptions{headers: map[string]string{
+			"anthropic-beta": "prompt-caching-2024-07-31,extended-cache-ttl-2025-04-11",
+		}})
+		row := CacheTTLResult{
+			Name:                  item.name,
+			RequestedTTL:          item.ttl,
+			Expected:              item.expected,
+			HTTPStatus:            result.statusCode,
+			CacheCreation5MTokens: result.cacheCreate5M,
+			CacheCreation1HTokens: result.cacheCreate1H,
+			CacheReadTokens:       result.cacheRead,
+		}
+		if result.err != nil {
+			row.Error = result.err.Error()
+		}
+		switch item.expected {
+		case "5m_bucket":
+			row.OK = result.err == nil && result.statusCode >= 200 && result.statusCode < 300 &&
+				(result.cacheCreate5M > 0 || (result.cacheCreate > 0 && result.cacheCreate1H == 0))
+		case "1h_bucket":
+			row.OK = result.err == nil && result.statusCode >= 200 && result.statusCode < 300 && result.cacheCreate1H > 0
+		case "4xx_rejection":
+			row.OK = result.err == nil && result.statusCode >= 400 && result.statusCode < 500
+		}
+		probe.Configurations = append(probe.Configurations, row)
+	}
+	probe.Supports5M = ttlConfigurationOK(probe.Configurations, "implicit_default") && ttlConfigurationOK(probe.Configurations, "explicit_5m")
+	probe.Supports1H = ttlConfigurationOK(probe.Configurations, "explicit_1h")
+	probe.RejectsInvalid = ttlConfigurationOK(probe.Configurations, "invalid_5h")
+	probe.OK = probe.Supports5M && probe.Supports1H && probe.RejectsInvalid
+	if !probe.OK {
+		probe.Error = "cache TTL semantics were not preserved for every required configuration"
+	}
+	return probe
+}
+
+func ttlConfigurationOK(configurations []CacheTTLResult, name string) bool {
+	for _, item := range configurations {
+		if item.Name == name {
+			return item.OK
+		}
+	}
+	return false
 }
 
 func (s *Service) probeInjection(ctx context.Context, baseURL, apiKey string, platform PlatformType, target probeTarget, basic probeResult) InjectionProbe {
@@ -1857,6 +2028,117 @@ func (s *Service) probeRole(ctx context.Context, baseURL, apiKey string, platfor
 	probe.IdentityConflict = sample.OK && !strings.Contains(lower, "doctor") && !strings.Contains(sample.Text, "医生")
 	probe.OK = sample.OK && !probe.IdentityConflict
 	return probe
+}
+
+func (s *Service) probeQuality(ctx context.Context, baseURL, apiKey string, platform PlatformType, target probeTarget) QualityProbe {
+	probe := QualityProbe{Tested: true, Applicable: true, Cases: make([]QualityCase, 0, 4)}
+
+	jsonResult := s.probeWithPayload(ctx, baseURL, apiKey, platform, target, map[string]any{
+		"model":       target.model,
+		"max_tokens":  64,
+		"temperature": 0,
+		"messages": []map[string]string{{
+			"role":    "user",
+			"content": `Return only this JSON object with no markdown: {"status":"ok","nonce":"hb-json-7319"}`,
+		}},
+	})
+	jsonOK := false
+	var jsonValue map[string]any
+	if json.Unmarshal([]byte(strings.TrimSpace(jsonResult.text)), &jsonValue) == nil {
+		jsonOK = stringFromAny(jsonValue["status"]) == "ok" && stringFromAny(jsonValue["nonce"]) == "hb-json-7319"
+	}
+	probe.Cases = append(probe.Cases, qualityCase("strict_json", "严格 JSON", jsonResult, jsonOK))
+
+	utfResult := s.probeBasic(ctx, baseURL, apiKey, platform, target, "只回答以下六个汉字，不要加标点：中继检测正常")
+	probe.Cases = append(probe.Cases, qualityCase("utf8_chinese", "中文 UTF-8", utfResult, strings.TrimSpace(utfResult.text) == "中继检测正常"))
+
+	memoryPayload := map[string]any{
+		"model":       target.model,
+		"max_tokens":  24,
+		"temperature": 0,
+		"messages": []map[string]any{
+			{"role": "user", "content": "Remember this nonce exactly: HB-MEM-4821. Reply ACK."},
+			{"role": "assistant", "content": "ACK"},
+			{"role": "user", "content": "Reply with only the nonce I asked you to remember."},
+		},
+	}
+	memoryResult := s.probeWithPayload(ctx, baseURL, apiKey, platform, target, memoryPayload)
+	probe.Cases = append(probe.Cases, qualityCase("multi_turn_memory", "多轮记忆", memoryResult, strings.TrimSpace(memoryResult.text) == "HB-MEM-4821"))
+
+	toolResult := s.probeWithPayload(ctx, baseURL, apiKey, platform, target, qualityToolPayload(target))
+	probe.Cases = append(probe.Cases, qualityCase("forced_tool_call", "强制工具调用", toolResult, toolResult.hasToolUse && toolResult.toolName == "relay_quality_probe"))
+
+	for _, item := range probe.Cases {
+		if item.OK {
+			probe.Passed++
+		}
+	}
+	probe.Total = len(probe.Cases)
+	if probe.Total > 0 {
+		probe.SuccessRate = float64(probe.Passed) / float64(probe.Total)
+	}
+	probe.OK = probe.Total > 0 && probe.SuccessRate >= 0.75
+	if !probe.OK {
+		probe.Error = fmt.Sprintf("agent quality smoke passed %d/%d cases", probe.Passed, probe.Total)
+	}
+	return probe
+}
+
+func qualityCase(id, title string, result probeResult, semanticOK bool) QualityCase {
+	item := QualityCase{
+		ID:         id,
+		Title:      title,
+		OK:         result.err == nil && result.statusCode >= 200 && result.statusCode < 300 && semanticOK,
+		HTTPStatus: result.statusCode,
+		Output:     truncateText(result.text, 240),
+	}
+	if result.err != nil {
+		item.Error = result.err.Error()
+	} else if result.statusCode < 200 || result.statusCode >= 300 {
+		item.Error = firstNonEmpty(result.text, fmt.Sprintf("HTTP %d", result.statusCode))
+	} else if !semanticOK {
+		item.Error = "response did not satisfy the semantic assertion"
+	}
+	return item
+}
+
+func qualityToolPayload(target probeTarget) map[string]any {
+	if target.protocol == "anthropic" {
+		return map[string]any{
+			"model":      target.model,
+			"max_tokens": 64,
+			"tools": []map[string]any{{
+				"name":        "relay_quality_probe",
+				"description": "Report relay quality probe status.",
+				"input_schema": map[string]any{
+					"type":       "object",
+					"properties": map[string]any{"status": map[string]any{"type": "string", "enum": []string{"ok"}}},
+					"required":   []string{"status"},
+				},
+			}},
+			"tool_choice": map[string]any{"type": "tool", "name": "relay_quality_probe"},
+			"messages":    []map[string]string{{"role": "user", "content": "Call relay_quality_probe with status ok."}},
+		}
+	}
+	return map[string]any{
+		"model":      target.model,
+		"max_tokens": 64,
+		"tools": []map[string]any{{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "relay_quality_probe",
+				"description": "Report relay quality probe status.",
+				"parameters": map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"properties":           map[string]any{"status": map[string]any{"type": "string", "enum": []string{"ok"}}},
+					"required":             []string{"status"},
+				},
+			},
+		}},
+		"tool_choice": map[string]any{"type": "function", "function": map[string]any{"name": "relay_quality_probe"}},
+		"messages":    []map[string]string{{"role": "user", "content": "Call relay_quality_probe with status ok."}},
+	}
 }
 
 func (s *Service) promptProbeSample(ctx context.Context, baseURL, apiKey string, platform PlatformType, target probeTarget, name string, systemPrompt *string, prompt string) PromptProbeSample {
@@ -2008,7 +2290,7 @@ func (s *Service) probeClientProfiles(ctx context.Context, baseURL, apiKey strin
 }
 
 func clientProfilesForTarget(target probeTarget) []ClientProfile {
-	if target.protocol == "anthropic" {
+	if isClaudeTarget(target) {
 		return []ClientProfile{
 			{
 				ID:       "plain_sdk_cache",
@@ -2042,7 +2324,7 @@ func clientProfilesForTarget(target probeTarget) []ClientProfile {
 			},
 		}
 	}
-	if target.protocol == "openai" {
+	if isOpenAITarget(target) {
 		return []ClientProfile{
 			{
 				ID:       "codex_interaction",
@@ -2122,12 +2404,12 @@ func (s *Service) probeClientCache(ctx context.Context, baseURL, apiKey string, 
 func (s *Service) probeClientThinking(ctx context.Context, baseURL, apiKey string, platform PlatformType, target probeTarget, profile ClientProfile) ClientProfileProbe {
 	payload := map[string]any{
 		"model":       target.model,
-		"max_tokens":  1024,
+		"max_tokens":  claudeThinkingMaxTokens,
 		"temperature": 1,
 		"stream":      true,
 		"thinking": map[string]any{
 			"type":          "enabled",
-			"budget_tokens": 512,
+			"budget_tokens": claudeThinkingBudgetTokens,
 		},
 		"messages": []map[string]string{
 			{"role": "user", "content": "Claude Code thinking probe. Think briefly, then answer exactly: OK"},
@@ -2768,7 +3050,7 @@ func (s *Service) finishIfCanceled(ctx context.Context, taskID int) bool {
 	return true
 }
 
-func (s *Service) runRelayAuthCheck(ctx context.Context, baseURL, apiKey string, platform PlatformType) externalSuiteResult {
+func (s *Service) runRelayAuthCheck(ctx context.Context, baseURL, apiKey string, platform PlatformType, models []string) externalSuiteResult {
 	start := time.Now()
 	script, ok := findRelaySuiteScript("relay-auth-check", "relay_auth_check.py")
 	if !ok {
@@ -2782,12 +3064,14 @@ func (s *Service) runRelayAuthCheck(ctx context.Context, baseURL, apiKey string,
 	suiteCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 
-	mode := "auto"
-	if platform == PlatformOpenAI {
-		mode = "openai"
-	}
-	if platform == PlatformAnthropic || platform == PlatformAWSBedrock || platform == PlatformAWSPlatform {
-		mode = "anthropic"
+	mode := relayAuthCheckMode(platform, models)
+	if mode == "" {
+		return externalSuiteResult{
+			Name:       "relay-auth-check",
+			Status:     "skipped",
+			DurationMS: time.Since(start).Milliseconds(),
+			Error:      "no registered OpenAI or Anthropic provider profile for discovered model families",
+		}
 	}
 	cmd := exec.CommandContext(
 		suiteCtx,
@@ -2827,6 +3111,33 @@ func (s *Service) runRelayAuthCheck(ctx context.Context, baseURL, apiKey string,
 	return result
 }
 
+func relayAuthCheckMode(platform PlatformType, models []string) string {
+	hasOpenAI := false
+	hasAnthropic := false
+	for _, model := range models {
+		switch modelFamily(model) {
+		case "gpt":
+			hasOpenAI = true
+		case "claude":
+			hasAnthropic = true
+		}
+	}
+	switch {
+	case hasOpenAI && !hasAnthropic:
+		return "openai"
+	case hasAnthropic && !hasOpenAI:
+		return "anthropic"
+	case hasOpenAI && hasAnthropic:
+		return "auto"
+	case platform == PlatformOpenAI:
+		return "openai"
+	case isClaudeLikePlatform(platform):
+		return "anthropic"
+	default:
+		return ""
+	}
+}
+
 func findRelaySuiteScript(parts ...string) (string, bool) {
 	candidates := []string{}
 	if root := strings.TrimSpace(os.Getenv("RELAY_DETECTION_SUITE_DIR")); root != "" {
@@ -2864,6 +3175,9 @@ func normalizeBaseURL(raw string) (string, error) {
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return "", fmt.Errorf("%w: base_url only supports http/https", ErrInvalidInput)
 	}
+	if err := validateRelayTargetHostLiteral(parsed.Hostname()); err != nil {
+		return "", err
+	}
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	path := strings.TrimRight(parsed.Path, "/")
@@ -2875,6 +3189,76 @@ func normalizeBaseURL(raw string) (string, error) {
 	}
 	parsed.Path = strings.TrimRight(path, "/")
 	return strings.TrimRight(parsed.String(), "/"), nil
+}
+
+func validateRelayBaseURL(ctx context.Context, baseURL string) error {
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return fmt.Errorf("%w: base_url must be absolute http(s) URL", ErrInvalidInput)
+	}
+	validateCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return validateRelayTargetURL(validateCtx, parsed, false)
+}
+
+func validateRelayTargetURL(ctx context.Context, parsed *url.URL, allowPrivateNetwork bool) error {
+	if parsed == nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("%w: relay detection target must be absolute http(s) URL", ErrInvalidInput)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("%w: relay detection target only supports http/https", ErrInvalidInput)
+	}
+	return validateRelayTargetHost(ctx, parsed.Hostname(), allowPrivateNetwork)
+}
+
+func validateRelayTargetHost(ctx context.Context, host string, allowPrivateNetwork bool) error {
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if host == "" {
+		return fmt.Errorf("%w: base_url host is required", ErrInvalidInput)
+	}
+	if allowPrivateNetwork {
+		return nil
+	}
+	if err := validateRelayTargetHostLiteral(host); err != nil {
+		return err
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return validateRelayTargetIP(ip, host)
+	}
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return fmt.Errorf("%w: base_url host lookup failed: %v", ErrInvalidInput, err)
+	}
+	if len(addrs) == 0 {
+		return fmt.Errorf("%w: base_url host has no DNS addresses", ErrInvalidInput)
+	}
+	for _, addr := range addrs {
+		if err := validateRelayTargetIP(addr.IP, host); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateRelayTargetHostLiteral(host string) error {
+	normalized := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if normalized == "localhost" || strings.HasSuffix(normalized, ".localhost") {
+		return fmt.Errorf("%w: base_url must not target localhost", ErrInvalidInput)
+	}
+	if ip := net.ParseIP(normalized); ip != nil {
+		return validateRelayTargetIP(ip, host)
+	}
+	return nil
+}
+
+func validateRelayTargetIP(ip net.IP, host string) error {
+	if ip == nil {
+		return fmt.Errorf("%w: base_url host resolved to an invalid IP", ErrInvalidInput)
+	}
+	if ip.IsUnspecified() || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() {
+		return fmt.Errorf("%w: base_url must not resolve to private or local address %s", ErrInvalidInput, host)
+	}
+	return nil
 }
 
 func normalizePlatform(platform PlatformType) PlatformType {
@@ -2905,6 +3289,18 @@ func buildKeyHint(key string) string {
 		return "***"
 	}
 	return key[:4] + "..." + key[len(key)-4:]
+}
+
+// decryptRetestKey 取回「重测」所需的上游 key:优先解密加密字段;不再写明文,
+// 但仍兼容读取历史可能残留的明文 api_key(本特性上线前不会有这类数据)。
+func (s *Service) decryptRetestKey(input map[string]interface{}) string {
+	if enc, _ := input["api_key_encrypted"].(string); strings.TrimSpace(enc) != "" {
+		if plain, err := auth.DecryptAPIKey(enc, s.apiKeySecret); err == nil {
+			return plain
+		}
+	}
+	plain, _ := input["api_key"].(string)
+	return plain
 }
 
 func joinURL(baseURL, route string) string {
@@ -2981,13 +3377,24 @@ func parseModelList(body []byte) ([]string, map[string]any, error) {
 func buildProbeTargets(models []string, platform PlatformType) []probeTarget {
 	targets := make([]probeTarget, 0, len(models))
 	for _, model := range models {
-		protocol := "openai"
-		if platform == PlatformAnthropic || platform == PlatformAWSBedrock || platform == PlatformAWSPlatform || platform == PlatformKiro || platform == PlatformWindsurf || platform == PlatformClaudeCode || looksAnthropicModel(model) {
-			protocol = "anthropic"
-		}
+		protocol := protocolForModel(model, platform)
 		targets = append(targets, probeTarget{model: model, protocol: protocol})
 	}
 	return targets
+}
+
+func protocolForModel(model string, platform PlatformType) string {
+	family := modelFamily(model)
+	if family == "claude" {
+		return "anthropic"
+	}
+	if family != "other" {
+		return "openai"
+	}
+	if isClaudeLikePlatform(platform) {
+		return "anthropic"
+	}
+	return "openai"
 }
 
 func looksAnthropicModel(model string) bool {
@@ -2995,7 +3402,20 @@ func looksAnthropicModel(model string) bool {
 	return strings.Contains(m, "claude") || strings.Contains(m, "anthropic")
 }
 
+func isClaudeTarget(target probeTarget) bool {
+	return target.protocol == "anthropic" && modelFamily(target.model) == "claude"
+}
+
+func isOpenAITarget(target probeTarget) bool {
+	return target.protocol == "openai" && modelFamily(target.model) == "gpt"
+}
+
+func isCacheApplicableTarget(target probeTarget) bool {
+	return isClaudeTarget(target) || isOpenAITarget(target)
+}
+
 func parseProbeBody(body []byte, protocol string, result *probeResult) {
+	result.semanticChecked = true
 	var data map[string]any
 	if err := json.Unmarshal(body, &data); err != nil {
 		result.err = err
@@ -3013,6 +3433,8 @@ func parseProbeBody(body []byte, protocol string, result *probeResult) {
 		result.outputTokens = intNumber(firstValue(usage, "output_tokens", "completion_tokens"))
 		result.cacheCreate = intNumber(firstValue(usage, "cache_creation_input_tokens", "cache_creation_tokens"))
 		result.cacheRead = intNumber(firstValue(usage, "cache_read_input_tokens", "cache_read_tokens"))
+		result.cacheCreate5M, result.cacheCreate1H = cacheCreationBuckets(usage)
+		result.cacheFieldsPresent = hasAnyKey(usage, "cache_creation_input_tokens", "cache_creation_tokens", "cache_read_input_tokens", "cache_read_tokens", "cache_creation") || hasCachedTokensField(usage)
 		if result.cacheRead == 0 {
 			if cached := cachedTokensFromUsageDetails(usage); cached > 0 {
 				result.cacheRead = cached
@@ -3020,17 +3442,49 @@ func parseProbeBody(body []byte, protocol string, result *probeResult) {
 			}
 		}
 		reportedInput := result.promptUsageTokens()
-		if reportedInput > 80 {
-			result.hiddenInjection = reportedInput - 80
+		// The generic response parser sees prompts of different shapes. Keep a
+		// conservative allowance here; dedicated token probes own exact baselines.
+		const conservativeInputAllowance = 80
+		if reportedInput > conservativeInputAllowance+12 {
+			result.hiddenInjection = reportedInput - conservativeInputAllowance
 		}
 	}
 	result.text = extractResponseText(data, protocol)
-	result.hasToolUse = hasAnthropicToolUse(data)
+	result.semanticCompletion = hasSemanticCompletion(data, protocol)
+	result.toolName = anthropicToolUseName(data)
+	result.hasToolUse = result.toolName != ""
+	if protocol == "openai" {
+		name, args := parseOpenAIToolCall(body)
+		result.toolName = name
+		result.hasToolUse = name != "" && len(args) > 0
+	}
 	if protocol == "anthropic" && result.responseID == "" {
 		if id, ok := data["id"].(string); ok {
 			result.responseID = id
 		}
 	}
+}
+
+func hasSemanticCompletion(data map[string]any, protocol string) bool {
+	if protocol == "anthropic" {
+		content, _ := data["content"].([]any)
+		for _, item := range content {
+			block, _ := item.(map[string]any)
+			if strings.TrimSpace(stringFromAny(block["text"])) != "" {
+				return true
+			}
+		}
+		return false
+	}
+	choices, _ := data["choices"].([]any)
+	for _, item := range choices {
+		choice, _ := item.(map[string]any)
+		message, _ := choice["message"].(map[string]any)
+		if strings.TrimSpace(stringFromAny(message["content"])) != "" || strings.TrimSpace(stringFromAny(choice["text"])) != "" {
+			return true
+		}
+	}
+	return strings.TrimSpace(stringFromAny(data["output_text"])) != ""
 }
 
 func (r probeResult) promptUsageTokens() int {
@@ -3054,7 +3508,39 @@ func cachedTokensFromUsageDetails(usage map[string]any) int {
 	return 0
 }
 
-func hasAnthropicToolUse(data map[string]any) bool {
+func hasCachedTokensField(usage map[string]any) bool {
+	for _, key := range []string{"prompt_tokens_details", "input_tokens_details"} {
+		detail, _ := usage[key].(map[string]any)
+		if detail == nil {
+			continue
+		}
+		if _, ok := detail["cached_tokens"]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func cacheCreationBuckets(usage map[string]any) (int, int) {
+	fiveMinute := intNumber(firstValue(usage, "cache_creation_5m_input_tokens", "cache_creation_5_minute_input_tokens", "claude_cache_creation_5_m_tokens"))
+	oneHour := intNumber(firstValue(usage, "cache_creation_1h_input_tokens", "cache_creation_1_hour_input_tokens", "claude_cache_creation_1_h_tokens"))
+	if detail, _ := usage["cache_creation"].(map[string]any); detail != nil {
+		fiveMinute = maxInt(fiveMinute, intNumber(firstValue(detail, "ephemeral_5m_input_tokens", "5m_input_tokens")))
+		oneHour = maxInt(oneHour, intNumber(firstValue(detail, "ephemeral_1h_input_tokens", "1h_input_tokens")))
+	}
+	return fiveMinute, oneHour
+}
+
+func hasAnyKey(values map[string]any, keys ...string) bool {
+	for _, key := range keys {
+		if _, ok := values[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func anthropicToolUseName(data map[string]any) string {
 	content, _ := data["content"].([]any)
 	for _, item := range content {
 		block, ok := item.(map[string]any)
@@ -3062,10 +3548,10 @@ func hasAnthropicToolUse(data map[string]any) bool {
 			continue
 		}
 		if block["type"] == "tool_use" {
-			return true
+			return stringFromAny(block["name"])
 		}
 	}
-	return false
+	return ""
 }
 
 func extractResponseText(data map[string]any, protocol string) string {
@@ -3172,7 +3658,10 @@ func buildModelResult(target probeTarget, probe probeResult) ModelResult {
 	if available && modelMatch.Kind == "not_returned" {
 		risks = append(risks, "model_identity_unverified")
 	}
-	if available && probe.hiddenInjection > 0 {
+	// Without a trusted provider-side token baseline, small deltas are only a
+	// low-confidence observation. Reserve scoring risk for very large overhead;
+	// prompt disclosure/canary evidence is handled separately below.
+	if available && probe.hiddenInjection > 300 {
 		risks = append(risks, "hidden_injection_tokens")
 	}
 	if available && probe.inputTokens == 0 && probe.outputTokens == 0 {
@@ -3181,9 +3670,9 @@ func buildModelResult(target probeTarget, probe probeResult) ModelResult {
 	if probe.stream.Tested && !probe.stream.OK {
 		risks = append(risks, "stream_shape_mismatch")
 	}
-	if available && !probe.cache.Tested {
+	if available && isCacheApplicableTarget(target) && !probe.cache.Tested {
 		risks = append(risks, "cache_not_tested")
-	} else if probe.cache.Tested && !probe.cache.OK {
+	} else if isCacheApplicableTarget(target) && probe.cache.Tested && !probe.cache.OK {
 		if !probe.cache.HasCacheFields {
 			risks = append(risks, "cache_unobservable")
 		} else if probe.cache.WarmHitRate < 0.6 {
@@ -3191,6 +3680,9 @@ func buildModelResult(target probeTarget, probe probeResult) ModelResult {
 		} else {
 			risks = append(risks, "cache_hit_rate_partial")
 		}
+	}
+	if probe.cacheTTL.Applicable && probe.cacheTTL.Tested && !probe.cacheTTL.OK {
+		risks = append(risks, "cache_ttl_control_failed")
 	}
 	if probe.injection.Tested && !probe.injection.OK {
 		risks = append(risks, "prompt_injection_signal")
@@ -3219,8 +3711,11 @@ func buildModelResult(target probeTarget, probe probeResult) ModelResult {
 			}
 		}
 	}
-	if probe.tokenPrecision.Tested && !probe.tokenPrecision.OK {
+	if probe.tokenPrecision.Tested && (probe.tokenPrecision.ScoreEligible || probe.tokenPrecision.BaselineSource == "") && !probe.tokenPrecision.OK {
 		risks = append(risks, "token_precision_mismatch")
+	}
+	if probe.quality.Tested && probe.quality.Applicable && !probe.quality.OK {
+		risks = append(risks, "agent_quality_failed")
 	}
 	if probe.runtimeBaseline.Tested && probe.runtimeBaseline.Configured && !probe.runtimeBaseline.OK {
 		risks = append(risks, "aws_bedrock_runtime_baseline_mismatch")
@@ -3281,12 +3776,7 @@ func buildModelResult(target probeTarget, probe probeResult) ModelResult {
 	if probe.err != nil {
 		errMsg = probe.err.Error()
 	}
-	prefix := ""
-	if probe.responseID != "" {
-		if idx := strings.Index(probe.responseID, "-"); idx > 0 {
-			prefix = probe.responseID[:idx]
-		}
-	}
+	prefix := classifyResponseIDPrefix(probe.responseID)
 	return ModelResult{
 		Model:                 target.model,
 		Family:                family,
@@ -3310,7 +3800,9 @@ func buildModelResult(target probeTarget, probe probeResult) ModelResult {
 		LatencyMS:             probe.latency.Milliseconds(),
 		Stream:                probe.stream,
 		Cache:                 probe.cache,
+		CacheTTL:              probe.cacheTTL,
 		Injection:             probe.injection,
+		Quality:               probe.quality,
 		RoleProbe:             probe.role,
 		Thinking:              probe.thinking,
 		TokenPrecision:        probe.tokenPrecision,
@@ -3327,20 +3819,44 @@ func buildModelResult(target probeTarget, probe probeResult) ModelResult {
 	}
 }
 
+func classifyResponseIDPrefix(id string) string {
+	lower := strings.ToLower(strings.TrimSpace(id))
+	for _, item := range []struct {
+		prefix string
+		label  string
+	}{
+		{prefix: "msg_bdrk_", label: "msg_bdrk"},
+		{prefix: "chatcmpl_", label: "chatcmpl"},
+		{prefix: "chatcmpl-", label: "chatcmpl"},
+		{prefix: "resp_", label: "resp"},
+		{prefix: "msg_", label: "msg"},
+		{prefix: "cmpl_", label: "cmpl"},
+		{prefix: "cmpl-", label: "cmpl"},
+	} {
+		if strings.HasPrefix(lower, item.prefix) {
+			return item.label
+		}
+	}
+	return ""
+}
+
 func modelGrade(available bool, risks []string, modelMatch modelMatchResult, probe probeResult) string {
 	if !available {
 		return "F"
+	}
+	if (probe.protocol == "anthropic" && containsString(risks, "cache_hit_rate_low")) ||
+		(probe.quality.Tested && probe.quality.SuccessRate < 0.5) {
+		return "D"
 	}
 	if containsAnyRisk(risks,
 		"model_mismatch",
 		"prompt_injection_signal",
 		"hidden_injection_tokens",
-		"cache_hit_rate_low",
+		"cache_ttl_control_failed",
 		"thinking_signature_mismatch",
 		"stability_low_success_rate",
 		"stability_multi_window_persistent_failure",
 		"concurrency_low_success_rate",
-		"anthropic_count_tokens_failed",
 		"aws_bedrock_runtime_baseline_mismatch",
 		"plain_sdk_cache_failed",
 		"claude_code_cache_failed",
@@ -3354,6 +3870,7 @@ func modelGrade(available bool, risks []string, modelMatch modelMatchResult, pro
 		"cache_not_tested",
 		"cache_unobservable",
 		"cache_hit_rate_partial",
+		"cache_hit_rate_low",
 		"stream_shape_mismatch",
 		"missing_usage",
 		"openai_responses_api_failed",
@@ -3364,9 +3881,11 @@ func modelGrade(available bool, risks []string, modelMatch modelMatchResult, pro
 		"role_probe_identity_conflict",
 		"role_probe_failed",
 		"token_precision_mismatch",
+		"anthropic_count_tokens_failed",
 		"source_identity_mismatch",
 		"claude_code_interaction_failed",
 		"codex_interaction_failed",
+		"agent_quality_failed",
 	) {
 		return "C"
 	}
@@ -3389,7 +3908,7 @@ func coreProbePassed(modelMatch modelMatchResult, probe probeResult) bool {
 	if !probe.stream.Tested || !probe.stream.OK {
 		return false
 	}
-	if !probe.cache.Tested || !probe.cache.OK {
+	if (probe.cache.Applicable || probe.cache.Tested) && (!probe.cache.Tested || !probe.cache.OK) {
 		return false
 	}
 	if !probe.injection.Tested || !probe.injection.OK {
@@ -3401,10 +3920,13 @@ func coreProbePassed(modelMatch modelMatchResult, probe probeResult) bool {
 	if probe.thinking.Tested && (!probe.thinking.Supported || !probe.thinking.OK) {
 		return false
 	}
-	if probe.tokenPrecision.Tested && !probe.tokenPrecision.OK {
+	if probe.tokenPrecision.Tested && probe.tokenPrecision.ScoreEligible && !probe.tokenPrecision.OK {
 		return false
 	}
 	if probe.source.Tested && !probe.source.OK {
+		return false
+	}
+	if probe.quality.Tested && !probe.quality.OK {
 		return false
 	}
 	if !probe.stability.Tested || !probe.stability.OK {
@@ -3496,23 +4018,40 @@ func isDateVersionToken(part string) bool {
 }
 
 func modelFamily(model string) string {
-	m := strings.ToLower(model)
+	m := normalizeModelName(model)
 	switch {
-	case strings.Contains(m, "claude"):
+	case strings.Contains(m, "claude") || strings.Contains(m, "anthropic"):
 		return "claude"
-	case strings.Contains(m, "gpt"):
+	case strings.Contains(m, "gpt"), strings.Contains(m, "chatgpt"), strings.Contains(m, "codex"), isOpenAIReasoningModelName(m):
 		return "gpt"
 	case strings.Contains(m, "gemini"):
 		return "gemini"
+	case strings.Contains(m, "glm"):
+		return "glm"
 	case strings.Contains(m, "deepseek"):
 		return "deepseek"
 	case strings.Contains(m, "qwen"):
 		return "qwen"
 	case strings.Contains(m, "llama"):
 		return "llama"
+	case strings.Contains(m, "mistral") || strings.Contains(m, "mixtral"):
+		return "mistral"
+	case strings.Contains(m, "grok"):
+		return "grok"
+	case strings.Contains(m, "kimi") || strings.Contains(m, "moonshot"):
+		return "kimi"
 	default:
 		return "other"
 	}
+}
+
+func isOpenAIReasoningModelName(model string) bool {
+	for _, part := range strings.Split(normalizeModelName(model), "-") {
+		if part == "o1" || part == "o3" || part == "o4" {
+			return true
+		}
+	}
+	return false
 }
 
 func riskFromCode(code, model string, result ModelResult) RiskFinding {
@@ -3537,6 +4076,8 @@ func riskFromCode(code, model string, result ModelResult) RiskFinding {
 		return RiskFinding{Severity: "high", Code: code, Model: model, Message: "Prompt Cache warm 命中率过低", Detail: map[string]any{"cache": result.Cache}}
 	case "cache_hit_rate_partial":
 		return RiskFinding{Severity: "medium", Code: code, Model: model, Message: "Prompt Cache warm 命中率不稳定", Detail: map[string]any{"cache": result.Cache}}
+	case "cache_ttl_control_failed":
+		return RiskFinding{Severity: "high", Code: code, Model: model, Message: "Claude Prompt Cache TTL 语义未被完整透传", Detail: map[string]any{"cache_ttl": result.CacheTTL}}
 	case "prompt_injection_signal":
 		return RiskFinding{Severity: "high", Code: code, Model: model, Message: "发现提示词注水/模板污染辅助信号", Detail: map[string]any{"injection": result.Injection}}
 	case "role_probe_identity_conflict":
@@ -3556,7 +4097,7 @@ func riskFromCode(code, model string, result ModelResult) RiskFinding {
 	case "token_precision_mismatch":
 		return RiskFinding{Severity: "medium", Code: code, Model: model, Message: "Token 计量精度偏差较大", Detail: map[string]any{"token_precision": result.TokenPrecision}}
 	case "anthropic_count_tokens_failed":
-		return RiskFinding{Severity: "high", Code: code, Model: model, Message: "Anthropic /v1/messages/count_tokens 主链路探针失败", Detail: map[string]any{"anthropic_count_tokens": result.AnthropicCountTokens}}
+		return RiskFinding{Severity: "medium", Code: code, Model: model, Message: "被测入口未提供 Anthropic /v1/messages/count_tokens 能力", Detail: map[string]any{"anthropic_count_tokens": result.AnthropicCountTokens, "official_runtime_truth": false}}
 	case "aws_bedrock_runtime_baseline_mismatch":
 		return RiskFinding{Severity: "high", Code: code, Model: model, Message: "AWS Bedrock 官方 runtime CountTokens 基线不一致", Detail: map[string]any{"runtime_baseline": result.RuntimeBaseline}}
 	case "openai_responses_api_failed":
@@ -3569,6 +4110,8 @@ func riskFromCode(code, model string, result ModelResult) RiskFinding {
 		return RiskFinding{Severity: "high", Code: code, Model: model, Message: "OpenAI structured outputs/json_schema 探针失败", Detail: map[string]any{"openai_native": result.OpenAINative}}
 	case "source_identity_mismatch":
 		return RiskFinding{Severity: "medium", Code: code, Model: model, Message: "逆向来源识别与目标模型族不一致", Detail: map[string]any{"source_probe": result.SourceProbe}}
+	case "agent_quality_failed":
+		return RiskFinding{Severity: "medium", Code: code, Model: model, Message: "Agent 兼容质量 smoke 未达到 75%", Detail: map[string]any{"quality": result.Quality}}
 	case "stability_low_success_rate":
 		return RiskFinding{Severity: "high", Code: code, Model: model, Message: "连续稳定性成功率不足", Detail: map[string]any{"stability": result.Stability}}
 	case "stability_multi_window_persistent_failure":
@@ -3662,23 +4205,32 @@ func buildReport(baseURL string, platform PlatformType, startedAt, completedAt t
 		avgLatency = float64(totalLatency) / float64(len(models))
 		avgInjection = float64(totalInjection) / float64(len(models))
 	}
-	grade := overallGrade(len(models), available, len(risks))
+	matrix := buildModelIssueMatrix(platform, models, risks, evidence)
+	checks := buildStandardChecks(platform, catalog, models, risks, evidence, nil)
+	coverage := coverageFromMatrix(matrix)
+	scoreEligible, scoreEligibilityReason := reportScoreEligibility(len(models), available, coverage)
+	score := overallScore(models, risks)
+	grade := gradeFromScore(score, len(models), available, scoreEligible)
 	report := Report{
-		Version:      "2026-06-27.v1",
+		Version:      "2026-07-11.v2",
 		BaseURL:      baseURL,
 		PlatformType: string(platform),
 		StartedAt:    startedAt.Format(time.RFC3339),
 		CompletedAt:  completedAt.Format(time.RFC3339),
 		Summary: ReportSummary{
-			OverallGrade:     grade,
-			ChannelLabel:     channelLabel(grade),
-			Confidence:       confidenceLabel(len(models), available, len(risks)),
-			ProductionReady:  grade == "A" || grade == "B",
-			ModelCount:       len(models),
-			AvailableModels:  available,
-			RiskModels:       riskModels,
-			AverageLatencyMS: avgLatency,
-			AverageInjection: avgInjection,
+			OverallGrade:           grade,
+			OverallScore:           score,
+			ScoreEligible:          scoreEligible,
+			ScoreEligibilityReason: scoreEligibilityReason,
+			ChannelLabel:           channelLabel(grade),
+			Confidence:             confidenceFromCoverage(len(models), available, coverage),
+			ProductionReady:        scoreEligible && (grade == "A" || grade == "B") && !hasSevereFinding(risks),
+			ModelCount:             len(models),
+			AvailableModels:        available,
+			RiskModels:             riskModels,
+			AverageLatencyMS:       avgLatency,
+			AverageInjection:       avgInjection,
+			Coverage:               coverage,
 		},
 		ModelCatalog: ModelCatalog{
 			Route:         catalog.route,
@@ -3689,10 +4241,10 @@ func buildReport(baseURL string, platform PlatformType, startedAt, completedAt t
 			Heterogeneous: len(families) > 1,
 		},
 		Models:         models,
-		ModelMatrix:    buildModelIssueMatrix(platform, models, risks, evidence),
+		ModelMatrix:    matrix,
 		Risks:          risks,
 		Evidence:       evidence,
-		StandardChecks: buildStandardChecks(platform, catalog, models, risks, evidence, nil),
+		StandardChecks: checks,
 		Baselines:      baselines,
 		Charts:         buildChartData(models, risks, families),
 		Raw: map[string]any{
@@ -3700,10 +4252,9 @@ func buildReport(baseURL string, platform PlatformType, startedAt, completedAt t
 			"scenario_registry": registrySummary(registry),
 		},
 		NextMilestone: []string{
-			"补 OpenAI Responses、Responses stream、structured outputs、function calling 与官方 rate-limit 形态探针",
 			"补 AWS Bedrock/Platform 原生 SigV4、Converse/InvokeModel、AWS event-stream、region/workspace 错误探针",
 			"接入官方 count_tokens/runtime golden baseline，替换启发式 token 精度判断",
-			"把稳定性从 smoke test 扩展到 20 轮、多时间窗、1/5/10/20 并发与字段漂移检测",
+			"补 GLM、Gemini 与图片模型的 provider-specific 验真 profile",
 		},
 	}
 	return report
@@ -3724,16 +4275,22 @@ func buildModelIssueMatrix(platform PlatformType, models []ModelResult, risks []
 	}
 	rows := make([]ModelMatrixRow, 0, len(models))
 	for _, model := range models {
+		cacheCell := matrixCacheCell(model)
+		if model.Family != "claude" && model.Family != "gpt" {
+			cacheCell = notApplicableMatrixCell("prompt_cache", "Prompt Cache", "该模型族尚未注册可审计的 provider-specific cache 语义")
+		}
 		cells := []ModelMatrixCell{
 			matrixAvailabilityCell(model),
 			matrixModelPurityCell(model),
 			matrixInjectionCell(model),
-			matrixCacheCell(model),
+			cacheCell,
+			matrixQualityCell(model),
 			matrixStabilityCell(model),
 			matrixStreamCell(model),
 		}
-		if isClaudeLikePlatform(platform) {
+		if isClaudeModelResult(model) {
 			cells = append(cells,
+				matrixCacheTTLCell(model),
 				matrixAnthropicCountTokensCell(model),
 				matrixClaudeRuntimeCell(model),
 				matrixClientProfileCell(model, "plain_sdk_cache", "Plain SDK 缓存"),
@@ -3742,8 +4299,19 @@ func buildModelIssueMatrix(platform PlatformType, models []ModelResult, risks []
 				matrixClientProfileCell(model, "claude_code_thinking", "Claude Code thinking"),
 				matrixClientProfileCell(model, "claude_code_subagents", "Claude Code subagents"),
 			)
+		} else {
+			cells = append(cells,
+				notApplicableMatrixCell("cache_ttl_control", "Claude Cache TTL", "仅适用于 Claude/Anthropic Prompt Cache"),
+				notApplicableMatrixCell("anthropic_count_tokens", "Claude count_tokens", "仅适用于 Claude/Anthropic Messages"),
+				notApplicableMatrixCell("claude_runtime_state", "官方 runtime 状态验证", "仅适用于 Claude extended thinking"),
+				notApplicableMatrixCell("plain_sdk_cache", "Plain SDK 缓存", "仅适用于 Claude/Anthropic Prompt Cache"),
+				notApplicableMatrixCell("claude_code_cache", "Claude Code 缓存", "仅适用于 Claude Code 客户端画像"),
+				notApplicableMatrixCell("claude_code_interaction", "Claude Code 普通交互", "仅适用于 Claude Code 客户端画像"),
+				notApplicableMatrixCell("claude_code_thinking", "Claude Code thinking", "仅适用于 Claude extended thinking"),
+				notApplicableMatrixCell("claude_code_subagents", "Claude Code subagents", "仅适用于 Claude Code 客户端画像"),
+			)
 		}
-		if isOpenAIPlatform(platform) {
+		if isOpenAIModelResult(model) {
 			cells = append(cells,
 				matrixOpenAINativeCell(model, "openai_responses_native", "OpenAI Responses API", model.OpenAINative.ResponsesTested, model.OpenAINative.ResponsesOK, model.OpenAINative.ResponsesHTTPStatus, model.OpenAINative.Error, map[string]any{"response_id": model.OpenAINative.ResponsesID, "object": model.OpenAINative.ResponsesObject}),
 				matrixOpenAINativeCell(model, "openai_input_tokens_baseline", "OpenAI input_tokens", model.OpenAINative.InputTokensTested, model.OpenAINative.InputTokensOK, model.OpenAINative.ResponsesHTTPStatus, model.OpenAINative.Error, map[string]any{"input_tokens": model.OpenAINative.InputTokens}),
@@ -3752,17 +4320,36 @@ func buildModelIssueMatrix(platform PlatformType, models []ModelResult, risks []
 				matrixClientProfileCell(model, "codex_interaction", "Codex 普通交互"),
 				matrixClientProfileCell(model, "codex_subagents", "Codex subagents"),
 			)
+		} else {
+			cells = append(cells,
+				notApplicableMatrixCell("openai_responses_native", "OpenAI Responses API", "仅适用于 OpenAI GPT/o-series 模型"),
+				notApplicableMatrixCell("openai_input_tokens_baseline", "OpenAI input_tokens", "仅适用于 OpenAI GPT/o-series 模型"),
+				notApplicableMatrixCell("openai_tool_call_native", "OpenAI tool calling", "仅适用于 OpenAI GPT/o-series 模型"),
+				notApplicableMatrixCell("openai_structured_outputs", "OpenAI structured outputs", "仅适用于 OpenAI GPT/o-series 模型"),
+				notApplicableMatrixCell("codex_interaction", "Codex 普通交互", "仅适用于 OpenAI/Codex 客户端画像"),
+				notApplicableMatrixCell("codex_subagents", "Codex subagents", "仅适用于 OpenAI/Codex 客户端画像"),
+			)
 		}
-		if platform == PlatformAWSBedrock {
+		awsBedrockModel := isClaudeModelResult(model) || (model.Protocol == "anthropic" && model.RuntimeBaseline.Tested)
+		if platform == PlatformAWSBedrock && awsBedrockModel {
 			cells = append(cells,
 				matrixAWSBedrockRuntimeBaselineCell(model),
 				matrixAWSBedrockBrokerCell(model, reportRiskCodes, evidenceCodes),
 			)
+		} else if platform == PlatformAWSBedrock {
+			cells = append(cells,
+				notApplicableMatrixCell("aws_bedrock_count_tokens_baseline", "AWS 官方 runtime baseline", "AWS Bedrock Claude baseline 不适用于该模型族"),
+				notApplicableMatrixCell("aws_bedrock_broker_generation", "Bedrock broker 生成侧", "AWS Bedrock Claude 验真不适用于该模型族"),
+			)
+		}
+		for i := range cells {
+			cells[i] = finalizeMatrixCell(cells[i])
 		}
 		status, reason := summarizeMatrixRow(model, cells, riskByModel[model.Model])
 		rows = append(rows, ModelMatrixRow{
 			Model:         model.Model,
 			Family:        model.Family,
+			Protocol:      model.Protocol,
 			Available:     model.Available,
 			Grade:         model.Grade,
 			OverallStatus: status,
@@ -3771,6 +4358,76 @@ func buildModelIssueMatrix(platform PlatformType, models []ModelResult, risks []
 		})
 	}
 	return rows
+}
+
+func isClaudeModelResult(model ModelResult) bool {
+	return model.Family == "claude" && (model.Protocol == "anthropic" || model.Protocol == "")
+}
+
+func isOpenAIModelResult(model ModelResult) bool {
+	return model.Family == "gpt" && (model.Protocol == "openai" || model.Protocol == "")
+}
+
+func notApplicableMatrixCell(id, title, reason string) ModelMatrixCell {
+	return ModelMatrixCell{
+		ID:                id,
+		Title:             title,
+		Status:            "not_applicable",
+		Severity:          "low",
+		Summary:           "不适用",
+		Applicable:        false,
+		Executed:          false,
+		Conclusive:        false,
+		ScoreEligible:     false,
+		EligibilityReason: reason,
+	}
+}
+
+func finalizeMatrixCell(cell ModelMatrixCell) ModelMatrixCell {
+	if cell.Status == "not_applicable" {
+		cell.Applicable = false
+		cell.Executed = false
+		cell.Conclusive = false
+		cell.ScoreEligible = false
+		return cell
+	}
+	cell.Applicable = true
+	cell.ScoreWeight = severityScoreWeight(cell.Severity)
+	switch cell.Status {
+	case "pass":
+		cell.Executed = true
+		cell.Conclusive = true
+		cell.ScoreEligible = true
+	case "partial":
+		cell.Executed = true
+		cell.Conclusive = true
+		cell.ScoreEligible = true
+		cell.ScoreImpact = -math.Round(cell.ScoreWeight*0.35*10) / 10
+	case "fail":
+		cell.Executed = true
+		cell.Conclusive = true
+		cell.ScoreEligible = true
+		cell.ScoreImpact = -cell.ScoreWeight
+	case "blocked":
+		cell.Executed = true
+		cell.EligibilityReason = firstNonEmpty(cell.EligibilityReason, "探针被网络、预算或上游闸门阻断")
+	case "missing":
+		cell.EligibilityReason = firstNonEmpty(cell.EligibilityReason, "适用探针尚未执行或没有形成结论")
+	}
+	return cell
+}
+
+func severityScoreWeight(severity string) float64 {
+	switch severity {
+	case "critical":
+		return 30
+	case "high":
+		return 20
+	case "medium":
+		return 10
+	default:
+		return 5
+	}
 }
 
 func summarizeMatrixRow(model ModelResult, cells []ModelMatrixCell, risks []RiskFinding) (string, string) {
@@ -3954,6 +4611,83 @@ func matrixCacheCell(model ModelResult) ModelMatrixCell {
 	}
 }
 
+func matrixCacheTTLCell(model ModelResult) ModelMatrixCell {
+	probe := model.CacheTTL
+	if !probe.Applicable {
+		return notApplicableMatrixCell("cache_ttl_control", "Claude Cache TTL", "仅适用于 Claude/Anthropic Prompt Cache")
+	}
+	status := "pass"
+	severity := "low"
+	if !probe.Tested {
+		status = "missing"
+		severity = "high"
+	} else if !probe.OK {
+		status = "fail"
+		severity = "high"
+	}
+	summary := "未执行 cache TTL 控制探针"
+	if probe.Tested {
+		summary = fmt.Sprintf("5m=%t，1h=%t，非法TTL拒绝=%t", probe.Supports5M, probe.Supports1H, probe.RejectsInvalid)
+		if probe.Error != "" {
+			summary += " · " + probe.Error
+		}
+	}
+	return ModelMatrixCell{
+		ID:       "cache_ttl_control",
+		Title:    "Claude Cache TTL",
+		Status:   status,
+		Severity: severity,
+		Summary:  summary,
+		Metrics: map[string]any{
+			"supports_5m":     probe.Supports5M,
+			"supports_1h":     probe.Supports1H,
+			"rejects_invalid": probe.RejectsInvalid,
+			"configurations":  probe.Configurations,
+		},
+		EvidenceRefs: compactEvidenceRefs(
+			evidenceRef("cache_ttl", "TTL 配置结果", "models[].cache_ttl.configurations", probe.Configurations),
+		),
+		Risks: filterModelRisks(model, "cache_ttl_control_failed"),
+	}
+}
+
+func matrixQualityCell(model ModelResult) ModelMatrixCell {
+	probe := model.Quality
+	status := "pass"
+	severity := "low"
+	if !probe.Tested {
+		status = "missing"
+		severity = "medium"
+	} else if !probe.OK {
+		status = "fail"
+		severity = "medium"
+	}
+	summary := "未执行 agent 质量 smoke"
+	if probe.Tested {
+		summary = fmt.Sprintf("%d/%d 通过（%.0f%%）", probe.Passed, probe.Total, probe.SuccessRate*100)
+		if probe.Error != "" {
+			summary += " · " + probe.Error
+		}
+	}
+	return ModelMatrixCell{
+		ID:       "agent_quality",
+		Title:    "质量 / Agent 兼容",
+		Status:   status,
+		Severity: severity,
+		Summary:  summary,
+		Metrics: map[string]any{
+			"passed":       probe.Passed,
+			"total":        probe.Total,
+			"success_rate": probe.SuccessRate,
+			"cases":        probe.Cases,
+		},
+		EvidenceRefs: compactEvidenceRefs(
+			evidenceRef("quality", "Agent smoke cases", "models[].quality.cases", probe.Cases),
+		),
+		Risks: filterModelRisks(model, "agent_quality_failed"),
+	}
+}
+
 func matrixStabilityCell(model ModelResult) ModelMatrixCell {
 	stability := model.Stability
 	status := "pass"
@@ -4055,7 +4789,7 @@ func matrixAnthropicCountTokensCell(model ModelResult) ModelMatrixCell {
 		severity = "medium"
 	} else if !probe.OK || containsString(model.Risks, "anthropic_count_tokens_failed") {
 		status = "fail"
-		severity = "high"
+		severity = "medium"
 	}
 	summary := "未执行 /v1/messages/count_tokens"
 	if probe.Tested {
@@ -4066,7 +4800,7 @@ func matrixAnthropicCountTokensCell(model ModelResult) ModelMatrixCell {
 	}
 	return ModelMatrixCell{
 		ID:       "anthropic_count_tokens",
-		Title:    "Claude count_tokens",
+		Title:    "Claude count_tokens 能力",
 		Status:   status,
 		Severity: severity,
 		Summary:  summary,
@@ -4543,15 +5277,18 @@ func passFailText(ok bool) string {
 
 func buildFailureReport(baseURL string, platform PlatformType, startedAt time.Time, err error) Report {
 	return Report{
-		Version:      "2026-06-27.v1",
+		Version:      "2026-07-11.v2",
 		BaseURL:      baseURL,
 		PlatformType: string(platform),
 		StartedAt:    startedAt.Format(time.RFC3339),
 		Summary: ReportSummary{
-			OverallGrade:    "F",
-			ChannelLabel:    "不可用",
-			Confidence:      "low",
-			ProductionReady: false,
+			OverallGrade:           "F",
+			OverallScore:           0,
+			ScoreEligible:          false,
+			ScoreEligibilityReason: "模型目录不可用，未形成可评分目标",
+			ChannelLabel:           "不可用",
+			Confidence:             "low",
+			ProductionReady:        false,
 		},
 		ModelCatalog: ModelCatalog{
 			Families: map[string]int{},
@@ -4592,10 +5329,14 @@ func buildStandardChecks(platform PlatformType, catalog modelListResult, models 
 	cacheTested := 0
 	cacheHealthy := 0
 	cachePartial := 0
+	cacheTTLTested := 0
+	cacheTTLOK := 0
 	injectionOK := 0
 	injectionTested := 0
 	roleOK := 0
 	roleTested := 0
+	qualityTested := 0
+	qualityOK := 0
 	thinkingOK := 0
 	thinkingTested := 0
 	thinkingSupported := 0
@@ -4697,6 +5438,12 @@ func buildStandardChecks(platform PlatformType, catalog modelListResult, models 
 				cachePartial++
 			}
 		}
+		if item.CacheTTL.Tested && item.CacheTTL.Applicable {
+			cacheTTLTested++
+			if item.CacheTTL.OK {
+				cacheTTLOK++
+			}
+		}
 		if item.Injection.Tested {
 			injectionTested++
 			if item.Injection.OK {
@@ -4707,6 +5454,12 @@ func buildStandardChecks(platform PlatformType, catalog modelListResult, models 
 			roleTested++
 			if item.RoleProbe.OK {
 				roleOK++
+			}
+		}
+		if item.Quality.Tested && item.Quality.Applicable {
+			qualityTested++
+			if item.Quality.OK {
+				qualityOK++
 			}
 		}
 		if item.Thinking.Tested {
@@ -5182,7 +5935,9 @@ func buildStandardChecks(platform PlatformType, catalog modelListResult, models 
 			Source:  "max-pool-validation-standard.md §5; openai-model-channel-validation-standard.md §5",
 		},
 	}
+	checks = append(checks, agentQualityStandardCheck(qualityTested, qualityOK, riskCounts))
 	if claudeRuntimeApplicable {
+		checks = append(checks, cacheTTLStandardCheck(cacheTTLTested, cacheTTLOK, riskCounts))
 		checks = append(checks, anthropicCountTokensStandardCheck(anthropicCountTokensTested, anthropicCountTokensOK, riskCounts))
 		checks = append(checks, claudeRuntimeStandardChecks(
 			thinkingOK,
@@ -5232,7 +5987,7 @@ func buildStandardChecks(platform PlatformType, catalog modelListResult, models 
 			riskCounts,
 		)...)
 	}
-	checks = appendStandardChecksReplacingMissing(checks, externalCapabilityStandardChecks(platform, hasSuite, externalCaps)...)
+	checks = appendStandardChecksReplacingMissing(checks, externalCapabilityStandardChecks(capabilityPlatform(platform, models), hasSuite, externalCaps)...)
 	if platform == PlatformAWSBedrock {
 		checks = append(checks, awsBedrockRuntimeBaselineStandardCheck(runtimeBaselineTested, runtimeBaselineConfigured, runtimeBaselineOK, riskCounts))
 		checks = append(checks, awsBedrockBrokerStandardCheck(models, riskCounts))
@@ -5265,6 +6020,48 @@ func buildStandardChecks(platform PlatformType, catalog modelListResult, models 
 			Missing:    missingWhen(claudeCodeTested == 0, "需要执行 Claude Code profile 普通交互探针。"),
 			Source:     "max-pool-validation-standard.md §0",
 		})
+	}
+	return finalizeStandardChecks(checks)
+}
+
+func finalizeStandardChecks(checks []StandardCheck) []StandardCheck {
+	for i := range checks {
+		check := &checks[i]
+		if check.Status == "not_applicable" {
+			check.Applicable = false
+			check.Executed = false
+			check.Conclusive = false
+			check.ScoreEligible = false
+			continue
+		}
+		check.Applicable = true
+		check.ScoreWeight = severityScoreWeight(check.Severity)
+		switch check.Status {
+		case "pass":
+			check.Executed = true
+			check.Conclusive = true
+			check.ScoreEligible = true
+		case "partial":
+			check.Executed = true
+			check.Conclusive = true
+			check.ScoreEligible = true
+			check.ScoreImpact = -math.Round(check.ScoreWeight*0.35*10) / 10
+		case "fail":
+			check.Executed = true
+			check.Conclusive = true
+			check.ScoreEligible = true
+			check.ScoreImpact = -check.ScoreWeight
+		case "blocked":
+			check.Executed = true
+			check.EligibilityReason = firstNonEmpty(check.EligibilityReason, "探针被网络、预算或上游闸门阻断")
+		case "missing":
+			check.EligibilityReason = firstNonEmpty(check.EligibilityReason, "适用探针尚未执行或没有形成结论")
+		}
+		if check.ID == "token_precision" {
+			check.ScoreEligible = false
+			check.ScoreImpact = 0
+			check.EligibilityReason = "启发式 token 估算只作为辅助证据；没有官方 tokenizer/count_tokens 真值时不扣分"
+		}
 	}
 	return checks
 }
@@ -5321,30 +6118,82 @@ func thresholdStatus(pass bool, partial bool, fail bool) string {
 }
 
 func isClaudeRuntimeApplicable(platform PlatformType, models []ModelResult) bool {
-	switch platform {
-	case PlatformAnthropic, PlatformAWSBedrock, PlatformAWSPlatform, PlatformKiro, PlatformWindsurf, PlatformClaudeCode:
-		return true
-	case PlatformOpenAI:
-		return false
-	}
 	for _, model := range models {
-		if model.Protocol == "anthropic" || model.Family == "claude" || looksAnthropicModel(model.Model) {
+		if model.Protocol == "anthropic" && model.Family == "claude" {
 			return true
 		}
 	}
-	return false
+	return len(models) == 0 && isClaudeLikePlatform(platform)
 }
 
 func isOpenAIClientApplicable(platform PlatformType, models []ModelResult) bool {
-	if platform == PlatformOpenAI {
-		return true
-	}
 	for _, model := range models {
-		if model.Protocol == "openai" || model.Family == "gpt" {
+		if model.Protocol == "openai" && model.Family == "gpt" {
 			return true
 		}
 	}
-	return false
+	return len(models) == 0 && platform == PlatformOpenAI
+}
+
+func capabilityPlatform(platform PlatformType, models []ModelResult) PlatformType {
+	hasClaude := false
+	hasOpenAI := false
+	for _, model := range models {
+		hasClaude = hasClaude || isClaudeModelResult(model)
+		hasOpenAI = hasOpenAI || isOpenAIModelResult(model)
+	}
+	switch {
+	case hasClaude && hasOpenAI:
+		return PlatformAuto
+	case hasOpenAI:
+		return PlatformOpenAI
+	case hasClaude:
+		if platform == PlatformAWSBedrock || platform == PlatformAWSPlatform || platform == PlatformKiro || platform == PlatformWindsurf || platform == PlatformClaudeCode {
+			return platform
+		}
+		return PlatformAnthropic
+	default:
+		return platform
+	}
+}
+
+func agentQualityStandardCheck(tested, ok int, riskCounts map[string]int) StandardCheck {
+	return StandardCheck{
+		ID:         "agent_quality",
+		Category:   "质量 / Agent 兼容",
+		Title:      "JSON、UTF-8、多轮与工具调用 smoke",
+		Status:     thresholdStatus(tested > 0 && ok == tested, ok > 0, riskCounts["agent_quality_failed"] > 0),
+		Severity:   "medium",
+		Conclusion: fmt.Sprintf("%d/%d 个模型通过四项 agent 兼容 smoke。", ok, tested),
+		Evidence:   []string{"逐模型验证严格 JSON、中文 UTF-8、多轮 nonce 记忆和 provider-compatible 强制工具调用；该项证明基础 agent 可用性，不单独证明高档模型 fidelity。"},
+		Metrics: map[string]any{
+			"tested_models": tested,
+			"ok_models":     ok,
+			"failed_count":  riskCounts["agent_quality_failed"],
+			"case_ids":      []string{"strict_json", "utf8_chinese", "multi_turn_memory", "forced_tool_call"},
+		},
+		Missing: missingWhen(tested == 0, "需要执行 JSON、UTF-8、多轮记忆和工具调用 smoke。"),
+		Source:  "max-pool-validation-standard.md §4; openai-model-channel-validation-standard.md §8",
+	}
+}
+
+func cacheTTLStandardCheck(tested, ok int, riskCounts map[string]int) StandardCheck {
+	return StandardCheck{
+		ID:         "cache_ttl_control",
+		Category:   "缓存检测",
+		Title:      "Claude Prompt Cache TTL 可控性",
+		Status:     thresholdStatus(tested > 0 && ok == tested, ok > 0, riskCounts["cache_ttl_control_failed"] > 0),
+		Severity:   "high",
+		Conclusion: fmt.Sprintf("%d/%d 个 Claude 模型保持默认/显式 5m、显式 1h 与非法 TTL 拒绝语义。", ok, tested),
+		Evidence:   []string{"分别请求 implicit、ttl=5m、ttl=1h、非法 ttl=5h；验证 cache_creation 5m/1h usage 分桶和 4xx 参数拒绝。"},
+		Metrics: map[string]any{
+			"tested_models": tested,
+			"ok_models":     ok,
+			"failed_count":  riskCounts["cache_ttl_control_failed"],
+		},
+		Missing: missingWhen(tested == 0, "需要执行 Claude cache TTL 5m/1h/非法值控制探针。"),
+		Source:  "max-pool-validation-standard.md §3; §9",
+	}
 }
 
 func anthropicCountTokensStandardCheck(tested, ok int, riskCounts map[string]int) StandardCheck {
@@ -5353,7 +6202,7 @@ func anthropicCountTokensStandardCheck(tested, ok int, riskCounts map[string]int
 		Category:   "计量透明",
 		Title:      "Anthropic count_tokens 计量端点",
 		Status:     thresholdStatus(tested > 0 && ok == tested, ok > 0, riskCounts["anthropic_count_tokens_failed"] > 0),
-		Severity:   "high",
+		Severity:   "medium",
 		Conclusion: fmt.Sprintf("%d/%d 个 Claude 模型通过 /v1/messages/count_tokens 短 prompt 与 cache payload 计量探针。", ok, tested),
 		Evidence:   []string{"对被测入口调用 /v1/messages/count_tokens，验证短 prompt input_tokens、长 cache_control payload input_tokens，并与同 payload usage 做差值；这证明中转是否透传官方计量形态，官方直连真值仍需配置可信 Anthropic key。"},
 		Metrics: map[string]any{
@@ -6040,6 +6889,199 @@ func confidenceLabel(total, available, riskCount int) string {
 	return "low"
 }
 
+func coverageFromMatrix(rows []ModelMatrixRow) CoverageSummary {
+	coverage := CoverageSummary{}
+	for _, row := range rows {
+		for _, cell := range row.Checks {
+			if !cell.Applicable || cell.Status == "not_applicable" {
+				coverage.NotApplicable++
+				continue
+			}
+			coverage.Applicable++
+			if cell.Executed {
+				coverage.Attempted++
+			}
+			if cell.Conclusive {
+				coverage.Conclusive++
+			}
+			switch cell.Status {
+			case "blocked":
+				coverage.Blocked++
+			case "missing":
+				coverage.NotRun++
+			}
+		}
+	}
+	if coverage.Applicable > 0 {
+		coverage.Ratio = math.Round((float64(coverage.Conclusive)/float64(coverage.Applicable))*1000) / 1000
+	}
+	return coverage
+}
+
+func reportScoreEligibility(total, available int, coverage CoverageSummary) (bool, string) {
+	if total == 0 {
+		return false, "模型目录为空，无法形成可评分目标"
+	}
+	if available == 0 {
+		return false, "没有模型完成有效基础调用，失败证据可展示但不生成可信分数"
+	}
+	if coverage.Applicable == 0 || coverage.Conclusive == 0 {
+		return false, "没有适用检测项形成结论"
+	}
+	return true, ""
+}
+
+func confidenceFromCoverage(total, available int, coverage CoverageSummary) string {
+	if total == 0 || available == 0 || coverage.Applicable == 0 {
+		return "low"
+	}
+	if coverage.Ratio >= 0.9 && available == total {
+		return "high"
+	}
+	if coverage.Ratio >= 0.6 {
+		return "medium"
+	}
+	return "low"
+}
+
+// hasSevereFinding 判定报告里是否存在任一 high/critical 级别的确证问题。
+// production_ready 是"可直接上生产"的硬结论:只要坐实了严重问题——模型被静默调包、
+// 假 thinking、缓存 TTL 语义失真、注水、模型探测失败(掉线)、稳定性不达标等——
+// 就绝不能判定为 ready,否则本工具会给一个偷换模型/掉线的中转开绿灯,自相矛盾。
+func hasSevereFinding(risks []RiskFinding) bool {
+	for _, r := range risks {
+		if r.Severity == "high" || r.Severity == "critical" {
+			return true
+		}
+	}
+	return false
+}
+
+func gradeFromScore(score float64, total, available int, eligible bool) string {
+	if !eligible || total == 0 || available == 0 {
+		return "F"
+	}
+	availability := float64(available) / float64(total)
+	if availability < 0.75 {
+		return "D"
+	}
+	switch {
+	case score >= 90:
+		return "A"
+	case score >= 75:
+		return "B"
+	case score >= 60:
+		return "C"
+	default:
+		return "D"
+	}
+}
+
+func riskDimension(code string) string {
+	switch {
+	case strings.Contains(code, "thinking"), strings.HasPrefix(code, "claude_runtime_"):
+		return "thinking"
+	case strings.Contains(code, "cache"):
+		return "cache"
+	case strings.Contains(code, "injection"), strings.Contains(code, "prompt_disclosure"):
+		return "injection"
+	case strings.Contains(code, "stability"), strings.Contains(code, "concurrency"):
+		return "stability"
+	case strings.HasPrefix(code, "openai_"):
+		return "openai_native"
+	case strings.Contains(code, "model_mismatch"), strings.Contains(code, "identity"), strings.Contains(code, "source"):
+		return "purity"
+	case strings.Contains(code, "quality"), strings.Contains(code, "tool_call"), strings.Contains(code, "structured"):
+		return "quality"
+	case strings.Contains(code, "client"), strings.Contains(code, "subagents"):
+		return "client_profile"
+	default:
+		return code
+	}
+}
+
+func severityPenalty(severity string) float64 {
+	switch severity {
+	case "critical", "confirmed":
+		return 30
+	case "high":
+		return 18
+	case "medium":
+		return 8
+	case "low":
+		return 3
+	default:
+		return 0
+	}
+}
+
+func scoreForModel(model ModelResult, risks []RiskFinding) float64 {
+	if !model.Available {
+		return 0
+	}
+	penaltyByDimension := map[string]float64{}
+	seenCodes := map[string]struct{}{}
+	for _, risk := range risks {
+		if risk.Model != model.Model {
+			continue
+		}
+		if _, seen := seenCodes[risk.Code]; seen {
+			continue
+		}
+		seenCodes[risk.Code] = struct{}{}
+		dimension := riskDimension(risk.Code)
+		penaltyByDimension[dimension] = math.Max(penaltyByDimension[dimension], severityPenalty(risk.Severity))
+	}
+	for _, code := range model.Risks {
+		if _, seen := seenCodes[code]; seen {
+			continue
+		}
+		seenCodes[code] = struct{}{}
+		risk := riskFromCode(code, model.Model, model)
+		dimension := riskDimension(code)
+		penaltyByDimension[dimension] = math.Max(penaltyByDimension[dimension], severityPenalty(risk.Severity))
+	}
+	score := 100.0
+	for _, penalty := range penaltyByDimension {
+		score -= penalty
+	}
+	return math.Max(0, math.Round(score*10)/10)
+}
+
+func overallScore(models []ModelResult, risks []RiskFinding) float64 {
+	availableScores := make([]float64, 0, len(models))
+	for _, model := range models {
+		if model.Available {
+			availableScores = append(availableScores, scoreForModel(model, risks))
+		}
+	}
+	if len(availableScores) == 0 {
+		return 0
+	}
+	var score float64
+	for _, item := range availableScores {
+		score += item
+	}
+	score /= float64(len(availableScores))
+	globalPenaltyByDimension := map[string]float64{}
+	seen := map[string]struct{}{}
+	for _, risk := range risks {
+		if risk.Model != "" {
+			continue
+		}
+		if _, ok := seen[risk.Code]; ok {
+			continue
+		}
+		seen[risk.Code] = struct{}{}
+		dimension := riskDimension(risk.Code)
+		globalPenaltyByDimension[dimension] = math.Max(globalPenaltyByDimension[dimension], severityPenalty(risk.Severity))
+	}
+	for _, penalty := range globalPenaltyByDimension {
+		score -= penalty
+	}
+	return math.Max(0, math.Round(score*10)/10)
+}
+
 func buildChartData(models []ModelResult, risks []RiskFinding, families map[string]int) ChartData {
 	gradeCounts := map[string]int{}
 	for _, item := range models {
@@ -6051,18 +7093,7 @@ func buildChartData(models []ModelResult, risks []RiskFinding, families map[stri
 	}
 	metrics := make([]ModelMetricItem, 0, len(models))
 	for _, item := range models {
-		score := 100.0
-		if !item.Available {
-			score = 0
-		} else {
-			score -= float64(len(item.Risks) * 18)
-			if item.LatencyMS > 5000 {
-				score -= 10
-			}
-		}
-		if score < 0 {
-			score = 0
-		}
+		score := scoreForModel(item, risks)
 		metrics = append(metrics, ModelMetricItem{
 			Model:           item.Model,
 			LatencyMS:       item.LatencyMS,
@@ -6106,12 +7137,15 @@ func summaryAttributes(report Report) map[string]interface{} {
 		"base_url":         report.BaseURL,
 		"platform_type":    report.PlatformType,
 		"overall_grade":    report.Summary.OverallGrade,
+		"overall_score":    report.Summary.OverallScore,
+		"score_eligible":   report.Summary.ScoreEligible,
 		"channel_label":    report.Summary.ChannelLabel,
 		"confidence":       report.Summary.Confidence,
 		"model_count":      report.Summary.ModelCount,
 		"risk_count":       len(report.Risks),
 		"available_models": report.Summary.AvailableModels,
 		"production_ready": report.Summary.ProductionReady,
+		"coverage_ratio":   report.Summary.Coverage.Ratio,
 	}
 }
 
@@ -6153,8 +7187,8 @@ func mergeExternalSuiteResults(report *Report, suites []externalSuiteResult) {
 				Detail:   map[string]any{"reason": suite.Error},
 			})
 		case "failed":
-			report.Risks = append(report.Risks, RiskFinding{
-				Severity: "medium",
+			report.Evidence = append(report.Evidence, EvidenceItem{
+				Strength: "low",
 				Code:     "external_suite_failed",
 				Message:  suite.Name + " 执行失败，深层指纹证据不完整",
 				Detail:   map[string]any{"error": suite.Error},
@@ -6187,16 +7221,23 @@ func refreshReportSummary(report *Report) {
 		avgLatency = float64(totalLatency) / float64(len(report.Models))
 		avgInjection = float64(totalInjection) / float64(len(report.Models))
 	}
-	grade := overallGrade(len(report.Models), available, len(report.Risks))
+	coverage := coverageFromMatrix(report.ModelMatrix)
+	scoreEligible, scoreEligibilityReason := reportScoreEligibility(len(report.Models), available, coverage)
+	score := overallScore(report.Models, report.Risks)
+	grade := gradeFromScore(score, len(report.Models), available, scoreEligible)
 	report.Summary.OverallGrade = grade
+	report.Summary.OverallScore = score
+	report.Summary.ScoreEligible = scoreEligible
+	report.Summary.ScoreEligibilityReason = scoreEligibilityReason
 	report.Summary.ChannelLabel = channelLabel(grade)
-	report.Summary.Confidence = confidenceLabel(len(report.Models), available, len(report.Risks))
-	report.Summary.ProductionReady = grade == "A" || grade == "B"
+	report.Summary.Confidence = confidenceFromCoverage(len(report.Models), available, coverage)
+	report.Summary.ProductionReady = scoreEligible && (grade == "A" || grade == "B") && !hasSevereFinding(report.Risks)
 	report.Summary.ModelCount = len(report.Models)
 	report.Summary.AvailableModels = available
 	report.Summary.RiskModels = countRiskModels(report.Models)
 	report.Summary.AverageLatencyMS = avgLatency
 	report.Summary.AverageInjection = avgInjection
+	report.Summary.Coverage = coverage
 	report.Charts = buildChartData(report.Models, report.Risks, report.ModelCatalog.Families)
 }
 
@@ -6244,6 +7285,12 @@ func mergeRelayAuthCheckReport(report *Report, raw map[string]any) {
 	for _, item := range findings {
 		f, ok := item.(map[string]any)
 		if !ok {
+			continue
+		}
+		if applicable, present := boolFromAny(f["applicable"]); present && !applicable {
+			continue
+		}
+		if protocol := strings.TrimSpace(stringFromAny(f["protocol"])); protocol != "" && !reportSupportsProtocol(report, protocol) {
 			continue
 		}
 		severity, _ := f["severity"].(string)
@@ -6318,6 +7365,9 @@ func mergeExternalCapabilities(report *Report, raw map[string]any) {
 		},
 	}
 	for _, def := range defs {
+		if !reportSupportsProtocol(report, def.Protocol) {
+			continue
+		}
 		capability := mapAt(raw, "protocols", def.Protocol, "capabilities", def.Capability)
 		if capability == nil {
 			continue
@@ -6351,6 +7401,22 @@ func mergeExternalCapabilities(report *Report, raw map[string]any) {
 			})
 		}
 	}
+}
+
+func reportSupportsProtocol(report *Report, protocol string) bool {
+	for _, model := range report.Models {
+		switch protocol {
+		case "anthropic":
+			if isClaudeModelResult(model) {
+				return true
+			}
+		case "openai":
+			if isOpenAIModelResult(model) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func externalCapabilityProbeSummaries(raw map[string]any, protocol, capability string) any {

@@ -69,15 +69,29 @@ type Report struct {
 }
 
 type ReportSummary struct {
-	OverallGrade     string  `json:"overall_grade"`
-	ChannelLabel     string  `json:"channel_label"`
-	Confidence       string  `json:"confidence"`
-	ProductionReady  bool    `json:"production_ready"`
-	ModelCount       int     `json:"model_count"`
-	AvailableModels  int     `json:"available_models"`
-	RiskModels       int     `json:"risk_models"`
-	AverageLatencyMS float64 `json:"average_latency_ms"`
-	AverageInjection float64 `json:"average_injection_tokens"`
+	OverallGrade           string          `json:"overall_grade"`
+	OverallScore           float64         `json:"overall_score"`
+	ScoreEligible          bool            `json:"score_eligible"`
+	ScoreEligibilityReason string          `json:"score_eligibility_reason,omitempty"`
+	ChannelLabel           string          `json:"channel_label"`
+	Confidence             string          `json:"confidence"`
+	ProductionReady        bool            `json:"production_ready"`
+	ModelCount             int             `json:"model_count"`
+	AvailableModels        int             `json:"available_models"`
+	RiskModels             int             `json:"risk_models"`
+	AverageLatencyMS       float64         `json:"average_latency_ms"`
+	AverageInjection       float64         `json:"average_injection_tokens"`
+	Coverage               CoverageSummary `json:"coverage"`
+}
+
+type CoverageSummary struct {
+	Applicable    int     `json:"applicable"`
+	Attempted     int     `json:"attempted"`
+	Conclusive    int     `json:"conclusive"`
+	Blocked       int     `json:"blocked"`
+	NotRun        int     `json:"not_run"`
+	NotApplicable int     `json:"not_applicable"`
+	Ratio         float64 `json:"ratio"`
 }
 
 type ModelCatalog struct {
@@ -112,7 +126,9 @@ type ModelResult struct {
 	LatencyMS             int64                `json:"latency_ms"`
 	Stream                StreamProbe          `json:"stream"`
 	Cache                 CacheProbe           `json:"cache"`
+	CacheTTL              CacheTTLProbe        `json:"cache_ttl"`
 	Injection             InjectionProbe       `json:"injection"`
+	Quality               QualityProbe         `json:"quality"`
 	RoleProbe             RoleProbe            `json:"role_probe"`
 	Thinking              ThinkingProbe        `json:"thinking_probe"`
 	TokenPrecision        TokenPrecision       `json:"token_precision"`
@@ -164,7 +180,10 @@ type StreamProbe struct {
 
 type CacheProbe struct {
 	Tested         bool         `json:"tested"`
+	Applicable     bool         `json:"applicable"`
 	OK             bool         `json:"ok"`
+	Protocol       string       `json:"protocol,omitempty"`
+	CostSemantics  string       `json:"cost_semantics,omitempty"`
 	Rounds         int          `json:"rounds"`
 	HasCacheFields bool         `json:"has_cache_fields"`
 	CacheEngaged   bool         `json:"cache_engaged"`
@@ -180,11 +199,35 @@ type CacheRound struct {
 	Round               int    `json:"round"`
 	OK                  bool   `json:"ok"`
 	HTTPStatus          int    `json:"http_status"`
+	HasCacheFields      bool   `json:"has_cache_fields"`
 	InputTokens         int    `json:"input_tokens"`
 	CacheCreationTokens int    `json:"cache_creation_tokens"`
 	CacheReadTokens     int    `json:"cache_read_tokens"`
 	LatencyMS           int64  `json:"latency_ms"`
 	Error               string `json:"error,omitempty"`
+}
+
+type CacheTTLProbe struct {
+	Tested         bool             `json:"tested"`
+	Applicable     bool             `json:"applicable"`
+	OK             bool             `json:"ok"`
+	Supports5M     bool             `json:"supports_5m"`
+	Supports1H     bool             `json:"supports_1h"`
+	RejectsInvalid bool             `json:"rejects_invalid"`
+	Configurations []CacheTTLResult `json:"configurations,omitempty"`
+	Error          string           `json:"error,omitempty"`
+}
+
+type CacheTTLResult struct {
+	Name                  string `json:"name"`
+	RequestedTTL          string `json:"requested_ttl,omitempty"`
+	Expected              string `json:"expected"`
+	OK                    bool   `json:"ok"`
+	HTTPStatus            int    `json:"http_status"`
+	CacheCreation5MTokens int    `json:"cache_creation_5m_tokens"`
+	CacheCreation1HTokens int    `json:"cache_creation_1h_tokens"`
+	CacheReadTokens       int    `json:"cache_read_tokens"`
+	Error                 string `json:"error,omitempty"`
 }
 
 type InjectionProbe struct {
@@ -257,10 +300,33 @@ type ClientProfileProbe struct {
 type TokenPrecision struct {
 	Tested              bool   `json:"tested"`
 	OK                  bool   `json:"ok"`
+	ScoreEligible       bool   `json:"score_eligible"`
+	BaselineSource      string `json:"baseline_source,omitempty"`
+	Confidence          string `json:"confidence,omitempty"`
 	ExpectedInputTokens int    `json:"expected_input_tokens"`
 	ObservedInputTokens int    `json:"observed_input_tokens"`
 	Delta               int    `json:"delta"`
 	Error               string `json:"error,omitempty"`
+}
+
+type QualityProbe struct {
+	Tested      bool          `json:"tested"`
+	Applicable  bool          `json:"applicable"`
+	OK          bool          `json:"ok"`
+	Passed      int           `json:"passed"`
+	Total       int           `json:"total"`
+	SuccessRate float64       `json:"success_rate"`
+	Cases       []QualityCase `json:"cases,omitempty"`
+	Error       string        `json:"error,omitempty"`
+}
+
+type QualityCase struct {
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	OK         bool   `json:"ok"`
+	HTTPStatus int    `json:"http_status"`
+	Output     string `json:"output,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 type RuntimeBaselineProbe struct {
@@ -383,6 +449,7 @@ type RiskFinding struct {
 type ModelMatrixRow struct {
 	Model         string            `json:"model"`
 	Family        string            `json:"family"`
+	Protocol      string            `json:"protocol"`
 	Available     bool              `json:"available"`
 	Grade         string            `json:"grade"`
 	OverallStatus string            `json:"overall_status"`
@@ -391,15 +458,22 @@ type ModelMatrixRow struct {
 }
 
 type ModelMatrixCell struct {
-	ID           string             `json:"id"`
-	Title        string             `json:"title"`
-	Status       string             `json:"status"`
-	Severity     string             `json:"severity,omitempty"`
-	Summary      string             `json:"summary"`
-	Metrics      map[string]any     `json:"metrics,omitempty"`
-	Evidence     []string           `json:"evidence,omitempty"`
-	EvidenceRefs []ModelEvidenceRef `json:"evidence_refs,omitempty"`
-	Risks        []string           `json:"risks,omitempty"`
+	ID                string             `json:"id"`
+	Title             string             `json:"title"`
+	Status            string             `json:"status"`
+	Severity          string             `json:"severity,omitempty"`
+	Summary           string             `json:"summary"`
+	Metrics           map[string]any     `json:"metrics,omitempty"`
+	Evidence          []string           `json:"evidence,omitempty"`
+	EvidenceRefs      []ModelEvidenceRef `json:"evidence_refs,omitempty"`
+	Risks             []string           `json:"risks,omitempty"`
+	Applicable        bool               `json:"applicable"`
+	Executed          bool               `json:"executed"`
+	Conclusive        bool               `json:"conclusive"`
+	ScoreEligible     bool               `json:"score_eligible"`
+	EligibilityReason string             `json:"eligibility_reason,omitempty"`
+	ScoreWeight       float64            `json:"score_weight,omitempty"`
+	ScoreImpact       float64            `json:"score_impact,omitempty"`
 }
 
 type ModelEvidenceRef struct {
@@ -419,16 +493,23 @@ type EvidenceItem struct {
 }
 
 type StandardCheck struct {
-	ID         string         `json:"id"`
-	Category   string         `json:"category"`
-	Title      string         `json:"title"`
-	Status     string         `json:"status"`
-	Severity   string         `json:"severity"`
-	Conclusion string         `json:"conclusion"`
-	Evidence   []string       `json:"evidence,omitempty"`
-	Metrics    map[string]any `json:"metrics,omitempty"`
-	Missing    []string       `json:"missing,omitempty"`
-	Source     string         `json:"source"`
+	ID                string         `json:"id"`
+	Category          string         `json:"category"`
+	Title             string         `json:"title"`
+	Status            string         `json:"status"`
+	Severity          string         `json:"severity"`
+	Conclusion        string         `json:"conclusion"`
+	Evidence          []string       `json:"evidence,omitempty"`
+	Metrics           map[string]any `json:"metrics,omitempty"`
+	Missing           []string       `json:"missing,omitempty"`
+	Source            string         `json:"source"`
+	Applicable        bool           `json:"applicable"`
+	Executed          bool           `json:"executed"`
+	Conclusive        bool           `json:"conclusive"`
+	ScoreEligible     bool           `json:"score_eligible"`
+	EligibilityReason string         `json:"eligibility_reason,omitempty"`
+	ScoreWeight       float64        `json:"score_weight,omitempty"`
+	ScoreImpact       float64        `json:"score_impact,omitempty"`
 }
 
 type BaselineDiff struct {

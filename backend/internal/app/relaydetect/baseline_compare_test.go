@@ -100,3 +100,13 @@ func TestBuildReportAddsOfficialSpecBaselineRisks(t *testing.T) {
 		t.Fatalf("official baseline check = %#v, want fail", check)
 	}
 }
+
+func TestOfficialSpecBaselineSkipsUnregisteredProviderFamilies(t *testing.T) {
+	models := []ModelResult{
+		{Model: "gemini-2.5-pro", Family: "gemini", Protocol: "openai", Available: true},
+		{Model: "glm-5.2", Family: "glm", Protocol: "openai", Available: true},
+	}
+	if diffs := compareOfficialSpecBaselines(defaultScenarioRegistry(), models); len(diffs) != 0 {
+		t.Fatalf("unregistered provider baselines = %#v, want N/A instead of OpenAI drift", diffs)
+	}
+}

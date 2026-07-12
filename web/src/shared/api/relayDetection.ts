@@ -1,7 +1,46 @@
 import { get, post } from './client';
 import type { PageReq, PagedData } from '../types';
 
-export type RelayPlatformType = 'anthropic' | 'openai' | 'aws-bedrock' | 'aws-platform' | 'kiro' | 'windsurf' | 'claude-code';
+export type RelayPlatformType = 'auto' | 'anthropic' | 'openai' | 'aws-bedrock' | 'aws-platform' | 'kiro' | 'windsurf' | 'claude-code';
+
+export type RelayCheckStatus =
+  | 'pass'
+  | 'warn'
+  | 'fail'
+  | 'blocked'
+  | 'not_run'
+  | 'not_applicable'
+  | 'inconclusive'
+  // Legacy reports used these values before applicability was explicit.
+  | 'partial'
+  | 'missing'
+  | string;
+
+export interface RelayCheckApplicability {
+  applicable: boolean;
+  executed: boolean;
+  conclusive: boolean;
+  score_eligible: boolean;
+  eligibility_reason?: string;
+  score_weight?: number;
+  score_impact?: number;
+}
+
+export interface RelayCoverageSummary {
+  applicable: number;
+  attempted: number;
+  conclusive: number;
+  blocked: number;
+  not_run: number;
+  not_applicable: number;
+  ratio: number;
+  inconclusive?: number;
+}
+
+export interface RelayScoreEligibility {
+  eligible: boolean;
+  reason?: string;
+}
 
 export interface CreateRelayDetectionReq {
   base_url: string;
@@ -76,6 +115,26 @@ export interface RelayModelResult {
     }>;
     error?: string;
   };
+  cache_ttl?: {
+    tested: boolean;
+    applicable: boolean;
+    ok: boolean;
+    supports_5m: boolean;
+    supports_1h: boolean;
+    rejects_invalid: boolean;
+    configurations?: Array<{
+      name: string;
+      requested_ttl?: string;
+      expected: string;
+      ok: boolean;
+      http_status: number;
+      cache_creation_5m_tokens: number;
+      cache_creation_1h_tokens: number;
+      cache_read_tokens: number;
+      error?: string;
+    }>;
+    error?: string;
+  };
   injection?: {
     tested: boolean;
     ok: boolean;
@@ -93,6 +152,23 @@ export interface RelayModelResult {
       keyword_hits?: string[];
       error?: string;
     }>;
+  };
+  quality?: {
+    tested: boolean;
+    applicable: boolean;
+    ok: boolean;
+    passed: number;
+    total: number;
+    success_rate: number;
+    cases?: Array<{
+      id: string;
+      title: string;
+      ok: boolean;
+      http_status: number;
+      output?: string;
+      error?: string;
+    }>;
+    error?: string;
   };
   role_probe?: {
     tested: boolean;
@@ -230,19 +306,32 @@ export interface RelayStandardCheck {
   id: string;
   category: string;
   title: string;
-  status: 'pass' | 'partial' | 'fail' | 'missing' | string;
+  status: RelayCheckStatus;
   severity: string;
   conclusion: string;
   evidence?: string[];
   metrics?: Record<string, unknown>;
   missing?: string[];
   source: string;
+  applicability?: RelayCheckApplicability;
+  applicable?: boolean;
+  executed?: boolean;
+  conclusive?: boolean;
+  score_eligible?: boolean;
+  eligibility_reason?: string;
+  score_weight?: number;
+  score_impact?: number;
+  threshold?: unknown;
+  family?: string;
+  families?: string[];
+  endpoint?: string;
+  protocol?: string;
 }
 
 export interface RelayModelMatrixCell {
   id: string;
   title: string;
-  status: 'pass' | 'partial' | 'fail' | 'missing' | string;
+  status: RelayCheckStatus;
   severity?: string;
   summary: string;
   metrics?: Record<string, unknown>;
@@ -256,6 +345,19 @@ export interface RelayModelMatrixCell {
     detail?: Record<string, unknown>;
   }>;
   risks?: string[];
+  applicability?: RelayCheckApplicability;
+  applicable?: boolean;
+  executed?: boolean;
+  conclusive?: boolean;
+  score_eligible?: boolean;
+  eligibility_reason?: string;
+  score_weight?: number;
+  score_impact?: number;
+  threshold?: unknown;
+  family?: string;
+  families?: string[];
+  endpoint?: string;
+  protocol?: string;
 }
 
 export interface RelayModelMatrixRow {
@@ -263,8 +365,12 @@ export interface RelayModelMatrixRow {
   family: string;
   available: boolean;
   grade: string;
-  overall_status: 'pass' | 'partial' | 'fail' | 'missing' | string;
+  overall_status: RelayCheckStatus;
   overall_reason?: string;
+  protocol?: string;
+  endpoint?: string;
+  score_eligible?: boolean;
+  coverage?: RelayCoverageSummary;
   checks: RelayModelMatrixCell[];
 }
 
@@ -297,6 +403,11 @@ export interface RelayReport {
     risk_models: number;
     average_latency_ms: number;
     average_injection_tokens: number;
+    overall_score?: number;
+    score_eligible?: boolean;
+    score_eligibility_reason?: string;
+    eligibility_reason?: string;
+    coverage?: RelayCoverageSummary;
   };
   model_catalog: {
     route: string;
@@ -317,6 +428,22 @@ export interface RelayReport {
     detail?: Record<string, unknown>;
   }>;
   standard_checks?: RelayStandardCheck[];
+  check_catalog?: Array<{
+    id: string;
+    title: string;
+    category?: string;
+    family?: string;
+    families?: string[];
+    endpoint?: string;
+    protocol?: string;
+  }>;
+  coverage?: RelayCoverageSummary;
+  coverage_summary?: RelayCoverageSummary;
+  score_eligible?: boolean;
+  eligibility_reason?: string;
+  score_eligibility?: RelayScoreEligibility;
+  overall_score?: number;
+  raw?: Record<string, unknown>;
   charts: {
     grade_distribution: NameValue[];
     family_distribution: NameValue[];
@@ -339,6 +466,10 @@ export interface RelayDetectionTask {
   confidence: string;
   model_count: number;
   risk_count: number;
+  overall_score?: number;
+  score_eligible?: boolean;
+  eligibility_reason?: string;
+  coverage?: RelayCoverageSummary;
   error_message?: string;
   output?: RelayReport;
   execution?: Record<string, unknown>;

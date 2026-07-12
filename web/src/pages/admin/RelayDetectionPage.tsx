@@ -1,50 +1,102 @@
-import { type FormEvent, type ReactNode, useMemo, useState } from 'react';
+import {
+  type FormEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip as RechartsTooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import { Button, Card, Chip, Form, Input, Label, ListBox, Select, Spinner, Tabs, TextArea, TextField } from '@heroui/react';
+  Button,
+  Card,
+  Chip,
+  Form,
+  Input,
+  Label,
+  ListBox,
+  Modal,
+  Select,
+  Spinner,
+  Tabs,
+  TextArea,
+  TextField,
+  useOverlayState,
+} from '@heroui/react';
 import {
+  Ban,
+  CheckCircle2,
   ClipboardPaste,
-  Clock3,
-  Database,
+  Download,
+  Eye,
   FileJson,
   Gauge,
-  LayoutDashboard,
   ListChecks,
   Play,
   Radar,
   RefreshCw,
+  RotateCcw,
   ScanSearch,
-  ServerCog,
   ShieldAlert,
   ShieldCheck,
   TriangleAlert,
+  WifiOff,
   XCircle,
 } from 'lucide-react';
 import {
   relayDetectionApi,
+  type RelayCheckApplicability,
+  type RelayCheckStatus,
+  type RelayCoverageSummary,
   type RelayDetectionTask,
+  type RelayModelMatrixCell,
   type RelayModelMatrixRow,
   type RelayPlatformType,
   type RelayReport,
   type RelayStandardCheck,
 } from '../../shared/api/relayDetection';
+import { DialogTriggerShim } from '../../shared/components/DialogTriggerShim';
+import { useMediaQuery } from '../../shared/hooks/useMediaQuery';
 import { queryKeys } from '../../shared/queryKeys';
 import { useToast } from '../../shared/ui';
-import { CompactDataTable } from '../../shared/components/CompactDataTable';
-import { PIE_CHART_COLORS } from '../../shared/constants';
+
+type Tone = 'success' | 'warning' | 'danger' | 'default';
+type NormalizedStatus = 'pass' | 'warn' | 'fail' | 'blocked' | 'not_run' | 'not_applicable' | 'inconclusive';
+type ReportTab = 'decision' | 'matrix' | 'checks' | 'baselines' | 'risks' | 'evidence';
+type MobileSegment = 'configure' | 'tasks' | 'report';
+type MatrixCheck = RelayModelMatrixCell & { virtual?: boolean };
+
+interface FormState {
+  api_key: string;
+  base_url: string;
+  platform_type: RelayPlatformType;
+}
+
+interface MatrixRowView extends RelayModelMatrixRow {
+  endpoint: string;
+  protocol: string;
+}
+
+interface EvidenceSelection {
+  check: RelayModelMatrixCell | RelayStandardCheck;
+  context?: string;
+  model?: string;
+}
+
+interface FailureItem extends EvidenceSelection {
+  key: string;
+  summary: string;
+  title: string;
+}
+
+interface CheckDefinition {
+  id: string;
+  title: string;
+}
 
 const platformOptions: Array<{ id: RelayPlatformType; label: string }> = [
+  { id: 'auto', label: '自动检测' },
   { id: 'openai', label: 'OpenAI Compatible' },
   { id: 'anthropic', label: 'Anthropic Claude' },
   { id: 'aws-bedrock', label: 'AWS Bedrock' },
@@ -54,313 +106,104 @@ const platformOptions: Array<{ id: RelayPlatformType; label: string }> = [
   { id: 'windsurf', label: 'Windsurf' },
 ];
 
-type Tone = 'success' | 'warning' | 'danger' | 'default';
-
 const statusTone: Record<string, Tone> = {
+  blocked: 'warning',
   cancelled: 'default',
   cancelling: 'warning',
   completed: 'success',
+  fail: 'danger',
   failed: 'danger',
+  inconclusive: 'warning',
+  not_applicable: 'default',
+  not_run: 'default',
+  pass: 'success',
   pending: 'default',
   processing: 'warning',
+  warn: 'warning',
 };
 
-const checkTone: Record<string, Tone> = {
-  fail: 'danger',
-  missing: 'default',
-  not_applicable: 'default',
-  partial: 'warning',
-  pass: 'success',
-};
-
-const checkLabels: Record<string, string> = {
+const checkLabels: Record<NormalizedStatus, string> = {
+  blocked: '受阻',
   fail: '失败',
-  missing: '未接入',
-  not_applicable: '不适用',
-  partial: '部分',
+  inconclusive: '无结论',
+  not_applicable: 'N/A',
+  not_run: '未运行',
   pass: '通过',
+  warn: '警告',
 };
 
-const severityTone: Record<string, Tone> = {
-  critical: 'danger',
-  high: 'danger',
-  low: 'success',
-  medium: 'warning',
+const taskLabels: Record<string, string> = {
+  cancelled: '已取消',
+  cancelling: '取消中',
+  completed: '已完成',
+  failed: '失败',
+  pending: '排队中',
+  processing: '检测中',
 };
 
-const gradeTone: Record<string, Tone> = {
-  A: 'success',
-  B: 'success',
-  C: 'warning',
-  D: 'danger',
-  F: 'danger',
-};
+const claudeOnlyCheckIDs = new Set([
+  'anthropic_count_tokens',
+  'anthropic_tool_use',
+  'cache_ttl',
+  'cache_ttl_control',
+  'claude_code_cache',
+  'claude_code_client_interaction',
+  'claude_code_interaction',
+  'claude_code_subagents',
+  'claude_code_thinking',
+  'claude_runtime_signature_presence',
+  'claude_runtime_signature_roundtrip',
+  'claude_runtime_signature_tamper_reject',
+  'claude_runtime_state',
+  'claude_runtime_tool_continuation',
+  'client_gate',
+  'plain_sdk_cache',
+  'thinking_signature',
+]);
 
-// tone → 主题色变量，供 StatCard / 图标底色复用
-const toneColor: Record<Tone, string> = {
-  danger: 'var(--ag-danger)',
-  default: 'var(--ag-primary)',
-  success: 'var(--ag-success)',
-  warning: 'var(--ag-warning)',
-};
+const openAIOnlyCheckIDs = new Set([
+  'codex_client_interaction',
+  'codex_interaction',
+  'codex_subagents',
+  'openai_input_tokens_baseline',
+  'openai_responses_api',
+  'openai_responses_native',
+  'openai_structured_outputs',
+  'openai_tool_call',
+  'openai_tool_call_native',
+]);
 
-interface FormState {
-  api_key: string;
-  base_url: string;
-  platform_type: RelayPlatformType | '';
+const awsOnlyCheckIDs = new Set([
+  'aws_bedrock_broker_generation',
+  'aws_bedrock_count_tokens_baseline',
+  'aws_bedrock_generation_verification',
+  'aws_bedrock_runtime_baseline',
+  'aws_platform_generation_verification',
+]);
+
+const activeTaskStatuses = new Set(['pending', 'processing', 'cancelling']);
+
+function cx(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(' ');
 }
 
-function Panel({
-  children,
-  extra,
-  title,
-}: {
-  children: ReactNode;
-  extra?: ReactNode;
-  title: string;
-}) {
-  return (
-    <Card className="ag-dashboard-panel">
-      <div className="flex min-w-0 items-center justify-between gap-3 p-3 pb-2 2xl:p-4 2xl:pb-2">
-        <h3 className="min-w-0 truncate text-base font-semibold leading-none text-text">{title}</h3>
-        {extra ? <div className="min-w-0 shrink">{extra}</div> : null}
-      </div>
-      <Card.Content className="px-3 pb-3 2xl:px-4 2xl:pb-4">{children}</Card.Content>
-    </Card>
-  );
-}
-
-// 复用项目统一的指标卡写法（accentColor + ring，对齐 UsagePage 的 StatCard）
-function StatCard({
-  icon,
-  label,
-  meta,
-  tone = 'default',
-  value,
-}: {
-  icon: ReactNode;
-  label: string;
-  meta?: ReactNode;
-  tone?: Tone;
-  value: ReactNode;
-}) {
-  const accentColor = toneColor[tone];
-  return (
-    <Card className="ag-dashboard-metric min-h-[76px] 2xl:min-h-[82px]">
-      <Card.Content className="ag-dashboard-metric-content p-3 2xl:p-3.5">
-        <div className="ag-dashboard-metric-copy">
-          <div className="truncate text-sm font-semibold tracking-normal text-text-tertiary">{label}</div>
-          <div className="mt-1 flex min-w-0 items-baseline gap-2">
-            <div className="min-w-0 truncate font-mono text-[22px] font-semibold leading-none text-text 2xl:text-2xl">{value}</div>
-          </div>
-          {meta ? <div className="mt-1 min-w-0 truncate text-xs font-medium text-text-tertiary">{meta}</div> : null}
-        </div>
-        <div
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--field-radius)] shadow-sm ring-1 2xl:h-11 2xl:w-11"
-          style={{
-            background: `color-mix(in srgb, ${accentColor} 14%, transparent)`,
-            borderColor: `color-mix(in srgb, ${accentColor} 24%, transparent)`,
-            color: accentColor,
-          }}
-        >
-          {icon}
-        </div>
-      </Card.Content>
-    </Card>
-  );
-}
-
-function DistributionPie({ data }: { data: Array<{ name: string; value: number }> }) {
-  return (
-    <ResponsiveContainer width="100%" height={158}>
-      <PieChart>
-        <Pie
-          cx="50%"
-          cy="50%"
-          data={data}
-          dataKey="value"
-          innerRadius={38}
-          isAnimationActive={false}
-          minAngle={3}
-          outerRadius={62}
-          stroke="var(--ag-surface)"
-          strokeWidth={2}
-        >
-          {data.map((_, index) => (
-            <Cell fill={PIE_CHART_COLORS[index % PIE_CHART_COLORS.length]} key={index} />
-          ))}
-        </Pie>
-        <RechartsTooltip contentStyle={{ background: 'var(--ag-bg-elevated)', border: '1px solid var(--ag-border)', borderRadius: 8, fontSize: 12 }} />
-      </PieChart>
-    </ResponsiveContainer>
-  );
-}
-
-function ScoreBars({ data }: { data: Array<{ model: string; score: number }> }) {
-  const chartData = data.slice(0, 18).map((item) => ({
-    model: item.model.length > 16 ? `${item.model.slice(0, 16)}...` : item.model,
-    score: Math.round(item.score),
-  }));
-  return (
-    <ResponsiveContainer width="100%" height={180}>
-      <BarChart data={chartData} margin={{ bottom: 0, left: -22, right: 8, top: 8 }}>
-        <CartesianGrid stroke="var(--ag-border-subtle)" vertical={false} />
-        <XAxis angle={-24} dataKey="model" height={52} interval={0} textAnchor="end" tick={{ fill: 'var(--ag-text-tertiary)', fontSize: 10 }} />
-        <YAxis axisLine={false} domain={[0, 100]} tick={{ fill: 'var(--ag-text-tertiary)', fontSize: 11 }} tickLine={false} />
-        <RechartsTooltip contentStyle={{ background: 'var(--ag-bg-elevated)', border: '1px solid var(--ag-border)', borderRadius: 8, fontSize: 12 }} />
-        <Bar dataKey="score" fill="var(--ag-primary)" isAnimationActive={false} radius={[4, 4, 0, 0]} />
-      </BarChart>
-    </ResponsiveContainer>
-  );
-}
-
-// 居中状态占位：空 / 检测中 / 无报告 统一外观
-function CenterState({
-  hint,
-  icon,
-  spinning = false,
-  title,
-  tone = 'default',
-}: {
-  hint?: string;
-  icon: ReactNode;
-  spinning?: boolean;
-  title: string;
-  tone?: Tone;
-}) {
-  const accentColor = toneColor[tone];
-  return (
-    <div className="flex min-h-[360px] flex-col items-center justify-center gap-3 p-8 text-center">
-      <div
-        className="flex h-14 w-14 items-center justify-center rounded-2xl ring-1"
-        style={{
-          background: `color-mix(in srgb, ${accentColor} 12%, transparent)`,
-          borderColor: `color-mix(in srgb, ${accentColor} 22%, transparent)`,
-          color: accentColor,
-        }}
-      >
-        {spinning ? <Spinner /> : icon}
-      </div>
-      <div className="space-y-1">
-        <div className="text-sm font-semibold text-text">{title}</div>
-        {hint ? <div className="max-w-[280px] text-xs text-text-tertiary">{hint}</div> : null}
-      </div>
-    </div>
-  );
+function statusLabel(status: string) {
+  return taskLabels[status] ?? status;
 }
 
 function fmtTime(value?: string) {
   if (!value) return '-';
-  try {
-    return new Date(value).toLocaleString();
-  } catch {
-    return value;
-  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-function statusLabel(status: string) {
-  const labels: Record<string, string> = {
-    cancelled: '已取消',
-    cancelling: '取消中',
-    completed: '完成',
-    failed: '失败',
-    pending: '等待',
-    processing: '检测中',
-  };
-  return labels[status] ?? status;
+function formatNumber(value: number, maximumFractionDigits = 0) {
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits }).format(value);
 }
 
-function modelMatchLabel(kind: string, matched: boolean) {
-  switch (kind) {
-    case 'exact':
-      return '一致';
-    case 'version_alias':
-      return '版本别名';
-    case 'not_returned':
-      return '身份不可验证';
-    case 'model_changed':
-      return '真实换模';
-    default:
-      return matched ? '一致' : '真实换模';
-  }
-}
-
-function modelMatchTone(kind: string, matched: boolean): Tone {
-  if (kind === 'exact' || matched) return 'success';
-  if (kind === 'version_alias' || kind === 'not_returned') return 'warning';
-  return 'danger';
-}
-
-function riskLevelLabel(riskCount: number, grade?: string) {
-  if ((grade === 'D' || grade === 'F') && riskCount > 0) return '高风险';
-  if (riskCount > 0 || grade === 'C') return '中风险';
-  if (grade === 'A' || grade === 'B') return '低风险';
-  return '未评级';
-}
-
-function riskLevelTone(riskCount: number, grade?: string): Tone {
-  if ((grade === 'D' || grade === 'F') && riskCount > 0) return 'danger';
-  if (riskCount > 0 || grade === 'C') return 'warning';
-  if (grade === 'A' || grade === 'B') return 'success';
-  return 'default';
-}
-
-function normalizeModelName(model: string) {
-  return model.trim().toLowerCase().replace(/_/gu, '-').replace(/-+/gu, '-').replace(/^-|-$/gu, '');
-}
-
-function isDateVersionToken(part: string) {
-  if (!/^\d{8}$/u.test(part)) return false;
-  const year = Number(part.slice(0, 4));
-  const month = Number(part.slice(4, 6));
-  const day = Number(part.slice(6, 8));
-  return year >= 2020 && year <= 2099 && month >= 1 && month <= 12 && day >= 1 && day <= 31;
-}
-
-function normalizeModelAlias(model: string) {
-  return normalizeModelName(model)
-    .replace(/-latest$/u, '')
-    .split('-')
-    .filter((part) => !isDateVersionToken(part))
-    .join('-');
-}
-
-function inferModelMatch(row: RelayReport['models'][number]) {
-  const requested = row.requested_model || row.model;
-  const returned = row.returned_model || '';
-  if (row.model_match_kind) {
-    return {
-      kind: row.model_match_kind,
-      matched: row.model_matched,
-      reason: row.model_match_reason,
-    };
-  }
-  if (!returned) {
-    return {
-      kind: 'not_returned',
-      matched: false,
-      reason: '响应未返回 model 字段，无法验证是否静默换模',
-    };
-  }
-  if (normalizeModelName(requested) === normalizeModelName(returned)) {
-    return {
-      kind: 'exact',
-      matched: true,
-      reason: 'request.model 与 response.model 完全一致',
-    };
-  }
-  if (normalizeModelAlias(requested) === normalizeModelAlias(returned)) {
-    return {
-      kind: 'version_alias',
-      matched: true,
-      reason: `版本别名归一化一致：${requested} -> ${returned}`,
-    };
-  }
-  return {
-    kind: 'model_changed',
-    matched: false,
-    reason: `请求模型与返回模型归一化后仍不一致：${requested} != ${returned}`,
-  };
+function coveragePercent(ratio: number) {
+  const normalized = ratio > 1 ? ratio / 100 : ratio;
+  return Math.round(Math.max(0, Math.min(1, normalized)) * 100);
 }
 
 function normalizeBaseURL(raw: string) {
@@ -368,14 +211,11 @@ function normalizeBaseURL(raw: string) {
   if (!trimmed) return '';
   try {
     const url = new URL(trimmed);
-    for (const suffix of ['/v1/chat/completions', '/chat/completions', '/v1/messages', '/messages', '/v1/models', '/models']) {
-      if (url.pathname.endsWith(suffix)) {
-        url.pathname = url.pathname.slice(0, -suffix.length) || '/';
-        break;
-      }
-    }
+    const suffixes = ['/v1/chat/completions', '/chat/completions', '/v1/messages', '/messages', '/v1/models', '/models'];
+    const suffix = suffixes.find((item) => url.pathname.endsWith(item));
+    if (suffix) url.pathname = url.pathname.slice(0, -suffix.length) || '/';
     url.hash = '';
-    return url.toString().replace(/\/$/, '');
+    return url.toString().replace(/\/$/u, '');
   } catch {
     return trimmed.replace(/\/(?:v1\/)?(?:chat\/completions|messages|models)$/u, '').replace(/\/$/u, '');
   }
@@ -383,17 +223,17 @@ function normalizeBaseURL(raw: string) {
 
 function readNested(obj: unknown, paths: string[]) {
   for (const path of paths) {
-    let cur: unknown = obj;
-    let ok = true;
+    let current: unknown = obj;
+    let found = true;
     for (const part of path.split('.')) {
-      if (cur && typeof cur === 'object' && part in cur) {
-        cur = (cur as Record<string, unknown>)[part];
+      if (current && typeof current === 'object' && part in current) {
+        current = (current as Record<string, unknown>)[part];
       } else {
-        ok = false;
+        found = false;
         break;
       }
     }
-    if (ok && typeof cur === 'string' && cur.trim()) return cur.trim();
+    if (found && typeof current === 'string' && current.trim()) return current.trim();
   }
   return '';
 }
@@ -402,7 +242,7 @@ function parseCredentialInput(raw: string): Partial<FormState> {
   const text = raw.trim();
   if (!text) return {};
   try {
-    const parsed = JSON.parse(text);
+    const parsed: unknown = JSON.parse(text);
     if (parsed && typeof parsed === 'object') {
       const base = readNested(parsed, ['base_url', 'baseURL', 'ANTHROPIC_BASE_URL', 'OPENAI_BASE_URL', 'url', 'api_base', 'apiBase', 'endpoint', 'server.url', 'provider.base_url']);
       const key = readNested(parsed, ['api_key', 'apiKey', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'key', 'token', 'auth.api_key', 'provider.api_key']);
@@ -412,360 +252,520 @@ function parseCredentialInput(raw: string): Partial<FormState> {
       };
     }
   } catch {
-    // Fall through to regex parsing.
+    // Continue with the text parser.
   }
   const baseMatch = text.match(/https?:\/\/[^\s"',}]+/u);
-  const keyMatch = text.match(/(?:api[_-]?key|auth[_-]?token|token|authorization)\s*[:=]\s*["']?([^"',\s}]+)/iu) ?? text.match(/\b(sk-[A-Za-z0-9._-]{12,})\b/u);
+  const keyMatch = text.match(/(?:api[_-]?key|auth[_-]?token|token|authorization)\s*[:=]\s*["']?([^"',\s}]+)/iu)
+    ?? text.match(/\b(sk-[A-Za-z0-9._-]{12,})\b/u);
   return {
     ...(baseMatch ? { base_url: normalizeBaseURL(baseMatch[0]) } : {}),
     ...(keyMatch?.[1] ? { api_key: keyMatch[1].trim() } : {}),
   };
 }
 
-function countChecks(checks: RelayStandardCheck[], status: string) {
-  return checks.filter((item) => item.status === status).length;
+function sanitizeValue(value: unknown, key = ''): unknown {
+  const sensitiveKey = /(?:api[_-]?key|authorization|auth[_-]?token|access[_-]?token|x-api-key|anthropic-api-key)/iu.test(key);
+  if (sensitiveKey) return '[REDACTED]';
+  if (typeof value === 'string') {
+    return value
+      .replace(/\b(sk-[A-Za-z0-9._-]{8,})\b/gu, '[REDACTED]')
+      .replace(/(Bearer\s+)[A-Za-z0-9._~+/-]{8,}/giu, '$1[REDACTED]');
+  }
+  if (Array.isArray(value)) return value.map((item) => sanitizeValue(item));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([entryKey, entryValue]) => [entryKey, sanitizeValue(entryValue, entryKey)]));
+  }
+  return value;
 }
 
-function buildFallbackChecks(task?: RelayDetectionTask): RelayStandardCheck[] {
-  const report = task?.output;
-  const summary = report?.summary;
-  if (!report || !summary) return [];
+function safeJSON(value: unknown) {
+  return JSON.stringify(sanitizeValue(value), null, 2);
+}
+
+type RelayFamilyKind = 'aws' | 'claude' | 'openai' | 'unknown';
+
+function classifyRelayFamily(value: string): RelayFamilyKind {
+  const normalized = value.toLowerCase();
+  if (/bedrock|aws-platform|aws platform/u.test(normalized)) return 'aws';
+  if (/claude|anthropic|kiro|windsurf/u.test(normalized)) return 'claude';
+  if (/openai|gpt|chatgpt|codex|responses|\bo[134](?:\b|-)/u.test(normalized)) return 'openai';
+  return 'unknown';
+}
+
+// Mixed legacy reports must classify each row before consulting the task-level platform.
+export function familyKind(family?: string, protocol?: string, platform?: string): RelayFamilyKind {
+  const modelKind = classifyRelayFamily(`${family ?? ''} ${protocol ?? ''}`);
+  if (modelKind !== 'unknown') return modelKind;
+  return classifyRelayFamily(platform ?? '');
+}
+
+export function inferApplicable(checkID: string, family?: string, protocol?: string, platform?: string) {
+  const kind = familyKind(family, protocol, platform);
+  if (claudeOnlyCheckIDs.has(checkID)) return kind !== 'openai';
+  if (openAIOnlyCheckIDs.has(checkID)) return kind !== 'claude' && kind !== 'aws';
+  if (awsOnlyCheckIDs.has(checkID)) return kind === 'unknown' || kind === 'aws';
+  return true;
+}
+
+function rawApplicability(check: RelayModelMatrixCell | RelayStandardCheck) {
+  const nested = check.applicability;
+  return {
+    applicable: nested?.applicable ?? check.applicable,
+    conclusive: nested?.conclusive ?? check.conclusive,
+    eligibilityReason: nested?.eligibility_reason ?? check.eligibility_reason,
+    executed: nested?.executed ?? check.executed,
+    scoreEligible: nested?.score_eligible ?? check.score_eligible,
+    scoreImpact: nested?.score_impact ?? check.score_impact,
+    scoreWeight: nested?.score_weight ?? check.score_weight,
+  };
+}
+
+function mapLegacyStatus(status: RelayCheckStatus): NormalizedStatus {
+  switch (status) {
+    case 'pass':
+      return 'pass';
+    case 'warn':
+    case 'partial':
+      return 'warn';
+    case 'fail':
+      return 'fail';
+    case 'blocked':
+      return 'blocked';
+    case 'not_run':
+    case 'missing':
+      return 'not_run';
+    case 'not_applicable':
+      return 'not_applicable';
+    default:
+      return 'inconclusive';
+  }
+}
+
+function normalizeApplicability(
+  check: RelayModelMatrixCell | RelayStandardCheck,
+  family?: string,
+  protocol?: string,
+  platform?: string,
+): RelayCheckApplicability & { status: NormalizedStatus } {
+  const explicit = rawApplicability(check);
+  let applicable = explicit.applicable ?? inferApplicable(check.id, family, protocol, platform);
+  const status = applicable ? mapLegacyStatus(check.status) : 'not_applicable';
+  if (status === 'not_applicable') applicable = false;
+  const executed = explicit.executed ?? !['not_applicable', 'not_run', 'blocked'].includes(status);
+  const conclusive = explicit.conclusive ?? (applicable && ['pass', 'warn', 'fail'].includes(status));
+  return {
+    applicable,
+    conclusive,
+    eligibility_reason: explicit.eligibilityReason,
+    executed,
+    score_eligible: explicit.scoreEligible ?? conclusive,
+    score_impact: explicit.scoreImpact,
+    score_weight: explicit.scoreWeight,
+    status,
+  };
+}
+
+function normalizedMatrixCells(rows: MatrixRowView[], platform: string) {
+  return rows.flatMap((row) => row.checks.map((cell) => normalizeApplicability(cell, row.family, row.protocol, platform)));
+}
+
+function collectFailureItems(rows: MatrixRowView[], checks: RelayStandardCheck[], platform: string): FailureItem[] {
+  const matrixFailures = rows.flatMap((row) => row.checks.flatMap((check) => {
+    const normalized = normalizeApplicability(check, row.family, row.protocol, platform);
+    if (normalized.status !== 'fail' || !normalized.applicable || !normalized.executed || !normalized.conclusive || !normalized.score_eligible) return [];
+    return [{
+      check,
+      context: `${row.protocol} · ${row.endpoint}`,
+      key: `matrix:${row.model}:${check.id}`,
+      model: row.model,
+      summary: check.summary || normalized.eligibility_reason || '检查返回确定性失败。',
+      title: check.title,
+    }];
+  }));
+  const standardFailures = checks.flatMap((check) => {
+    const normalized = normalizeApplicability(check, check.family, check.protocol, platform);
+    if (normalized.status !== 'fail' || !normalized.applicable || !normalized.executed || !normalized.conclusive || !normalized.score_eligible) return [];
+    return [{
+      check,
+      context: [check.family, check.protocol, check.endpoint].filter(Boolean).join(' · ') || check.category,
+      key: `standard:${check.id}:${check.family || ''}:${check.protocol || ''}:${check.endpoint || ''}`,
+      summary: check.conclusion || normalized.eligibility_reason || '检查返回确定性失败。',
+      title: check.title,
+    }];
+  });
+  return [...matrixFailures, ...standardFailures];
+}
+
+function calculateCoverage(rows: MatrixRowView[], platform: string): RelayCoverageSummary {
+  const normalized = normalizedMatrixCells(rows, platform);
+  const applicable = normalized.filter((item) => item.applicable).length;
+  const conclusive = normalized.filter((item) => item.applicable && item.conclusive).length;
+  return {
+    applicable,
+    attempted: normalized.filter((item) => item.applicable && item.executed).length,
+    blocked: normalized.filter((item) => item.applicable && item.status === 'blocked').length,
+    conclusive,
+    inconclusive: normalized.filter((item) => item.applicable && item.status === 'inconclusive').length,
+    not_applicable: normalized.filter((item) => !item.applicable || item.status === 'not_applicable').length,
+    not_run: normalized.filter((item) => item.applicable && item.status === 'not_run').length,
+    ratio: applicable > 0 ? Math.round((conclusive / applicable) * 1000) / 1000 : 0,
+  };
+}
+
+function isCoverage(value: RelayCoverageSummary | undefined): value is RelayCoverageSummary {
+  return Boolean(value
+    && Number.isFinite(value.applicable)
+    && Number.isFinite(value.conclusive)
+    && Number.isFinite(value.ratio));
+}
+
+function buildLegacyChecks(task?: RelayDetectionTask): RelayStandardCheck[] {
+  const summary = task?.output?.summary;
+  if (!summary) return [];
   return [
     {
-      category: '号池基础',
+      applicable: true,
+      category: '基础可用性',
       conclusion: `枚举到 ${summary.model_count} 个模型。`,
-      evidence: ['旧任务报告未包含标准规则字段，页面按模型结果生成兼容视图。'],
+      conclusive: true,
+      evidence: ['历史报告未包含完整标准检查目录。'],
+      executed: true,
       id: 'model_catalog',
+      score_eligible: true,
       severity: summary.model_count > 0 ? 'low' : 'high',
-      source: 'compat',
+      source: 'legacy-compatibility',
       status: summary.model_count > 0 ? 'pass' : 'fail',
       title: '模型目录枚举',
     },
     {
-      category: '号池基础',
+      applicable: true,
+      category: '基础可用性',
       conclusion: `${summary.available_models}/${summary.model_count} 个模型可用。`,
+      conclusive: true,
+      executed: true,
       id: 'model_availability',
+      score_eligible: true,
       severity: 'medium',
-      source: 'compat',
-      status: summary.available_models === summary.model_count ? 'pass' : 'partial',
-      title: '全模型基础可用性',
+      source: 'legacy-compatibility',
+      status: summary.available_models === summary.model_count ? 'pass' : 'warn',
+      title: '模型基础可用性',
     },
     {
-      category: '缓存检测',
-      conclusion: '旧任务未执行缓存 warm 命中率测试。',
-      id: 'prompt_cache',
-      missing: ['需要重新创建检测任务，后端会写入完整标准规则项。'],
+      applicable: true,
+      category: '覆盖缺口',
+      conclusion: '历史任务没有保存完整探针覆盖信息。',
+      conclusive: false,
+      eligibility_reason: '请重新检测以生成 applicability 与 coverage。',
+      executed: false,
+      id: 'legacy_probe_coverage',
+      missing: ['请重新检测以生成完整覆盖报告。'],
+      score_eligible: false,
       severity: 'medium',
-      source: 'compat',
-      status: 'missing',
-      title: 'Prompt Cache 命中率',
+      source: 'legacy-compatibility',
+      status: 'not_run',
+      title: '完整探针覆盖',
     },
   ];
 }
 
-function normalizeStandardChecks(checks: RelayStandardCheck[], models: RelayReport['models']): RelayStandardCheck[] {
-  if (checks.length === 0 || models.length === 0) return checks;
-  const matches = models.map(inferModelMatch);
-  const changed = matches.filter((item) => item.kind === 'model_changed').length;
-  const missing = matches.filter((item) => item.kind === 'not_returned').length;
-  const aliases = matches.filter((item) => item.kind === 'version_alias').length;
-  const matched = matches.filter((item) => item.kind === 'exact' || item.kind === 'version_alias').length;
-
-  return checks.map((check) => {
-    if (check.id !== 'model_purity' || aliases === 0 || changed > 0) return check;
+function buildLegacyMatrix(report: RelayReport): MatrixRowView[] {
+  return report.models.map((model) => {
+    const checks: RelayModelMatrixCell[] = [];
+    const add = (cell: RelayModelMatrixCell) => checks.push(cell);
+    add({
+      applicable: true,
+      conclusive: true,
+      executed: true,
+      id: 'availability',
+      score_eligible: true,
+      status: model.available ? 'pass' : 'fail',
+      summary: model.available ? `HTTP ${model.http_status || 200}` : model.error || `HTTP ${model.http_status || '-'}`,
+      title: '可用性',
+    });
+    const returned = model.returned_model;
+    const identityConclusive = Boolean(returned);
+    add({
+      applicable: true,
+      conclusive: identityConclusive,
+      eligibility_reason: identityConclusive ? undefined : '响应没有返回 model 字段。',
+      executed: true,
+      id: 'model_purity',
+      score_eligible: identityConclusive,
+      status: !identityConclusive ? 'inconclusive' : model.model_matched ? 'pass' : 'fail',
+      summary: `${model.requested_model || model.model} -> ${returned || '未返回 model'}`,
+      title: '模型身份',
+    });
+    const probes: Array<{
+      applicable?: boolean;
+      error?: string;
+      id: string;
+      ok?: boolean;
+      summary: string;
+      tested?: boolean;
+      title: string;
+    }> = [
+      { error: model.injection?.samples?.find((item) => item.error)?.error, id: 'prompt_injection', ok: model.injection?.ok, summary: `隐藏注入 token ${model.hidden_injection_tokens ?? 0}`, tested: model.injection?.tested, title: '注入检测' },
+      { error: model.cache?.error, id: 'prompt_cache', ok: model.cache?.ok, summary: `warm 命中率 ${Math.round((model.cache?.warm_hit_rate ?? 0) * 100)}%`, tested: model.cache?.tested, title: '缓存' },
+      { error: model.stability?.error_classes ? safeJSON(model.stability.error_classes) : undefined, id: 'stability', ok: model.stability?.ok, summary: `成功率 ${Math.round((model.stability?.success_rate ?? 0) * 100)}%`, tested: model.stability?.tested, title: '稳定性' },
+      { error: model.stream?.error, id: 'stream_shape', ok: model.stream?.ok, summary: `${model.stream?.event_count ?? 0} 个流事件`, tested: model.stream?.tested, title: '流式协议' },
+      { applicable: inferApplicable('thinking_signature', model.family, model.protocol, report.platform_type), error: model.thinking_probe?.error, id: 'thinking_signature', ok: model.thinking_probe?.ok, summary: model.thinking_probe?.events?.slice(0, 4).join(' / ') || 'Thinking 签名', tested: model.thinking_probe?.tested, title: 'Thinking 签名' },
+      { error: model.token_precision?.error, id: 'token_precision', ok: model.token_precision?.ok, summary: `偏差 ${model.token_precision?.delta ?? '-'}`, tested: model.token_precision?.tested, title: 'Token 精度' },
+      { error: model.source_probe?.error, id: 'source_identity', ok: model.source_probe?.ok, summary: `${model.source_probe?.expected || '-'} -> ${model.source_probe?.claimed_source || 'unknown'}`, tested: model.source_probe?.tested, title: '来源身份' },
+      { applicable: model.cache_ttl?.applicable, error: model.cache_ttl?.error, id: 'cache_ttl', ok: model.cache_ttl?.ok, summary: `5m ${model.cache_ttl?.supports_5m ? '支持' : '未证实'} · 1h ${model.cache_ttl?.supports_1h ? '支持' : '未证实'}`, tested: model.cache_ttl?.tested, title: '缓存 TTL' },
+      { applicable: model.quality?.applicable, error: model.quality?.error, id: 'quality', ok: model.quality?.ok, summary: `${model.quality?.passed ?? 0}/${model.quality?.total ?? 0} 质量用例`, tested: model.quality?.tested, title: '输出质量' },
+    ];
+    probes.forEach((probe) => {
+      const applicable = probe.applicable ?? inferApplicable(probe.id, model.family, model.protocol, report.platform_type);
+      const status: RelayCheckStatus = !applicable ? 'not_applicable' : !probe.tested ? 'not_run' : probe.ok ? 'pass' : 'fail';
+      add({
+        applicable,
+        conclusive: applicable && Boolean(probe.tested),
+        eligibility_reason: !applicable ? `不适用于 ${model.family || model.protocol} 模型。` : !probe.tested ? probe.error || '历史任务未运行此探针。' : undefined,
+        evidence: probe.error ? [probe.error] : undefined,
+        executed: applicable && Boolean(probe.tested),
+        id: probe.id,
+        score_eligible: applicable && Boolean(probe.tested),
+        status,
+        summary: probe.summary,
+        title: probe.title,
+      });
+    });
     return {
-      ...check,
-      conclusion: `${matched}/${models.length} 个模型身份可归一化一致，其中 ${aliases} 个为官方版本别名返回。`,
-      evidence: [
-        '比对 request.model 与 response.model；日期版本号 / latest 归一化一致时标记为版本别名，不按真实换模处理。',
-      ],
-      metrics: {
-        ...(check.metrics ?? {}),
-        matched_models: matched,
-        mismatch_count: changed,
-        missing_model_count: missing,
-        version_alias_models: aliases,
-      },
-      severity: missing > 0 ? 'medium' : 'low',
-      status: missing > 0 ? 'partial' : 'pass',
+      available: model.available,
+      checks,
+      endpoint: model.transport?.url || model.transport?.host || report.model_catalog.route || report.base_url,
+      family: model.family,
+      grade: model.grade,
+      model: model.model,
+      overall_reason: model.error || model.risks?.join(', '),
+      overall_status: model.available ? 'pass' : 'fail',
+      protocol: model.protocol || report.platform_type,
     };
   });
 }
 
-function roleProbeLabel(row: RelayReport['models'][number]) {
-  if (!row.role_probe?.tested) return '未测';
-  if (row.role_probe.ok) return '通过';
-  if (row.role_probe.identity_conflict) return '身份冲突';
-  return '失败';
-}
-
-function roleProbeTone(row: RelayReport['models'][number]): Tone {
-  if (!row.role_probe?.tested) return 'default';
-  if (row.role_probe.ok) return 'success';
-  return 'warning';
-}
-
-function thinkingLabel(row: RelayReport['models'][number]) {
-  const probe = row.thinking_probe;
-  if (!probe?.tested) return '未测';
-  if (!probe.supported) return '不支持';
-  if (probe.ok) return '签名通过';
-  return '签名异常';
-}
-
-function thinkingTone(row: RelayReport['models'][number]): Tone {
-  const probe = row.thinking_probe;
-  if (!probe?.tested || !probe.supported) return 'default';
-  return probe.ok ? 'success' : 'danger';
-}
-
-function tokenPrecisionLabel(row: RelayReport['models'][number]) {
-  const probe = row.token_precision;
-  if (!probe?.tested) return '未测';
-  if (probe.ok) return `偏差 ${probe.delta}`;
-  return `异常 ${probe.delta}`;
-}
-
-function tokenPrecisionTone(row: RelayReport['models'][number]): Tone {
-  const probe = row.token_precision;
-  if (!probe?.tested) return 'default';
-  return probe.ok ? 'success' : 'warning';
-}
-
-function sourceProbeLabel(row: RelayReport['models'][number]) {
-  const probe = row.source_probe;
-  if (!probe?.tested) return '未测';
-  const claimed = probe.claimed_source || 'unknown';
-  return probe.ok ? claimed : `${probe.expected || '-'} -> ${claimed}`;
-}
-
-function sourceProbeTone(row: RelayReport['models'][number]): Tone {
-  const probe = row.source_probe;
-  if (!probe?.tested) return 'default';
-  return probe.ok ? 'success' : 'warning';
-}
-
-const claudeOnlyCheckIDs = new Set([
-  'thinking_signature',
-  'claude_runtime_signature_presence',
-  'claude_runtime_signature_roundtrip',
-  'claude_runtime_signature_tamper_reject',
-  'claude_runtime_tool_continuation',
-  'plain_sdk_cache',
-  'claude_code_cache',
-  'claude_code_client_interaction',
-  'claude_code_thinking',
-  'claude_code_subagents',
-  'anthropic_count_tokens',
-  'anthropic_tool_use',
-  'client_gate',
-]);
-
-const awsClaudeOnlyCheckIDs = new Set(['aws_bedrock_generation_verification']);
-
-const openAIOnlyCheckIDs = new Set([
-  'openai_responses_native',
-  'openai_input_tokens_baseline',
-  'openai_tool_call_native',
-  'openai_structured_outputs',
-  'openai_responses_api',
-  'openai_tool_call',
-  'codex_client_interaction',
-  'codex_subagents',
-]);
-
-function platformSpecificChecks(checks: RelayStandardCheck[], platform?: string): RelayStandardCheck[] {
-  const normalizedPlatform = (platform ?? '').toLowerCase();
-  const openaiLike = normalizedPlatform === 'openai';
-  const anthropicLike = ['anthropic', 'aws-bedrock', 'aws-platform', 'claude-code', 'kiro', 'windsurf'].includes(normalizedPlatform);
-
-  return checks.filter((check) => {
-    if (openaiLike) {
-      return !claudeOnlyCheckIDs.has(check.id) && !awsClaudeOnlyCheckIDs.has(check.id);
-    }
-    if (anthropicLike) {
-      return !openAIOnlyCheckIDs.has(check.id);
-    }
-    return true;
-  }).map((check) => {
-    if (check.id === 'sse_stream_shape') {
-      if (openaiLike) {
-        return {
-          ...check,
-          evidence: ['OpenAI 兼容协议需验证 stream=true 的 SSE data chunk、结束帧、TTFB 和流式 usage 结构。'],
-          missing: check.missing?.map(() => '需要补充 OpenAI SSE/chunk 探针，记录 chunk 序列、结束帧、TTFB 和 usage。'),
-          source: 'openai-model-channel-validation-standard.md §3',
-        };
-      }
-      if (anthropicLike) {
-        return {
-          ...check,
-          evidence: ['Claude/Bedrock 需验证 message_start、content_block_delta、message_stop 或 AWS event-stream 结构。'],
-          missing: check.missing?.map(() => '需要补充 Claude/Bedrock stream 探针，记录事件序列、TTFB 和末帧 usage。'),
-          source: 'aws-claude-channel-purity-standard.md §3; max-pool-validation-standard.md §1',
-        };
-      }
-    }
-    if (check.id === 'negative_model_probe') {
-      return {
-        ...check,
-        evidence: openaiLike
-          ? ['非法 OpenAI model 应返回 OpenAI 风格错误，不应泄漏 No available channel/new-api/one-api/litellm。']
-          : check.evidence,
-      };
-    }
-    return check;
+function buildMatrixRows(report: RelayReport): MatrixRowView[] {
+  if (!report.model_issue_matrix?.length) return buildLegacyMatrix(report);
+  const modelByID = new Map(report.models.map((model) => [model.model, model]));
+  return report.model_issue_matrix.map((row) => {
+    const model = modelByID.get(row.model);
+    return {
+      ...row,
+      endpoint: row.endpoint || model?.transport?.url || model?.transport?.host || report.model_catalog.route || report.base_url,
+      protocol: row.protocol || model?.protocol || report.platform_type,
+    };
   });
 }
 
-function aggregateRiskRows(rows: RelayReport['risks']): RelayReport['risks'] {
-  const externalQuota = rows.filter((row) => row.code === 'external_platform_quota_keyword_leak');
-  if (externalQuota.length <= 1) return rows;
-
-  const first = externalQuota[0];
-  if (!first) return rows;
-  const probes = externalQuota
-    .map((row) => String(row.detail?.evidence && typeof row.detail.evidence === 'object' ? (row.detail.evidence as Record<string, unknown>).probe ?? '' : ''))
-    .filter(Boolean);
-  return [
-    {
-      ...first,
-      message: `外部指纹检测在 ${externalQuota.length} 个公开/路由探针响应中发现平台配额关键词信号`,
-      detail: {
-        ...(first.detail ?? {}),
-        probe_count: externalQuota.length,
-        probes,
-      },
-    },
-    ...rows.filter((row) => row.code !== 'external_platform_quota_keyword_leak'),
-  ];
+function matrixCatalog(rows: MatrixRowView[], report: RelayReport): CheckDefinition[] {
+  const seen = new Set<string>();
+  const result: CheckDefinition[] = [];
+  report.check_catalog?.forEach((item) => {
+    if (!seen.has(item.id)) {
+      seen.add(item.id);
+      result.push({ id: item.id, title: item.title });
+    }
+  });
+  rows.forEach((row) => row.checks.forEach((check) => {
+    if (!seen.has(check.id)) {
+      seen.add(check.id);
+      result.push({ id: check.id, title: check.title });
+    }
+  }));
+  return result;
 }
 
-function summarizeChecks(checks: RelayStandardCheck[]) {
+function findMatrixCell(row: MatrixRowView, definition: CheckDefinition, platform: string): MatrixCheck {
+  const cell = row.checks.find((item) => item.id === definition.id);
+  if (cell) return cell;
+  const applicable = inferApplicable(definition.id, row.family, row.protocol, platform);
   return {
-    failed: countChecks(checks, 'fail'),
-    missing: countChecks(checks, 'missing'),
-    partial: countChecks(checks, 'partial'),
-    passed: countChecks(checks, 'pass'),
-    total: checks.length,
+    applicable,
+    conclusive: false,
+    eligibility_reason: applicable ? '检查目录包含此项，但本模型没有返回探针结果。' : `不适用于 ${row.family || row.protocol} 模型。`,
+    executed: false,
+    id: definition.id,
+    score_eligible: false,
+    status: applicable ? 'not_run' : 'not_applicable',
+    summary: applicable ? '未返回探针结果' : '模型家族不适用',
+    title: definition.title,
+    virtual: true,
   };
 }
 
-const checkRiskCodes: Record<string, string[]> = {
-  claude_code_client_interaction: ['claude_code_interaction_failed'],
-  claude_code_subagents: ['claude_code_subagents_failed'],
-  claude_code_thinking: ['claude_code_thinking_failed'],
-  claude_runtime_signature_presence: ['claude_runtime_signature_presence_failed', 'thinking_signature_mismatch'],
-  claude_runtime_signature_roundtrip: ['claude_runtime_signature_roundtrip_failed'],
-  claude_runtime_signature_tamper_reject: ['claude_runtime_signature_tamper_not_rejected'],
-  claude_runtime_tool_continuation: ['claude_runtime_tool_continuation_failed'],
-  plain_sdk_cache: ['plain_sdk_cache_failed'],
-  claude_code_cache: ['claude_code_cache_failed'],
-  anthropic_count_tokens: ['anthropic_count_tokens_failed', 'external_anthropic_count_tokens_failed'],
-  aws_bedrock_generation_verification: [
-    'invalid_model_wrapper_leak',
-    'aws_bedrock_invalid_model_accepted',
-    'aws_bedrock_invalid_model_wrapper_leak',
-    'aws_bedrock_invalid_model_unexpected_error',
-    'aws_bedrock_parameter_probe_accepted',
-    'aws_bedrock_parameter_probe_failed',
-    'model_mismatch',
-    'thinking_signature_mismatch',
-    'cache_unobservable',
-    'stability_low_success_rate',
-  ],
-  codex_client_interaction: ['codex_interaction_failed'],
-  codex_subagents: ['codex_subagents_failed'],
-  model_availability: ['probe_failed'],
-  model_purity: ['model_mismatch', 'model_identity_unverified'],
-  negative_model_probe: ['invalid_model_accepted', 'invalid_model_wrapper_leak', 'invalid_model_unexpected_status'],
-  prompt_cache: ['cache_hit_rate_low', 'cache_unobservable', 'cache_hit_rate_partial', 'cache_not_tested'],
-  prompt_injection: ['hidden_injection_tokens', 'prompt_injection_signal'],
-  openai_responses_native: ['openai_responses_api_failed'],
-  openai_input_tokens_baseline: ['openai_input_tokens_failed'],
-  openai_tool_call_native: ['openai_tool_call_native_failed'],
-  openai_structured_outputs: ['openai_structured_outputs_failed'],
-  role_probe: ['role_probe_identity_conflict', 'role_probe_failed'],
-  source_identity: ['source_identity_mismatch'],
-  sse_stream_shape: ['stream_shape_mismatch'],
-  stability_concurrency: ['stability_low_success_rate', 'stability_multi_window_persistent_failure', 'concurrency_low_success_rate'],
-  thinking_signature: ['thinking_signature_mismatch'],
-  token_precision: ['token_precision_mismatch'],
-};
-
-function modelIssueReason(checkID: string, row: RelayReport['models'][number]) {
-  const status = row.http_status ? `HTTP ${row.http_status}` : '';
-  switch (checkID) {
-    case 'model_availability':
-      return [status, row.error || row.transport?.error_body_summary || '基础调用未成功'].filter(Boolean).join(' · ');
-    case 'model_purity':
-      return `${row.requested_model || row.model} -> ${row.returned_model || '未返回 model'} · ${row.model_match_reason || modelMatchLabel(row.model_match_kind ?? '', row.model_matched)}`;
-    case 'prompt_cache':
-      if (!row.cache?.tested) {
-        return row.cache?.error
-          ? `未执行缓存命中率测试 · ${row.cache.error}`
-          : '未执行缓存命中率测试';
-      }
-      return `warm 命中率 ${Math.round((row.cache.warm_hit_rate ?? 0) * 100)}% · cache字段 ${row.cache.has_cache_fields ? '可见' : '不可见'}${row.cache.error ? ` · ${row.cache.error}` : ''}`;
-    case 'sse_stream_shape':
-      return row.stream?.tested ? `事件数 ${row.stream.event_count ?? 0} · ${row.stream.events?.slice(0, 4).join(', ') || '无事件'}${row.stream.error ? ` · ${row.stream.error}` : ''}` : '未执行流式探针';
-    case 'prompt_injection':
-      return `隐藏注入 token ${row.hidden_injection_tokens ?? 0}${row.injection?.keyword_hits?.length ? ` · 命中 ${row.injection.keyword_hits.join(', ')}` : ''}`;
-    case 'role_probe':
-      return row.role_probe?.error || (row.role_probe?.identity_conflict ? '角色诱探出现身份/行为冲突' : '角色诱探未通过');
-    case 'thinking_signature':
-    case 'claude_runtime_signature_presence':
-      return `thinking=${Boolean(row.thinking_probe?.has_thinking_content)} · signature_delta=${Boolean(row.thinking_probe?.has_signature_delta)} · order=${Boolean(row.thinking_probe?.event_order_ok)} · fake_rejected=${Boolean(row.thinking_probe?.fake_signature_rejected)}`;
-    case 'claude_runtime_signature_roundtrip':
-      return `roundtrip=${Boolean(row.thinking_probe?.runtime_round_trip_ok)}`;
-    case 'claude_runtime_signature_tamper_reject':
-      return `tamper_rejected=${Boolean(row.thinking_probe?.tamper_rejected || row.thinking_probe?.fake_signature_rejected)}`;
-    case 'claude_runtime_tool_continuation':
-      return `tool_continuation=${Boolean(row.thinking_probe?.tool_continuation_ok)}`;
-    case 'token_precision':
-      return `预估 ${row.token_precision?.expected_input_tokens ?? '-'} / 返回 ${row.token_precision?.observed_input_tokens ?? '-'} · 偏差 ${row.token_precision?.delta ?? '-'}`;
-    case 'source_identity':
-      return `${row.source_probe?.expected || '-'} -> ${row.source_probe?.claimed_source || 'unknown'}${row.source_probe?.error ? ` · ${row.source_probe.error}` : ''}`;
-    case 'stability_concurrency':
-      return row.stability?.tested ? `成功率 ${Math.round((row.stability.success_rate ?? 0) * 100)}% · 并发 ${row.stability.concurrency?.map((item) => `${item.level}:${Math.round(item.success_rate * 100)}%`).join(' / ') || '-'}` : '未执行稳定性探针';
-    case 'claude_code_client_interaction':
-    case 'claude_code_thinking':
-    case 'claude_code_subagents':
-    case 'codex_client_interaction':
-    case 'codex_subagents': {
-      const expectedPrefix = checkID.startsWith('codex') ? 'codex' : 'claude_code';
-      const scenario = checkID.includes('subagents') ? 'subagents' : checkID.includes('thinking') ? 'thinking' : 'interaction';
-      const profile = row.client_profiles?.find((item) => item.profile_id.startsWith(expectedPrefix) && item.scenario === scenario);
-      if (!profile) return '未执行客户端画像探针';
-      return `${profile.title} · ${profile.ok ? '通过' : '失败'}${profile.success_rate !== undefined ? ` · 成功率 ${Math.round(profile.success_rate * 100)}%` : ''}${profile.error ? ` · ${profile.error}` : ''}`;
-    }
-    default:
-      return row.risks?.length ? row.risks.slice(0, 3).join(', ') : '标准项未通过';
-  }
+function hasExplicitApplicability(checks: RelayStandardCheck[]) {
+  return checks.some((check) => check.applicability !== undefined || check.applicable !== undefined);
 }
 
-function buildOverviewIssues(checks: RelayStandardCheck[], models: RelayReport['models'], risks: RelayReport['risks']) {
-  const issueChecks = checks.filter((item) => item.status === 'fail' || item.status === 'missing' || item.status === 'partial');
-  return issueChecks.slice(0, 6).map((check) => {
-    const codes = checkRiskCodes[check.id] ?? [];
-    const riskModels = new Set(risks.filter((risk) => codes.includes(risk.code) && risk.model).map((risk) => risk.model as string));
-    const affected = models.filter((model) => {
-      if (riskModels.has(model.model)) return true;
-      return codes.some((code) => model.risks?.includes(code));
-    });
-    const affectedModels = affected.slice(0, 4).map((model) => ({
-      model: model.model,
-      reason: modelIssueReason(check.id, model),
-    }));
-    const riskSample = risks.find((risk) => codes.includes(risk.code));
-    return {
-      affectedCount: affected.length,
-      affectedModels,
-      check,
-      fallback: riskSample?.message || check.missing?.[0] || check.conclusion,
-      totalModels: models.length,
-    };
-  });
+function taskSelectedFromStorage() {
+  if (typeof window === 'undefined') return null;
+  const queryValue = new URLSearchParams(window.location.search).get('relayTask');
+  const storedValue = window.localStorage.getItem('airgate.relayDetection.selectedTask');
+  const parsed = Number(queryValue || storedValue);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function persistSelectedTask(id: number) {
+  window.localStorage.setItem('airgate.relayDetection.selectedTask', String(id));
+  const url = new URL(window.location.href);
+  url.searchParams.set('relayTask', String(id));
+  window.history.replaceState(window.history.state, '', url);
+}
+
+function Panel({ children, extra, title }: { children: ReactNode; extra?: ReactNode; title: string }) {
+  return (
+    <Card className="ag-dashboard-panel min-w-0">
+      <div className="flex min-w-0 items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
+        <h2 className="min-w-0 text-sm font-semibold text-text">{title}</h2>
+        {extra ? <div className="shrink-0">{extra}</div> : null}
+      </div>
+      <Card.Content className="p-4">{children}</Card.Content>
+    </Card>
+  );
+}
+
+function SelectControl({
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  options: Array<{ id: string; label: string }>;
+  value: string;
+}) {
+  const selected = options.find((item) => item.id === value)?.label ?? options[0]?.label ?? '';
+  return (
+    <Select fullWidth selectedKey={value} onSelectionChange={(key) => onChange(String(key ?? 'all'))}>
+      <Label>{label}</Label>
+      <Select.Trigger>
+        <Select.Value>{selected}</Select.Value>
+        <Select.Indicator />
+      </Select.Trigger>
+      <Select.Popover>
+        <ListBox items={options}>
+          {(item) => <ListBox.Item id={item.id} textValue={item.label}>{item.label}</ListBox.Item>}
+        </ListBox>
+      </Select.Popover>
+    </Select>
+  );
+}
+
+function DetectionForm({
+  form,
+  isPending,
+  onChange,
+  onSubmit,
+  onParse,
+}: {
+  form: FormState;
+  isPending: boolean;
+  onChange: (next: FormState) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onParse: (raw: string) => void;
+}) {
+  const [showParser, setShowParser] = useState(false);
+  const [raw, setRaw] = useState('');
+  const canSubmit = Boolean(form.base_url.trim() && form.api_key.trim()) && !isPending;
+  const selectedPlatform = platformOptions.find((item) => item.id === form.platform_type)?.label ?? '自动检测';
+
+  return (
+    <Panel
+      extra={(
+        <Button size="sm" variant="ghost" onPress={() => setShowParser((value) => !value)}>
+          <ClipboardPaste className="h-4 w-4" />
+          解析凭据
+        </Button>
+      )}
+      title="创建检测"
+    >
+      {showParser ? (
+        <div className="mb-4 space-y-2 border-b border-border-subtle pb-4">
+          <TextField fullWidth>
+            <Label>JSON / 文本</Label>
+            <TextArea
+              className="min-h-[92px] w-full resize-y font-mono text-xs"
+              placeholder='{"base_url":"https://relay.example.com","api_key":"sk-..."}'
+              value={raw}
+              onChange={(event) => setRaw(event.target.value)}
+            />
+          </TextField>
+          <Button
+            className="w-full"
+            isDisabled={!raw.trim()}
+            size="sm"
+            variant="secondary"
+            onPress={() => onParse(raw)}
+          >
+            <ClipboardPaste className="h-4 w-4" />
+            填入表单
+          </Button>
+        </div>
+      ) : null}
+      <Form className="space-y-4" onSubmit={onSubmit}>
+        <TextField fullWidth isRequired>
+          <Label>Base URL</Label>
+          <Input
+            autoComplete="url"
+            placeholder="https://relay.example.com"
+            value={form.base_url}
+            onChange={(event) => onChange({ ...form, base_url: event.target.value })}
+          />
+        </TextField>
+        <TextField fullWidth isRequired>
+          <Label>API Key</Label>
+          <Input
+            autoComplete="off"
+            placeholder="sk-..."
+            type="password"
+            value={form.api_key}
+            onChange={(event) => onChange({ ...form, api_key: event.target.value })}
+          />
+        </TextField>
+        <Select
+          fullWidth
+          selectedKey={form.platform_type}
+          onSelectionChange={(key) => onChange({ ...form, platform_type: String(key ?? 'auto') as RelayPlatformType })}
+        >
+          <Label>平台与协议</Label>
+          <Select.Trigger>
+            <Select.Value>{selectedPlatform}</Select.Value>
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox items={platformOptions}>
+              {(item) => <ListBox.Item id={item.id} textValue={item.label}>{item.label}</ListBox.Item>}
+            </ListBox>
+          </Select.Popover>
+        </Select>
+        <Button className="min-h-11 w-full" isDisabled={!canSubmit} type="submit" variant="primary">
+          {isPending ? <Spinner size="sm" /> : <Play className="h-4 w-4" />}
+          开始检测
+        </Button>
+      </Form>
+    </Panel>
+  );
+}
+
+function ProgressBar({ progress, status }: { progress: number; status: string }) {
+  const determinate = status !== 'pending' && Number.isFinite(progress) && progress > 0;
+  return (
+    <div
+      aria-label={status === 'pending' ? '任务正在排队' : `检测进度 ${progress}%`}
+      aria-valuemax={100}
+      aria-valuemin={0}
+      aria-valuenow={determinate ? Math.max(0, Math.min(100, progress)) : undefined}
+      aria-valuetext={status === 'pending' ? '正在排队，进度未知' : undefined}
+      className="ag-relay-progress"
+      role="progressbar"
+    >
+      <span
+        className={cx('ag-relay-progress-value', !determinate && 'ag-relay-progress-value--indeterminate')}
+        style={determinate ? { width: `${Math.max(2, Math.min(100, progress))}%` } : undefined}
+      />
+    </div>
+  );
 }
 
 function TaskQueue({
@@ -785,90 +785,72 @@ function TaskQueue({
   onSelect: (id: number) => void;
   selectedID: number | null;
 }) {
-  const activeCount = items.filter((item) => item.status === 'processing' || item.status === 'pending' || item.status === 'cancelling').length;
-
+  const activeCount = items.filter((item) => activeTaskStatuses.has(item.status)).length;
   return (
     <Panel
       extra={(
         <div className="flex items-center gap-2">
-          <Chip size="sm" color={activeCount > 0 ? 'warning' : 'default'}>{activeCount} 执行中</Chip>
-          <Button isIconOnly aria-label="刷新任务" size="sm" variant="ghost" onPress={onRefresh}>
+          <Chip color={activeCount ? 'warning' : 'default'} size="sm">{activeCount} 执行中</Chip>
+          <Button size="sm" variant="ghost" onPress={onRefresh}>
             <RefreshCw className="h-4 w-4" />
+            刷新
           </Button>
         </div>
       )}
-      title="任务列表"
+      title="任务"
     >
-      <div className="space-y-1.5">
-        {loading ? (
-          <div className="flex h-24 items-center justify-center"><Spinner /></div>
-        ) : items.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 rounded-[var(--radius)] border border-dashed border-border bg-bg-subtle px-4 py-6 text-center text-sm text-text-tertiary">
-            <Radar className="h-5 w-5 text-text-tertiary" />
-            <span>暂无检测任务，创建后会出现在这里，支持多任务并行。</span>
+      <div className="ag-relay-task-list" aria-busy={loading}>
+        {loading ? Array.from({ length: 3 }, (_, index) => (
+          <div className="ag-relay-task-skeleton" key={index} aria-hidden="true">
+            <span />
+            <span />
+          </div>
+        )) : items.length === 0 ? (
+          <div className="flex min-h-32 flex-col items-center justify-center gap-2 border border-dashed border-border px-4 py-6 text-center text-sm text-text-tertiary">
+            <Radar className="h-5 w-5" />
+            <span>暂无检测任务</span>
           </div>
         ) : items.map((item) => {
           const selected = selectedID === item.id;
-          const active = item.status === 'processing' || item.status === 'pending' || item.status === 'cancelling';
-          const canRetest = item.status === 'completed' || item.status === 'failed' || item.status === 'cancelled';
-          const accent = toneColor[statusTone[item.status] ?? 'default'];
+          const active = activeTaskStatuses.has(item.status);
+          const canRetest = ['completed', 'failed', 'cancelled'].includes(item.status);
           return (
-            <button
-              className={`relative w-full overflow-hidden rounded-[var(--radius)] border px-3 py-2.5 pl-4 text-left transition-colors ${selected ? 'border-primary bg-primary-subtle/60' : 'border-transparent bg-bg-subtle hover:border-border'}`}
-              key={item.id}
-              onClick={() => onSelect(item.id)}
-              type="button"
-            >
-              <span className="absolute inset-y-0 left-0 w-1" style={{ background: accent }} />
-              <div className="flex min-w-0 items-center justify-between gap-2">
-                <span className="min-w-0 truncate font-mono text-xs font-semibold text-text" title={item.base_url}>{item.base_url}</span>
-	                <div className="flex shrink-0 items-center gap-1">
-	                  <Chip size="sm" color={statusTone[item.status] ?? 'default'}>{statusLabel(item.status)}</Chip>
-	                  {item.status === 'completed' && item.overall_grade ? (
-	                    <>
-	                      <Chip size="sm" color={gradeTone[item.overall_grade] ?? 'default'}>G{item.overall_grade}</Chip>
-	                      <Chip size="sm" color={riskLevelTone(item.risk_count, item.overall_grade)}>{riskLevelLabel(item.risk_count, item.overall_grade)}</Chip>
-	                    </>
-	                  ) : null}
-	                  {active ? (
-                    <Button
-                      isIconOnly
-                      aria-label="取消检测"
-                      size="sm"
-                      variant="ghost"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onCancel(item.id);
-                      }}
-                    >
-                      <XCircle className="h-3.5 w-3.5" />
-                    </Button>
-                  ) : canRetest ? (
-                    <Button
-                      isIconOnly
-                      aria-label="重测"
-                      size="sm"
-                      variant="ghost"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onRetest(item.id);
-                      }}
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" />
-                    </Button>
-                  ) : null}
-                </div>
+            <div className={cx('ag-relay-task-row', selected && 'ag-relay-task-row--selected')} key={item.id}>
+              <button
+                aria-current={selected ? 'true' : undefined}
+                aria-label={`查看任务 ${item.id}，${item.base_url}，${statusLabel(item.status)}`}
+                className="ag-relay-task-select"
+                onClick={() => onSelect(item.id)}
+                type="button"
+              >
+                <span className="flex min-w-0 items-center justify-between gap-2">
+                  <span className="min-w-0 break-all font-mono text-xs font-semibold text-text">{item.base_url}</span>
+                  <Chip color={statusTone[item.status] ?? 'default'} size="sm">{statusLabel(item.status)}</Chip>
+                </span>
+                <span className="mt-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[11px] text-text-tertiary">
+                  <span>#{item.id} · {item.platform_type} · {fmtTime(item.created_at)}</span>
+                  <span className="font-mono">{item.model_count || 0} models · {item.risk_count || 0} risks</span>
+                </span>
+                {active ? (
+                  <span className="mt-2 block">
+                    <ProgressBar progress={item.progress} status={item.status} />
+                  </span>
+                ) : null}
+              </button>
+              <div className="ag-relay-task-actions">
+                {active ? (
+                  <Button size="sm" variant="ghost" onPress={() => onCancel(item.id)}>
+                    <XCircle className="h-4 w-4" />
+                    取消
+                  </Button>
+                ) : canRetest ? (
+                  <Button size="sm" variant="ghost" onPress={() => onRetest(item.id)}>
+                    <RotateCcw className="h-4 w-4" />
+                    重测
+                  </Button>
+                ) : null}
               </div>
-	              <div className="mt-1.5 grid grid-cols-[1fr_auto] items-center gap-2 text-[11px] text-text-tertiary">
-	                <span className="min-w-0 truncate">#{item.id} · {item.platform_type} · {fmtTime(item.created_at)}</span>
-	                <span className="font-mono">{item.model_count || 0} models · {item.risk_count || 0} risks</span>
-	              </div>
-              {active ? (
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-bg">
-                  <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${Math.max(3, Math.min(100, item.progress))}%` }} />
-                </div>
-              ) : null}
-            </button>
+            </div>
           );
         })}
       </div>
@@ -876,895 +858,891 @@ function TaskQueue({
   );
 }
 
-function StandardChecksTable({ checks }: { checks: RelayStandardCheck[] }) {
+function DecisionStrip({
+  coverage,
+  failedCount,
+  legacy,
+  report,
+  scoreEligible,
+  scoreReason,
+}: {
+  coverage: RelayCoverageSummary;
+  failedCount: number;
+  legacy: boolean;
+  report: RelayReport;
+  scoreEligible: boolean;
+  scoreReason?: string;
+}) {
+  const score = report.summary.overall_score ?? report.overall_score;
+  const available = report.summary.available_models;
+  const total = report.summary.model_count;
+  const percent = coveragePercent(coverage.ratio);
+  const verdict = scoreEligible
+    ? report.summary.channel_label || `Grade ${report.summary.overall_grade || '-'}`
+    : '无法评分 / Unable to score';
   return (
-    <CompactDataTable
-      ariaLabel="检测标准矩阵"
-      emptyText="暂无标准检测项"
-      minWidth={1280}
-      rowKey={(row) => row.id}
-      rows={checks}
-      columns={[
-        {
-          key: 'rule',
-          render: (row) => (
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="min-w-0 truncate font-semibold text-text" title={row.title}>{row.title}</span>
-                <Chip size="sm" color={checkTone[row.status] ?? 'default'}>{checkLabels[row.status] ?? row.status}</Chip>
-              </div>
-              <div className="mt-0.5 truncate text-[11px] text-text-tertiary">{row.category} · {row.id}</div>
-            </div>
-          ),
-          title: '标准项',
-          width: '22%',
-        },
-        {
-          key: 'severity',
-          render: (row) => <Chip size="sm" color={severityTone[row.severity] ?? 'default'}>{row.severity}</Chip>,
-          title: '风险级别',
-          width: '9%',
-        },
-        {
-          key: 'conclusion',
-          render: (row) => <span className="line-clamp-2 text-xs text-text-secondary" title={row.conclusion}>{row.conclusion}</span>,
-          title: '结论',
-          width: '25%',
-        },
-        {
-          key: 'evidence',
-          render: (row) => {
-            const evidence = row.evidence?.[0] ?? row.missing?.[0] ?? '-';
-            return <span className="line-clamp-2 text-xs text-text-tertiary" title={evidence}>{evidence}</span>;
-          },
-          title: '证据 / 缺口',
-          width: '30%',
-        },
-        {
-          key: 'source',
-          render: (row) => <span className="block whitespace-normal break-words font-mono text-[11px] leading-4 text-text-tertiary" title={row.source}>{row.source}</span>,
-          title: '来源',
-          width: '14%',
-        },
-      ]}
-    />
+    <section aria-label="检测判定" className="ag-relay-decision">
+      <div className="ag-relay-decision-grid">
+        <div className="ag-relay-decision-cell">
+          <span className="ag-relay-decision-label">资格 / 结论</span>
+          <span className="ag-relay-decision-value">{verdict}</span>
+          <span className="ag-relay-decision-meta">
+            {scoreEligible ? `${score !== undefined ? `${formatNumber(score, 1)} 分 · ` : ''}Grade ${report.summary.overall_grade || '-'}` : scoreReason || '没有有效完成的检查'}
+          </span>
+        </div>
+        <div className="ag-relay-decision-cell">
+          <span className="ag-relay-decision-label">确定性失败</span>
+          <span className="ag-relay-decision-value font-mono">{failedCount}</span>
+          <span className="ag-relay-decision-meta">仅计入可评分且有结论的失败</span>
+        </div>
+        <div className="ag-relay-decision-cell">
+          <span className="ag-relay-decision-label">可用性 / 延迟</span>
+          <span className="ag-relay-decision-value font-mono">{available}/{total} · {Math.round(report.summary.average_latency_ms || 0)}ms</span>
+          <span className="ag-relay-decision-meta">{report.platform_type} · {report.summary.confidence || 'confidence unknown'}</span>
+        </div>
+      </div>
+      <div className="ag-relay-evidence-rail" aria-label="评分资格与覆盖摘要">
+        <span>{scoreEligible ? 'Eligible' : 'Ineligible'}</span>
+        <span>{coverage.conclusive}/{coverage.applicable} conclusive</span>
+        <span>{percent}% coverage</span>
+        <span>{failedCount} fail</span>
+        <span>{coverage.not_run} not run</span>
+        <span>{coverage.not_applicable} N/A</span>
+        {legacy ? <span>Legacy compatibility</span> : null}
+      </div>
+    </section>
   );
 }
 
-function ReportHeaderBar({
-  onRefresh,
-  task,
+function FailureRegister({
+  failures,
+  onEvidence,
 }: {
-  onRefresh: () => void;
-  task: RelayDetectionTask;
+  failures: FailureItem[];
+  onEvidence: (selection: EvidenceSelection, origin: HTMLButtonElement) => void;
 }) {
-  const active = task.status === 'processing' || task.status === 'cancelling';
-  const completedModels = Number(task.execution?.completed_models ?? task.execution?.completed ?? 0);
-  const totalModels = Number(task.execution?.total_models ?? task.execution?.total ?? 0);
-  const progressLabel = totalModels > 0 ? `${completedModels}/${totalModels}` : `${task.progress}%`;
-
   return (
-    <div className="space-y-3 border-b border-border-subtle p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <Chip size="sm" color={statusTone[task.status] ?? 'default'}>{statusLabel(task.status)}</Chip>
-            {task.overall_grade ? <Chip size="sm" color={gradeTone[task.overall_grade] ?? 'default'}>Grade {task.overall_grade}</Chip> : null}
-            <span className="font-mono text-xs text-text-tertiary">#{task.id}</span>
-          </div>
-          <div className="truncate font-mono text-sm font-semibold text-text" title={task.base_url}>{task.base_url}</div>
-          <div className="mt-1 text-xs text-text-tertiary">
-            {task.platform_type} · 创建 {fmtTime(task.created_at)} · 更新 {fmtTime(task.updated_at)}
-          </div>
+    <section className="ag-relay-section" aria-labelledby="failure-heading">
+      <div className="ag-relay-section-heading">
+        <div>
+          <h3 id="failure-heading">本次失败项</h3>
+          <p>只列出有结论且会影响评分的失败；完整响应请在证据详情中查看</p>
         </div>
-        <Button aria-label="刷新详情" size="sm" variant="ghost" onPress={onRefresh}>
-          <RefreshCw className="h-4 w-4" />
-          刷新
-        </Button>
+        <Chip color={failures.length ? 'danger' : 'success'} size="sm">{failures.length} 项</Chip>
       </div>
-
-      {active ? (
-        <div className="space-y-2">
-          <div className="flex justify-between text-xs text-text-tertiary">
-            <span>{task.stage || '检测执行中'}</span>
-            <span>{progressLabel} · {task.progress}%</span>
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-bg-subtle">
-            <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${Math.max(0, Math.min(100, task.progress))}%` }} />
-          </div>
+      {failures.length ? (
+        <div className="ag-relay-failure-list">
+          {failures.map((failure) => (
+            <button
+              aria-label={`查看失败证据：${failure.model ? `${failure.model}，` : ''}${failure.title}`}
+              className="ag-relay-failure-row"
+              key={failure.key}
+              onClick={(event) => onEvidence(failure, event.currentTarget)}
+              type="button"
+            >
+              <span className="ag-relay-failure-identity">
+                <strong>{failure.title}</strong>
+                <span>{failure.model || failure.context || '全局检查'}</span>
+              </span>
+              <span className="ag-relay-failure-summary">{failure.summary}</span>
+              <span className="ag-relay-failure-action">
+                <Chip color="danger" size="sm">失败</Chip>
+                <span><Eye className="h-3.5 w-3.5" />查看证据</span>
+              </span>
+            </button>
+          ))}
         </div>
-      ) : null}
-
-      {task.error_message ? (
-        <div className="rounded-[var(--radius)] border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-          {task.error_message}
+      ) : (
+        <div className="ag-relay-failure-empty">
+          <CheckCircle2 className="h-4 w-4 text-success" />
+          <span>本次未发现计分失败项</span>
         </div>
-      ) : null}
+      )}
+    </section>
+  );
+}
+
+function CoverageBreakdown({ coverage, platform, rows }: { coverage: RelayCoverageSummary; platform: string; rows: MatrixRowView[] }) {
+  const cells = normalizedMatrixCells(rows, platform);
+  const statusCounts = cells.reduce<Record<NormalizedStatus, number>>((accumulator, cell) => {
+    const status = cell.status;
+    accumulator[status] += 1;
+    return accumulator;
+  }, { blocked: 0, fail: 0, inconclusive: 0, not_applicable: 0, not_run: 0, pass: 0, warn: 0 });
+  const total = Math.max(1, cells.length);
+  const segments: Array<{ className: string; count: number; label: string }> = [
+    { className: 'is-pass', count: statusCounts.pass, label: '通过' },
+    { className: 'is-warn', count: statusCounts.warn, label: '警告' },
+    { className: 'is-fail', count: statusCounts.fail, label: '失败' },
+    { className: 'is-gap', count: statusCounts.blocked + statusCounts.not_run + statusCounts.inconclusive, label: '覆盖缺口' },
+    { className: 'is-na', count: statusCounts.not_applicable, label: 'N/A' },
+  ];
+  return (
+    <section className="ag-relay-section" aria-labelledby="coverage-heading">
+      <div className="ag-relay-section-heading">
+        <div>
+          <h3 id="coverage-heading">本次覆盖</h3>
+          <p>{coverage.conclusive}/{coverage.applicable} 个适用检查已有确定结论</p>
+        </div>
+        <Chip color={coveragePercent(coverage.ratio) === 100 ? 'success' : 'warning'} size="sm">{coveragePercent(coverage.ratio)}%</Chip>
+      </div>
+      <div className="ag-relay-coverage-track" aria-hidden="true">
+        {segments.map((segment) => segment.count > 0 ? (
+          <span className={segment.className} key={segment.label} style={{ width: `${(segment.count / total) * 100}%` }} />
+        ) : null)}
+      </div>
+      <div className="ag-relay-coverage-values" aria-label="覆盖状态计数">
+        {segments.map((segment) => (
+          <span key={segment.label}><strong>{segment.count}</strong> {segment.label}</span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MatrixCellButton({
+  cell,
+  family,
+  onOpen,
+  platform,
+  protocol,
+}: {
+  cell: MatrixCheck;
+  family: string;
+  onOpen: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  platform: string;
+  protocol: string;
+}) {
+  const normalized = normalizeApplicability(cell, family, protocol, platform);
+  const reason = normalized.eligibility_reason || cell.summary;
+  return (
+    <button
+      aria-label={`${cell.title}：${checkLabels[normalized.status]}。${reason}`}
+      className={cx('ag-relay-matrix-cell', `is-${normalized.status}`)}
+      onClick={onOpen}
+      type="button"
+    >
+      <span className="flex flex-wrap items-center gap-1.5">
+        <Chip color={statusTone[normalized.status]} size="sm">{checkLabels[normalized.status]}</Chip>
+        {normalized.score_eligible && normalized.status === 'fail' ? <span className="text-[10px] font-semibold text-danger">计分</span> : null}
+      </span>
+      <span className="line-clamp-3 text-left text-[11px] leading-4 text-text-tertiary">{reason}</span>
+    </button>
+  );
+}
+
+function ModelProblemMatrix({
+  onEvidence,
+  platform,
+  report,
+  rows,
+}: {
+  onEvidence: (selection: EvidenceSelection, origin: HTMLButtonElement) => void;
+  platform: string;
+  report: RelayReport;
+  rows: MatrixRowView[];
+}) {
+  const mobile = useMediaQuery('(max-width: 639px)');
+  const catalog = useMemo(() => matrixCatalog(rows, report), [report, rows]);
+  const [family, setFamily] = useState('all');
+  const [scope, setScope] = useState('all');
+  const [state, setState] = useState('all');
+  const [eligibility, setEligibility] = useState('all');
+  const [mobileModel, setMobileModel] = useState(rows[0]?.model ?? '');
+  const familyValues = [...new Set(rows.map((row) => row.family).filter(Boolean))];
+  const protocolValues = [...new Set(rows.map((row) => row.protocol).filter(Boolean))];
+  const endpointValues = [...new Set(rows.map((row) => row.endpoint).filter(Boolean))];
+  const statusMatches = (row: MatrixRowView, definition: CheckDefinition) => {
+    const cell = findMatrixCell(row, definition, platform);
+    const normalized = normalizeApplicability(cell, row.family, row.protocol, platform);
+    const matchesState = state === 'all' || normalized.status === state;
+    const matchesEligibility = eligibility === 'all'
+      || (eligibility === 'eligible' ? normalized.score_eligible : !normalized.score_eligible);
+    return matchesState && matchesEligibility;
+  };
+  const scopeRows = rows.filter((row) => {
+    const matchesFamily = family === 'all' || row.family === family;
+    const matchesScope = scope === 'all'
+      || (scope.startsWith('protocol:') && row.protocol === scope.slice('protocol:'.length))
+      || (scope.startsWith('endpoint:') && row.endpoint === scope.slice('endpoint:'.length));
+    return matchesFamily && matchesScope;
+  });
+  const filteredRows = scopeRows.filter((row) => (state === 'all' && eligibility === 'all') || catalog.some((definition) => statusMatches(row, definition)));
+  const visibleCatalog = catalog.filter((definition) => (state === 'all' && eligibility === 'all') || filteredRows.some((row) => statusMatches(row, definition)));
+
+  useEffect(() => {
+    if (!filteredRows.some((row) => row.model === mobileModel)) setMobileModel(filteredRows[0]?.model ?? '');
+  }, [filteredRows, mobileModel]);
+
+  const filters = (
+    <div className="ag-relay-matrix-filters">
+      <SelectControl label="家族" value={family} onChange={setFamily} options={[{ id: 'all', label: '全部家族' }, ...familyValues.map((value) => ({ id: value, label: value }))]} />
+      <SelectControl
+        label="协议 / 端点"
+        value={scope}
+        onChange={setScope}
+        options={[
+          { id: 'all', label: '全部协议与端点' },
+          ...protocolValues.map((value) => ({ id: `protocol:${value}`, label: `协议 · ${value}` })),
+          ...endpointValues.map((value) => ({ id: `endpoint:${value}`, label: `端点 · ${value}` })),
+        ]}
+      />
+      <SelectControl label="状态" value={state} onChange={setState} options={[
+        { id: 'all', label: '全部状态' },
+        { id: 'fail', label: '失败' },
+        { id: 'warn', label: '警告' },
+        { id: 'blocked', label: '受阻' },
+        { id: 'not_run', label: '未运行' },
+        { id: 'not_applicable', label: 'N/A' },
+        { id: 'pass', label: '通过' },
+      ]} />
+      <SelectControl label="评分资格" value={eligibility} onChange={setEligibility} options={[
+        { id: 'all', label: '全部检查' },
+        { id: 'eligible', label: '可影响评分' },
+        { id: 'ineligible', label: '不影响评分' },
+      ]} />
     </div>
   );
-}
 
-function MatrixCellBadge({ cell }: { cell?: RelayModelMatrixRow['checks'][number] }) {
-  if (!cell) {
+  if (mobile) {
+    const row = filteredRows.find((item) => item.model === mobileModel) ?? filteredRows[0];
     return (
-      <div className="min-w-0">
-        <Chip size="sm" color="default">不适用</Chip>
-        <div className="mt-1 truncate text-[11px] text-text-tertiary">当前平台未执行</div>
-      </div>
+      <section className="ag-relay-section" aria-labelledby="matrix-heading-mobile">
+        <div className="ag-relay-section-heading">
+          <div>
+            <h3 id="matrix-heading-mobile">模型问题矩阵</h3>
+            <p>{filteredRows.length} 个模型 · {visibleCatalog.length} 个检查</p>
+          </div>
+        </div>
+        {filters}
+        {filteredRows.length ? (
+          <SelectControl
+            label="模型"
+            onChange={setMobileModel}
+            options={filteredRows.map((item) => ({ id: item.model, label: item.model }))}
+            value={row?.model ?? ''}
+          />
+        ) : null}
+        {row ? (
+          <div className="mt-3 space-y-2">
+            <div className="border-y border-border-subtle py-2">
+              <div className="break-all font-mono text-xs font-semibold text-text">{row.model}</div>
+              <div className="mt-1 text-[11px] text-text-tertiary">{row.family} · {row.protocol} · {row.endpoint}</div>
+            </div>
+            {visibleCatalog.map((definition) => {
+              const cell = findMatrixCell(row, definition, platform);
+              return (
+                <div className="grid grid-cols-[minmax(96px,0.36fr)_minmax(0,0.64fr)] gap-2 border-b border-border-subtle py-2" key={definition.id}>
+                  <span className="break-words text-xs font-semibold text-text">{definition.title}</span>
+                  <MatrixCellButton
+                    cell={cell}
+                    family={row.family}
+                    platform={platform}
+                    protocol={row.protocol}
+                    onOpen={(event) => onEvidence({ check: cell, context: `${row.protocol} · ${row.endpoint}`, model: row.model }, event.currentTarget)}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ) : <div className="py-10 text-center text-sm text-text-tertiary">没有符合筛选条件的模型</div>}
+      </section>
     );
   }
-  const title = [
-    cell.summary,
-    cell.risks?.length ? `risks=${cell.risks.join(', ')}` : '',
-    cell.evidence?.length ? `evidence=${cell.evidence.join(', ')}` : '',
-    cell.evidence_refs?.length ? `refs=${cell.evidence_refs.map((item) => `${item.label}:${item.path}${item.summary ? `=${item.summary}` : ''}`).join(' | ')}` : '',
-  ].filter(Boolean).join(' · ');
-  const evidenceSummary = cell.evidence_refs?.slice(0, 2).map((item) => item.summary ? `${item.label}: ${item.summary}` : item.label).join(' · ');
+
   return (
-    <div className="min-w-0" title={title}>
-      <div className="flex min-w-0 items-center gap-1.5">
-        <Chip size="sm" color={checkTone[cell.status] ?? 'default'}>{checkLabels[cell.status] ?? cell.status}</Chip>
-        {cell.severity ? <span className="text-[11px] text-text-tertiary">{cell.severity}</span> : null}
-        {cell.evidence_refs?.length ? <span className="text-[11px] text-text-tertiary">证据 {cell.evidence_refs.length}</span> : null}
+    <section className="ag-relay-section" aria-labelledby="matrix-heading">
+      <div className="ag-relay-section-heading">
+        <div>
+          <h3 id="matrix-heading">模型问题矩阵</h3>
+          <p>{filteredRows.length} 个模型 · {visibleCatalog.length} 个检查</p>
+        </div>
       </div>
-      <div className="mt-1 line-clamp-3 break-words text-[11px] leading-4 text-text-tertiary">
-        {cell.summary}
+      {filters}
+      <div aria-label="模型检测证据矩阵，可横向滚动" className="ag-relay-matrix-scroll" role="region" tabIndex={0}>
+        <table className="ag-relay-matrix-table">
+          <thead>
+            <tr>
+              <th scope="col">模型</th>
+              {visibleCatalog.map((definition) => <th key={definition.id} scope="col">{definition.title}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {filteredRows.map((row) => (
+              <tr key={row.model}>
+                <th scope="row">
+                  <span className="block break-all font-mono text-xs font-semibold text-text">{row.model}</span>
+                  <span className="mt-1 block break-words text-[11px] font-normal text-text-tertiary">{row.family} · {row.protocol}</span>
+                </th>
+                {visibleCatalog.map((definition) => {
+                  const cell = findMatrixCell(row, definition, platform);
+                  return (
+                    <td key={definition.id}>
+                      <MatrixCellButton
+                        cell={cell}
+                        family={row.family}
+                        platform={platform}
+                        protocol={row.protocol}
+                        onOpen={(event) => onEvidence({ check: cell, context: `${row.protocol} · ${row.endpoint}`, model: row.model }, event.currentTarget)}
+                      />
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {filteredRows.length === 0 ? <div className="py-12 text-center text-sm text-text-tertiary">没有符合筛选条件的模型</div> : null}
       </div>
-      {evidenceSummary ? (
-        <div className="mt-1 line-clamp-2 break-words font-mono text-[10px] leading-4 text-text-tertiary">
-          {evidenceSummary}
+    </section>
+  );
+}
+
+function ChecksView({
+  checks,
+  onEvidence,
+  platform,
+}: {
+  checks: RelayStandardCheck[];
+  onEvidence: (selection: EvidenceSelection, origin: HTMLButtonElement) => void;
+  platform: string;
+}) {
+  return (
+    <section className="ag-relay-section" aria-labelledby="checks-heading">
+      <div className="ag-relay-section-heading">
+        <div>
+          <h3 id="checks-heading">标准检查</h3>
+          <p>{checks.length} 个检查，N/A 不进入评分分母</p>
+        </div>
+      </div>
+      <div className="ag-relay-check-list">
+        {checks.length ? checks.map((check) => {
+          const normalized = normalizeApplicability(check, check.family, check.protocol, platform);
+          return (
+            <button
+              aria-label={`查看 ${check.title} 的证据`}
+              className="ag-relay-check-row"
+              key={check.id}
+              onClick={(event) => onEvidence({ check, context: `${check.category} · ${check.source}` }, event.currentTarget)}
+              type="button"
+            >
+              <span className="min-w-0">
+                <span className="flex flex-wrap items-center gap-2">
+                  <strong className="text-xs text-text">{check.title}</strong>
+                  <Chip color={statusTone[normalized.status]} size="sm">{checkLabels[normalized.status]}</Chip>
+                  {normalized.score_eligible && normalized.status === 'fail' ? <span className="text-[10px] font-semibold text-danger">计入评分</span> : null}
+                </span>
+                <span className="mt-1 block break-words text-[11px] leading-4 text-text-tertiary">{check.conclusion}</span>
+              </span>
+              <Eye className="h-4 w-4 shrink-0 text-text-tertiary" aria-hidden="true" />
+            </button>
+          );
+        }) : <div className="py-10 text-center text-sm text-text-tertiary">暂无标准检查</div>}
+      </div>
+    </section>
+  );
+}
+
+function BaselinesView({ rows }: { rows: NonNullable<RelayReport['baselines']> }) {
+  return (
+    <section className="ag-relay-section" aria-labelledby="baselines-heading">
+      <div className="ag-relay-section-heading">
+        <div><h3 id="baselines-heading">官方基线</h3><p>{rows.length} 个对比</p></div>
+      </div>
+      <div className="divide-y divide-border-subtle">
+        {rows.length ? rows.map((row, index) => (
+          <div className="grid gap-2 py-3 sm:grid-cols-[180px_100px_minmax(0,1fr)]" key={`${row.kind}-${row.model ?? index}`}>
+            <div>
+              <div className="font-mono text-xs text-text">{row.model || row.provider}</div>
+              <div className="mt-1 text-[11px] text-text-tertiary">{row.protocol} · {row.source}</div>
+            </div>
+            <div><Chip color={statusTone[mapLegacyStatus(row.status)]} size="sm">{checkLabels[mapLegacyStatus(row.status)]}</Chip></div>
+            <div className="break-words text-xs text-text-secondary">{row.conclusion}</div>
+          </div>
+        )) : <div className="py-10 text-center text-sm text-text-tertiary">暂无官方基线数据</div>}
+      </div>
+    </section>
+  );
+}
+
+function RisksView({ rows }: { rows: RelayReport['risks'] }) {
+  return (
+    <section className="ag-relay-section" aria-labelledby="risks-heading">
+      <div className="ag-relay-section-heading">
+        <div><h3 id="risks-heading">风险发现</h3><p>{rows.length} 条证据化风险</p></div>
+      </div>
+      <div className="divide-y divide-border-subtle">
+        {rows.length ? rows.map((row, index) => (
+          <div className="grid gap-2 py-3 sm:grid-cols-[130px_minmax(0,1fr)]" key={`${row.code}-${row.model ?? index}`}>
+            <div>
+              <Chip color={row.severity === 'critical' || row.severity === 'high' ? 'danger' : row.severity === 'medium' ? 'warning' : 'default'} size="sm">{row.severity}</Chip>
+              <div className="mt-1 break-all font-mono text-[10px] text-text-tertiary">{row.code}</div>
+            </div>
+            <div>
+              <div className="break-words text-xs text-text-secondary">{row.message}</div>
+              {row.model ? <div className="mt-1 break-all font-mono text-[11px] text-text-tertiary">{row.model}</div> : null}
+            </div>
+          </div>
+        )) : <div className="flex min-h-36 items-center justify-center gap-2 text-sm text-success"><CheckCircle2 className="h-4 w-4" />暂无风险发现</div>}
+      </div>
+    </section>
+  );
+}
+
+function EvidenceView({ report }: { report: RelayReport }) {
+  return (
+    <section className="ag-relay-section" aria-labelledby="evidence-heading">
+      <div className="ag-relay-section-heading">
+        <div><h3 id="evidence-heading">已脱敏证据</h3><p>{report.evidence?.length ?? 0} 条报告证据</p></div>
+      </div>
+      <div className="divide-y divide-border-subtle">
+        {report.evidence?.length ? report.evidence.map((item, index) => (
+          <div className="py-3" key={`${item.code}-${index}`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Chip color="default" size="sm">{item.strength}</Chip>
+              <span className="break-all font-mono text-[11px] text-text-tertiary">{item.code}</span>
+            </div>
+            <p className="mt-2 break-words text-xs text-text-secondary">{item.message}</p>
+            {item.detail ? <pre className="ag-relay-json mt-2">{safeJSON(item.detail)}</pre> : null}
+          </div>
+        )) : <div className="py-10 text-center text-sm text-text-tertiary">暂无报告证据</div>}
+      </div>
+    </section>
+  );
+}
+
+function EvidenceDetail({ onClose, selection }: { onClose: () => void; selection: EvidenceSelection | null }) {
+  const state = useOverlayState({
+    isOpen: Boolean(selection),
+    onOpenChange: (open) => {
+      if (!open) onClose();
+    },
+  });
+  if (!selection) return null;
+  const applicability = normalizeApplicability(selection.check);
+  const excerpt = {
+    evidence: selection.check.evidence,
+    evidence_refs: 'evidence_refs' in selection.check ? selection.check.evidence_refs : undefined,
+    metrics: selection.check.metrics,
+    missing: 'missing' in selection.check ? selection.check.missing : undefined,
+    risks: 'risks' in selection.check ? selection.check.risks : undefined,
+  };
+  return (
+    <Modal state={state}>
+      <DialogTriggerShim />
+      <Modal.Backdrop>
+        <Modal.Container placement="center" scroll="inside" size="lg">
+          <Modal.Dialog className="ag-elevation-modal">
+            <Modal.Header>
+              <Modal.Heading>{selection.check.title}</Modal.Heading>
+              <Modal.CloseTrigger />
+            </Modal.Header>
+            <Modal.Body>
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Chip color={statusTone[applicability.status]} size="sm">{checkLabels[applicability.status]}</Chip>
+                  <Chip color={applicability.score_eligible ? 'warning' : 'default'} size="sm">{applicability.score_eligible ? '可影响评分' : '不影响评分'}</Chip>
+                  {selection.model ? <span className="break-all font-mono text-xs text-text-tertiary">{selection.model}</span> : null}
+                </div>
+                {selection.context ? <div className="break-words text-xs text-text-tertiary">{selection.context}</div> : null}
+                <dl className="ag-relay-detail-grid">
+                  <div><dt>适用</dt><dd>{applicability.applicable ? '是' : '否'}</dd></div>
+                  <div><dt>已执行</dt><dd>{applicability.executed ? '是' : '否'}</dd></div>
+                  <div><dt>确定结论</dt><dd>{applicability.conclusive ? '是' : '否'}</dd></div>
+                  <div><dt>权重 / 影响</dt><dd>{applicability.score_weight ?? '-'} / {applicability.score_impact ?? '-'}</dd></div>
+                </dl>
+                <div>
+                  <div className="text-xs font-semibold text-text">结论</div>
+                  <p className="mt-1 break-words text-sm text-text-secondary">{'conclusion' in selection.check ? selection.check.conclusion : selection.check.summary}</p>
+                </div>
+                {applicability.eligibility_reason ? (
+                  <div>
+                    <div className="text-xs font-semibold text-text">资格说明</div>
+                    <p className="mt-1 break-words text-sm text-text-secondary">{applicability.eligibility_reason}</p>
+                  </div>
+                ) : null}
+                {'threshold' in selection.check && selection.check.threshold !== undefined ? (
+                  <div><div className="text-xs font-semibold text-text">阈值</div><pre className="ag-relay-json mt-1">{safeJSON(selection.check.threshold)}</pre></div>
+                ) : null}
+                <div>
+                  <div className="text-xs font-semibold text-text">脱敏证据</div>
+                  <pre className="ag-relay-json mt-1 max-h-80">{safeJSON(excerpt)}</pre>
+                </div>
+              </div>
+            </Modal.Body>
+            <Modal.Footer><Button variant="primary" onPress={onClose}>关闭</Button></Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </Modal>
+  );
+}
+
+function ReportHeader({
+  offline,
+  onCancel,
+  onExport,
+  onRefresh,
+  onRetest,
+  task,
+}: {
+  offline: boolean;
+  onCancel: () => void;
+  onExport: () => void;
+  onRefresh: () => void;
+  onRetest: () => void;
+  task: RelayDetectionTask;
+}) {
+  const active = activeTaskStatuses.has(task.status);
+  const completedModels = Number(task.execution?.completed_models ?? task.execution?.completed ?? 0);
+  const totalModels = Number(task.execution?.total_models ?? task.execution?.total ?? 0);
+  return (
+    <div className="border-b border-border-subtle px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Chip color={statusTone[task.status] ?? 'default'} size="sm">{statusLabel(task.status)}</Chip>
+            <span className="font-mono text-xs text-text-tertiary">#{task.id}</span>
+          </div>
+          <div className="mt-2 break-all font-mono text-sm font-semibold text-text">{task.base_url}</div>
+          <div className="mt-1 text-xs text-text-tertiary">{task.platform_type} · 更新 {fmtTime(task.updated_at)}</div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="ghost" onPress={onRefresh}><RefreshCw className="h-4 w-4" />刷新</Button>
+          {task.output ? <Button size="sm" variant="secondary" onPress={onExport}><Download className="h-4 w-4" />导出 JSON</Button> : null}
+          {active ? <Button size="sm" variant="danger" onPress={onCancel}><XCircle className="h-4 w-4" />取消</Button> : null}
+          {['completed', 'failed', 'cancelled'].includes(task.status) ? <Button size="sm" variant="primary" onPress={onRetest}><RotateCcw className="h-4 w-4" />重测</Button> : null}
+        </div>
+      </div>
+      {offline ? (
+        <div className="mt-3 flex items-center gap-2 border border-warning/35 bg-warning-subtle px-3 py-2 text-xs text-warning" role="status">
+          <WifiOff className="h-4 w-4" />离线，已暂停轮询并保留当前报告
         </div>
       ) : null}
+      {active ? (
+        <div className="mt-3 space-y-2">
+          <div className="flex flex-wrap justify-between gap-2 text-xs text-text-tertiary" aria-live="polite">
+            <span>{task.stage || (task.status === 'pending' ? '等待执行' : '检测执行中')}</span>
+            <span>{totalModels > 0 ? `${completedModels}/${totalModels} · ` : ''}{task.status === 'pending' ? '等待分配' : `${task.progress}%`}</span>
+          </div>
+          <ProgressBar progress={task.progress} status={task.status} />
+        </div>
+      ) : null}
+      {task.error_message ? <div className="mt-3 border border-danger/30 bg-danger-subtle px-3 py-2 text-xs text-danger">{task.error_message}</div> : null}
     </div>
   );
 }
 
-function matrixCell(row: RelayModelMatrixRow, ...ids: string[]) {
-  return row.checks.find((item) => ids.includes(item.id));
-}
-
-function ModelIssueMatrixTable({ rows }: { rows: RelayModelMatrixRow[] }) {
+function EmptyReportState({ task }: { task?: RelayDetectionTask }) {
+  const active = task && activeTaskStatuses.has(task.status);
+  const failed = task?.status === 'failed';
+  const cancelled = task?.status === 'cancelled';
   return (
-    <CompactDataTable
-      ariaLabel="模型检测矩阵"
-      className="ag-compact-data-table--matrix ag-compact-data-table--relay-matrix"
-      emptyText="暂无模型检测结果"
-      minWidth={2200}
-      rowKey={(row) => row.model}
-      rows={rows}
-      columns={[
-        {
-          key: 'model',
-          render: (row) => (
-            <div className="min-w-0">
-              <div className="truncate font-mono text-xs font-semibold text-text" title={row.model}>{row.model}</div>
-              <div className="mt-0.5 truncate text-[11px] text-text-tertiary">{row.family} · {row.checks.length} 项检测</div>
-            </div>
-          ),
-          title: '模型',
-          width: '20%',
-        },
-        {
-          key: 'overall',
-          render: (row) => {
-            return (
-              <div className="min-w-0" title={row.overall_reason}>
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <Chip size="sm" color={row.available ? 'success' : 'danger'}>{row.available ? '可用' : '失败'}</Chip>
-                  <Chip size="sm" color={gradeTone[row.grade] ?? 'default'}>{row.grade}</Chip>
-                </div>
-                <div className="mt-1 line-clamp-3 break-words text-[11px] leading-4 text-text-tertiary">
-                  {row.overall_reason || '无异常'}
-                </div>
-              </div>
-            );
-          },
-          title: '总体',
-          width: '14%',
-        },
-        { key: 'availability', render: (row) => <MatrixCellBadge cell={matrixCell(row, 'availability')} />, title: '可用性', width: '9%' },
-        { key: 'purity', render: (row) => <MatrixCellBadge cell={matrixCell(row, 'model_purity')} />, title: '纯度/换模', width: '14%' },
-        { key: 'injection', render: (row) => <MatrixCellBadge cell={matrixCell(row, 'prompt_injection')} />, title: '注水', width: '10%' },
-        { key: 'cache', render: (row) => <MatrixCellBadge cell={matrixCell(row, 'prompt_cache')} />, title: '缓存', width: '10%' },
-        { key: 'stability', render: (row) => <MatrixCellBadge cell={matrixCell(row, 'stability')} />, title: '稳定性', width: '11%' },
-        { key: 'stream', render: (row) => <MatrixCellBadge cell={matrixCell(row, 'stream_shape')} />, title: '流式', width: '9%' },
-        {
-          key: 'runtime',
-          render: (row) => <MatrixCellBadge cell={matrixCell(row, 'claude_runtime_state', 'openai_responses_native', 'aws_bedrock_broker_generation')} />,
-          title: '原生/Runtime',
-          width: '14%',
-        },
-        {
-          key: 'client',
-          render: (row) => <MatrixCellBadge cell={matrixCell(row, 'claude_code_subagents', 'codex_subagents', 'claude_code_cache', 'plain_sdk_cache')} />,
-          title: '客户端场景',
-          width: '12%',
-        },
-      ]}
-    />
+    <div className="flex min-h-[360px] flex-col items-center justify-center gap-3 px-6 py-10 text-center">
+      <div className="flex h-11 w-11 items-center justify-center rounded-[var(--field-radius)] border border-border bg-bg-subtle text-text-tertiary">
+        {active ? <Spinner size="sm" /> : failed ? <XCircle className="h-5 w-5 text-danger" /> : cancelled ? <Ban className="h-5 w-5" /> : <ScanSearch className="h-5 w-5" />}
+      </div>
+      <div>
+        <div className="text-sm font-semibold text-text">{active ? statusLabel(task.status) : failed ? '检测失败' : cancelled ? '检测已取消' : '暂无检测报告'}</div>
+        <div className="mt-1 max-w-sm text-xs text-text-tertiary">{active ? task.stage || '报告会在探针返回后自动更新' : task?.error_message || '选择已有任务或创建新检测'}</div>
+      </div>
+    </div>
   );
 }
 
-function ModelMatrixTable({ rows }: { rows: RelayReport['models'] }) {
-  return (
-    <CompactDataTable
-      ariaLabel="模型检测矩阵"
-      className="ag-compact-data-table--matrix ag-compact-data-table--relay-matrix"
-      emptyText="暂无模型检测结果"
-      minWidth={2360}
-      rowKey={(row) => row.model}
-      rows={rows}
-      columns={[
-        {
-          key: 'model',
-          render: (row) => (
-            <div className="min-w-0">
-              <div className="truncate font-mono text-xs font-semibold text-text" title={row.model}>{row.model}</div>
-              <div className="mt-0.5 truncate text-[11px] text-text-tertiary">{row.family} · {row.protocol} · HTTP {row.http_status || '-'}</div>
-            </div>
-          ),
-          title: '模型',
-          width: '20%',
-        },
-        { key: 'status', render: (row) => <Chip size="sm" color={row.available ? 'success' : 'danger'}>{row.available ? '可用' : '失败'}</Chip>, title: '状态', width: '8%' },
-        { key: 'grade', render: (row) => <Chip size="sm" color={gradeTone[row.grade] ?? 'default'} title="模型级评分：A 必须通过身份、注水、缓存、流式与稳定性核心验证">{row.grade}</Chip>, title: '模型等级', width: '6%' },
-        {
-          key: 'purity',
-          render: (row) => {
-            const match = inferModelMatch(row);
-            const label = modelMatchLabel(match.kind, match.matched);
-            const compareText = row.returned_model ? `${row.requested_model} → ${row.returned_model}` : `${row.requested_model} → 未返回`;
-            return (
-              <div className="min-w-0" title={[compareText, match.reason].filter(Boolean).join(' · ')}>
-                <Chip size="sm" color={modelMatchTone(match.kind, match.matched)}>{label}</Chip>
-                <div className="mt-1 line-clamp-3 break-words font-mono text-[11px] leading-4 text-text-tertiary">{compareText}</div>
-              </div>
-            );
-          },
-          title: '纯血验证',
-          width: '17%',
-        },
-        {
-          key: 'role',
-          render: (row) => {
-            const sample = row.role_probe?.samples?.[0];
-            const evidence = sample?.text || row.role_probe?.error || '';
-            return (
-              <div className="min-w-0" title={evidence || '角色诱探：注入短系统身份，验证是否被包装角色覆盖'}>
-                <Chip size="sm" color={roleProbeTone(row)}>{roleProbeLabel(row)}</Chip>
-                <div className="mt-1 line-clamp-3 break-words text-[11px] leading-4 text-text-tertiary">{evidence || '伪装辅助证据'}</div>
-              </div>
-            );
-          },
-          title: '角色诱探',
-          width: '13%',
-        },
-        {
-          key: 'thinking',
-          render: (row) => {
-            const probe = row.thinking_probe;
-            const title = probe
-              ? `thinking=${probe.has_thinking_content} · signature_delta=${probe.has_signature_delta} · order=${probe.event_order_ok} · fake_rejected=${probe.fake_signature_rejected}${probe.error ? ` · ${probe.error}` : ''}`
-              : 'Claude/Anthropic thinking + signature_delta 协议指纹';
-            return (
-              <div className="min-w-0" title={title}>
-                <Chip size="sm" color={thinkingTone(row)}>{thinkingLabel(row)}</Chip>
-                <div className="mt-1 line-clamp-3 break-words text-[11px] leading-4 text-text-tertiary">{probe?.events?.slice(0, 4).join('/') || probe?.error || '协议指纹'}</div>
-              </div>
-            );
-          },
-          title: 'Thinking签名',
-          width: '13%',
-        },
-        {
-          key: 'token_precision',
-          render: (row) => {
-            const probe = row.token_precision;
-            const title = probe
-              ? `expected=${probe.expected_input_tokens} · observed=${probe.observed_input_tokens} · delta=${probe.delta}${probe.error ? ` · ${probe.error}` : ''}`
-              : '固定 prompt 的 input token 计量精度辅助验证';
-            return (
-              <div className="min-w-0" title={title}>
-                <Chip size="sm" color={tokenPrecisionTone(row)}>{tokenPrecisionLabel(row)}</Chip>
-                <div className="mt-0.5 truncate font-mono text-[11px] text-text-tertiary">
-                  {probe ? `${probe.expected_input_tokens}/${probe.observed_input_tokens}` : '-'}
-                </div>
-              </div>
-            );
-          },
-          title: 'Token精度',
-          width: '9%',
-        },
-        {
-          key: 'source_probe',
-          render: (row) => (
-            <div className="min-w-0" title={row.source_probe?.text || row.source_probe?.error || '逆向来源识别辅助证据'}>
-              <Chip size="sm" color={sourceProbeTone(row)}>{sourceProbeLabel(row)}</Chip>
-              <div className="mt-0.5 truncate text-[11px] text-text-tertiary">
-                {row.source_probe?.text || '来源自述'}
-              </div>
-            </div>
-          ),
-          title: '来源反查',
-          width: '10%',
-        },
-        { align: 'end', key: 'latency', render: (row) => <span className="font-mono text-text-secondary" title="基础 PONG 探针完整响应耗时">{row.latency_ms}ms</span>, title: '基础延迟', width: '8%' },
-        {
-          align: 'end',
-          key: 'tokens',
-          render: (row) => (
-            <span className="font-mono text-text-secondary" title="基础 PONG 探针返回的 usage：输入 token / 输出 token">
-              {row.input_tokens}/{row.output_tokens}
-            </span>
-          ),
-          title: '基础Token 入/出',
-          width: '8%',
-        },
-        {
-          align: 'end',
-          key: 'cache',
-          render: (row) => {
-            const hitRate = typeof row.cache?.warm_hit_rate === 'number' ? `${Math.round(row.cache.warm_hit_rate * 100)}%` : '-';
-            const probeTokens = row.cache?.round_results?.reduce((sum, item) => sum + item.cache_creation_tokens + item.cache_read_tokens, 0) ?? 0;
-            const responseTokens = row.cache_creation_tokens + row.cache_read_tokens;
-            const cacheTokens = probeTokens || responseTokens;
-            const title = `warm_hit_rate ${hitRate} · cache tokens ${cacheTokens} · rounds ${row.cache?.rounds ?? 0}`;
-            return (
-              <div className="min-w-0 text-right" title={title}>
-                <div className="font-mono text-text-secondary">{hitRate}</div>
-                <div className="mt-0.5 font-mono text-[11px] text-text-tertiary">{cacheTokens.toLocaleString()} / {row.cache?.rounds ?? 0}轮</div>
-              </div>
-            );
-          },
-          title: '缓存命中',
-          width: '10%',
-        },
-        { align: 'end', key: 'inject', render: (row) => <span className="font-mono text-text-secondary">{row.hidden_injection_tokens}</span>, title: '注水', width: '6%' },
-        {
-          key: 'risks',
-          render: (row) => {
-            const match = inferModelMatch(row);
-            const risks = match.kind === 'version_alias' ? row.risks.filter((risk) => risk !== 'model_mismatch') : row.risks;
-            return (
-              <span className="line-clamp-3 min-w-0 break-words text-xs leading-4 text-text-tertiary" title={risks.join(', ') || row.error}>
-                {risks.length > 0 ? risks.join(', ') : row.error || '-'}
-              </span>
-            );
-          },
-          title: '风险',
-          width: '6%',
-        },
-      ]}
-    />
+function ReportWorkspace({
+  offline,
+  onCancel,
+  onRetest,
+  onRetry,
+  task,
+}: {
+  offline: boolean;
+  onCancel: (id: number) => void;
+  onRetest: (id: number) => void;
+  onRetry: () => void;
+  task: RelayDetectionTask;
+}) {
+  const [tab, setTab] = useState<ReportTab>('decision');
+  const [selection, setSelection] = useState<EvidenceSelection | null>(null);
+  const originRef = useRef<HTMLButtonElement | null>(null);
+  const report = task.output;
+  const rawChecks = report?.standard_checks?.length ? report.standard_checks : buildLegacyChecks(task);
+  const checks = useMemo(() => rawChecks.map((check) => {
+    const normalized = normalizeApplicability(check, check.family, check.protocol, report?.platform_type ?? task.platform_type);
+    return {
+      ...check,
+      applicable: normalized.applicable,
+      conclusive: normalized.conclusive,
+      eligibility_reason: normalized.eligibility_reason,
+      executed: normalized.executed,
+      score_eligible: normalized.score_eligible,
+      score_impact: normalized.score_impact,
+      score_weight: normalized.score_weight,
+      status: normalized.status,
+    };
+  }), [rawChecks, report?.platform_type, task.platform_type]);
+  const matrixRows = useMemo(() => report ? buildMatrixRows(report) : [], [report]);
+  const calculatedCoverage = useMemo(
+    () => calculateCoverage(matrixRows, report?.platform_type ?? task.platform_type),
+    [matrixRows, report?.platform_type, task.platform_type],
   );
-}
+  const failures = useMemo(
+    () => collectFailureItems(matrixRows, checks, report?.platform_type ?? task.platform_type),
+    [checks, matrixRows, report?.platform_type, task.platform_type],
+  );
+  const returnedCoverage = report?.summary.coverage ?? report?.coverage ?? report?.coverage_summary ?? task.coverage;
+  const coverage = isCoverage(returnedCoverage) ? returnedCoverage : calculatedCoverage;
+  const explicitEligibility = report?.summary.score_eligible ?? report?.score_eligible ?? task.score_eligible;
+  const scoreEligible = explicitEligibility ?? (task.status === 'completed' && (report?.summary.available_models ?? 0) > 0 && coverage.conclusive > 0);
+  const scoreReason = report?.summary.score_eligibility_reason
+    ?? report?.summary.eligibility_reason
+    ?? report?.eligibility_reason
+    ?? task.eligibility_reason;
+  const legacy = Boolean(report && !hasExplicitApplicability(report.standard_checks ?? []));
 
-function RiskTable({ rows }: { rows: RelayReport['risks'] }) {
-  function riskDetail(row: RelayReport['risks'][number]) {
-    if (row.code === 'external_platform_quota_keyword_leak') {
-      const count = Number(row.detail?.probe_count ?? 1);
-      const probes = Array.isArray(row.detail?.probes) ? row.detail.probes.slice(0, 4).join(', ') : '';
-      return `${row.message}${probes ? `：${probes}${count > 4 ? ' 等' : ''}` : ''}`;
-    }
-    if ((row.code === 'model_mismatch' || row.code === 'model_identity_unverified') && row.detail) {
-      const requested = String(row.detail.requested_model ?? row.detail.requested ?? '-');
-      const returned = String(row.detail.returned_model ?? row.detail.returned ?? '未返回');
-      const kind = String(row.detail.match_kind ?? row.detail.kind ?? 'model_changed');
-      const reason = String(row.detail.match_reason ?? row.detail.reason ?? '');
-      return `${requested} -> ${returned} · ${kind}${reason ? ` · ${reason}` : ''}`;
-    }
-    if (row.code === 'thinking_signature_mismatch' && row.detail?.thinking_probe && typeof row.detail.thinking_probe === 'object') {
-      const probe = row.detail.thinking_probe as Record<string, unknown>;
-      return `thinking=${String(probe.has_thinking_content)} · signature_delta=${String(probe.has_signature_delta)} · order=${String(probe.event_order_ok)} · fake_rejected=${String(probe.fake_signature_rejected)}`;
-    }
-    if (row.code === 'token_precision_mismatch' && row.detail?.token_precision && typeof row.detail.token_precision === 'object') {
-      const probe = row.detail.token_precision as Record<string, unknown>;
-      return `预估 ${String(probe.expected_input_tokens ?? '-')} / 返回 ${String(probe.observed_input_tokens ?? '-')} · 偏差 ${String(probe.delta ?? '-')}`;
-    }
-    if (row.code === 'source_identity_mismatch' && row.detail?.source_probe && typeof row.detail.source_probe === 'object') {
-      const probe = row.detail.source_probe as Record<string, unknown>;
-      return `${String(probe.expected ?? '-')} -> ${String(probe.claimed_source ?? 'unknown')} · ${String(probe.text ?? '')}`;
-    }
-    return row.message;
+  function openEvidence(next: EvidenceSelection, origin: HTMLButtonElement) {
+    originRef.current = origin;
+    setSelection(next);
+  }
+
+  function closeEvidence() {
+    setSelection(null);
+    window.requestAnimationFrame(() => originRef.current?.focus());
+  }
+
+  function exportReport() {
+    if (!report) return;
+    const blob = new Blob([safeJSON(report)], { type: 'application/json;charset=utf-8' });
+    const href = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = href;
+    anchor.download = `relay-detection-${task.id}.json`;
+    anchor.click();
+    URL.revokeObjectURL(href);
   }
 
   return (
-    <CompactDataTable
-      ariaLabel="风险明细"
-      emptyText="暂无风险"
-      minWidth={780}
-      rowKey={(row, index) => `${row.code}-${row.model ?? index}`}
-      rows={rows}
-      columns={[
-        { key: 'severity', render: (row) => <Chip size="sm" color={severityTone[row.severity] ?? 'warning'}>{row.severity}</Chip>, title: '级别', width: '12%' },
-        { key: 'code', render: (row) => <span className="truncate font-mono text-xs text-text-secondary">{row.code}</span>, title: '代码', width: '22%' },
-        { key: 'model', render: (row) => <span className="truncate font-mono text-xs text-text-tertiary">{row.model || '-'}</span>, title: '模型', width: '24%' },
-        { key: 'message', render: (row) => <span className="line-clamp-2 text-xs text-text" title={riskDetail(row)}>{riskDetail(row)}</span>, title: '结论', width: '42%' },
-      ]}
-    />
+    <Card className="ag-dashboard-panel min-w-0 overflow-hidden">
+      <ReportHeader
+        offline={offline}
+        onCancel={() => onCancel(task.id)}
+        onExport={exportReport}
+        onRefresh={onRetry}
+        onRetest={() => onRetest(task.id)}
+        task={task}
+      />
+      {!report ? <EmptyReportState task={task} /> : (
+        <>
+          <DecisionStrip coverage={coverage} failedCount={failures.length} legacy={legacy} report={report} scoreEligible={scoreEligible} scoreReason={scoreReason} />
+          {coveragePercent(coverage.ratio) < 100 ? (
+            <div className="flex items-start gap-2 border-b border-warning/30 bg-warning-subtle px-4 py-2.5 text-xs text-warning">
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>报告覆盖不完整：受阻、未运行和无结论检查会降低覆盖率，但不会作为失败扣分。</span>
+            </div>
+          ) : null}
+          <Tabs selectedKey={tab} onSelectionChange={(key) => setTab(String(key) as ReportTab)}>
+            <div className="border-b border-border-subtle px-3 pt-3">
+              <Tabs.ListContainer className="ag-page-tabs w-full">
+                <Tabs.List>
+                  <Tabs.Tab id="decision"><Tabs.Indicator /><ShieldCheck className="h-4 w-4" />结论</Tabs.Tab>
+                  <Tabs.Tab id="matrix"><Tabs.Separator /><Tabs.Indicator /><Radar className="h-4 w-4" />矩阵</Tabs.Tab>
+                  <Tabs.Tab id="checks"><Tabs.Separator /><Tabs.Indicator /><ListChecks className="h-4 w-4" />检查</Tabs.Tab>
+                  <Tabs.Tab id="baselines"><Tabs.Separator /><Tabs.Indicator /><Gauge className="h-4 w-4" />基线</Tabs.Tab>
+                  <Tabs.Tab id="risks"><Tabs.Separator /><Tabs.Indicator /><ShieldAlert className="h-4 w-4" />风险</Tabs.Tab>
+                  <Tabs.Tab id="evidence"><Tabs.Separator /><Tabs.Indicator /><FileJson className="h-4 w-4" />证据</Tabs.Tab>
+                </Tabs.List>
+              </Tabs.ListContainer>
+            </div>
+            <Tabs.Panel className="ag-tabs-panel-flush" id="decision">
+              <div className="space-y-4 p-3 sm:p-4">
+                <FailureRegister failures={failures} onEvidence={openEvidence} />
+                <CoverageBreakdown coverage={coverage} platform={report.platform_type} rows={matrixRows} />
+                <ModelProblemMatrix onEvidence={openEvidence} platform={report.platform_type} report={report} rows={matrixRows} />
+              </div>
+            </Tabs.Panel>
+            <Tabs.Panel className="ag-tabs-panel-flush" id="matrix"><div className="p-3 sm:p-4"><ModelProblemMatrix onEvidence={openEvidence} platform={report.platform_type} report={report} rows={matrixRows} /></div></Tabs.Panel>
+            <Tabs.Panel className="ag-tabs-panel-flush" id="checks"><div className="p-3 sm:p-4"><ChecksView checks={checks} onEvidence={openEvidence} platform={report.platform_type} /></div></Tabs.Panel>
+            <Tabs.Panel className="ag-tabs-panel-flush" id="baselines"><div className="p-3 sm:p-4"><BaselinesView rows={report.baselines ?? []} /></div></Tabs.Panel>
+            <Tabs.Panel className="ag-tabs-panel-flush" id="risks"><div className="p-3 sm:p-4"><RisksView rows={report.risks ?? []} /></div></Tabs.Panel>
+            <Tabs.Panel className="ag-tabs-panel-flush" id="evidence"><div className="p-3 sm:p-4"><EvidenceView report={report} /></div></Tabs.Panel>
+          </Tabs>
+          <EvidenceDetail onClose={closeEvidence} selection={selection} />
+        </>
+      )}
+    </Card>
   );
 }
 
-function BaselineDiffTable({ rows }: { rows: NonNullable<RelayReport['baselines']> }) {
+function MobileSegments({ onChange, value }: { onChange: (value: MobileSegment) => void; value: MobileSegment }) {
+  const items: Array<{ id: MobileSegment; label: string }> = [
+    { id: 'configure', label: '配置' },
+    { id: 'tasks', label: '任务' },
+    { id: 'report', label: '报告' },
+  ];
   return (
-    <CompactDataTable
-      ariaLabel="官方基线比对"
-      emptyText="暂无基线比对结果"
-      minWidth={980}
-      rowKey={(row, index) => `${row.kind}-${row.model ?? index}`}
-      rows={rows}
-      columns={[
-        {
-          key: 'status',
-          render: (row) => <Chip size="sm" color={checkTone[row.status] ?? 'default'}>{checkLabels[row.status] ?? row.status}</Chip>,
-          title: '状态',
-          width: '10%',
-        },
-        {
-          key: 'baseline',
-          render: (row) => (
-            <div className="min-w-0">
-              <div className="truncate font-mono text-xs font-semibold text-text">{row.provider}/{row.protocol}</div>
-              <div className="mt-0.5 truncate text-[11px] text-text-tertiary">{row.kind} · {row.source}</div>
-            </div>
-          ),
-          title: '基线',
-          width: '18%',
-        },
-        {
-          key: 'model',
-          render: (row) => <span className="truncate font-mono text-xs text-text-secondary" title={row.model}>{row.model || '-'}</span>,
-          title: '模型',
-          width: '24%',
-        },
-        {
-          key: 'severity',
-          render: (row) => <Chip size="sm" color={severityTone[row.severity] ?? 'default'}>{row.severity}</Chip>,
-          title: '级别',
-          width: '10%',
-        },
-        {
-          key: 'differences',
-          render: (row) => {
-            const text = row.differences?.join(', ') || row.conclusion;
-            return <span className="line-clamp-2 text-xs text-text" title={text}>{text}</span>;
-          },
-          title: '差异',
-          width: '38%',
-        },
-      ]}
-    />
+    <div aria-label="中继检测视图" className="ag-relay-mobile-segments" role="tablist">
+      {items.map((item) => (
+        <button
+          aria-selected={value === item.id}
+          className={cx(value === item.id && 'is-selected')}
+          key={item.id}
+          onClick={() => onChange(item.id)}
+          role="tab"
+          type="button"
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
 export default function RelayDetectionPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [bulkInput, setBulkInput] = useState('');
-  const [selectedID, setSelectedID] = useState<number | null>(null);
-  const [reportTab, setReportTab] = useState('overview');
-  const [form, setForm] = useState<FormState>({
-    api_key: '',
-    base_url: '',
-    platform_type: '',
-  });
+  const mobile = useMediaQuery('(max-width: 639px)');
+  const [mobileSegment, setMobileSegment] = useState<MobileSegment>('configure');
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
+  const [selectedID, setSelectedID] = useState<number | null>(taskSelectedFromStorage);
+  const [form, setForm] = useState<FormState>({ api_key: '', base_url: '', platform_type: 'auto' });
+
+  useEffect(() => {
+    const handleOnline = () => setOnline(true);
+    const handleOffline = () => setOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const listQuery = useQuery({
     placeholderData: keepPreviousData,
     queryFn: () => relayDetectionApi.list({ page: 1, page_size: 50 }),
     queryKey: queryKeys.relayDetections('list'),
-    refetchInterval: (query) => (
-      query.state.data?.list?.some((item) => item.status === 'processing' || item.status === 'pending' || item.status === 'cancelling') ? 3000 : false
-    ),
+    refetchInterval: (query) => online && query.state.data?.list?.some((item) => activeTaskStatuses.has(item.status)) ? 2500 : false,
   });
-
-  const rows = listQuery.data?.list ?? [];
-  const effectiveSelectedID = selectedID ?? rows[0]?.id ?? null;
+  const tasks = listQuery.data?.list ?? [];
+  const effectiveSelectedID = selectedID ?? tasks[0]?.id ?? null;
   const detailQuery = useQuery({
-    enabled: effectiveSelectedID != null,
+    enabled: effectiveSelectedID !== null,
     queryFn: () => relayDetectionApi.get(effectiveSelectedID as number),
     queryKey: queryKeys.relayDetections('detail', effectiveSelectedID),
-    refetchInterval: (query) => query.state.data?.status === 'processing' || query.state.data?.status === 'cancelling' ? 2500 : false,
+    refetchInterval: (query) => online && query.state.data && activeTaskStatuses.has(query.state.data.status) ? 2000 : false,
   });
 
+  useEffect(() => {
+    if (effectiveSelectedID !== null) persistSelectedTask(effectiveSelectedID);
+  }, [effectiveSelectedID]);
+
   const createMutation = useMutation({
-    mutationFn: (data: FormState) => relayDetectionApi.create(data as FormState & { platform_type: RelayPlatformType }),
-    onError: (err: Error) => toast('error', err.message),
+    mutationFn: relayDetectionApi.create,
+    onError: (error: Error) => toast('error', error.message),
     onSuccess: (task) => {
       toast('success', `检测任务 #${task.id} 已创建`);
       setSelectedID(task.id);
-      setForm((prev) => ({ ...prev, api_key: '' }));
-      setBulkInput('');
+      setMobileSegment('report');
       void queryClient.invalidateQueries({ queryKey: queryKeys.relayDetections() });
     },
   });
-
   const cancelMutation = useMutation({
-    mutationFn: (id: number) => relayDetectionApi.cancel(id),
-    onError: (err: Error) => toast('error', err.message),
-    onSuccess: (task) => {
-      toast('success', `检测任务 #${task.id} 已请求取消`);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.relayDetections() });
-    },
+    mutationFn: relayDetectionApi.cancel,
+    onError: (error: Error) => toast('error', error.message),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.relayDetections() }),
   });
-
   const retestMutation = useMutation({
-    mutationFn: (id: number) => relayDetectionApi.retest(id),
-    onError: (err: Error) => {
-      if (err.message.includes('original api_key is not stored')) {
-        toast('error', '这个旧任务没有保存原始 API Key，请重新填写 Base URL / API Key 创建检测');
-        return;
-      }
-      toast('error', err.message);
-    },
+    mutationFn: relayDetectionApi.retest,
+    onError: (error: Error) => toast('error', error.message),
     onSuccess: (task) => {
-      toast('success', `重测任务 #${task.id} 已创建`);
       setSelectedID(task.id);
+      setMobileSegment('report');
       void queryClient.invalidateQueries({ queryKey: queryKeys.relayDetections() });
     },
   });
 
-  const selectedPlatformLabel = platformOptions.find((item) => item.id === form.platform_type)?.label ?? '请选择平台类型';
-  const task = detailQuery.data;
-  const report = task?.output;
-  const summary = report?.summary;
-  const processing = task?.status === 'processing';
-  const rawChecks = report?.standard_checks?.length ? report.standard_checks : buildFallbackChecks(task);
-  const modelRows = report?.models ?? [];
-  const baselineRows = report?.baselines ?? [];
-  const checks = platformSpecificChecks(normalizeStandardChecks(rawChecks, modelRows), report?.platform_type ?? task?.platform_type);
-  const checkSummary = summarizeChecks(checks);
-  const riskRows = aggregateRiskRows(report?.risks ?? []);
-  const familyData = report?.charts?.family_distribution ?? [];
-  const riskData = report?.charts?.risk_distribution ?? [];
-  const scoreData = report?.charts?.model_metrics ?? [];
-  const canSubmit = form.base_url.trim() !== '' && form.api_key.trim() !== '' && form.platform_type !== '' && !createMutation.isPending;
-
-  const overviewIssues = useMemo(() => buildOverviewIssues(checks, modelRows, report?.risks ?? []), [checks, modelRows, report?.risks]);
-  const failedModels = useMemo(() => modelRows.filter((item) => !item.available || item.risks?.length > 0), [modelRows]);
-  const highRiskCount = report?.risks?.filter((item) => item.severity === 'high' || item.severity === 'critical').length ?? 0;
+  function selectTask(id: number) {
+    setSelectedID(id);
+    if (mobile) setMobileSegment('report');
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!canSubmit) {
-      toast('error', '请填写 Base URL、API Key 和平台类型');
+    if (!form.base_url.trim() || !form.api_key.trim()) {
+      toast('error', '请填写 Base URL 和 API Key');
       return;
     }
-    createMutation.mutate({
+    const request = {
       api_key: form.api_key.trim(),
       base_url: normalizeBaseURL(form.base_url),
       platform_type: form.platform_type,
-    });
+    };
+    setForm((current) => ({ ...current, api_key: '' }));
+    createMutation.mutate(request);
   }
 
-  function handleParseCredential() {
-    const parsed = parseCredentialInput(bulkInput);
+  function handleParse(raw: string) {
+    const parsed = parseCredentialInput(raw);
     if (!parsed.base_url && !parsed.api_key) {
       toast('error', '没有解析到 Base URL 或 API Key');
       return;
     }
-    setForm((prev) => ({ ...prev, ...parsed }));
-    toast('success', '已解析到输入框');
+    setForm((current) => ({ ...current, ...parsed }));
+    toast('success', '凭据已填入表单');
+  }
+
+  const configure = <DetectionForm form={form} isPending={createMutation.isPending} onChange={setForm} onParse={handleParse} onSubmit={handleSubmit} />;
+  const taskQueue = (
+    <TaskQueue
+      items={tasks}
+      loading={listQuery.isLoading}
+      onCancel={(id) => cancelMutation.mutate(id)}
+      onRefresh={() => void listQuery.refetch()}
+      onRetest={(id) => retestMutation.mutate(id)}
+      onSelect={selectTask}
+      selectedID={effectiveSelectedID}
+    />
+  );
+  const report = detailQuery.isError ? (
+    <Card className="ag-dashboard-panel">
+      <div className="flex min-h-[360px] flex-col items-center justify-center gap-3 p-6 text-center">
+        <TriangleAlert className="h-6 w-6 text-danger" />
+        <div className="text-sm font-semibold text-text">报告加载失败</div>
+        <div className="text-xs text-text-tertiary">{(detailQuery.error as Error).message}</div>
+        <Button variant="primary" onPress={() => void detailQuery.refetch()}><RefreshCw className="h-4 w-4" />重试</Button>
+      </div>
+    </Card>
+  ) : detailQuery.data ? (
+    <ReportWorkspace
+      offline={!online}
+      onCancel={(id) => cancelMutation.mutate(id)}
+      onRetest={(id) => retestMutation.mutate(id)}
+      onRetry={() => void detailQuery.refetch()}
+      task={detailQuery.data}
+    />
+  ) : (
+    <Card className="ag-dashboard-panel"><EmptyReportState /></Card>
+  );
+
+  if (mobile) {
+    return (
+      <div className="ag-relay-workbench min-w-0 space-y-3">
+        <MobileSegments onChange={setMobileSegment} value={mobileSegment} />
+        <div role="tabpanel">
+          {mobileSegment === 'configure' ? configure : mobileSegment === 'tasks' ? taskQueue : report}
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
-      <div className="space-y-4">
-        <Card className="ag-dashboard-panel">
-          <div className="border-b border-border-subtle p-4">
-            <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-[var(--field-radius)] bg-primary-subtle text-primary">
-                <FileJson className="h-4 w-4" />
-              </div>
-              <h2 className="text-base font-semibold text-text">创建检测</h2>
-            </div>
-            <p className="mt-2 text-sm text-text-tertiary">
-              一次检测会枚举对方暴露的全部模型，并执行完整标准项。
-            </p>
-          </div>
-          <Card.Content className="p-4">
-            <div className="mb-4 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <Label>JSON / 文本解析</Label>
-                <Chip size="sm" color="default">可选</Chip>
-              </div>
-              <TextField fullWidth>
-                <TextArea
-                  className="min-h-[104px] w-full resize-y"
-                  placeholder='粘贴 {"url":"http://localhost:3000","key":"sk-..."} 或 newapi_channel_conn'
-                  value={bulkInput}
-                  onChange={(event) => setBulkInput(event.target.value)}
-                />
-              </TextField>
-              <Button className="w-full" isDisabled={!bulkInput.trim()} type="button" variant="secondary" onPress={handleParseCredential}>
-                <ClipboardPaste className="h-4 w-4" />
-                解析到输入框
-              </Button>
-            </div>
-
-            <Form className="space-y-4" onSubmit={handleSubmit}>
-              <TextField fullWidth isRequired>
-                <Label>Base URL</Label>
-                <Input
-                  autoComplete="off"
-                  placeholder="https://relay.example.com"
-                  value={form.base_url}
-                  onChange={(event) => setForm((prev) => ({ ...prev, base_url: event.target.value }))}
-                />
-              </TextField>
-              <TextField fullWidth isRequired>
-                <Label>API Key</Label>
-                <Input
-                  autoComplete="off"
-                  placeholder="sk-..."
-                  type="password"
-                  value={form.api_key}
-                  onChange={(event) => setForm((prev) => ({ ...prev, api_key: event.target.value }))}
-                />
-              </TextField>
-              <Select
-                fullWidth
-                isRequired
-                selectedKey={form.platform_type}
-                onSelectionChange={(key) => setForm((prev) => ({
-                  ...prev,
-                  platform_type: (key ?? '') as RelayPlatformType | '',
-                }))}
-              >
-                <Label>平台类型</Label>
-                <Select.Trigger>
-                  <Select.Value>{selectedPlatformLabel}</Select.Value>
-                  <Select.Indicator />
-                </Select.Trigger>
-                <Select.Popover>
-                  <ListBox items={platformOptions}>
-                    {(item) => (
-                      <ListBox.Item id={item.id} textValue={item.label}>
-                        {item.label}
-                      </ListBox.Item>
-                    )}
-                  </ListBox>
-                </Select.Popover>
-              </Select>
-              <Button className="w-full" isDisabled={!canSubmit} type="submit" variant="primary">
-                {createMutation.isPending ? <Spinner size="sm" /> : <Play className="h-4 w-4" />}
-                开始检测
-              </Button>
-            </Form>
-          </Card.Content>
-        </Card>
-
-        <TaskQueue
-          items={rows}
-          loading={listQuery.isLoading}
-          onCancel={(id) => cancelMutation.mutate(id)}
-          onRefresh={() => { void listQuery.refetch(); }}
-          onRetest={(id) => retestMutation.mutate(id)}
-          onSelect={setSelectedID}
-          selectedID={effectiveSelectedID}
-        />
-      </div>
-
-      <div className="space-y-4">
-        {!task ? (
-          <Card className="ag-dashboard-panel">
-            <CenterState
-              hint="在左侧创建一个检测任务，或从任务列表选择一条已有任务查看完整报告。"
-              icon={<ScanSearch className="h-6 w-6" />}
-              title="尚未选择检测任务"
-            />
-          </Card>
-        ) : (
-          <>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <StatCard
-                icon={<ShieldCheck className="h-5 w-5" />}
-                label="真实结论"
-                meta={summary?.confidence ? `confidence ${summary.confidence}` : statusLabel(task.status)}
-                tone={task.status === 'failed' ? 'danger' : task.status === 'completed' ? 'success' : 'warning'}
-                value={summary?.channel_label ?? task.channel_label ?? '-'}
-              />
-              <StatCard
-                icon={<Database className="h-5 w-5" />}
-                label="模型覆盖"
-                meta={summary ? `${summary.model_count} total` : '等待报告'}
-                tone={summary && summary.available_models === summary.model_count ? 'success' : 'warning'}
-                value={summary?.available_models ?? task.model_count ?? 0}
-              />
-              <StatCard
-                icon={checkSummary.failed > 0 ? <XCircle className="h-5 w-5" /> : <ListChecks className="h-5 w-5" />}
-                label="标准项"
-                meta={`${checkSummary.failed} fail · ${checkSummary.missing} missing`}
-                tone={checkSummary.failed > 0 ? 'danger' : checkSummary.missing > 0 ? 'warning' : 'success'}
-                value={`${checkSummary.passed}/${checkSummary.total}`}
-              />
-              <StatCard
-                icon={<Gauge className="h-5 w-5" />}
-                label="平均延迟"
-                meta={`Grade ${task.overall_grade || summary?.overall_grade || '-'}`}
-                tone={summary && summary.average_latency_ms > 3000 ? 'warning' : 'default'}
-                value={`${Math.round(summary?.average_latency_ms ?? 0)}ms`}
-              />
-            </div>
-
-            <Card className="ag-dashboard-panel">
-              <ReportHeaderBar
-                onRefresh={() => { void detailQuery.refetch(); }}
-                task={task}
-              />
-
-              {report ? (
-                <Tabs selectedKey={reportTab} onSelectionChange={(key) => setReportTab(String(key))}>
-                  <div className="border-b border-border-subtle px-3 pt-3 2xl:px-4">
-                    <Tabs.ListContainer className="ag-page-tabs w-full">
-                      <Tabs.List>
-                        <Tabs.Tab id="overview">
-                          <Tabs.Indicator />
-                          <LayoutDashboard className="h-4 w-4" />
-                          概览
-                        </Tabs.Tab>
-                        <Tabs.Tab id="checks">
-                          <Tabs.Separator />
-                          <Tabs.Indicator />
-                          <ListChecks className="h-4 w-4" />
-                          标准检测
-                          <Chip size="sm" color={checkSummary.failed > 0 ? 'danger' : 'default'}>{checkSummary.total}</Chip>
-                        </Tabs.Tab>
-                        <Tabs.Tab id="models">
-                          <Tabs.Separator />
-                          <Tabs.Indicator />
-                          <ServerCog className="h-4 w-4" />
-                          模型矩阵
-                          <Chip size="sm" color="default">{modelRows.length}</Chip>
-                        </Tabs.Tab>
-                        <Tabs.Tab id="baselines">
-                          <Tabs.Separator />
-                          <Tabs.Indicator />
-                          <ShieldCheck className="h-4 w-4" />
-                          基线
-                          <Chip size="sm" color={baselineRows.some((item) => item.status === 'fail') ? 'warning' : 'success'}>{baselineRows.length}</Chip>
-                        </Tabs.Tab>
-                        <Tabs.Tab id="risks">
-                          <Tabs.Separator />
-                          <Tabs.Indicator />
-                          <TriangleAlert className="h-4 w-4" />
-                          风险
-                          <Chip size="sm" color={riskRows.length > 0 ? 'warning' : 'success'}>{riskRows.length}</Chip>
-                        </Tabs.Tab>
-                      </Tabs.List>
-                    </Tabs.ListContainer>
-                  </div>
-
-                  <Tabs.Panel id="overview" className="ag-tabs-panel-flush">
-                    <div className="space-y-4 p-3 2xl:p-4">
-                      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-                        <Panel
-                          extra={overviewIssues.length > 0 ? <Chip size="sm" color="warning">{overviewIssues.length} 项</Chip> : <Chip size="sm" color="success">0 项</Chip>}
-                          title="本次失败项"
-                        >
-                          <div className="space-y-2">
-                            {overviewIssues.length === 0 ? (
-                              <div className="flex min-h-[150px] items-center justify-center rounded-[var(--radius)] border border-success/25 bg-success-subtle p-4 text-sm text-success">
-                                当前标准项没有失败或缺失。
-                              </div>
-                            ) : overviewIssues.map((item) => (
-                              <div className="rounded-[var(--radius)] border border-border bg-bg-subtle p-3" key={item.check.id}>
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="truncate text-sm font-semibold text-text">{item.check.title}</span>
-                                  <div className="flex shrink-0 items-center gap-1">
-                                    <Chip size="sm" color={item.affectedCount > 0 ? 'warning' : 'default'}>
-                                      {item.affectedCount > 0 ? `${item.affectedCount}/${item.totalModels} 模型` : '无模型明细'}
-                                    </Chip>
-                                    <Chip size="sm" color={checkTone[item.check.status] ?? 'default'}>{checkLabels[item.check.status] ?? item.check.status}</Chip>
-                                  </div>
-                                </div>
-                                {item.affectedModels.length > 0 ? (
-                                  <div className="mt-2 space-y-1">
-                                    {item.affectedModels.map((model) => (
-                                      <div className="grid gap-2 rounded-[6px] bg-bg px-2 py-1.5 text-xs sm:grid-cols-[minmax(140px,220px)_minmax(0,1fr)]" key={`${item.check.id}-${model.model}`}>
-                                        <span className="truncate font-mono text-text" title={model.model}>{model.model}</span>
-                                        <span className="min-w-0 break-words text-text-tertiary">{model.reason}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <p className="mt-1 break-words text-xs text-text-tertiary">{item.fallback}</p>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </Panel>
-
-                        <Panel title="本次覆盖">
-                          <div className="space-y-3">
-                            <div className="rounded-[var(--radius)] border border-border bg-bg-subtle p-3">
-                              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-text">
-                                <Clock3 className="h-4 w-4 text-primary" />
-                                执行窗口
-                              </div>
-                              <div className="space-y-1 text-xs text-text-tertiary">
-                                <div>开始：{fmtTime(report.started_at || task.started_at)}</div>
-                                <div>完成：{fmtTime(report.completed_at || task.completed_at)}</div>
-                                <div>协议：{report.platform_type}</div>
-                              </div>
-                            </div>
-                            <div className="rounded-[var(--radius)] border border-border bg-bg-subtle p-3">
-                              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-text">
-                                <ShieldAlert className="h-4 w-4 text-warning" />
-                                当前结论依据
-                              </div>
-                              <div className="space-y-1 text-xs text-text-tertiary">
-                                <div>模型覆盖：{summary?.available_models ?? 0}/{summary?.model_count ?? modelRows.length} 可调用</div>
-                                <div>异常模型：{failedModels.length} 个</div>
-                                <div>高风险证据：{highRiskCount} 条</div>
-                                <div>标准项：{checkSummary.passed} 通过 / {checkSummary.failed} 失败 / {checkSummary.missing} 未接入</div>
-                              </div>
-                            </div>
-                          </div>
-                        </Panel>
-                      </div>
-
-                      <div className="grid gap-4 xl:grid-cols-3">
-                        <Panel title="模型家族">
-                          {familyData.length > 0 ? <DistributionPie data={familyData} /> : <div className="py-10 text-center text-sm text-text-tertiary">无数据</div>}
-                        </Panel>
-                        <Panel title="风险分布">
-                          {riskData.length > 0 ? <DistributionPie data={riskData} /> : <div className="py-10 text-center text-sm text-text-tertiary">暂无风险</div>}
-                        </Panel>
-                        <Panel title="模型评分">
-                          {scoreData.length > 0 ? <ScoreBars data={scoreData} /> : <div className="py-10 text-center text-sm text-text-tertiary">无数据</div>}
-                        </Panel>
-                      </div>
-                    </div>
-                  </Tabs.Panel>
-
-                  <Tabs.Panel id="checks" className="ag-tabs-panel-flush">
-                    <div className="p-3 2xl:p-4">
-                      <StandardChecksTable checks={checks} />
-                    </div>
-                  </Tabs.Panel>
-
-                  <Tabs.Panel id="models" className="ag-tabs-panel-flush">
-                    <div className="p-3 2xl:p-4">
-                      {report?.model_issue_matrix?.length ? (
-                        <ModelIssueMatrixTable rows={report.model_issue_matrix} />
-                      ) : (
-                        <ModelMatrixTable rows={modelRows} />
-                      )}
-                    </div>
-                  </Tabs.Panel>
-
-                  <Tabs.Panel id="baselines" className="ag-tabs-panel-flush">
-                    <div className="p-3 2xl:p-4">
-                      <BaselineDiffTable rows={baselineRows} />
-                    </div>
-                  </Tabs.Panel>
-
-                  <Tabs.Panel id="risks" className="ag-tabs-panel-flush">
-                    <div className="p-3 2xl:p-4">
-                      <RiskTable rows={riskRows} />
-                    </div>
-                  </Tabs.Panel>
-                </Tabs>
-              ) : processing ? (
-                <CenterState
-                  hint="检测执行中，结果生成后会自动刷新，期间可以继续创建其它任务。"
-                  icon={<Radar className="h-6 w-6" />}
-                  spinning
-                  title="检测执行中"
-                  tone="warning"
-                />
-              ) : (
-                <CenterState
-                  hint="该任务暂无可展示的检测报告。"
-                  icon={<ScanSearch className="h-6 w-6" />}
-                  title="暂无检测报告"
-                />
-              )}
-            </Card>
-          </>
-        )}
-      </div>
+    <div className="ag-relay-workbench grid min-w-0 gap-4 xl:grid-cols-[clamp(320px,22vw,360px)_minmax(0,1fr)]">
+      <aside className="grid min-w-0 gap-4 md:grid-cols-2 xl:block xl:space-y-4">
+        {configure}
+        {taskQueue}
+      </aside>
+      <main className="min-w-0">{report}</main>
     </div>
   );
 }
