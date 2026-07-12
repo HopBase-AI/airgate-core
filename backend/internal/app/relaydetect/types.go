@@ -138,6 +138,7 @@ type ModelResult struct {
 	SourceProbe           SourceProbe          `json:"source_probe"`
 	Stability             StabilityProbe       `json:"stability"`
 	ClientProfiles        []ClientProfileProbe `json:"client_profiles,omitempty"`
+	CCGate                CCGateProbe          `json:"cc_gate,omitempty"`
 	Risks                 []string             `json:"risks"`
 	Error                 string               `json:"error,omitempty"`
 	Headers               map[string]any       `json:"headers,omitempty"`
@@ -276,6 +277,23 @@ type RuntimeCheck struct {
 	HTTPStatus int            `json:"http_status,omitempty"`
 	Detail     map[string]any `json:"detail,omitempty"`
 	Error      string         `json:"error,omitempty"`
+}
+
+// CCGateProbe 是 cc-vs-plain 差分闸门结果:用真实 plain SDK 身份与真实 Claude Code 身份
+// (真 UA + anthropic-beta + "You are Claude Code" system 首块)打同一条裸请求,识别
+// "只认 Claude Code 指纹的订阅号池"。这是标准里的 #2 决定性反作弊信号,不需要第二把真值 key。
+type CCGateProbe struct {
+	Tested           bool   `json:"tested"`
+	PlainStatus      int    `json:"plain_status"`
+	CCStatus         int    `json:"cc_status"`
+	PlainAvailable   bool   `json:"plain_available"`
+	CCAvailable      bool   `json:"cc_available"`
+	PlainHasID       bool   `json:"plain_has_id"`
+	PlainHasUsage    bool   `json:"plain_has_usage"`
+	ForgedCCGate     bool   `json:"forged_cc_gate"`
+	PlainGated       bool   `json:"plain_gated"`
+	Verdict          string `json:"verdict"`
+	PlainBodyExcerpt string `json:"plain_body_excerpt,omitempty"`
 }
 
 type ClientProfileProbe struct {

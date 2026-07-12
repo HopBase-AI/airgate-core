@@ -883,12 +883,17 @@ func TestProbeModelDetectsPlainSDKCacheFailure(t *testing.T) {
 	if containsString(model.Risks, "claude_code_cache_failed") {
 		t.Fatalf("Claude Code cache should still pass: %#v", model.Risks)
 	}
-	if model.Grade != "D" {
-		t.Fatalf("grade = %s, want D for plain SDK cache failure", model.Grade)
+	// plain SDK 缓存退化=第三方 agent 兼容风险(medium),不再判死真·订阅制渠道
+	// (standard §9:属 agent 兼容 10% 维度,而非纯度 D)。
+	if model.Grade == "D" {
+		t.Fatalf("grade = %s, plain SDK cache degradation must not force D", model.Grade)
 	}
 }
 
-func TestProbeModelDetectsAnthropicCountTokensFailure(t *testing.T) {
+func TestProbeModelDoesNotPenalizeMissingCountTokens(t *testing.T) {
+	// countTokensFails 让 mock 的 /v1/messages/count_tokens 返回 404(端点缺失)。
+	// standard §2:中转不实现 count_tokens 本身不该扣分(很多合法透明代理都不实现),
+	// 只有 endpoint 真返回 2xx 却与自报 usage 不一致才算风险。
 	server := newMockAnthropicRelay(t, mockRelayOptions{countTokensFails: true})
 	defer server.Close()
 
@@ -896,11 +901,11 @@ func TestProbeModelDetectsAnthropicCountTokensFailure(t *testing.T) {
 	svc.client.Timeout = 5 * time.Second
 	result := svc.probeModel(context.Background(), server.URL, "sk-test", PlatformAnthropic, probeTarget{model: "claude-sonnet-4-5-20250929", protocol: "anthropic"})
 	model := buildModelResult(probeTarget{model: "claude-sonnet-4-5-20250929", protocol: "anthropic"}, result)
-	if !containsString(model.Risks, "anthropic_count_tokens_failed") {
-		t.Fatalf("risks = %#v, want anthropic_count_tokens_failed", model.Risks)
+	if containsString(model.Risks, "anthropic_count_tokens_failed") {
+		t.Fatalf("missing count_tokens must not be penalized: risks = %#v", model.Risks)
 	}
-	if model.Grade != "C" {
-		t.Fatalf("grade = %s, want C for count_tokens capability failure", model.Grade)
+	if model.Grade == "C" || model.Grade == "D" {
+		t.Fatalf("grade = %s, missing count_tokens must not drag the grade down", model.Grade)
 	}
 }
 
@@ -1590,7 +1595,7 @@ func TestProbeThinkingRejectsGPTAdapterStyleSignatureForgery(t *testing.T) {
 	}
 }
 
-func TestProbeThinkingUnsupportedIsRuntimeVerificationFailure(t *testing.T) {
+func TestProbeThinkingUnsupportedIsInconclusiveNotFake(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -1603,8 +1608,8 @@ func TestProbeThinkingUnsupportedIsRuntimeVerificationFailure(t *testing.T) {
 
 	svc := newTestRelayDetectService()
 	probe := svc.probeThinking(context.Background(), server.URL, "sk-test", PlatformAnthropic, probeTarget{model: "claude-sonnet-4-5-20250929", protocol: "anthropic"})
-	if probe.OK || probe.Supported {
-		t.Fatalf("unsupported thinking should fail runtime verification: %#v", probe)
+	if probe.OK {
+		t.Fatalf("unsupported thinking should not report OK: %#v", probe)
 	}
 	result := buildModelResult(probeTarget{model: "claude-sonnet-4-5-20250929", protocol: "anthropic"}, probeResult{
 		statusCode:     200,
@@ -1620,13 +1625,16 @@ func TestProbeThinkingUnsupportedIsRuntimeVerificationFailure(t *testing.T) {
 		source:         SourceProbe{Tested: true, OK: true, Expected: "anthropic", ClaimedSource: "anthropic"},
 		stability:      StabilityProbe{Tested: true, OK: true, Concurrency: healthyConcurrency()},
 	})
-	for _, want := range []string{"thinking_signature_mismatch", "claude_runtime_signature_presence_failed"} {
-		if !containsString(result.Risks, want) {
-			t.Fatalf("expected risk %s in %#v", want, result.Risks)
+	// 400 "thinking not supported"(传输错 + 无 thinking 块)属于"没击穿/不支持",不是签名造假:
+	// standard 明确"不支持 thinking 的模型不因此扣分",memory 也有 apifun 断连假阳性教训。
+	// thinkingInconclusive 止损把它标为不确定,绝不误判成 D。
+	for _, notWant := range []string{"thinking_signature_mismatch", "claude_runtime_signature_presence_failed"} {
+		if containsString(result.Risks, notWant) {
+			t.Fatalf("inconclusive thinking must not raise %s (not a fake): %#v", notWant, result.Risks)
 		}
 	}
-	if result.Grade != "D" {
-		t.Fatalf("grade = %s, want D for unsupported Claude runtime verification", result.Grade)
+	if result.Grade == "D" {
+		t.Fatalf("grade = %s, inconclusive thinking must not force D", result.Grade)
 	}
 }
 
@@ -2547,5 +2555,96 @@ func TestDecryptRetestKeyRoundTrip(t *testing.T) {
 	}
 	if got := svc.decryptRetestKey(map[string]interface{}{}); got != "" {
 		t.Fatalf("decryptRetestKey(no key) = %q, want empty", got)
+	}
+}
+
+// TestClassifyCCGate 锁定 cc-vs-plain 差分闸门(#2 决定性反作弊信号)的判决:
+// 伪 CC 话术闸门 / plain 被闸门 / 正常放行 / 不确定,以及不能误判的边界。
+func TestClassifyCCGate(t *testing.T) {
+	cases := []struct {
+		name        string
+		plain       probeResult
+		cc          probeResult
+		wantVerdict string
+		wantForged  bool
+		wantGated   bool
+	}{
+		{
+			name:        "forged_cc_body_no_id_no_usage",
+			plain:       probeResult{statusCode: 200, text: "Please use Claude Code CLI to access this service."},
+			cc:          probeResult{statusCode: 200, text: "PONG", responseID: "msg_01", inputTokens: 12},
+			wantVerdict: "forged_cc_gate", wantForged: true,
+		},
+		{
+			name:        "nudge_text_but_has_id_and_usage_is_not_forged",
+			plain:       probeResult{statusCode: 200, text: "I am Claude Code compatible. PONG", responseID: "msg_02", inputTokens: 12},
+			cc:          probeResult{statusCode: 200, text: "PONG", responseID: "msg_03", inputTokens: 12},
+			wantVerdict: "ungated",
+		},
+		{
+			name:        "plain_blocked_cc_works_is_gated",
+			plain:       probeResult{statusCode: 403, text: "forbidden"},
+			cc:          probeResult{statusCode: 200, text: "PONG", responseID: "msg_04", inputTokens: 12},
+			wantVerdict: "plain_sdk_gated", wantGated: true,
+		},
+		{
+			name:        "both_ok_is_ungated",
+			plain:       probeResult{statusCode: 200, text: "PONG", responseID: "msg_05", inputTokens: 12},
+			cc:          probeResult{statusCode: 200, text: "PONG", responseID: "msg_06", inputTokens: 12},
+			wantVerdict: "ungated",
+		},
+		{
+			name:        "both_dead_is_inconclusive",
+			plain:       probeResult{statusCode: 500},
+			cc:          probeResult{statusCode: 500},
+			wantVerdict: "inconclusive",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			verdict, forged, gated := classifyCCGate(tc.plain, tc.cc)
+			if verdict != tc.wantVerdict || forged != tc.wantForged || gated != tc.wantGated {
+				t.Fatalf("classifyCCGate = (%q,%v,%v), want (%q,%v,%v)", verdict, forged, gated, tc.wantVerdict, tc.wantForged, tc.wantGated)
+			}
+		})
+	}
+}
+
+// TestThinkingInconclusive 锁定"死连接/断流/5xx 不下真伪判定"的止损逻辑。
+func TestThinkingInconclusive(t *testing.T) {
+	cases := []struct {
+		name string
+		in   ThinkingProbe
+		want bool
+	}{
+		{"transport_error_status0", ThinkingProbe{Error: "connection reset", HTTPStatus: 0}, true},
+		{"transport_error_5xx", ThinkingProbe{Error: "bad gateway", HTTPStatus: 503}, true},
+		{"error_no_thinking_content", ThinkingProbe{Error: "empty stream", HTTPStatus: 200, HasThinkingContent: false}, true},
+		{"error_but_got_content_still_scored", ThinkingProbe{Error: "late close", HTTPStatus: 200, HasThinkingContent: true}, false},
+		{"no_error_conclusive", ThinkingProbe{HTTPStatus: 200, HasThinkingContent: true}, false},
+		{"conclusive_4xx_with_content", ThinkingProbe{Error: "tamper rejected", HTTPStatus: 400, HasThinkingContent: true}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := thinkingInconclusive(tc.in); got != tc.want {
+				t.Fatalf("thinkingInconclusive(%+v) = %v, want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestGateRiskSeverities 锁定新增/重分级风险码的严重度:伪 CC 闸门=critical(会挡 production_ready),
+// plain 闸门/plain 缓存=medium(不判死真·订阅渠道)。
+func TestGateRiskSeverities(t *testing.T) {
+	want := map[string]string{
+		"forged_cc_gate":         "critical",
+		"plain_sdk_gated":        "medium",
+		"plain_sdk_cache_failed": "medium",
+	}
+	for code, sev := range want {
+		got := riskFromCode(code, "claude-opus-4-8", ModelResult{})
+		if got.Severity != sev {
+			t.Fatalf("riskFromCode(%q).Severity = %q, want %q", code, got.Severity, sev)
+		}
 	}
 }

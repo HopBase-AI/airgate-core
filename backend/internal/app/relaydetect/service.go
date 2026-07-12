@@ -115,6 +115,7 @@ type probeResult struct {
 	source                   SourceProbe
 	stability                StabilityProbe
 	clientProfiles           []ClientProfileProbe
+	ccGate                   CCGateProbe
 }
 
 type httpProbeResponse struct {
@@ -126,6 +127,9 @@ type httpProbeResponse struct {
 
 type probeRequestOptions struct {
 	headers map[string]string
+	// systemPrompt 若非空则作为 system 首块注入请求(anthropic 走 "system" 字段,
+	// openai 走首条 system message)。用于 cc-vs-plain 闸门里模拟真实 Claude Code 身份。
+	systemPrompt string
 }
 
 type externalSuiteResult struct {
@@ -615,6 +619,7 @@ func (s *Service) probeModel(ctx context.Context, baseURL, apiKey string, platfo
 	result.source = s.probeSource(ctx, baseURL, apiKey, platform, target)
 	result.stability = s.probeStability(ctx, baseURL, apiKey, platform, target)
 	result.clientProfiles = s.probeClientProfiles(ctx, baseURL, apiKey, platform, target)
+	result.ccGate = s.probeCCGate(ctx, baseURL, apiKey, platform, target)
 	return result
 }
 
@@ -643,15 +648,21 @@ func (s *Service) probeBasicWithOptions(ctx context.Context, baseURL, apiKey str
 				{"role": "user", "content": prompt},
 			},
 		}
+		if opts.systemPrompt != "" {
+			payload["system"] = opts.systemPrompt
+		}
 	} else {
 		route = "/v1/chat/completions"
+		msgs := make([]map[string]string, 0, 2)
+		if opts.systemPrompt != "" {
+			msgs = append(msgs, map[string]string{"role": "system", "content": opts.systemPrompt})
+		}
+		msgs = append(msgs, map[string]string{"role": "user", "content": prompt})
 		payload = map[string]any{
 			"model":       target.model,
 			"max_tokens":  16,
 			"temperature": 0,
-			"messages": []map[string]string{
-				{"role": "user", "content": prompt},
-			},
+			"messages":    msgs,
 		}
 	}
 	resp := s.doJSONWithOptions(ctx, http.MethodPost, joinURL(baseURL, route), apiKey, platformForProtocol(platform, target.protocol), payload, opts)
@@ -1192,6 +1203,17 @@ func hashThinkingBlocks(blocks []map[string]any) string {
 	b, _ := json.Marshal(blocks)
 	sum := sha256.Sum256(b)
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// thinkingInconclusive 判断 thinking 探针是不是"死连接/断流/5xx 导致的不确定"。
+// 这种情况不能当成签名造假扣成 D:传输层报错,且要么状态 0/5xx,要么压根没拿到
+// thinking 块 —— 都说明没击穿,只能标 inconclusive。真造假(200 拿到块但篡改被接受)
+// 有内容、无传输错,仍会照常扣分。
+func thinkingInconclusive(t ThinkingProbe) bool {
+	if t.Error == "" {
+		return false
+	}
+	return t.HTTPStatus == 0 || t.HTTPStatus >= 500 || !t.HasThinkingContent
 }
 
 func (s *Service) probeTokenPrecision(ctx context.Context, baseURL, apiKey string, platform PlatformType, target probeTarget) TokenPrecision {
@@ -2343,12 +2365,73 @@ func clientProfilesForTarget(target probeTarget) []ClientProfile {
 	return nil
 }
 
+// claudeCodeSystemBlock 是真实 Claude Code 客户端的 system 首块指纹。订阅制号池
+// 常按"UA=claude-cli + 该 system 首块 + anthropic-beta"整套指纹放行,只发自造标记头
+// 是勾不出闸门的,必须发真实指纹。
+const claudeCodeSystemBlock = "You are Claude Code, Anthropic's official CLI for Claude."
+
 func claudeCodeProbeHeaders(scenario string) map[string]string {
 	return map[string]string{
-		"User-Agent":                 "claude-code",
-		"X-Hopbase-Client-Profile":   "claude-code",
-		"X-Hopbase-Probe-Scenario":   scenario,
-		"X-Hopbase-Agent-Subprocess": "false",
+		"User-Agent":               "claude-cli/1.0.98 (external, cli)",
+		"x-app":                    "cli",
+		"anthropic-beta":           "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14",
+		"X-Hopbase-Probe-Scenario": scenario,
+	}
+}
+
+// plainSDKProbeHeaders 模拟普通第三方 SDK 客户端(非 Claude Code),用于 cc-vs-plain 差分。
+func plainSDKProbeHeaders() map[string]string {
+	return map[string]string{
+		"User-Agent":               "anthropic-sdk-python/0.39.0",
+		"X-Hopbase-Client-Profile": "plain-sdk",
+	}
+}
+
+// probeCCGate 执行 cc-vs-plain 差分闸门探测(标准 #2 决定性反作弊信号,不需要第二把真值 key):
+// 用真实 plain SDK 身份 vs 真实 Claude Code 身份(真 UA + anthropic-beta + system 首块)打同一条裸请求。
+func (s *Service) probeCCGate(ctx context.Context, baseURL, apiKey string, platform PlatformType, target probeTarget) CCGateProbe {
+	if !isClaudeTarget(target) {
+		return CCGateProbe{}
+	}
+	const prompt = "Reply with exactly: PONG"
+	plain := s.probeBasicWithOptions(ctx, baseURL, apiKey, platform, target, prompt, probeRequestOptions{headers: plainSDKProbeHeaders()})
+	cc := s.probeBasicWithOptions(ctx, baseURL, apiKey, platform, target, prompt, probeRequestOptions{headers: claudeCodeProbeHeaders("gate"), systemPrompt: claudeCodeSystemBlock})
+	probe := CCGateProbe{
+		Tested:         true,
+		PlainStatus:    plain.statusCode,
+		CCStatus:       cc.statusCode,
+		PlainAvailable: plain.basicAvailable(),
+		CCAvailable:    cc.basicAvailable(),
+		PlainHasID:     strings.TrimSpace(plain.responseID) != "",
+		PlainHasUsage:  plain.promptUsageTokens() > 0,
+	}
+	if plain.err == nil {
+		probe.PlainBodyExcerpt = truncateText(plain.text, 200)
+	}
+	probe.Verdict, probe.ForgedCCGate, probe.PlainGated = classifyCCGate(plain, cc)
+	return probe
+}
+
+// classifyCCGate 从 plain / cc 两次响应判决闸门形态。纯函数,便于表驱动单测(不打网络)。
+func classifyCCGate(plain, cc probeResult) (verdict string, forgedCCGate, plainGated bool) {
+	plainText := strings.ToLower(plain.text)
+	nudgesToCC := strings.Contains(plainText, "claude code") ||
+		strings.Contains(plainText, "claude-code") ||
+		strings.Contains(plainText, "claude cli") ||
+		strings.Contains(plainText, "claude-cli")
+	plainHasID := strings.TrimSpace(plain.responseID) != ""
+	plainHasUsage := plain.promptUsageTokens() > 0
+	switch {
+	// 伪 CC 闸门:plain 收到"请用 Claude Code"之类话术正文,却没有 id/usage —— 官方 1P/Bedrock 绝不会这样。
+	case plain.err == nil && plainText != "" && nudgesToCC && (!plainHasID || !plainHasUsage):
+		return "forged_cc_gate", true, false
+	// plain 被闸门但 CC 放行:只放行 Claude Code 客户端的订阅号池,第三方 agent 用不了(兼容风险,非造假)。
+	case cc.basicAvailable() && !plain.basicAvailable():
+		return "plain_sdk_gated", false, true
+	case plain.basicAvailable() && cc.basicAvailable():
+		return "ungated", false, false
+	default:
+		return "inconclusive", false, false
 	}
 }
 
@@ -3692,22 +3775,26 @@ func buildModelResult(target probeTarget, probe probeResult) ModelResult {
 	} else if probe.role.Tested && !probe.role.OK {
 		risks = append(risks, "role_probe_failed")
 	}
-	if probe.thinking.Tested && !probe.thinking.Supported {
-		risks = append(risks, "thinking_signature_mismatch", "claude_runtime_signature_presence_failed")
-	} else if probe.thinking.Tested && probe.thinking.Supported && !probe.thinking.OK {
-		risks = append(risks, "thinking_signature_mismatch")
-		thinkingPresenceOK := probe.thinking.HasThinkingContent && probe.thinking.HasSignatureDelta && probe.thinking.SignatureStructureOK && probe.thinking.EventOrderOK
-		if !thinkingPresenceOK {
-			risks = append(risks, "claude_runtime_signature_presence_failed")
-		} else {
-			if !probe.thinking.RuntimeRoundTripOK {
-				risks = append(risks, "claude_runtime_signature_roundtrip_failed")
-			}
-			if !probe.thinking.TamperRejected && !probe.thinking.FakeSignatureRejected {
-				risks = append(risks, "claude_runtime_signature_tamper_not_rejected")
-			}
-			if !probe.thinking.ToolContinuationOK {
-				risks = append(risks, "claude_runtime_tool_continuation_failed")
+	// thinking 断流/5xx/死连接绝不下真伪判定(memory:apifun 那次"签名失败"其实是号池中途断连的假阳性)。
+	// 只在拿到确定状态(200 含 thinking 块 / 明确 4xx)时才据此扣分,否则标为 inconclusive、不进风险。
+	if probe.thinking.Tested && !thinkingInconclusive(probe.thinking) {
+		if !probe.thinking.Supported {
+			risks = append(risks, "thinking_signature_mismatch", "claude_runtime_signature_presence_failed")
+		} else if !probe.thinking.OK {
+			risks = append(risks, "thinking_signature_mismatch")
+			thinkingPresenceOK := probe.thinking.HasThinkingContent && probe.thinking.HasSignatureDelta && probe.thinking.SignatureStructureOK && probe.thinking.EventOrderOK
+			if !thinkingPresenceOK {
+				risks = append(risks, "claude_runtime_signature_presence_failed")
+			} else {
+				if !probe.thinking.RuntimeRoundTripOK {
+					risks = append(risks, "claude_runtime_signature_roundtrip_failed")
+				}
+				if !probe.thinking.TamperRejected && !probe.thinking.FakeSignatureRejected {
+					risks = append(risks, "claude_runtime_signature_tamper_not_rejected")
+				}
+				if !probe.thinking.ToolContinuationOK {
+					risks = append(risks, "claude_runtime_tool_continuation_failed")
+				}
 			}
 		}
 	}
@@ -3720,7 +3807,10 @@ func buildModelResult(target probeTarget, probe probeResult) ModelResult {
 	if probe.runtimeBaseline.Tested && probe.runtimeBaseline.Configured && !probe.runtimeBaseline.OK {
 		risks = append(risks, "aws_bedrock_runtime_baseline_mismatch")
 	}
-	if probe.anthropicCountTokens.Tested && !probe.anthropicCountTokens.OK {
+	// 标准 §2:中转不实现 count_tokens 本身不该扣分(很多合法透明代理都不实现)。
+	// 只有 endpoint 真返回 2xx 却与自报 usage 不一致(疑似假 count_tokens)才计入风险。
+	if probe.anthropicCountTokens.Tested && !probe.anthropicCountTokens.OK &&
+		probe.anthropicCountTokens.ShortHTTPStatus >= 200 && probe.anthropicCountTokens.ShortHTTPStatus < 300 {
 		risks = append(risks, "anthropic_count_tokens_failed")
 	}
 	if probe.openAINative.ResponsesTested && !probe.openAINative.ResponsesOK {
@@ -3771,6 +3861,15 @@ func buildModelResult(target probeTarget, probe probeResult) ModelResult {
 			risks = append(risks, "codex_subagents_failed")
 		}
 	}
+	// cc-vs-plain 闸门(#2 决定性信号):伪 CC 话术闸门=坐实号池套壳(critical);
+	// plain 被闸门=只放行 Claude Code 的订阅渠道,第三方 agent 兼容风险(medium)。
+	if probe.ccGate.Tested {
+		if probe.ccGate.ForgedCCGate {
+			risks = append(risks, "forged_cc_gate")
+		} else if probe.ccGate.PlainGated {
+			risks = append(risks, "plain_sdk_gated")
+		}
+	}
 	grade := modelGrade(available, risks, modelMatch, probe)
 	var errMsg string
 	if probe.err != nil {
@@ -3812,6 +3911,7 @@ func buildModelResult(target probeTarget, probe probeResult) ModelResult {
 		SourceProbe:           probe.source,
 		Stability:             probe.stability,
 		ClientProfiles:        probe.clientProfiles,
+		CCGate:                probe.ccGate,
 		Risks:                 risks,
 		Error:                 errMsg,
 		Headers:               probe.headers,
@@ -3858,7 +3958,7 @@ func modelGrade(available bool, risks []string, modelMatch modelMatchResult, pro
 		"stability_multi_window_persistent_failure",
 		"concurrency_low_success_rate",
 		"aws_bedrock_runtime_baseline_mismatch",
-		"plain_sdk_cache_failed",
+		"forged_cc_gate",
 		"claude_code_cache_failed",
 		"claude_code_thinking_failed",
 		"claude_code_subagents_failed",
@@ -4119,7 +4219,11 @@ func riskFromCode(code, model string, result ModelResult) RiskFinding {
 	case "concurrency_low_success_rate":
 		return RiskFinding{Severity: "high", Code: code, Model: model, Message: "并发阶梯成功率不足", Detail: map[string]any{"stability": result.Stability}}
 	case "plain_sdk_cache_failed":
-		return RiskFinding{Severity: "high", Code: code, Model: model, Message: "Plain SDK 场景 prompt cache 未达标", Detail: map[string]any{"client_profiles": result.ClientProfiles}}
+		return RiskFinding{Severity: "medium", Code: code, Model: model, Message: "Plain SDK 场景 prompt cache 未达标(订阅制渠道对 plain SDK 的正常限制,属第三方 agent 兼容风险,非上游造假)", Detail: map[string]any{"client_profiles": result.ClientProfiles}}
+	case "forged_cc_gate":
+		return RiskFinding{Severity: "critical", Code: code, Model: model, Message: "伪 Claude Code 闸门:plain 请求被话术正文挡回且无 id/usage,坐实订阅号池按客户端指纹套壳(官方 1P/Bedrock 绝不会如此)", Detail: map[string]any{"cc_gate": result.CCGate}}
+	case "plain_sdk_gated":
+		return RiskFinding{Severity: "medium", Code: code, Model: model, Message: "plain SDK 被闸门:仅放行 Claude Code 客户端的订阅制渠道,第三方非 CC agent 接入受限(兼容风险,非上游造假)", Detail: map[string]any{"cc_gate": result.CCGate}}
 	case "claude_code_cache_failed":
 		return RiskFinding{Severity: "high", Code: code, Model: model, Message: "Claude Code 场景 prompt cache 未达标", Detail: map[string]any{"client_profiles": result.ClientProfiles}}
 	case "claude_code_interaction_failed":
