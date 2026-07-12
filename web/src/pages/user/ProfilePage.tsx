@@ -9,6 +9,7 @@ import { useCrudMutation } from '../../shared/hooks/useCrudMutation';
 import { queryKeys } from '../../shared/queryKeys';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { getTotalPages } from '../../shared/utils/pagination';
+import { formatBalance } from '../../shared/utils/format';
 import { CommonTable } from '../../shared/components/CommonTable';
 import { TablePaginationFooter } from '../../shared/components/TablePaginationFooter';
 import { NativeSwitch } from '../../shared/components/NativeSwitch';
@@ -121,7 +122,7 @@ export default function ProfilePage() {
                 <span className="text-xs font-medium text-text-secondary">{t('profile.balance')}</span>
               </div>
               <span className="text-sm text-text font-mono">
-                ${user.balance.toFixed(4)}
+                ${formatBalance(user.balance)}
               </span>
               <ChevronRight className="w-4 h-4 text-text-tertiary ml-auto" />
             </button>
@@ -317,7 +318,7 @@ function MyBalanceHistoryModal({ open, balance, onClose }: { open: boolean; bala
             <Modal.Body>
               <div className="mb-4 rounded-md border border-glass-border bg-surface px-4 py-3">
                 <p className="text-xs text-text-tertiary">{t('users.current_balance')}</p>
-                <p className="mt-1 font-mono text-lg font-bold">${balance.toFixed(2)}</p>
+                <p className="mt-1 font-mono text-lg font-bold">${formatBalance(balance)}</p>
               </div>
 
               <CommonTable
@@ -376,9 +377,9 @@ function MyBalanceHistoryModal({ open, balance, onClose }: { open: boolean; bala
                             </CommonTable.Cell>
                             <CommonTable.Cell>
                               <span className="font-mono text-xs text-text-secondary whitespace-nowrap">
-                                ${row.before_balance.toFixed(2)}
+                                ${formatBalance(row.before_balance)}
                                 <span className="text-text-tertiary"> → </span>
-                                ${row.after_balance.toFixed(2)}
+                                ${formatBalance(row.after_balance)}
                               </span>
                             </CommonTable.Cell>
                             <CommonTable.Cell>
@@ -464,7 +465,7 @@ function BalanceAlertCard({ threshold, balance }: { threshold: number; balance: 
                       placeholder="5.00"
                     />
                   </div>
-                  <Description>{t('profile.balance_alert_hint', { balance: balance.toFixed(2) })}</Description>
+                  <Description>{t('profile.balance_alert_hint', { balance: formatBalance(balance) })}</Description>
                 </HeroTextField>
               </div>
               <Button

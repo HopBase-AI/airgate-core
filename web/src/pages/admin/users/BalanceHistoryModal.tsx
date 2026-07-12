@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '../../../shared/queryKeys';
 import { usersApi } from '../../../shared/api/users';
 import { getTotalPages } from '../../../shared/utils/pagination';
+import { formatBalance } from '../../../shared/utils/format';
 import { CommonTable } from '../../../shared/components/CommonTable';
 import { TablePaginationFooter } from '../../../shared/components/TablePaginationFooter';
 import type { UserResp, BalanceLogResp } from '../../../shared/types';
@@ -69,7 +70,7 @@ export function BalanceHistoryModal({ open, user, onClose }: BalanceHistoryModal
             <Modal.Body>
               <div className="mb-4 rounded-md border border-glass-border bg-surface px-4 py-3">
                 <p className="text-xs uppercaser text-text-tertiary">{t('users.current_balance')}</p>
-                <p className="mt-1 font-mono text-lg font-bold">${user.balance.toFixed(2)}</p>
+                <p className="mt-1 font-mono text-lg font-bold">${formatBalance(user.balance)}</p>
               </div>
 
               <CommonTable
@@ -128,7 +129,7 @@ export function BalanceHistoryModal({ open, user, onClose }: BalanceHistoryModal
                     </CommonTable.Cell>
                     <CommonTable.Cell>
                       <span className="font-mono text-xs text-text-secondary">
-                        ${row.before_balance.toFixed(2)} → ${row.after_balance.toFixed(2)}
+                        ${formatBalance(row.before_balance)} → ${formatBalance(row.after_balance)}
                       </span>
                     </CommonTable.Cell>
                     <CommonTable.Cell>

@@ -16,7 +16,7 @@ import { TableLoadingRow } from '../../shared/components/TableLoadingRow';
 import { CommonTable } from '../../shared/components/CommonTable';
 import { NativeSwitch } from '../../shared/components/NativeSwitch';
 import { getAvatarColor } from '../../shared/utils/avatar';
-import { formatDateTime } from '../../shared/utils/format';
+import { formatBalance, formatDateTime } from '../../shared/utils/format';
 import { CreateUserModal } from './users/CreateUserModal';
 import { EditUserModal } from './users/EditUserModal';
 import { BalanceModal } from './users/BalanceModal';
@@ -244,7 +244,7 @@ export default function UsersPage() {
                       </Chip>
                     </CommonTable.Cell>
                     <CommonTable.Cell>
-                      <span className="font-mono">${row.balance.toFixed(2)}</span>
+                      <span className="font-mono">${formatBalance(row.balance)}</span>
                     </CommonTable.Cell>
                     <CommonTable.Cell>
                       <NativeSwitch

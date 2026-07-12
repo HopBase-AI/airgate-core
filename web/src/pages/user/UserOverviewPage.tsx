@@ -14,6 +14,7 @@ import { usageApi } from '../../shared/api/usage';
 import { queryKeys } from '../../shared/queryKeys';
 import { CompactDataTable } from '../../shared/components/CompactDataTable';
 import { CostValue } from '../../shared/components/CostValue';
+import { formatBalance } from '../../shared/utils/format';
 import { PIE_CHART_COLORS, USAGE_TOKEN_COLORS } from '../../shared/constants';
 
 const PIE_COLORS = PIE_CHART_COLORS;
@@ -220,7 +221,7 @@ export default function UserOverviewPage() {
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:gap-4">
         <StatCard
           title={t('user_overview.balance')}
-          value={`$${(user?.balance ?? 0).toFixed(2)}`}
+          value={`$${formatBalance(user?.balance)}`}
           icon={<Wallet className="w-5 h-5" />}
           tone="blue"
         />

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Input, Label, Modal, Spinner, TextArea, TextField as HeroTextField, useOverlayState } from '@heroui/react';
 import { DialogTriggerShim } from '../../../shared/components/DialogTriggerShim';
+import { formatBalance } from '../../../shared/utils/format';
 import type { UserResp, AdjustBalanceReq } from '../../../shared/types';
 
 interface BalanceModalProps {
@@ -56,7 +57,7 @@ export function BalanceModal({ open, user, defaultAction, onClose, onSubmit, loa
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-text">{user.email}</p>
                     <p className="mt-0.5 font-mono text-xs text-text-tertiary">
-                      {t('users.current_balance')}: ${user.balance.toFixed(7)}
+                      {t('users.current_balance')}: ${formatBalance(user.balance)}
                     </p>
                   </div>
                 </div>
@@ -102,7 +103,7 @@ export function BalanceModal({ open, user, defaultAction, onClose, onSubmit, loa
                     {t('users.balance_after_op', '操作后余额')}:
                   </span>
                   <span className={`font-mono text-lg font-bold ${afterBalance < 0 ? 'text-danger' : 'text-text'}`}>
-                    ${afterBalance.toFixed(7)}
+                    ${formatBalance(afterBalance)}
                   </span>
                 </div>
               </div>

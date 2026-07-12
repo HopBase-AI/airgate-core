@@ -21,3 +21,13 @@ export function formatDateTime(date: string): string {
 export function formatDate(date: string): string {
   return new Date(date).toLocaleDateString('zh-CN');
 }
+
+/**
+ * 格式化余额:整额显示 2 位小数,存在更细小数位时完整展示(最多 8 位,对齐 DB numeric(20,8))。
+ * 余额扣费常在 $0.000x 量级,固定 toFixed(2) 会把小额消费四舍五入掩盖成"余额没动"。
+ */
+export function formatBalance(value: number | null | undefined): string {
+  const amount = value ?? 0;
+  const [int, dec = ''] = amount.toFixed(8).replace(/0+$/, '').split('.');
+  return `${int}.${dec.padEnd(2, '0')}`;
+}
