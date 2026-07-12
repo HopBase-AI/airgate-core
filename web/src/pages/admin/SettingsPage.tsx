@@ -13,7 +13,7 @@ import { queryKeys } from '../../shared/queryKeys';
 import { useToast } from '../../shared/ui';
 import {
   Save, Loader2, Globe, Mail, MailSearch, Send, Upload, X, RotateCcw,
-  ShieldCheck, Copy, Trash2, KeyRound, Zap, Download, Database, Boxes, Plus, ChevronDown,
+  ShieldCheck, Copy, Trash2, KeyRound, Zap, Download, Database, Boxes, Plus, ChevronDown, Info,
 } from 'lucide-react';
 import type { SettingItem, TestSMTPReq } from '../../shared/types';
 import { SystemUpdatePanel } from './SystemUpdatePanel';
@@ -1999,7 +1999,7 @@ function ModelCatalogEditor({ label, settingKey, set, value, builtinModels, onVa
           {t('settings.models_add')}
         </Button>
       )}
-      description={t('settings.models_catalog_desc')}
+      help={t('settings.models_catalog_desc')}
       title={`${t('settings.models_catalog')} · ${label}`}
     >
       {rows.length === 0 ? (
@@ -2184,6 +2184,7 @@ function SettingsSection({
   action,
   children,
   description,
+  help,
   title,
   collapsible = false,
   open = true,
@@ -2193,12 +2194,15 @@ function SettingsSection({
   action?: React.ReactNode;
   children: React.ReactNode;
   description?: React.ReactNode;
+  // help 详细说明:收进标题旁的 ⓘ,点开才展示,避免长注释常驻占地方。
+  help?: React.ReactNode;
   title: React.ReactNode;
   collapsible?: boolean;
   open?: boolean;
   onToggleOpen?: () => void;
   badge?: React.ReactNode;
 }) {
+  const [showHelp, setShowHelp] = useState(false);
   const heading = (
     <div className="min-w-0">
       <h3 className="flex items-center gap-2 text-sm font-semibold text-text">
@@ -2230,8 +2234,26 @@ function SettingsSection({
         ) : (
           heading
         )}
-        {action ? <div className="shrink-0">{action}</div> : null}
+        <div className="flex shrink-0 items-center gap-1">
+          {help ? (
+            <button
+              type="button"
+              onClick={() => setShowHelp((v) => !v)}
+              aria-expanded={showHelp}
+              aria-label="help"
+              className={`rounded p-1 transition-colors hover:bg-bg-hover ${showHelp ? 'text-text-secondary' : 'text-text-tertiary'}`}
+            >
+              <Info className="h-4 w-4" />
+            </button>
+          ) : null}
+          {action ? <div>{action}</div> : null}
+        </div>
       </div>
+      {help && showHelp && open ? (
+        <div className="mb-3 rounded-lg border border-glass-border bg-bg-subtle px-3 py-2 text-[12px] leading-5 text-text-tertiary">
+          {help}
+        </div>
+      ) : null}
       {open ? <div className="ag-settings-section-body">{children}</div> : null}
     </section>
   );
