@@ -469,7 +469,7 @@ function buildLegacyChecks(task?: RelayDetectionTask): RelayStandardCheck[] {
 }
 
 function buildLegacyMatrix(report: RelayReport): MatrixRowView[] {
-  return report.models.map((model) => {
+  return (report.models ?? []).map((model) => {
     const checks: RelayModelMatrixCell[] = [];
     const add = (cell: RelayModelMatrixCell) => checks.push(cell);
     add({
@@ -546,7 +546,7 @@ function buildLegacyMatrix(report: RelayReport): MatrixRowView[] {
 
 function buildMatrixRows(report: RelayReport): MatrixRowView[] {
   if (!report.model_issue_matrix?.length) return buildLegacyMatrix(report);
-  const modelByID = new Map(report.models.map((model) => [model.model, model]));
+  const modelByID = new Map((report.models ?? []).map((model) => [model.model, model]));
   return report.model_issue_matrix.map((row) => {
     const model = modelByID.get(row.model);
     return {
@@ -1466,7 +1466,13 @@ function ReportWorkspace({
   const [tab, setTab] = useState<ReportTab>('decision');
   const [selection, setSelection] = useState<EvidenceSelection | null>(null);
   const originRef = useRef<HTMLButtonElement | null>(null);
-  const report = task.output;
+  const rawReport = task.output;
+  // 半成品 output（如恢复中的 recovered_retrying 只写了 standard_checks、或失败任务 models 为 null）
+  // 缺少完整报告所需的 summary/models。若按完整报告渲染，buildMatrixRows 会对 undefined 调 .map 导致整页崩溃。
+  // 只有 output 确实是完整报告（summary 为对象且 models 为数组）才渲染报告体，否则退回 EmptyReportState 显示任务状态。
+  const report = rawReport && Array.isArray(rawReport.models) && rawReport.summary && typeof rawReport.summary === 'object'
+    ? rawReport
+    : undefined;
   const rawChecks = report?.standard_checks?.length ? report.standard_checks : buildLegacyChecks(task);
   const checks = useMemo(() => rawChecks.map((check) => {
     const normalized = normalizeApplicability(check, check.family, check.protocol, report?.platform_type ?? task.platform_type);
@@ -1512,8 +1518,8 @@ function ReportWorkspace({
   }
 
   function exportReport() {
-    if (!report) return;
-    const blob = new Blob([safeJSON(report)], { type: 'application/json;charset=utf-8' });
+    if (!rawReport) return;
+    const blob = new Blob([safeJSON(rawReport)], { type: 'application/json;charset=utf-8' });
     const href = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = href;
