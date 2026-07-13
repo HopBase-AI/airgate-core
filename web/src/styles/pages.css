@@ -301,6 +301,16 @@
   font-weight: 600;
 }
 
+/* 划线官方原价：售价下方一行，弱化展示 */
+.ag-model-price-grid dd del {
+  display: block;
+  margin-top: 0.125rem;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  text-decoration: line-through;
+}
+
 .ag-model-long-context {
   margin-top: 0.5rem;
   color: var(--warning);

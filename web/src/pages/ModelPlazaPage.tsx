@@ -26,6 +26,8 @@ interface DisplayPrice {
   cachedInput: number;
   output: number;
   officialOnly: boolean;
+  // 官方基础价（划线原价对比用；officialOnly 时与上面三项相同）
+  official: { input: number; cachedInput: number; output: number };
 }
 
 function parsePricingConfig(raw: string | undefined): TocPricingConfig | null {
@@ -66,12 +68,12 @@ function mergeCatalog(platforms: Awaited<ReturnType<typeof modelsApi.pricing>>):
 }
 
 function resolvePrice(model: ModelLedgerItem, config: TocPricingConfig | null): DisplayPrice {
-  const official = {
+  const officialValues = {
     input: model.input,
     cachedInput: model.cached_input ?? 0,
     output: model.output,
-    officialOnly: true,
   };
+  const official = { ...officialValues, officialOnly: true, official: officialValues };
   if (!config) return official;
 
   const fx = typeof config.fx === 'number' && config.fx > 0 ? config.fx : 6.8;
@@ -87,6 +89,7 @@ function resolvePrice(model: ModelLedgerItem, config: TocPricingConfig | null): 
     cachedInput: (model.cached_input ?? 0) * multiplier / fx,
     output: model.output * multiplier / fx,
     officialOnly: false,
+    official: officialValues,
   };
 }
 
@@ -103,14 +106,35 @@ function formatPrice(value: number) {
   return `$${rounded.toLocaleString(undefined, { maximumFractionDigits: 4 })}`;
 }
 
+function PriceCell({ label, sale, official, officialOnly, officialTitle }: {
+  label: string;
+  sale: number;
+  official: number;
+  officialOnly: boolean;
+  officialTitle: string;
+}) {
+  // 有售价换算时同格展示划线官方原价，折扣一眼可比
+  const showStrike = !officialOnly && official > 0 && official !== sale;
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>
+        {formatPrice(sale)}
+        {showStrike ? <del title={officialTitle}>{formatPrice(official)}</del> : null}
+      </dd>
+    </div>
+  );
+}
+
 function PriceGrid({ model, price }: { model: ModelLedgerItem; price: DisplayPrice }) {
   const { t } = useTranslation();
+  const officialTitle = t('model_plaza.official_price');
   return (
     <div className="ag-model-price-wrap">
       <dl className="ag-model-price-grid">
-        <div><dt>{t('model_plaza.input')}</dt><dd>{formatPrice(price.input)}</dd></div>
-        <div><dt>{t('model_plaza.cached_input')}</dt><dd>{formatPrice(price.cachedInput)}</dd></div>
-        <div><dt>{t('model_plaza.output')}</dt><dd>{formatPrice(price.output)}</dd></div>
+        <PriceCell label={t('model_plaza.input')} sale={price.input} official={price.official.input} officialOnly={price.officialOnly} officialTitle={officialTitle} />
+        <PriceCell label={t('model_plaza.cached_input')} sale={price.cachedInput} official={price.official.cachedInput} officialOnly={price.officialOnly} officialTitle={officialTitle} />
+        <PriceCell label={t('model_plaza.output')} sale={price.output} official={price.official.output} officialOnly={price.officialOnly} officialTitle={officialTitle} />
       </dl>
       {price.officialOnly ? <p className="ag-model-official-label">{t('model_plaza.official_price')}</p> : null}
       {model.long_context?.threshold ? (
