@@ -246,25 +246,40 @@ func (m *Manager) GetAllRoutes() map[string][]sdk.RouteDefinition {
 
 // IsMetadataOnlyRoute 判断给定路径是否由插件声明为 metadata_only。
 // 插件在 RouteDefinition.Metadata 中设置 "metadata_only"="true" 表示该路径仅返回元信息，
-// 不需要账号调度、计费。
+// 不需要账号调度、计费；设置为 "prefix" 表示该路径及其子路径（如 /v1/video/tasks/:id）
+// 都按 metadata_only 处理。
 func (m *Manager) IsMetadataOnlyRoute(path string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.metadataOnlyPaths[path]
+	if m.metadataOnlyPaths[path] {
+		return true
+	}
+	for _, prefix := range m.metadataOnlyPrefixes {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // rebuildMetadataOnlyPathsLocked 从 routeCache 汇总所有声明了 metadata_only 的路径。
 // 调用方须持有 m.mu 写锁。
 func (m *Manager) rebuildMetadataOnlyPathsLocked() {
 	paths := make(map[string]bool)
+	prefixes := make([]string, 0, 4)
 	for _, routes := range m.routeCache {
 		for _, route := range routes {
-			if route.Metadata["metadata_only"] == "true" {
+			switch route.Metadata["metadata_only"] {
+			case "true":
 				paths[route.Path] = true
+			case "prefix":
+				paths[route.Path] = true
+				prefixes = append(prefixes, strings.TrimRight(route.Path, "/"))
 			}
 		}
 	}
 	m.metadataOnlyPaths = paths
+	m.metadataOnlyPrefixes = prefixes
 }
 
 // MatchPluginByRoute 根据请求方法和路径匹配插件。
@@ -321,6 +336,18 @@ func (m *Manager) MatchPluginByPlatformAndPath(platform, path string) *PluginIns
 
 func matchRoutePath(routePath, path string) bool {
 	return path == routePath || len(path) > len(routePath) && strings.HasPrefix(path, routePath)
+}
+
+// GetGatewayInstance 按插件名（支持别名）取运行中的 gateway 插件实例；
+// 未运行或非 gateway 类型返回 nil。供 RelayService 等按 token 内插件名回查。
+func (m *Manager) GetGatewayInstance(name string) *PluginInstance {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	inst, ok := m.instances[m.resolveNameLocked(name)]
+	if !ok || inst.Gateway == nil {
+		return nil
+	}
+	return inst
 }
 
 // IsRunning 检查插件是否正在运行。

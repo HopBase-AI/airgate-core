@@ -198,6 +198,7 @@ const (
 	hostMethodAssetsGetURL           = "assets.get_url"
 	hostMethodAssetsGetBytes         = "assets.get_bytes"
 	hostMethodAssetsDelete           = "assets.delete"
+	hostMethodRelaySignURL           = "relay.sign_url"
 	hostMethodTasksCreate            = "tasks.create"
 	hostMethodTasksUpdate            = "tasks.update"
 	hostMethodTasksGet               = "tasks.get"
@@ -315,6 +316,12 @@ func (h *HostService) invoke(
 			return nil, err
 		}
 		return h.deleteAsset(ctx, req)
+	case hostMethodRelaySignURL:
+		var req hostRelaySignURLRequest
+		if err := decodeHostPayload(payload, &req); err != nil {
+			return nil, err
+		}
+		return h.signRelayURL(pluginID, req)
 	case hostMethodTasksCreate:
 		var req hostCreateTaskRequest
 		if err := decodeHostPayload(payload, &req); err != nil {
@@ -411,6 +418,19 @@ type hostForwardRequest struct {
 	Headers  map[string]interface{} `json:"headers"`
 	Body     interface{}            `json:"body"`
 	Stream   bool                   `json:"stream"`
+
+	// AccountID >0 时钉选指定上游账号：跳过调度与 failover，直接用该账号转发。
+	// 供异步任务型平台（提交任务后必须回到同一账号查询/取产物）使用；
+	// 要求同时显式传 group_id（计费倍率归属必须确定），且账号须属于该分组。
+	// 仅非流式 forward 支持；判决/计费/账号状态机管线与普通转发一致。
+	AccountID int64 `json:"account_id,omitempty"`
+}
+
+// hostRelaySignURLRequest relay.sign_url 的入参。
+type hostRelaySignURLRequest struct {
+	Ref        string `json:"ref"`
+	TTLSeconds int64  `json:"ttl_seconds"`
+	Filename   string `json:"filename"`
 }
 
 type hostListModelsRequest struct {
@@ -881,6 +901,10 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 		return nil, err
 	}
 
+	if req.AccountID > 0 {
+		return h.forwardPinned(ctx, req)
+	}
+
 	routes, userEmail, err := h.hostForwardRoutes(ctx, req)
 	if err != nil {
 		return nil, err
@@ -1015,6 +1039,119 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 		return hostForwardPayload(sdk.ForwardOutcome{Upstream: lastUpstream}), nil
 	}
 	return nil, hostForwardGenericError()
+}
+
+// forwardPinned 钉选账号转发：异步任务型平台（提交任务后必须回到同一账号查询/取产物）
+// 的后续请求走这里。与 forward 的差异：不调度、不 failover，账号由调用方指定；
+// 分组归属与平台一致性显式校验（group_id / account_id 可能间接来自终端用户输入）。
+// 判决仍进账号状态机，Usage 仍走完整计费管线。
+func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest) (map[string]interface{}, error) {
+	if req.GroupID <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "钉选账号转发必须显式指定 group_id")
+	}
+	routes, userEmail, err := h.hostForwardRoutes(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	route := routes[0]
+	inst := h.manager.GetPluginByPlatform(route.Platform)
+	if inst == nil || inst.Gateway == nil {
+		slog.Warn("host_forward_pinned_no_plugin",
+			sdk.LogFieldPlatform, route.Platform, sdk.LogFieldGroupID, route.GroupID)
+		return nil, hostForwardGenericError()
+	}
+	model := h.resolveHostModel(route.Platform, req.Model)
+
+	accFull, err := h.db.Account.Query().
+		Where(
+			account.IDEQ(int(req.AccountID)),
+			account.PlatformEQ(route.Platform),
+			account.HasGroupsWith(group.IDEQ(route.GroupID)),
+		).
+		WithProxy().
+		Only(ctx)
+	if err != nil {
+		if cerr := hostContextError(err); cerr != nil {
+			return nil, cerr
+		}
+		if ent.IsNotFound(err) {
+			slog.Warn("host_forward_pinned_account_mismatch",
+				sdk.LogFieldAccountID, req.AccountID,
+				sdk.LogFieldGroupID, route.GroupID,
+				sdk.LogFieldPlatform, route.Platform,
+			)
+			return nil, status.Error(codes.NotFound, "指定账号不存在或不属于该分组")
+		}
+		slog.Error("host_forward_pinned_account_load_failed",
+			sdk.LogFieldAccountID, req.AccountID, sdk.LogFieldError, err)
+		return nil, hostForwardGenericError()
+	}
+
+	fwdCtx, cancel := context.WithTimeout(ctx, hostForwardTimeout(h.manager, req))
+	defer cancel()
+
+	headers := hostForwardHeaders(req, route)
+	applyAccountCapabilityHeaders(headers, accFull)
+	fwdReq := &sdk.ForwardRequest{
+		Account: hostSDKAccount(accFull),
+		Body:    hostForwardBody(req.Body),
+		Headers: headers,
+		Model:   model,
+		Stream:  false,
+	}
+
+	start := time.Now()
+	outcome, fwdErr := inst.Gateway.Forward(fwdCtx, fwdReq)
+	duration := time.Since(start)
+	h.applyHostOutcome(ctx, accFull.ID, accFull, model, outcome, duration)
+	if cerr := hostContextError(fwdErr); cerr != nil {
+		return nil, cerr
+	}
+	if fwdErr != nil {
+		slog.Warn("host_forward_pinned_failed",
+			sdk.LogFieldAccountID, accFull.ID, sdk.LogFieldError, fwdErr)
+		return nil, hostForwardGenericError()
+	}
+	if outcome.Kind != sdk.OutcomeSuccess && !returnableUpstream(outcome.Upstream) {
+		slog.Warn("host_forward_pinned_outcome_failed",
+			sdk.LogFieldAccountID, accFull.ID,
+			"kind", outcome.Kind,
+			sdk.LogFieldReason, outcome.Reason,
+		)
+		return nil, hostForwardGenericError()
+	}
+
+	resp := hostForwardPayload(outcome)
+	if outcome.Kind == sdk.OutcomeSuccess && outcome.Usage != nil {
+		if usageID, err := h.recordHostForwardUsage(ctx, req, route, accFull.ID, route.Platform, model, accFull, userEmail, outcome, duration); err != nil {
+			slog.Error("host_forward_pinned_record_usage_failed",
+				sdk.LogFieldUserID, req.UserID,
+				sdk.LogFieldAccountID, accFull.ID,
+				sdk.LogFieldError, err,
+			)
+		} else if usageID > 0 {
+			resp["usage_id"] = usageID
+		}
+		resp["usage"] = outcome.Usage
+	}
+	return resp, nil
+}
+
+// signRelayURL 为调用插件签发媒体中继路径（host method relay.sign_url）。
+// 插件名直接取调用方身份，插件无法冒签其他插件的中继地址。
+func (h *HostService) signRelayURL(pluginID string, req hostRelaySignURLRequest) (map[string]interface{}, error) {
+	rs := h.manager.RelayService()
+	if rs == nil {
+		return nil, status.Error(codes.FailedPrecondition, "relay 服务未启用")
+	}
+	if strings.TrimSpace(req.Ref) == "" {
+		return nil, status.Error(codes.InvalidArgument, "ref 不能为空")
+	}
+	path, expiresAt, err := rs.SignPath(pluginID, req.Ref, req.Filename, time.Duration(req.TTLSeconds)*time.Second)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	return map[string]interface{}{"path": path, "expires_at": expiresAt}, nil
 }
 
 // forwardStream 流式业务转发。

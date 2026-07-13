@@ -42,6 +42,18 @@ func (s *Server) registerRoutes() {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
+	// 签名媒体中继（无需认证，token 自带 HMAC 签名与时效；见 plugin/relay.go）
+	relayHandler := func(c *gin.Context) {
+		rs := s.pluginMgr.RelayService()
+		if rs == nil {
+			c.JSON(503, gin.H{"error": gin.H{"message": "relay 服务未启用", "type": "relay_error"}})
+			return
+		}
+		rs.ServeHTTP(c.Writer, c.Request, c.Param("token"))
+	}
+	r.GET(plugin.RelayPublicPrefix+"/:token", relayHandler)
+	r.HEAD(plugin.RelayPublicPrefix+"/:token", relayHandler)
+
 	// 安装向导路由（无需认证）
 	setup.RegisterRoutes(r)
 

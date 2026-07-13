@@ -80,10 +80,26 @@ type Manager struct {
 	// metadataOnlyPaths 汇总所有插件声明了 Metadata["metadata_only"]="true" 的路由路径。
 	// 由 rebuildMetadataOnlyPathsLocked 在路由缓存变更后重建。
 	metadataOnlyPaths map[string]bool
+	// metadataOnlyPrefixes 汇总声明为 "prefix" 的路径前缀（含子路径匹配）。
+	metadataOnlyPrefixes []string
 
 	// isLeaderFunc 由 server 注入的领导选举判定。非 nil 且返回 false 时，本实例不执行
 	// 插件后台任务（避免蓝绿/多实例期间重复轮询、重复计费）。nil = 不限制（单实例旧行为）。
 	isLeaderFunc func() bool
+
+	// relaySvc 通用签名媒体中继（relay.go）。由 SetRelayService 在 server 启动时注入；
+	// nil 时 host method relay.sign_url 返回 FailedPrecondition。
+	relaySvc *RelayService
+}
+
+// SetRelayService 注入签名媒体中继。须在加载插件之前（server 启动时）调用。
+func (m *Manager) SetRelayService(rs *RelayService) {
+	m.relaySvc = rs
+}
+
+// RelayService 返回签名媒体中继；未启用时为 nil。
+func (m *Manager) RelayService() *RelayService {
+	return m.relaySvc
 }
 
 // SetHostService 注入 Core 实现的 HostService 工厂。
