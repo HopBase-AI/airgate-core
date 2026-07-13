@@ -196,12 +196,18 @@ const privacyPolicyLegacyRoute = createRoute({
   component: () => null,
 });
 
-// 登录页（无需认证，懒加载）
+// 登录页（无需认证，懒加载）。
+// 已持有会话时直接回控制台首页：落地页 CTA 固定指向 /login，已登录用户点进来
+// 不该再看一次登录表单（token 过期时首页请求会走全局 401 清 token 送回这里，不会循环）。
+// OAuth 回调两种携带（hash 的 oauth_token / query 的 oauth_error）仍留在本页交给 LoginPage 处理。
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
   beforeLoad: () => withSetupCheck((needs) => {
     if (needs) throw redirect({ to: '/setup' });
+    const isOAuthCallback = window.location.hash.includes('oauth_token=')
+      || new URLSearchParams(window.location.search).has('oauth_error');
+    if (!isOAuthCallback && getToken()) throw redirect({ to: '/' });
   }),
   component: () => (
     <Suspense fallback={<FullPageLoading />}>
