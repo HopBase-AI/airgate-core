@@ -14,7 +14,9 @@ import (
 
 type stubRepo struct {
 	users         map[int]UserBrief
+	usersErr      error // 非 NotFound 的基础设施错误
 	commissions   []CommissionCreate
+	createErr     error // CreateCommission 注入失败
 	hasFirstBonus map[int]bool
 	inviteeCount  int
 	sums          InviterSums
@@ -27,9 +29,13 @@ type stubRepo struct {
 	commissionErr   error
 	markReversedErr error
 	marked          []int
+	appliedKeys     map[string]bool // BalanceChangeApplied 返回值
 }
 
 func (s *stubRepo) GetUserBrief(_ context.Context, id int) (UserBrief, error) {
+	if s.usersErr != nil {
+		return UserBrief{}, s.usersErr
+	}
 	u, ok := s.users[id]
 	if !ok {
 		return UserBrief{}, ErrUserNotFound
@@ -53,6 +59,9 @@ func (s *stubRepo) ClaimInviteCode(_ context.Context, _ int, code string) (strin
 func (s *stubRepo) CountInvitees(context.Context, int) (int, error) { return s.inviteeCount, nil }
 
 func (s *stubRepo) CreateCommission(_ context.Context, input CommissionCreate) error {
+	if s.createErr != nil {
+		return s.createErr
+	}
 	s.commissions = append(s.commissions, input)
 	return nil
 }
@@ -86,6 +95,10 @@ func (s *stubRepo) PromoterSummaries(context.Context) ([]PromoterSummary, error)
 
 func (s *stubRepo) SetUserReferralRate(context.Context, int, *float64) error { return nil }
 
+func (s *stubRepo) BalanceChangeApplied(_ context.Context, key string) (bool, error) {
+	return s.appliedKeys[key], nil
+}
+
 type balanceCall struct {
 	userID int
 	change appuser.BalanceChange
@@ -107,9 +120,13 @@ func (s *stubBalance) AdjustBalance(_ context.Context, id int, change appuser.Ba
 
 type stubSettings struct {
 	items []appsettings.Setting
+	err   error
 }
 
 func (s *stubSettings) List(context.Context, string) ([]appsettings.Setting, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
 	return s.items, nil
 }
 
@@ -291,6 +308,147 @@ func TestHandleTopupBalanceErrorPropagates(t *testing.T) {
 	}
 }
 
+func TestHandleTopupInvalidEventIsNoop(t *testing.T) {
+	cases := []struct {
+		name string
+		ev   TopupEvent
+	}{
+		{"user_id 为 0", TopupEvent{OutTradeNo: "X", PaidAmount: 100}},
+		{"订单号为空", TopupEvent{UserID: 2, PaidAmount: 100}},
+		{"实付为 0", TopupEvent{UserID: 2, OutTradeNo: "X"}},
+		{"实付为负", TopupEvent{UserID: 2, OutTradeNo: "X", PaidAmount: -5}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := twoUserRepo()
+			balance := &stubBalance{}
+			svc := NewService(repo, balance, enabledSettings())
+			if err := svc.HandleTopup(t.Context(), tc.ev); err != nil {
+				t.Fatalf("非法事件应静默忽略, err = %v", err)
+			}
+			if len(balance.calls) != 0 || len(repo.commissions) != 0 {
+				t.Fatal("非法事件不应产生任何入账/流水")
+			}
+		})
+	}
+}
+
+// 返利基数必须是实付金额，套餐赠送(bonus_amount)绝不参与计算。
+func TestHandleTopupBonusNotInRebateBase(t *testing.T) {
+	repo := twoUserRepo()
+	balance := &stubBalance{}
+	svc := NewService(repo, balance, enabledSettings())
+
+	ev := topupEvent(true)
+	ev.BonusAmount = 999 // 极端赠送额，若误入基数金额会显著偏大
+	if err := svc.HandleTopup(t.Context(), ev); err != nil {
+		t.Fatalf("HandleTopup() error = %v", err)
+	}
+	if balance.calls[0].change.Amount != 10 {
+		t.Fatalf("返利 = %v, want 10（基数只能是实付 100）", balance.calls[0].change.Amount)
+	}
+	if balance.calls[1].change.Amount != 5 {
+		t.Fatalf("加赠 = %v, want 5（基数只能是实付 100）", balance.calls[1].change.Amount)
+	}
+}
+
+// 加赠入账失败：返回 error 让回调重试；此前的返利已幂等入账，重试不会双发。
+func TestHandleTopupFirstBonusBalanceErrorPropagates(t *testing.T) {
+	repo := twoUserRepo()
+	balance := &stubBalance{errOnPrefix: "refbonus:"}
+	svc := NewService(repo, balance, enabledSettings())
+
+	if err := svc.HandleTopup(t.Context(), topupEvent(true)); err == nil {
+		t.Fatal("加赠入账失败应返回 error")
+	}
+	// 返利那笔已成功（重试时靠幂等键不重复）
+	if len(balance.calls) != 1 || balance.calls[0].change.IdempotencyKey != "referral:ORD1" {
+		t.Fatalf("返利应已入账等待重试补加赠: %+v", balance.calls)
+	}
+}
+
+// 流水落库失败：返回 error 让回调重试补写（余额已幂等入账，不会重复）。
+func TestHandleTopupCommissionWriteErrorPropagates(t *testing.T) {
+	repo := twoUserRepo()
+	repo.createErr = errors.New("db down")
+	balance := &stubBalance{}
+	svc := NewService(repo, balance, enabledSettings())
+
+	if err := svc.HandleTopup(t.Context(), topupEvent(false)); err == nil {
+		t.Fatal("流水落库失败应返回 error（重试补账）")
+	}
+	if len(balance.calls) != 1 {
+		t.Fatalf("余额入账应已发生（重试幂等命中）: %d", len(balance.calls))
+	}
+}
+
+// 用户在支付完成到事件送达之间被删除：no-op，不报错不卡支付。
+func TestHandleTopupInviteeMissingIsNoop(t *testing.T) {
+	repo := &stubRepo{users: map[int]UserBrief{}}
+	balance := &stubBalance{}
+	svc := NewService(repo, balance, enabledSettings())
+	if err := svc.HandleTopup(t.Context(), topupEvent(true)); err != nil {
+		t.Fatalf("被邀请人已删除应 no-op, err = %v", err)
+	}
+	if len(balance.calls) != 0 {
+		t.Fatal("不应入账")
+	}
+}
+
+func TestHandleTopupInviterMissingIsNoop(t *testing.T) {
+	repo := twoUserRepo()
+	delete(repo.users, 1)
+	balance := &stubBalance{}
+	svc := NewService(repo, balance, enabledSettings())
+	if err := svc.HandleTopup(t.Context(), topupEvent(true)); err != nil {
+		t.Fatalf("邀请人已删除应 no-op, err = %v", err)
+	}
+	if len(balance.calls) != 0 {
+		t.Fatal("邀请人不存在不应入账")
+	}
+}
+
+// 用户查询遇基础设施错误：必须返回 error 走重试，绝不静默吞掉（吞掉=丢返利）。
+func TestHandleTopupUserLookupInfraErrorPropagates(t *testing.T) {
+	repo := twoUserRepo()
+	repo.usersErr = errors.New("db down")
+	balance := &stubBalance{}
+	svc := NewService(repo, balance, enabledSettings())
+	if err := svc.HandleTopup(t.Context(), topupEvent(true)); err == nil {
+		t.Fatal("基础设施错误应返回 error 让回调重试")
+	}
+}
+
+// 配置读取失败：按功能关闭处理（宁可不返，不能在配置未知时乱发钱）。
+func TestHandleTopupSettingsErrorDisables(t *testing.T) {
+	repo := twoUserRepo()
+	balance := &stubBalance{}
+	svc := NewService(repo, balance, &stubSettings{err: errors.New("settings down")})
+	if err := svc.HandleTopup(t.Context(), topupEvent(true)); err != nil {
+		t.Fatalf("配置读取失败应 no-op, err = %v", err)
+	}
+	if len(balance.calls) != 0 {
+		t.Fatal("配置未知不应入账")
+	}
+}
+
+// 默认比例配置非法：返利跳过，但合法的首充加赠不受牵连。
+func TestHandleTopupInvalidRateConfigSkipsRebateOnly(t *testing.T) {
+	repo := twoUserRepo()
+	balance := &stubBalance{}
+	svc := NewService(repo, balance, &stubSettings{items: []appsettings.Setting{
+		{Key: "referral_enabled", Value: "true"},
+		{Key: "referral_default_rate", Value: "abc"},
+		{Key: "referral_first_bonus_rate", Value: "0.05"},
+	}})
+	if err := svc.HandleTopup(t.Context(), topupEvent(true)); err != nil {
+		t.Fatalf("HandleTopup() error = %v", err)
+	}
+	if len(balance.calls) != 1 || balance.calls[0].userID != 2 || balance.calls[0].change.Amount != 5 {
+		t.Fatalf("应只有加赠一笔: %+v", balance.calls)
+	}
+}
+
 // ===== Reverse =====
 
 func TestReverseSettledRebate(t *testing.T) {
@@ -345,6 +503,50 @@ func TestReverseRejectsAlreadyReversed(t *testing.T) {
 	}
 	if len(balance.calls) != 0 {
 		t.Fatal("已回冲记录不应再扣款")
+	}
+}
+
+// 扣款已发生但标记失败的重试：幂等键已入账 → 跳过扣款（避免余额不足卡死）直接补标记。
+func TestReverseRetrySkipsBalanceWhenAlreadyApplied(t *testing.T) {
+	repo := twoUserRepo()
+	repo.commission = Commission{ID: 9, InviterID: 1, InviteeID: 2, Kind: KindRebate, Amount: 10, Status: StatusSettled}
+	repo.appliedKeys = map[string]bool{"referral_reverse:9": true}
+	balance := &stubBalance{errOnPrefix: "referral_reverse:"} // 若误发扣款请求会直接失败
+	svc := NewService(repo, balance, enabledSettings())
+
+	if _, err := svc.Reverse(t.Context(), 9); err != nil {
+		t.Fatalf("重试回冲应跳过扣款直接补标记, err = %v", err)
+	}
+	if len(balance.calls) != 0 {
+		t.Fatalf("已入账不应再扣款: %+v", balance.calls)
+	}
+	if len(repo.marked) != 1 || repo.marked[0] != 9 {
+		t.Fatalf("应补标记 reversed: %+v", repo.marked)
+	}
+}
+
+func TestReverseNotFound(t *testing.T) {
+	repo := twoUserRepo()
+	repo.commissionErr = ErrCommissionNotFound
+	svc := NewService(repo, &stubBalance{}, enabledSettings())
+	if _, err := svc.Reverse(t.Context(), 999); !errors.Is(err, ErrCommissionNotFound) {
+		t.Fatalf("err = %v, want ErrCommissionNotFound", err)
+	}
+}
+
+// 扣款成功但标记失败：返回 error 供管理员重试；重试时扣款幂等命中不会双扣。
+func TestReverseMarkErrorPropagates(t *testing.T) {
+	repo := twoUserRepo()
+	repo.commission = Commission{ID: 8, InviterID: 1, InviteeID: 2, Kind: KindRebate, Amount: 10, Status: StatusSettled}
+	repo.markReversedErr = errors.New("db down")
+	balance := &stubBalance{}
+	svc := NewService(repo, balance, enabledSettings())
+
+	if _, err := svc.Reverse(t.Context(), 8); err == nil {
+		t.Fatal("标记失败应返回 error")
+	}
+	if len(balance.calls) != 1 || balance.calls[0].change.IdempotencyKey != "referral_reverse:8" {
+		t.Fatalf("扣款应带幂等键等待重试: %+v", balance.calls)
 	}
 }
 
@@ -421,6 +623,25 @@ func TestParseRate(t *testing.T) {
 	for _, tc := range cases {
 		if got := parseRate(tc.in); got != tc.want {
 			t.Errorf("parseRate(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestRound8(t *testing.T) {
+	cases := []struct {
+		in   float64
+		want float64
+	}{
+		{10.000000004, 10},
+		{10.000000006, 10.00000001},
+		{0.000000001, 0}, // 极小额四舍五入为 0 → 上游按不入账处理
+		{0.00000001, 0.00000001},
+		{100 * 0.1, 10}, // 浮点乘法残差归整
+		{33.33 * 0.15, 4.9995},
+	}
+	for _, tc := range cases {
+		if got := round8(tc.in); got != tc.want {
+			t.Errorf("round8(%v) = %v, want %v", tc.in, got, tc.want)
 		}
 	}
 }

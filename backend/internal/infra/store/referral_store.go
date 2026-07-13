@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/DouDOU-start/airgate-core/ent"
+	entbalancelog "github.com/DouDOU-start/airgate-core/ent/balancelog"
 	entreferral "github.com/DouDOU-start/airgate-core/ent/referralcommission"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
 	appreferral "github.com/DouDOU-start/airgate-core/internal/app/referral"
@@ -265,6 +266,13 @@ func (s *ReferralStore) PromoterSummaries(ctx context.Context) ([]appreferral.Pr
 		}
 	}
 	return result, nil
+}
+
+// BalanceChangeApplied 指定幂等键的余额变更是否已入账。
+func (s *ReferralStore) BalanceChangeApplied(ctx context.Context, idempotencyKey string) (bool, error) {
+	return s.db.BalanceLog.Query().
+		Where(entbalancelog.IdempotencyKeyEQ(idempotencyKey)).
+		Exist(ctx)
 }
 
 // SetUserReferralRate 设置/清除用户级返利比例覆盖。

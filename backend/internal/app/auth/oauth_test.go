@@ -188,6 +188,23 @@ func TestOAuthStateCarriesAttribution(t *testing.T) {
 	}
 }
 
+// 过期与未来时间戳的 state 一律拒绝（新旧格式同规则）。
+func TestOAuthStateExpiryRejected(t *testing.T) {
+	sign := func(payload string) string {
+		mac := hmac.New(sha256.New, oauthSigningKey())
+		mac.Write([]byte(payload))
+		return payload + "." + hex.EncodeToString(mac.Sum(nil))
+	}
+	expired := sign("deadbeef." + strconv.FormatInt(time.Now().Add(-oauthStateTTL-time.Minute).Unix(), 10) + ".")
+	if _, ok := verifyOAuthState(expired); ok {
+		t.Fatal("超过 TTL 的 state 应拒绝")
+	}
+	future := sign("deadbeef." + strconv.FormatInt(time.Now().Add(2*time.Minute).Unix(), 10) + ".")
+	if _, ok := verifyOAuthState(future); ok {
+		t.Fatal("时间戳在未来的 state 应拒绝")
+	}
+}
+
 // TestOAuthStateLegacyFormat 旧三段格式（nonce.ts.hmac）在发布过渡窗口内必须仍被接受。
 func TestOAuthStateLegacyFormat(t *testing.T) {
 	payload := "deadbeef." + strconv.FormatInt(time.Now().Unix(), 10)

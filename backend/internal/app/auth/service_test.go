@@ -101,6 +101,49 @@ func TestRegisterIgnoresInvalidInviteCode(t *testing.T) {
 	}
 }
 
+// 邀请码查库遇基础设施错误：注册照常成功，只丢邀请绑定（归因绝不阻断注册主流程）。
+func TestRegisterInviteLookupErrorDoesNotBlock(t *testing.T) {
+	var created *CreateUserInput
+	service := NewService(authStubRepository{
+		create: func(input CreateUserInput) (User, error) {
+			created = &input
+			return User{ID: 1, Email: input.Email, Role: "user", Status: "active"}, nil
+		},
+		findUserIDByInviteCode: func(string) (int, error) {
+			return 0, errors.New("db down")
+		},
+	}, corauth.NewJWTManager("secret", 24))
+
+	if _, err := service.Register(t.Context(), RegisterInput{
+		Email: "u@test.com", Password: "password123", InviteCode: "abcd2345",
+	}); err != nil {
+		t.Fatalf("查库失败不应阻断注册: %v", err)
+	}
+	if created == nil || created.InviterID != nil {
+		t.Fatalf("查库失败应放弃绑定: %+v", created)
+	}
+}
+
+func TestSanitizeInviteCode(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"ABCD2345", "abcd2345"},
+		{"  abcd2345  ", "abcd2345"},
+		{"abc", ""},               // 太短
+		{"a2345678901234567", ""}, // 超 16 位
+		{"abcd 2345", ""},         // 含空格
+		{"abcd-2345", ""},         // 含符号
+		{"", ""},
+	}
+	for _, tc := range cases {
+		if got := sanitizeInviteCode(tc.in); got != tc.want {
+			t.Errorf("sanitizeInviteCode(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 // stubSettingsLister 设置桩实现。
 type stubSettingsLister struct {
 	data map[string][]Setting

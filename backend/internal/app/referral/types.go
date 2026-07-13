@@ -140,6 +140,10 @@ type Repository interface {
 	PromoterSummaries(ctx context.Context) ([]PromoterSummary, error)
 	// SetUserReferralRate 设置/清除用户级返利比例覆盖（nil = 清除，回落全局默认）。
 	SetUserReferralRate(ctx context.Context, userID int, rate *float64) error
+	// BalanceChangeApplied 指定幂等键的余额变更是否已入账（balance_logs 唯一索引）。
+	// 用于回冲重试：扣款已发生但标记失败的窗口内，重试须跳过余额校验直接补标记，
+	// 否则受益人余额已花光时会被「余额不足」永久卡死在钱已扣、记录未标记的悬挂态。
+	BalanceChangeApplied(ctx context.Context, idempotencyKey string) (bool, error)
 }
 
 // BalanceAdjuster 余额入账依赖（由 app/user.Service 满足）——复用其幂等键管线，

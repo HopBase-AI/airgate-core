@@ -265,13 +265,22 @@ func (s *Service) Reverse(ctx context.Context, id int) (Commission, error) {
 	if item.Kind == KindFirstBonus {
 		beneficiary = item.InviteeID
 	}
-	if _, err := s.balance.AdjustBalance(ctx, beneficiary, appuser.BalanceChange{
-		Action:         "subtract",
-		Amount:         item.Amount,
-		Remark:         fmt.Sprintf("分销返利回冲（订单 %s）", item.OutTradeNo),
-		IdempotencyKey: fmt.Sprintf("referral_reverse:%d", item.ID),
-	}); err != nil {
+	reverseKey := fmt.Sprintf("referral_reverse:%d", item.ID)
+	// 扣款已发生但标记失败的重试窗口：幂等键已入账则跳过扣款（余额校验在幂等
+	// 命中之前执行，受益人余额已花光时重试会被「余额不足」卡死），直接补标记。
+	applied, err := s.repo.BalanceChangeApplied(ctx, reverseKey)
+	if err != nil {
 		return Commission{}, err
+	}
+	if !applied {
+		if _, err := s.balance.AdjustBalance(ctx, beneficiary, appuser.BalanceChange{
+			Action:         "subtract",
+			Amount:         item.Amount,
+			Remark:         fmt.Sprintf("分销返利回冲（订单 %s）", item.OutTradeNo),
+			IdempotencyKey: reverseKey,
+		}); err != nil {
+			return Commission{}, err
+		}
 	}
 	if err := s.repo.MarkReversed(ctx, id); err != nil {
 		return Commission{}, err
