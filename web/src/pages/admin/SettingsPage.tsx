@@ -2063,6 +2063,14 @@ function ModelCatalogEditor({ label, settingKey, set, value, builtinModels, onVa
         <div className="space-y-2">
           {rows.map((r, i) => {
             const rowOpen = openUids.has(r.uid);
+            // Seedance:取该模型的内置桶价 metadata,用于灰色占位回显(空字段＝沿用内置,不钉死)。
+            const builtinVideoMeta = isSeedance
+              ? builtinModels.find((m) => m.id.toLowerCase() === r.id.trim().toLowerCase())?.metadata
+              : undefined;
+            const seedanceRepPrice = isSeedance
+              ? (SEEDANCE_BUCKETS.map((b) => r.buckets[b]).find((v) => v && v.trim())
+                || builtinVideoMeta?.['price.video_tokens.480p_no_ref'] || '—')
+              : '';
             return (
             <div key={r.uid} className="rounded-lg border border-glass-border">
               <div className="flex items-center gap-2 px-3 py-2">
@@ -2077,7 +2085,7 @@ function ModelCatalogEditor({ label, settingKey, set, value, builtinModels, onVa
                   {r.name.trim() ? <span className="truncate text-[12px] text-text-tertiary">{r.name.trim()}</span> : null}
                   {!r.enabled ? <span className="shrink-0 text-[10px] font-medium uppercase text-text-tertiary">off</span> : null}
                   <span className="ml-auto shrink-0 font-mono text-[12px] tabular-nums text-text-tertiary">{isSeedance
-                    ? `${r.tier.trim() || t('settings.models_tier_inherit')} · $${SEEDANCE_BUCKETS.map((b) => r.buckets[b]).find((v) => v && v.trim()) ?? '—'}`
+                    ? `${r.tier.trim() || t('settings.models_tier_inherit')} · $${seedanceRepPrice}`
                     : `$${r.input.trim() || '—'} / $${r.output.trim() || '—'}`}</span>
                 </button>
                 <Button size="sm" variant="ghost" onPress={() => removeRow(i)} aria-label={t('common.delete')}>
@@ -2134,7 +2142,7 @@ function ModelCatalogEditor({ label, settingKey, set, value, builtinModels, onVa
                           const bucket = `${res}_${ref.suffix}`;
                           return (
                             <Field key={bucket} label={t(ref.labelKey)}>
-                              <Input type="number" value={r.buckets[bucket] ?? ''} onChange={(e) => updateBucket(i, bucket, e.target.value)} placeholder="0" />
+                              <Input type="number" value={r.buckets[bucket] ?? ''} onChange={(e) => updateBucket(i, bucket, e.target.value)} placeholder={builtinVideoMeta?.[`price.video_tokens.${bucket}`] ?? '0'} />
                             </Field>
                           );
                         })}
