@@ -2,6 +2,455 @@
    09. Page-Specific Overrides
    ========================================================================== */
 
+/* Model plaza: a compact ledger with the model ID as its visual spine. */
+
+.ag-model-plaza {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.ag-model-plaza-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
+  border-bottom: 1px solid var(--border);
+  padding: 0.25rem 0 1rem;
+}
+
+.ag-model-plaza-header h1 {
+  color: var(--foreground);
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+}
+
+.ag-model-plaza-header p {
+  margin-top: 0.375rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.ag-model-plaza-count {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.ag-model-plaza-count strong {
+  color: var(--foreground);
+  font-family: var(--ag-font-mono);
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-model-filter-rail {
+  position: sticky;
+  top: 0.75rem;
+  z-index: 10;
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+  border: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
+  border-radius: var(--radius-2xl);
+  background: color-mix(in oklab, var(--surface) 92%, transparent);
+  box-shadow: var(--surface-shadow);
+  padding: 0.625rem;
+  backdrop-filter: blur(14px) saturate(150%);
+}
+
+.ag-model-search {
+  position: relative;
+  display: flex;
+  min-width: min(100%, 15rem);
+  flex: 1 1 18rem;
+  align-items: center;
+}
+
+.ag-model-search > svg {
+  position: absolute;
+  left: 0.75rem;
+  z-index: 1;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.ag-model-search-input {
+  width: 100%;
+  padding-left: 2.25rem !important;
+}
+
+.ag-model-filter-group {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.ag-model-filter-group .button {
+  min-height: 2.25rem;
+}
+
+.ag-model-capability-filter {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.ag-model-capability-filter select {
+  min-height: 2.25rem;
+  max-width: 12rem;
+  border: 1px solid var(--border);
+  border-radius: var(--field-radius);
+  background: var(--field-background);
+  color: var(--foreground);
+  padding: 0 2rem 0 0.625rem;
+  font: inherit;
+}
+
+.ag-model-capability-filter select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.ag-model-stat-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0;
+  border-block: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.75rem;
+  padding-block: 0.625rem;
+}
+
+.ag-model-stat-strip > span {
+  padding-inline: 0.75rem;
+}
+
+.ag-model-stat-strip > span:first-child {
+  padding-left: 0;
+}
+
+.ag-model-stat-strip > span + span {
+  border-left: 1px solid var(--border);
+}
+
+.ag-model-stat-strip strong {
+  margin-left: 0.25rem;
+  color: var(--foreground);
+  font-family: var(--ag-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-model-stat-strip .ag-model-price-fallback {
+  margin-left: auto;
+  color: var(--warning);
+}
+
+.ag-model-ledger {
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
+  border-radius: var(--radius-2xl);
+  background: var(--surface);
+  box-shadow: var(--surface-shadow);
+}
+
+.ag-model-ledger table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.ag-model-ledger th,
+.ag-model-ledger td {
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 58%, transparent);
+  padding: 0.875rem 1rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.ag-model-ledger th {
+  background: var(--surface-secondary);
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.ag-model-ledger th:nth-child(1) { width: 34%; }
+.ag-model-ledger th:nth-child(2) { width: 24%; }
+.ag-model-ledger th:nth-child(3) { width: 10%; }
+.ag-model-ledger th:nth-child(4) { width: 32%; }
+
+.ag-model-ledger th small {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.ag-model-ledger tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.ag-model-ledger tbody tr:hover {
+  background: color-mix(in oklab, var(--default) 62%, transparent);
+}
+
+.ag-model-id-spine {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.625rem;
+  border-left: 3px solid var(--accent);
+  padding-left: 0.75rem;
+}
+
+.ag-model-id-spine > div {
+  min-width: 0;
+}
+
+.ag-model-id-spine code {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+  font-family: var(--ag-font-mono);
+  font-size: 0.875rem;
+  font-weight: 650;
+  line-height: 1.35;
+  user-select: text;
+}
+
+.ag-model-id-spine p {
+  margin-top: 0.25rem;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.ag-model-copy.button {
+  width: 2.75rem;
+  min-width: 2.75rem;
+  height: 2.75rem;
+  min-height: 2.75rem;
+  flex: 0 0 2.75rem;
+}
+
+.ag-model-tags > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.ag-model-tags p {
+  margin-top: 0.375rem;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.ag-model-context {
+  color: var(--foreground);
+  font-family: var(--ag-font-mono);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-model-price-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.ag-model-price-grid > div {
+  min-width: 0;
+}
+
+.ag-model-price-grid dt {
+  color: var(--muted);
+  font-size: 0.625rem;
+  white-space: nowrap;
+}
+
+.ag-model-price-grid dd {
+  margin-top: 0.1875rem;
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+  font-family: var(--ag-font-mono);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.ag-model-long-context {
+  margin-top: 0.5rem;
+  color: var(--warning);
+  font-size: 0.6875rem;
+  line-height: 1.35;
+}
+
+.ag-model-official-label {
+  margin-top: 0.375rem;
+  color: var(--muted);
+  font-size: 0.625rem;
+  font-weight: 600;
+}
+
+.ag-model-state-panel {
+  display: flex;
+  min-height: 10rem;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  background: var(--surface);
+  color: var(--muted);
+  padding: 2rem;
+  text-align: left;
+}
+
+.ag-model-state-panel > svg {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: 0 0 auto;
+}
+
+.ag-model-state-panel h2 {
+  color: var(--foreground);
+  font-size: 0.9375rem;
+  font-weight: 650;
+}
+
+.ag-model-state-panel p {
+  margin-top: 0.25rem;
+  font-size: 0.8125rem;
+}
+
+.ag-model-empty {
+  text-align: center;
+}
+
+@media (max-width: 767px) {
+  .ag-model-plaza-header {
+    align-items: flex-start;
+  }
+
+  .ag-model-filter-rail {
+    top: 0.5rem;
+  }
+
+  .ag-model-search,
+  .ag-model-filter-group,
+  .ag-model-capability-filter {
+    width: 100%;
+  }
+
+  .ag-model-capability-filter select {
+    min-height: 2.75rem;
+    max-width: none;
+    flex: 1 1 auto;
+  }
+
+  .ag-model-stat-strip .ag-model-price-fallback {
+    width: 100%;
+    margin: 0.5rem 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    padding: 0.5rem 0 0;
+  }
+
+  .ag-model-ledger {
+    border-radius: var(--radius);
+  }
+
+  .ag-model-ledger thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .ag-model-ledger table,
+  .ag-model-ledger tbody,
+  .ag-model-ledger tr,
+  .ag-model-ledger td {
+    display: block;
+    width: 100%;
+  }
+
+  .ag-model-ledger tr {
+    border-bottom: 1px solid var(--border);
+    padding: 0.5rem 0;
+  }
+
+  .ag-model-ledger tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .ag-model-ledger td {
+    display: grid;
+    grid-template-columns: minmax(5.5rem, 28%) minmax(0, 1fr);
+    gap: 0.75rem;
+    border: 0;
+    padding: 0.625rem 0.875rem;
+  }
+
+  .ag-model-ledger td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 0.6875rem;
+    font-weight: 650;
+    letter-spacing: 0.035em;
+    text-transform: uppercase;
+  }
+
+  .ag-model-ledger td:first-child {
+    display: block;
+  }
+
+  .ag-model-ledger td:first-child::before {
+    display: none;
+  }
+
+  .ag-model-price-grid {
+    gap: 0.5rem;
+  }
+
+  .ag-model-state-panel {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-model-ledger tbody tr {
+    transition: none;
+  }
+}
+
 /* API keys: 表格内容居中 */
 
 .ag-api-keys-table :where([data-slot="table-column"], [data-slot="th"], .table__column),

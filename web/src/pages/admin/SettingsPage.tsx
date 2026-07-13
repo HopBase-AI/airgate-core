@@ -454,7 +454,8 @@ export default function SettingsPage() {
     }
   }
 
-  // 多落地页品牌 JSON 的客户端校验：只提示不阻塞保存（留空 = 所有来源统一用 site_name/site_logo）。
+  // 多落地页品牌 JSON 的客户端校验：只提示不阻塞保存。
+  // 留空 = 所有来源统一用全局 site_name/site_logo/doc_url。
   const sitesBrandingRaw = values['sites_branding'] ?? '';
   let sitesBrandingError = '';
   if (sitesBrandingRaw.trim() !== '') {
@@ -556,7 +557,7 @@ export default function SettingsPage() {
                     value={sitesBrandingRaw}
                     onChange={(e) => set('sites_branding', e.target.value)}
                     className="h-40 w-full font-mono text-xs leading-5"
-                    placeholder={'{\n  "ink": { "name": "Essevin", "logo": "https://essevin.com/logo.svg" },\n  "kite": { "name": "KITE", "logo": "data:image/svg+xml;base64,..." }\n}'}
+                    placeholder={'{\n  "ink": { "name": "Essevin", "logo": "https://essevin.com/logo.svg", "doc_url": "https://essevin.com/docs" },\n  "open-late": { "name": "Essevin", "logo": "https://late.essevin.com/logo.svg", "doc_url": "https://late.essevin.com/docs" },\n  "kite": { "name": "KITE", "logo": "data:image/svg+xml;base64,...", "doc_url": "https://kite.essevin.com/docs" }\n}'}
                   />
                   {sitesBrandingError && (
                     <p className="text-[11px] text-danger mt-1.5">{sitesBrandingError}</p>

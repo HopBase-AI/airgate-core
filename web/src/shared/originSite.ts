@@ -27,3 +27,28 @@ export function getOriginSite(): string {
     return '';
   }
 }
+
+// adoptOriginSite 在 React 渲染之后才可能补写来源，订阅机制让品牌解析（useSyncExternalStore）随之重算。
+const listeners = new Set<() => void>();
+
+export function subscribeOriginSite(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+/**
+ * 用登录用户的注册归因（users.signup_source）兜底来源站：换设备/清缓存后 localStorage
+ * 里没有 ?site= 归因时，品牌与文档链接仍能跟随用户注册时的来源站。
+ * 本次已带显式来源（?site= 进入）时不覆盖。
+ */
+export function adoptOriginSite(site: string | undefined | null): void {
+  const normalized = (site ?? '').trim().toLowerCase();
+  if (!normalized || !SITE_ID_PATTERN.test(normalized)) return;
+  try {
+    if (window.localStorage.getItem(STORAGE_KEY)) return;
+    window.localStorage.setItem(STORAGE_KEY, normalized);
+    listeners.forEach((listener) => listener());
+  } catch {
+    // localStorage 不可用（隐私模式等）时静默降级为无来源
+  }
+}

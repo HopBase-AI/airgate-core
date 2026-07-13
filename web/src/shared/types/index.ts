@@ -68,6 +68,8 @@ export interface UserResp {
   balance: number;
   role: SessionRole;
   max_concurrency: number;
+  // 注册来源站点 ID（ToC 落地页 ?site= 归因），用于品牌/文档链接兜底
+  signup_source?: string;
 
   group_rates?: Record<number, number>;
   group_plugin_settings?: Record<number, Record<string, Record<string, string>>>;

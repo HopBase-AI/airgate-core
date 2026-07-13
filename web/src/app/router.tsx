@@ -24,6 +24,7 @@ import {
   GroupsPage,
   lazyWithPreload,
   LoginPage,
+  ModelPlazaPage,
   PluginPage,
   PluginsPage,
   RelayDetectionPage,
@@ -291,6 +292,7 @@ const profileRoute = createRoute({ getParentRoute: () => authLayout, path: '/pro
 const inviteRoute = createRoute({ getParentRoute: () => authLayout, path: '/invite', component: renderPage(InvitePage) });
 const userKeysRoute = createRoute({ getParentRoute: () => authLayout, path: '/keys', component: renderPage(UserKeysPage) });
 const userUsageRoute = createRoute({ getParentRoute: () => authLayout, path: '/usage', component: renderPage(UserUsagePage) });
+const modelPlazaRoute = createRoute({ getParentRoute: () => authLayout, path: '/models', component: renderPage(ModelPlazaPage) });
 
 // /chat: 全屏沉浸式 AI 对话页（airgate-playground 插件），独立布局不挂 AppShell。
 // 仍要求登录 + 安装完成；走 PluginShell 通用插件顶栏。
@@ -387,6 +389,7 @@ const routeTree = rootRoute.addChildren([
     inviteRoute,
     userKeysRoute,
     userUsageRoute,
+    modelPlazaRoute,
     pluginRoute,
   ]),
 ]);

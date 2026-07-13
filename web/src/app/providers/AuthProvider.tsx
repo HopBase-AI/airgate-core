@@ -8,6 +8,7 @@ import {
   getTokenRole,
 } from '../../shared/api/client';
 import { usersApi } from '../../shared/api/users';
+import { adoptOriginSite } from '../../shared/originSite';
 import { resetAdminCache } from '../routeGuards';
 
 interface AuthContextType {
@@ -43,6 +44,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserResp | null>(null);
   const [loading, setLoading] = useState(true);
   const authRevisionRef = useRef(0);
+
+  // 换设备/清缓存后 localStorage 无 ?site= 归因时，用注册归因兜底来源站，
+  // 让品牌与文档链接仍跟随该用户注册时的落地页。
+  useEffect(() => {
+    if (user?.signup_source) adoptOriginSite(user.signup_source);
+  }, [user?.signup_source]);
 
   useEffect(() => {
     let cancelled = false;

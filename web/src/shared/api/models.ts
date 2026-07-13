@@ -16,6 +16,30 @@ export interface BuiltinPlatformModels {
   models: BuiltinModel[];
 }
 
+export interface PublicModelLongContext {
+  threshold: number;
+  input_multiplier?: number;
+  cached_multiplier?: number;
+  output_multiplier?: number;
+}
+
+export interface PublicPricingModel {
+  id: string;
+  name?: string;
+  context_window?: number;
+  capabilities?: string[];
+  input: number;
+  cached_input?: number;
+  output: number;
+  long_context?: PublicModelLongContext;
+}
+
+export interface PublicPlatformPricing {
+  platform: string;
+  models: PublicPricingModel[];
+}
+
 export const modelsApi = {
   builtin: () => get<BuiltinPlatformModels[]>('/api/v1/admin/models/builtin'),
+  pricing: () => get<PublicPlatformPricing[]>('/api/v1/models/pricing'),
 };
