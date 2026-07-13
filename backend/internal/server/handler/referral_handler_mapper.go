@@ -13,6 +13,7 @@ func toMyReferralResp(item appreferral.MyReferral) dto.MyReferralResp {
 		InviteCode:    item.InviteCode,
 		LinkBaseURL:   item.LinkBaseURL,
 		Enabled:       item.Enabled,
+		ReferralRate:  item.ReferralRate,
 		InviteeCount:  item.InviteeCount,
 		TotalRebate:   item.TotalRebate,
 		TotalReversed: item.TotalReversed,

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Button, Chip, EmptyState } from '@heroui/react';
-import { Copy, Gift, Users, Wallet } from 'lucide-react';
+import { Copy, Gift, Percent, Users, Wallet } from 'lucide-react';
 import { referralApi } from '../../shared/api/referral';
 import { queryKeys } from '../../shared/queryKeys';
 import { usePagination } from '../../shared/hooks/usePagination';
@@ -110,7 +110,8 @@ export default function InvitePage() {
       </div>
 
       {/* 统计 */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard icon={<Percent className="h-5 w-5" />} label={t('referral.my_rate')} value={`${((me?.referral_rate ?? 0) * 100).toFixed(1)}%`} />
         <StatCard icon={<Users className="h-5 w-5" />} label={t('referral.invitee_count')} value={me?.invitee_count ?? 0} />
         <StatCard icon={<Wallet className="h-5 w-5" />} label={t('referral.total_rebate')} value={`$${(me?.total_rebate ?? 0).toFixed(2)}`} />
         <StatCard icon={<Gift className="h-5 w-5" />} label={t('referral.total_reversed')} value={`$${(me?.total_reversed ?? 0).toFixed(2)}`} />

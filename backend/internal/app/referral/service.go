@@ -202,10 +202,16 @@ func (s *Service) MyReferral(ctx context.Context, userID int) (MyReferral, error
 	if err != nil {
 		return MyReferral{}, err
 	}
+	// 有效返利比例：与充值返利入账口径一致（用户级覆盖 else 全局默认）。
+	rate := cfg.DefaultRate
+	if brief.ReferralRate != nil {
+		rate = clampRate(*brief.ReferralRate)
+	}
 	return MyReferral{
 		InviteCode:    code,
 		LinkBaseURL:   cfg.LinkBaseURL,
 		Enabled:       cfg.Enabled,
+		ReferralRate:  rate,
 		InviteeCount:  count,
 		TotalRebate:   sums.TotalRebate,
 		TotalReversed: sums.TotalReversed,

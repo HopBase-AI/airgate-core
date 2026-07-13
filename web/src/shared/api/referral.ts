@@ -7,6 +7,8 @@ export interface MyReferralResp {
   // 邀请链接前缀（后台可配）；空 = 用当前控制台域名
   link_base_url: string;
   enabled: boolean;
+  // 当前用户有效返利比例（0~1）：用户级覆盖 else 全局默认
+  referral_rate: number;
   invitee_count: number;
   total_rebate: number;
   total_reversed: number;

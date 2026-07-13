@@ -6,8 +6,10 @@ import "time"
 type MyReferralResp struct {
 	InviteCode string `json:"invite_code"`
 	// LinkBaseURL 邀请链接前缀（后台可配）；空 = 前端用当前控制台域名拼接。
-	LinkBaseURL   string  `json:"link_base_url"`
-	Enabled       bool    `json:"enabled"`
+	LinkBaseURL string `json:"link_base_url"`
+	Enabled     bool   `json:"enabled"`
+	// ReferralRate 当前用户有效返利比例（0~1）：用户级覆盖 else 全局默认。
+	ReferralRate  float64 `json:"referral_rate"`
 	InviteeCount  int     `json:"invitee_count"`
 	TotalRebate   float64 `json:"total_rebate"`
 	TotalReversed float64 `json:"total_reversed"`
