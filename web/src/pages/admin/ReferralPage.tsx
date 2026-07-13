@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Chip, EmptyState, Input, Label, ListBox, Select, useOverlayState } from '@heroui/react';
+import { Button, Chip, ComboBox, EmptyState, Input, Label, ListBox, Select, useOverlayState } from '@heroui/react';
+import { Search } from 'lucide-react';
 import { referralApi, type ReferralPromoterResp } from '../../shared/api/referral';
 import { settingsApi } from '../../shared/api/settings';
+import { usersApi } from '../../shared/api/users';
 import { queryKeys } from '../../shared/queryKeys';
 import { usePagination } from '../../shared/hooks/usePagination';
+import { useDebouncedValue } from '../../shared/hooks/useDebouncedValue';
 import { DEFAULT_PAGE_SIZE } from '../../shared/constants';
 import { getTotalPages } from '../../shared/utils/pagination';
 import { CommonModal } from '../../shared/components/CommonModal';
@@ -14,6 +17,7 @@ import { TableLoadingRow } from '../../shared/components/TableLoadingRow';
 import { TablePaginationFooter } from '../../shared/components/TablePaginationFooter';
 import { NativeSwitch } from '../../shared/components/NativeSwitch';
 import { useToast } from '../../shared/ui';
+import type { UserResp } from '../../shared/types';
 
 // settings referral 分组的四个 key（value 全为字符串；比例存 0~1 小数，UI 用百分比展示）
 const KEY_ENABLED = 'referral_enabled';
@@ -99,18 +103,53 @@ export default function ReferralPage() {
     queryFn: () => referralApi.summary(),
   });
 
-  // 设置比例弹窗（rateTarget 为 null 时手填用户 ID）
+  // 设置比例弹窗（rateTarget 为 null 时按邮箱搜索选择用户）
   const rateModal = useOverlayState();
   const [rateTarget, setRateTarget] = useState<ReferralPromoterResp | null>(null);
-  const [rateUserId, setRateUserId] = useState('');
+  const [rateEmailQuery, setRateEmailQuery] = useState('');
+  const [ratePickedUser, setRatePickedUser] = useState<UserResp | null>(null);
   const [rateInput, setRateInput] = useState('');
+  const debouncedRateEmailQuery = useDebouncedValue(rateEmailQuery.trim(), 250);
 
   const openRateModal = (target: ReferralPromoterResp | null) => {
     setRateTarget(target);
-    setRateUserId(target ? String(target.user_id) : '');
+    setRateEmailQuery('');
+    setRatePickedUser(null);
     setRateInput(target?.referral_rate != null ? rateToPercent(String(target.referral_rate)) : '');
     rateModal.open();
   };
+
+  const { data: rateUserSearch } = useQuery({
+    queryKey: queryKeys.users('referral-rate-search', debouncedRateEmailQuery),
+    queryFn: () => usersApi.list({
+      page: 1,
+      page_size: 20,
+      keyword: debouncedRateEmailQuery || undefined,
+    }),
+    enabled: rateModal.isOpen && !rateTarget && !ratePickedUser,
+  });
+
+  const rateSearchResults = useMemo(() => rateUserSearch?.list ?? [], [rateUserSearch?.list]);
+  const rateSearchOptions = useMemo(() => {
+    const options = rateSearchResults.map((user) => ({
+      id: String(user.id),
+      label: user.email,
+      description: user.username,
+      textValue: `${user.email} ${user.username ?? ''}`,
+    }));
+    if (ratePickedUser && !options.some((option) => option.id === String(ratePickedUser.id))) {
+      return [
+        {
+          id: String(ratePickedUser.id),
+          label: ratePickedUser.email,
+          description: ratePickedUser.username,
+          textValue: `${ratePickedUser.email} ${ratePickedUser.username ?? ''}`,
+        },
+        ...options,
+      ];
+    }
+    return options;
+  }, [ratePickedUser, rateSearchResults]);
 
   const setRateMutation = useMutation({
     mutationFn: ({ userId, rate }: { userId: number; rate: number | null }) =>
@@ -123,14 +162,15 @@ export default function ReferralPage() {
     onError: (err: Error) => toast('error', err.message || t('referral_admin.rate_save_failed')),
   });
 
+  const rateUserId = rateTarget ? rateTarget.user_id : ratePickedUser?.id ?? null;
+
   const submitRate = (clear: boolean) => {
-    const userId = Number(rateUserId);
-    if (!Number.isInteger(userId) || userId <= 0) {
+    if (rateUserId == null) {
       toast('error', t('referral_admin.user_id_invalid'));
       return;
     }
     if (clear) {
-      setRateMutation.mutate({ userId, rate: null });
+      setRateMutation.mutate({ userId: rateUserId, rate: null });
       return;
     }
     const rate = percentToRate(rateInput);
@@ -138,7 +178,7 @@ export default function ReferralPage() {
       toast('error', t('referral_admin.rate_invalid'));
       return;
     }
-    setRateMutation.mutate({ userId, rate: Number(rate) });
+    setRateMutation.mutate({ userId: rateUserId, rate: Number(rate) });
   };
 
   // ===== 返利流水 =====
@@ -250,7 +290,7 @@ export default function ReferralPage() {
             {t('referral_admin.summary_title')}
           </div>
           <Button size="sm" variant="secondary" onPress={() => openRateModal(null)}>
-            {t('referral_admin.set_rate_by_id')}
+            {t('referral_admin.set_rate')}
           </Button>
         </div>
         <CommonTable ariaLabel={t('referral_admin.summary_title')} minWidth={860}>
@@ -466,12 +506,19 @@ export default function ReferralPage() {
               variant="ghost"
               onPress={() => submitRate(true)}
               isPending={setRateMutation.isPending}
+              isDisabled={rateUserId == null}
             >
               {t('referral_admin.clear_override')}
             </Button>
             <div className="flex gap-2">
               <Button size="sm" variant="secondary" onPress={rateModal.close}>{t('common.cancel')}</Button>
-              <Button size="sm" variant="primary" onPress={() => submitRate(false)} isPending={setRateMutation.isPending}>
+              <Button
+                size="sm"
+                variant="primary"
+                onPress={() => submitRate(false)}
+                isPending={setRateMutation.isPending}
+                isDisabled={rateUserId == null}
+              >
                 {t('common.save')}
               </Button>
             </div>
@@ -482,15 +529,62 @@ export default function ReferralPage() {
           {rateTarget ? (
             <div className="text-sm" style={{ color: 'var(--ag-text-secondary)' }}>{rateTarget.email}</div>
           ) : (
-            <div>
-              <Label className="mb-1.5 block text-xs" style={{ color: 'var(--ag-text-tertiary)' }}>
-                {t('referral_admin.user_id')}
-              </Label>
-              <Input value={rateUserId} onChange={(e) => setRateUserId(e.target.value)} placeholder="42" />
-              <p className="mt-1 text-[11px]" style={{ color: 'var(--ag-text-tertiary)' }}>
-                {t('referral_admin.user_id_hint')}
-              </p>
-            </div>
+            <ComboBox
+              aria-label={t('users.search_placeholder')}
+              allowsEmptyCollection
+              fullWidth
+              inputValue={rateEmailQuery}
+              items={rateSearchOptions}
+              menuTrigger="focus"
+              selectedKey={ratePickedUser ? String(ratePickedUser.id) : null}
+              onInputChange={(value) => {
+                setRateEmailQuery(value);
+                if (ratePickedUser && value !== ratePickedUser.email) {
+                  setRatePickedUser(null);
+                }
+              }}
+              onSelectionChange={(key) => {
+                const value = key == null ? '' : String(key);
+                if (!value) {
+                  setRatePickedUser(null);
+                  setRateEmailQuery('');
+                  return;
+                }
+                const user = rateSearchResults.find((item) => String(item.id) === value)
+                  ?? (ratePickedUser && String(ratePickedUser.id) === value ? ratePickedUser : null);
+                setRatePickedUser(user ?? null);
+                setRateEmailQuery(user?.email ?? '');
+              }}
+            >
+              <ComboBox.InputGroup className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
+                <Input className="pl-9 pr-10" placeholder={t('users.search_placeholder') ?? ''} />
+                <ComboBox.Trigger
+                  className="ag-combobox-preview-trigger absolute right-1 top-1/2 z-10 h-7 w-7 min-w-0 -translate-y-1/2 p-0 text-text-tertiary hover:text-text"
+                />
+              </ComboBox.InputGroup>
+              <ComboBox.Popover>
+                <ListBox
+                  items={rateSearchOptions}
+                  renderEmptyState={() => (
+                    <div className="px-3 py-6 text-center text-xs text-text-tertiary">
+                      {debouncedRateEmailQuery ? t('common.no_data') : t('users.search_placeholder')}
+                    </div>
+                  )}
+                >
+                  {(item) => (
+                    <ListBox.Item id={item.id} textValue={item.textValue}>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm text-text">{item.label}</div>
+                        {item.description ? (
+                          <div className="truncate text-xs text-text-tertiary">{item.description}</div>
+                        ) : null}
+                      </div>
+                    </ListBox.Item>
+                  )}
+                </ListBox>
+              </ComboBox.Popover>
+            </ComboBox>
           )}
           <div>
             <Label className="mb-1.5 block text-xs" style={{ color: 'var(--ag-text-tertiary)' }}>
