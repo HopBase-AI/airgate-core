@@ -1,12 +1,17 @@
 package auth
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	corauth "github.com/DouDOU-start/airgate-core/internal/auth"
 )
@@ -79,7 +84,7 @@ func newOAuthTestService(repo authStubRepository, provider string, server *httpt
 
 func validState(t *testing.T) string {
 	t.Helper()
-	state, err := newOAuthState()
+	state, err := newOAuthState(oauthStateAttrs{})
 	if err != nil {
 		t.Fatalf("newOAuthState() error = %v", err)
 	}
@@ -134,7 +139,7 @@ func TestOAuthAuthorizeURL(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			service := newOAuthTestService(authStubRepository{}, OAuthProviderGoogle, nil, tc.settings)
-			got, err := service.OAuthAuthorizeURL(t.Context(), tc.provider)
+			got, err := service.OAuthAuthorizeURL(t.Context(), tc.provider, OAuthAttribution{})
 			if tc.wantErr != nil {
 				if !errors.Is(err, tc.wantErr) {
 					t.Fatalf("OAuthAuthorizeURL() error = %v, want %v", err, tc.wantErr)
@@ -155,14 +160,50 @@ func TestOAuthAuthorizeURL(t *testing.T) {
 
 func TestOAuthStateRoundTrip(t *testing.T) {
 	state := validState(t)
-	if !verifyOAuthState(state) {
+	if _, ok := verifyOAuthState(state); !ok {
 		t.Fatal("合法 state 应通过校验")
 	}
-	if verifyOAuthState(state + "x") {
+	if _, ok := verifyOAuthState(state + "x"); ok {
 		t.Fatal("被篡改的 state 应拒绝")
 	}
-	if verifyOAuthState("") || verifyOAuthState("a.b") {
+	if _, ok := verifyOAuthState(""); ok {
+		t.Fatal("空 state 应拒绝")
+	}
+	if _, ok := verifyOAuthState("a.b"); ok {
 		t.Fatal("畸形 state 应拒绝")
+	}
+}
+
+func TestOAuthStateCarriesAttribution(t *testing.T) {
+	state, err := newOAuthState(oauthStateAttrs{SourceSite: "ink", InviteCode: "abcd2345"})
+	if err != nil {
+		t.Fatalf("newOAuthState() error = %v", err)
+	}
+	attrs, ok := verifyOAuthState(state)
+	if !ok {
+		t.Fatal("携带归因的 state 应通过校验")
+	}
+	if attrs.SourceSite != "ink" || attrs.InviteCode != "abcd2345" {
+		t.Fatalf("归因载荷往返不一致: %+v", attrs)
+	}
+}
+
+// TestOAuthStateLegacyFormat 旧三段格式（nonce.ts.hmac）在发布过渡窗口内必须仍被接受。
+func TestOAuthStateLegacyFormat(t *testing.T) {
+	payload := "deadbeef." + strconv.FormatInt(time.Now().Unix(), 10)
+	mac := hmac.New(sha256.New, oauthSigningKey())
+	mac.Write([]byte(payload))
+	legacy := payload + "." + hex.EncodeToString(mac.Sum(nil))
+
+	attrs, ok := verifyOAuthState(legacy)
+	if !ok {
+		t.Fatal("旧格式 state 应通过校验（发布兼容窗口）")
+	}
+	if attrs != (oauthStateAttrs{}) {
+		t.Fatalf("旧格式 state 不应带出归因: %+v", attrs)
+	}
+	if _, ok := verifyOAuthState(legacy + "x"); ok {
+		t.Fatal("被篡改的旧格式 state 应拒绝")
 	}
 }
 
@@ -202,6 +243,44 @@ func TestOAuthLoginGoogleCreatesNewUser(t *testing.T) {
 	}
 	if linked == nil || linked.Provider != OAuthProviderGoogle || linked.ProviderUserID != "g-123" {
 		t.Fatalf("身份绑定不正确: %+v", linked)
+	}
+}
+
+// OAuth 建号必须落 state 携带的归因：来源站 → signup_source，邀请码 → inviter_id。
+func TestOAuthLoginGoogleCreatesNewUserWithAttribution(t *testing.T) {
+	var created *CreateUserInput
+	repo := authStubRepository{
+		create: func(input CreateUserInput) (User, error) {
+			created = &input
+			return User{ID: 7, Email: input.Email, Role: "user", Status: "active"}, nil
+		},
+		findUserIDByInviteCode: func(code string) (int, error) {
+			if code != "abcd2345" {
+				t.Fatalf("邀请码应归一化为小写后查询, got %q", code)
+			}
+			return 99, nil
+		},
+	}
+	server := newOAuthTestProvider(t, map[string]any{
+		"sub": "g-456", "email": "invited@example.com", "email_verified": true,
+	}, nil)
+	service := newOAuthTestService(repo, OAuthProviderGoogle, server, nil)
+
+	state, err := newOAuthState(oauthStateAttrs{SourceSite: "ink", InviteCode: "ABCD2345"})
+	if err != nil {
+		t.Fatalf("newOAuthState() error = %v", err)
+	}
+	if _, err := service.OAuthLogin(t.Context(), OAuthProviderGoogle, "good-code", state); err != nil {
+		t.Fatalf("OAuthLogin() error = %v", err)
+	}
+	if created == nil {
+		t.Fatal("应创建新用户")
+	}
+	if created.SignupSource != "ink" {
+		t.Fatalf("SignupSource = %q, want ink（OAuth 注册不能丢站点归因）", created.SignupSource)
+	}
+	if created.InviterID == nil || *created.InviterID != 99 {
+		t.Fatalf("InviterID = %v, want 99（OAuth 注册不能丢邀请绑定）", created.InviterID)
 	}
 }
 

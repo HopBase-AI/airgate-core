@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -147,42 +148,78 @@ func (s *Service) oauthRedirectURI(ctx context.Context, provider string) (string
 	return strings.TrimRight(base, "/") + "/api/v1/auth/oauth/" + provider + "/callback", nil
 }
 
-// newOAuthState 生成带时间戳的 HMAC 签名 state（防 CSRF）。
-func newOAuthState() (string, error) {
+// oauthStateAttrs 藏在 state 里往返穿透的注册归因（第三方授权页跳转会丢 query 参数）。
+type oauthStateAttrs struct {
+	SourceSite string `json:"site,omitempty"`
+	InviteCode string `json:"inv,omitempty"`
+}
+
+// newOAuthState 生成带时间戳与归因载荷的 HMAC 签名 state（防 CSRF + 归因穿透）。
+// 格式：nonce.ts.attrs.hmac，attrs 为 base64url(JSON)，无归因时为空段。
+func newOAuthState(attrs oauthStateAttrs) (string, error) {
 	nonce := make([]byte, 16)
 	if _, err := rand.Read(nonce); err != nil {
 		return "", err
 	}
-	payload := hex.EncodeToString(nonce) + "." + strconv.FormatInt(time.Now().Unix(), 10)
+	encoded := ""
+	if attrs != (oauthStateAttrs{}) {
+		raw, err := json.Marshal(attrs)
+		if err != nil {
+			return "", err
+		}
+		encoded = base64.RawURLEncoding.EncodeToString(raw)
+	}
+	payload := hex.EncodeToString(nonce) + "." + strconv.FormatInt(time.Now().Unix(), 10) + "." + encoded
 	mac := hmac.New(sha256.New, oauthSigningKey())
 	mac.Write([]byte(payload))
 	return payload + "." + hex.EncodeToString(mac.Sum(nil)), nil
 }
 
-// verifyOAuthState 校验 state 的签名与时效。
-func verifyOAuthState(state string) bool {
+// verifyOAuthState 校验 state 的签名与时效，并解出归因载荷。
+// 兼容三段旧格式（nonce.ts.hmac）——发布瞬间仍停留在授权页的用户手里是旧 state，
+// 旧格式过一个 TTL 周期后自然消亡，届时本兼容可删。
+func verifyOAuthState(state string) (oauthStateAttrs, bool) {
+	var attrs oauthStateAttrs
 	parts := strings.Split(state, ".")
-	if len(parts) != 3 {
-		return false
+	var payload, tsPart, sig string
+	switch len(parts) {
+	case 3: // 旧格式：nonce.ts.hmac
+		payload = parts[0] + "." + parts[1]
+		tsPart = parts[1]
+		sig = parts[2]
+	case 4: // 新格式：nonce.ts.attrs.hmac
+		payload = parts[0] + "." + parts[1] + "." + parts[2]
+		tsPart = parts[1]
+		sig = parts[3]
+	default:
+		return attrs, false
 	}
-	payload := parts[0] + "." + parts[1]
 	mac := hmac.New(sha256.New, oauthSigningKey())
 	mac.Write([]byte(payload))
 	expected := hex.EncodeToString(mac.Sum(nil))
-	if !hmac.Equal([]byte(expected), []byte(parts[2])) {
-		return false
+	if !hmac.Equal([]byte(expected), []byte(sig)) {
+		return attrs, false
 	}
-	ts, err := strconv.ParseInt(parts[1], 10, 64)
+	ts, err := strconv.ParseInt(tsPart, 10, 64)
 	if err != nil {
-		return false
+		return attrs, false
 	}
 	issued := time.Unix(ts, 0)
 	now := time.Now()
-	return !issued.After(now.Add(time.Minute)) && now.Sub(issued) <= oauthStateTTL
+	if issued.After(now.Add(time.Minute)) || now.Sub(issued) > oauthStateTTL {
+		return attrs, false
+	}
+	if len(parts) == 4 && parts[2] != "" {
+		if raw, decErr := base64.RawURLEncoding.DecodeString(parts[2]); decErr == nil {
+			// 载荷损坏只丢归因，不影响登录本身
+			_ = json.Unmarshal(raw, &attrs)
+		}
+	}
+	return attrs, true
 }
 
-// OAuthAuthorizeURL 构造第三方授权页跳转地址。
-func (s *Service) OAuthAuthorizeURL(ctx context.Context, provider string) (string, error) {
+// OAuthAuthorizeURL 构造第三方授权页跳转地址；归因（来源站/邀请码）经 state 签名携带。
+func (s *Service) OAuthAuthorizeURL(ctx context.Context, provider string, attribution OAuthAttribution) (string, error) {
 	ep, ok := s.oauthEndpointsFor(provider)
 	if !ok {
 		return "", ErrOAuthProviderUnknown
@@ -195,7 +232,10 @@ func (s *Service) OAuthAuthorizeURL(ctx context.Context, provider string) (strin
 	if err != nil {
 		return "", err
 	}
-	state, err := newOAuthState()
+	state, err := newOAuthState(oauthStateAttrs{
+		SourceSite: sanitizeSiteID(attribution.SourceSite),
+		InviteCode: sanitizeInviteCode(attribution.InviteCode),
+	})
 	if err != nil {
 		return "", err
 	}
@@ -223,7 +263,8 @@ func (s *Service) OAuthLogin(ctx context.Context, provider, code, state string) 
 	if !cfg.Enabled || cfg.ClientID == "" || cfg.ClientSecret == "" {
 		return LoginResult{}, ErrOAuthProviderDisabled
 	}
-	if code == "" || !verifyOAuthState(state) {
+	attrs, stateOK := verifyOAuthState(state)
+	if code == "" || !stateOK {
 		return LoginResult{}, ErrOAuthStateInvalid
 	}
 	redirectURI, err := s.oauthRedirectURI(ctx, provider)
@@ -245,7 +286,7 @@ func (s *Service) OAuthLogin(ctx context.Context, provider, code, state string) 
 		return LoginResult{}, ErrOAuthExchangeFailed
 	}
 
-	user, err := s.resolveOAuthUser(ctx, provider, info)
+	user, err := s.resolveOAuthUser(ctx, provider, info, attrs)
 	if err != nil {
 		return LoginResult{}, err
 	}
@@ -264,7 +305,8 @@ func (s *Service) OAuthLogin(ctx context.Context, provider, code, state string) 
 }
 
 // resolveOAuthUser 三段式匹配：已绑定身份 → 已验证同邮箱老用户自动绑定 → 新建用户。
-func (s *Service) resolveOAuthUser(ctx context.Context, provider string, info oauthUserInfo) (User, error) {
+// attrs 为 state 携带的注册归因，仅在新建用户时生效（老用户归因早已定格）。
+func (s *Service) resolveOAuthUser(ctx context.Context, provider string, info oauthUserInfo, attrs oauthStateAttrs) (User, error) {
 	logger := sdk.LoggerFromContext(ctx)
 
 	user, err := s.repo.FindUserByIdentity(ctx, provider, info.ProviderUserID)
@@ -316,6 +358,8 @@ func (s *Service) resolveOAuthUser(ctx context.Context, provider string, info oa
 		Status:         "active",
 		Balance:        defaultBalance,
 		MaxConcurrency: defaultConcurrency,
+		SignupSource:   sanitizeSiteID(attrs.SourceSite),
+		InviterID:      s.resolveInviterID(ctx, attrs.InviteCode),
 	})
 	if err != nil {
 		logger.Error("oauth_user_create_failed", "provider", provider, sdk.LogFieldError, err)

@@ -46,6 +46,12 @@ type User struct {
 	Status user.Status `json:"status,omitempty"`
 	// 注册来源站点 ID（ToC 落地页 ?site= 归因）；空表示直接注册或来源未知。
 	SignupSource string `json:"signup_source,omitempty"`
+	// 本人的推广邀请码；惰性生成（首次访问我的邀请页），NULL 表示尚未生成。
+	InviteCode *string `json:"invite_code,omitempty"`
+	// 邀请人 user id；注册时经邀请码绑定，终身不变。刻意不做外键，邀请人删除后保留归因。
+	InviterID *int `json:"inviter_id,omitempty"`
+	// 作为推广官的返利比例覆盖（0~1）；NULL 表示使用全局默认 referral_default_rate。
+	ReferralRate *float64 `json:"referral_rate,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -138,11 +144,11 @@ func (*User) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case user.FieldBalanceAlertNotified:
 			values[i] = new(sql.NullBool)
-		case user.FieldBalance, user.FieldBalanceAlertThreshold:
+		case user.FieldBalance, user.FieldBalanceAlertThreshold, user.FieldReferralRate:
 			values[i] = new(sql.NullFloat64)
-		case user.FieldID, user.FieldMaxConcurrency:
+		case user.FieldID, user.FieldMaxConcurrency, user.FieldInviterID:
 			values[i] = new(sql.NullInt64)
-		case user.FieldEmail, user.FieldPasswordHash, user.FieldUsername, user.FieldDisplayBadge, user.FieldRole, user.FieldTotpSecret, user.FieldStatus, user.FieldSignupSource:
+		case user.FieldEmail, user.FieldPasswordHash, user.FieldUsername, user.FieldDisplayBadge, user.FieldRole, user.FieldTotpSecret, user.FieldStatus, user.FieldSignupSource, user.FieldInviteCode:
 			values[i] = new(sql.NullString)
 		case user.FieldCreatedAt, user.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -255,6 +261,27 @@ func (u *User) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field signup_source", values[i])
 			} else if value.Valid {
 				u.SignupSource = value.String
+			}
+		case user.FieldInviteCode:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field invite_code", values[i])
+			} else if value.Valid {
+				u.InviteCode = new(string)
+				*u.InviteCode = value.String
+			}
+		case user.FieldInviterID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field inviter_id", values[i])
+			} else if value.Valid {
+				u.InviterID = new(int)
+				*u.InviterID = int(value.Int64)
+			}
+		case user.FieldReferralRate:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field referral_rate", values[i])
+			} else if value.Valid {
+				u.ReferralRate = new(float64)
+				*u.ReferralRate = value.Float64
 			}
 		case user.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -373,6 +400,21 @@ func (u *User) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("signup_source=")
 	builder.WriteString(u.SignupSource)
+	builder.WriteString(", ")
+	if v := u.InviteCode; v != nil {
+		builder.WriteString("invite_code=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := u.InviterID; v != nil {
+		builder.WriteString("inviter_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := u.ReferralRate; v != nil {
+		builder.WriteString("referral_rate=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(u.CreatedAt.Format(time.ANSIC))

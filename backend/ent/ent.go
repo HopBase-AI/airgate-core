@@ -20,6 +20,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/plugin"
 	"github.com/DouDOU-start/airgate-core/ent/pluginsource"
 	"github.com/DouDOU-start/airgate-core/ent/proxy"
+	"github.com/DouDOU-start/airgate-core/ent/referralcommission"
 	"github.com/DouDOU-start/airgate-core/ent/setting"
 	"github.com/DouDOU-start/airgate-core/ent/task"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
@@ -86,20 +87,21 @@ var (
 func checkColumn(table, column string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			apikey.Table:           apikey.ValidColumn,
-			account.Table:          account.ValidColumn,
-			accountevent.Table:     accountevent.ValidColumn,
-			balancelog.Table:       balancelog.ValidColumn,
-			group.Table:            group.ValidColumn,
-			plugin.Table:           plugin.ValidColumn,
-			pluginsource.Table:     pluginsource.ValidColumn,
-			proxy.Table:            proxy.ValidColumn,
-			setting.Table:          setting.ValidColumn,
-			task.Table:             task.ValidColumn,
-			usagelog.Table:         usagelog.ValidColumn,
-			user.Table:             user.ValidColumn,
-			useridentity.Table:     useridentity.ValidColumn,
-			usersubscription.Table: usersubscription.ValidColumn,
+			apikey.Table:             apikey.ValidColumn,
+			account.Table:            account.ValidColumn,
+			accountevent.Table:       accountevent.ValidColumn,
+			balancelog.Table:         balancelog.ValidColumn,
+			group.Table:              group.ValidColumn,
+			plugin.Table:             plugin.ValidColumn,
+			pluginsource.Table:       pluginsource.ValidColumn,
+			proxy.Table:              proxy.ValidColumn,
+			referralcommission.Table: referralcommission.ValidColumn,
+			setting.Table:            setting.ValidColumn,
+			task.Table:               task.ValidColumn,
+			usagelog.Table:           usagelog.ValidColumn,
+			user.Table:               user.ValidColumn,
+			useridentity.Table:       useridentity.ValidColumn,
+			usersubscription.Table:   usersubscription.ValidColumn,
 		})
 	})
 	return columnCheck(table, column)

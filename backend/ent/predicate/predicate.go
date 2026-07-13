@@ -30,6 +30,9 @@ type PluginSource func(*sql.Selector)
 // Proxy is the predicate function for proxy builders.
 type Proxy func(*sql.Selector)
 
+// ReferralCommission is the predicate function for referralcommission builders.
+type ReferralCommission func(*sql.Selector)
+
 // Setting is the predicate function for setting builders.
 type Setting func(*sql.Selector)
 

@@ -1,0 +1,540 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button, Chip, EmptyState, Input, Label, ListBox, Select, useOverlayState } from '@heroui/react';
+import { referralApi, type ReferralPromoterResp } from '../../shared/api/referral';
+import { settingsApi } from '../../shared/api/settings';
+import { queryKeys } from '../../shared/queryKeys';
+import { usePagination } from '../../shared/hooks/usePagination';
+import { DEFAULT_PAGE_SIZE } from '../../shared/constants';
+import { getTotalPages } from '../../shared/utils/pagination';
+import { CommonModal } from '../../shared/components/CommonModal';
+import { CommonTable } from '../../shared/components/CommonTable';
+import { TableLoadingRow } from '../../shared/components/TableLoadingRow';
+import { TablePaginationFooter } from '../../shared/components/TablePaginationFooter';
+import { NativeSwitch } from '../../shared/components/NativeSwitch';
+import { useToast } from '../../shared/ui';
+
+// settings referral 分组的四个 key（value 全为字符串；比例存 0~1 小数，UI 用百分比展示）
+const KEY_ENABLED = 'referral_enabled';
+const KEY_DEFAULT_RATE = 'referral_default_rate';
+const KEY_FIRST_BONUS_RATE = 'referral_first_bonus_rate';
+const KEY_LINK_BASE_URL = 'referral_link_base_url';
+
+function formatTime(date: string): string {
+  return new Date(date).toLocaleString('zh-CN', {
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+/** 比例小数 → 百分比输入串（0.1 → "10"）；空/非法 → ''。 */
+function rateToPercent(raw: string | undefined): string {
+  const v = Number(raw);
+  if (!raw || Number.isNaN(v)) return '';
+  return String(Math.round(v * 10000) / 100);
+}
+
+/** 百分比输入串 → 比例小数串（"10" → "0.1"）；非法返回 null。 */
+function percentToRate(input: string): string | null {
+  const trimmed = input.trim();
+  if (trimmed === '') return '0';
+  const v = Number(trimmed);
+  if (Number.isNaN(v) || v < 0 || v > 100) return null;
+  return String(Math.round(v * 100) / 10000);
+}
+
+export default function ReferralPage() {
+  const { t } = useTranslation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  // ===== 配置卡片 =====
+  const { data: settings } = useQuery({
+    queryKey: queryKeys.settings(),
+    queryFn: () => settingsApi.list(),
+  });
+  const [enabled, setEnabled] = useState(false);
+  const [defaultRate, setDefaultRate] = useState('');
+  const [firstBonusRate, setFirstBonusRate] = useState('');
+  const [linkBaseUrl, setLinkBaseUrl] = useState('');
+  const [configSeeded, setConfigSeeded] = useState(false);
+
+  useEffect(() => {
+    if (!settings || configSeeded) return;
+    const referral = new Map(settings.filter((s) => s.group === 'referral').map((s) => [s.key, s.value]));
+    setEnabled(referral.get(KEY_ENABLED) === 'true');
+    setDefaultRate(rateToPercent(referral.get(KEY_DEFAULT_RATE)));
+    setFirstBonusRate(rateToPercent(referral.get(KEY_FIRST_BONUS_RATE)));
+    setLinkBaseUrl(referral.get(KEY_LINK_BASE_URL) ?? '');
+    setConfigSeeded(true);
+  }, [settings, configSeeded]);
+
+  const saveConfig = useMutation({
+    mutationFn: () => {
+      const rate = percentToRate(defaultRate);
+      const bonus = percentToRate(firstBonusRate);
+      if (rate == null || bonus == null) {
+        return Promise.reject(new Error(t('referral_admin.rate_invalid')));
+      }
+      return settingsApi.update({
+        settings: [
+          { key: KEY_ENABLED, value: String(enabled), group: 'referral' },
+          { key: KEY_DEFAULT_RATE, value: rate, group: 'referral' },
+          { key: KEY_FIRST_BONUS_RATE, value: bonus, group: 'referral' },
+          { key: KEY_LINK_BASE_URL, value: linkBaseUrl.trim(), group: 'referral' },
+        ],
+      });
+    },
+    onSuccess: () => {
+      toast('success', t('referral_admin.config_saved'));
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.siteSettings() });
+    },
+    onError: (err: Error) => toast('error', err.message || t('referral_admin.config_save_failed')),
+  });
+
+  // ===== 推广官汇总 =====
+  const { data: promoters, isLoading: summaryLoading } = useQuery({
+    queryKey: queryKeys.referralSummary(),
+    queryFn: () => referralApi.summary(),
+  });
+
+  // 设置比例弹窗（rateTarget 为 null 时手填用户 ID）
+  const rateModal = useOverlayState();
+  const [rateTarget, setRateTarget] = useState<ReferralPromoterResp | null>(null);
+  const [rateUserId, setRateUserId] = useState('');
+  const [rateInput, setRateInput] = useState('');
+
+  const openRateModal = (target: ReferralPromoterResp | null) => {
+    setRateTarget(target);
+    setRateUserId(target ? String(target.user_id) : '');
+    setRateInput(target?.referral_rate != null ? rateToPercent(String(target.referral_rate)) : '');
+    rateModal.open();
+  };
+
+  const setRateMutation = useMutation({
+    mutationFn: ({ userId, rate }: { userId: number; rate: number | null }) =>
+      referralApi.setUserRate(userId, rate),
+    onSuccess: () => {
+      toast('success', t('referral_admin.rate_saved'));
+      queryClient.invalidateQueries({ queryKey: queryKeys.referralSummary() });
+      rateModal.close();
+    },
+    onError: (err: Error) => toast('error', err.message || t('referral_admin.rate_save_failed')),
+  });
+
+  const submitRate = (clear: boolean) => {
+    const userId = Number(rateUserId);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      toast('error', t('referral_admin.user_id_invalid'));
+      return;
+    }
+    if (clear) {
+      setRateMutation.mutate({ userId, rate: null });
+      return;
+    }
+    const rate = percentToRate(rateInput);
+    if (rate == null) {
+      toast('error', t('referral_admin.rate_invalid'));
+      return;
+    }
+    setRateMutation.mutate({ userId, rate: Number(rate) });
+  };
+
+  // ===== 返利流水 =====
+  const { page, setPage, pageSize, setPageSize } = usePagination(DEFAULT_PAGE_SIZE, 'admin.referral');
+  const [kindFilter, setKindFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+
+  const { data: commissions, isLoading: listLoading } = useQuery({
+    queryKey: queryKeys.referralCommissions(page, pageSize, kindFilter, statusFilter),
+    queryFn: () => referralApi.commissions({
+      page,
+      page_size: pageSize,
+      kind: kindFilter || undefined,
+      status: statusFilter || undefined,
+    }),
+    meta: { globalLoading: false },
+    placeholderData: keepPreviousData,
+  });
+
+  // 回冲确认弹窗
+  const reverseModal = useOverlayState();
+  const [reverseTarget, setReverseTarget] = useState<{ id: number; amount: number; email: string } | null>(null);
+  const reverseMutation = useMutation({
+    mutationFn: (id: number) => referralApi.reverse(id),
+    onSuccess: () => {
+      toast('success', t('referral_admin.reverse_done'));
+      queryClient.invalidateQueries({ queryKey: queryKeys.referralCommissions() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.referralSummary() });
+      reverseModal.close();
+    },
+    onError: (err: Error) => toast('error', err.message || t('referral_admin.reverse_failed')),
+  });
+
+  const rows = commissions?.list ?? [];
+  const total = commissions?.total ?? 0;
+  const totalPages = getTotalPages(total, pageSize);
+
+  const kindOptions = useMemo(() => [
+    { id: '', label: t('referral_admin.all_kinds') },
+    { id: 'rebate', label: t('referral_admin.kind_rebate') },
+    { id: 'first_bonus', label: t('referral_admin.kind_first_bonus') },
+  ], [t]);
+  const statusOptions = useMemo(() => [
+    { id: '', label: t('referral_admin.all_statuses') },
+    { id: 'settled', label: t('referral.status_settled') },
+    { id: 'reversed', label: t('referral.status_reversed') },
+  ], [t]);
+
+  return (
+    <div className="space-y-6">
+      {/* 配置卡片：全部数值后台可调 */}
+      <div className="rounded-[var(--radius)] border border-border bg-surface p-5">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-base font-semibold" style={{ color: 'var(--ag-text)' }}>
+              {t('referral_admin.config_title')}
+            </div>
+            <p className="mt-0.5 text-sm" style={{ color: 'var(--ag-text-secondary)' }}>
+              {t('referral_admin.config_desc')}
+            </p>
+          </div>
+          <Button variant="primary" onPress={() => saveConfig.mutate()} isPending={saveConfig.isPending}>
+            {t('common.save')}
+          </Button>
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="flex items-center">
+            <NativeSwitch
+              isSelected={enabled}
+              label={<span className="text-sm font-medium text-text">{t('referral_admin.enabled')}</span>}
+              onChange={(v) => setEnabled(Boolean(v))}
+            />
+          </div>
+          <div>
+            <Label className="mb-1.5 block text-xs" style={{ color: 'var(--ag-text-tertiary)' }}>
+              {t('referral_admin.default_rate')}
+            </Label>
+            <div className="flex items-center gap-2">
+              <Input value={defaultRate} onChange={(e) => setDefaultRate(e.target.value)} placeholder="10" />
+              <span className="text-sm" style={{ color: 'var(--ag-text-tertiary)' }}>%</span>
+            </div>
+          </div>
+          <div>
+            <Label className="mb-1.5 block text-xs" style={{ color: 'var(--ag-text-tertiary)' }}>
+              {t('referral_admin.first_bonus_rate')}
+            </Label>
+            <div className="flex items-center gap-2">
+              <Input value={firstBonusRate} onChange={(e) => setFirstBonusRate(e.target.value)} placeholder="5" />
+              <span className="text-sm" style={{ color: 'var(--ag-text-tertiary)' }}>%</span>
+            </div>
+          </div>
+          <div>
+            <Label className="mb-1.5 block text-xs" style={{ color: 'var(--ag-text-tertiary)' }}>
+              {t('referral_admin.link_base_url')}
+            </Label>
+            <Input
+              value={linkBaseUrl}
+              onChange={(e) => setLinkBaseUrl(e.target.value)}
+              placeholder={t('referral_admin.link_base_url_placeholder')}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* 推广官汇总：线下结算对账依据 */}
+      <div>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="text-base font-semibold" style={{ color: 'var(--ag-text)' }}>
+            {t('referral_admin.summary_title')}
+          </div>
+          <Button size="sm" variant="secondary" onPress={() => openRateModal(null)}>
+            {t('referral_admin.set_rate_by_id')}
+          </Button>
+        </div>
+        <CommonTable ariaLabel={t('referral_admin.summary_title')} minWidth={860}>
+          <CommonTable.Header>
+            <CommonTable.Column id="promoter">{t('referral_admin.col_promoter')}</CommonTable.Column>
+            <CommonTable.Column id="rate" style={{ width: 110 }}>{t('referral_admin.col_rate_override')}</CommonTable.Column>
+            <CommonTable.Column id="invitees" style={{ width: 96 }}>{t('referral.invitee_count')}</CommonTable.Column>
+            <CommonTable.Column id="rebate" style={{ width: 130 }}>{t('referral.total_rebate')}</CommonTable.Column>
+            <CommonTable.Column id="reversed" style={{ width: 110 }}>{t('referral.total_reversed')}</CommonTable.Column>
+            <CommonTable.Column id="bonus" style={{ width: 130 }}>{t('referral_admin.col_first_bonus_total')}</CommonTable.Column>
+            <CommonTable.Column id="actions" style={{ width: 100 }}>{t('common.actions')}</CommonTable.Column>
+          </CommonTable.Header>
+          <CommonTable.Body>
+            {summaryLoading ? (
+              <TableLoadingRow colSpan={7} />
+            ) : !promoters || promoters.length === 0 ? (
+              <CommonTable.Row id="empty">
+                <CommonTable.Cell colSpan={7}>
+                  <EmptyState>
+                    <div className="text-sm text-default-500">{t('referral_admin.summary_empty')}</div>
+                  </EmptyState>
+                </CommonTable.Cell>
+              </CommonTable.Row>
+            ) : (
+              promoters.map((row) => (
+                <CommonTable.Row id={String(row.user_id)} key={row.user_id}>
+                  <CommonTable.Cell>
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate font-medium" style={{ color: 'var(--ag-text)' }}>{row.email}</span>
+                      <span className="truncate text-[11px]" style={{ color: 'var(--ag-text-tertiary)' }}>
+                        #{row.user_id}{row.username ? ` · ${row.username}` : ''}
+                      </span>
+                    </div>
+                  </CommonTable.Cell>
+                  <CommonTable.Cell>
+                    {row.referral_rate != null ? (
+                      <span className="font-mono tabular-nums">{rateToPercent(String(row.referral_rate))}%</span>
+                    ) : (
+                      <span style={{ color: 'var(--ag-text-tertiary)' }}>{t('referral_admin.rate_default')}</span>
+                    )}
+                  </CommonTable.Cell>
+                  <CommonTable.Cell><span className="font-mono tabular-nums">{row.invitee_count}</span></CommonTable.Cell>
+                  <CommonTable.Cell>
+                    <span className="font-mono tabular-nums font-medium">${row.total_rebate.toFixed(4)}</span>
+                  </CommonTable.Cell>
+                  <CommonTable.Cell>
+                    <span className="font-mono tabular-nums">${row.total_reversed.toFixed(4)}</span>
+                  </CommonTable.Cell>
+                  <CommonTable.Cell>
+                    <span className="font-mono tabular-nums">${row.first_bonus_total.toFixed(4)}</span>
+                  </CommonTable.Cell>
+                  <CommonTable.Cell>
+                    <Button size="sm" variant="ghost" onPress={() => openRateModal(row)}>
+                      {t('referral_admin.set_rate')}
+                    </Button>
+                  </CommonTable.Cell>
+                </CommonTable.Row>
+              ))
+            )}
+          </CommonTable.Body>
+        </CommonTable>
+      </div>
+
+      {/* 返利流水 */}
+      <div>
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-base font-semibold" style={{ color: 'var(--ag-text)' }}>
+            {t('referral_admin.commissions_title')}
+          </div>
+          <div className="flex gap-2">
+            {[
+              { key: 'kind', value: kindFilter, options: kindOptions, setValue: setKindFilter },
+              { key: 'status', value: statusFilter, options: statusOptions, setValue: setStatusFilter },
+            ].map((filter) => (
+              <div key={filter.key} className="w-40">
+                <Select
+                  aria-label={filter.key}
+                  fullWidth
+                  selectedKey={filter.value}
+                  onSelectionChange={(key) => {
+                    filter.setValue(key == null ? '' : String(key));
+                    setPage(1);
+                  }}
+                >
+                  <Select.Trigger>
+                    <Select.Value>
+                      {filter.options.find((item) => item.id === filter.value)?.label ?? filter.options[0]?.label}
+                    </Select.Value>
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox items={filter.options}>
+                      {(item) => (
+                        <ListBox.Item id={item.id} textValue={item.label}>
+                          {item.label}
+                        </ListBox.Item>
+                      )}
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+              </div>
+            ))}
+          </div>
+        </div>
+        <CommonTable
+          ariaLabel={t('referral_admin.commissions_title')}
+          footer={(
+            <TablePaginationFooter
+              page={page}
+              pageSize={pageSize}
+              setPage={setPage}
+              setPageSize={setPageSize}
+              total={total}
+              totalPages={totalPages}
+            />
+          )}
+          minWidth={1080}
+        >
+          <CommonTable.Header>
+            <CommonTable.Column id="time" style={{ width: 148 }}>{t('referral.col_time')}</CommonTable.Column>
+            <CommonTable.Column id="kind" style={{ width: 100 }}>{t('referral_admin.col_kind')}</CommonTable.Column>
+            <CommonTable.Column id="inviter">{t('referral_admin.col_inviter')}</CommonTable.Column>
+            <CommonTable.Column id="invitee">{t('referral_admin.col_invitee')}</CommonTable.Column>
+            <CommonTable.Column id="order" style={{ width: 170 }}>{t('referral_admin.col_order')}</CommonTable.Column>
+            <CommonTable.Column id="paid" style={{ width: 100 }}>{t('referral.col_paid')}</CommonTable.Column>
+            <CommonTable.Column id="rate" style={{ width: 80 }}>{t('referral.col_rate')}</CommonTable.Column>
+            <CommonTable.Column id="amount" style={{ width: 110 }}>{t('referral.col_amount')}</CommonTable.Column>
+            <CommonTable.Column id="status" style={{ width: 90 }}>{t('referral.col_status')}</CommonTable.Column>
+            <CommonTable.Column id="actions" style={{ width: 90 }}>{t('common.actions')}</CommonTable.Column>
+          </CommonTable.Header>
+          <CommonTable.Body>
+            {listLoading ? (
+              <TableLoadingRow colSpan={10} />
+            ) : rows.length === 0 ? (
+              <CommonTable.Row id="empty">
+                <CommonTable.Cell colSpan={10}>
+                  <EmptyState>
+                    <div className="text-sm text-default-500">{t('referral.empty')}</div>
+                  </EmptyState>
+                </CommonTable.Cell>
+              </CommonTable.Row>
+            ) : (
+              rows.map((row) => (
+                <CommonTable.Row id={String(row.id)} key={row.id}>
+                  <CommonTable.Cell>
+                    <span className="font-mono tabular-nums whitespace-nowrap">{formatTime(row.created_at)}</span>
+                  </CommonTable.Cell>
+                  <CommonTable.Cell>
+                    <Chip color={row.kind === 'rebate' ? 'accent' : 'default'} size="sm" variant="soft">
+                      {row.kind === 'rebate' ? t('referral_admin.kind_rebate') : t('referral_admin.kind_first_bonus')}
+                    </Chip>
+                  </CommonTable.Cell>
+                  <CommonTable.Cell>
+                    <span className="truncate" title={row.inviter_email}>{row.inviter_email}</span>
+                  </CommonTable.Cell>
+                  <CommonTable.Cell>
+                    <span className="truncate" title={row.invitee_email}>{row.invitee_email}</span>
+                  </CommonTable.Cell>
+                  <CommonTable.Cell>
+                    <span className="truncate font-mono text-xs" title={row.out_trade_no}>{row.out_trade_no}</span>
+                  </CommonTable.Cell>
+                  <CommonTable.Cell>
+                    <span className="font-mono tabular-nums">${row.paid_amount.toFixed(2)}</span>
+                  </CommonTable.Cell>
+                  <CommonTable.Cell>
+                    <span className="font-mono tabular-nums">{(row.rate * 100).toFixed(1)}%</span>
+                  </CommonTable.Cell>
+                  <CommonTable.Cell>
+                    <span className="font-mono tabular-nums font-medium">${row.amount.toFixed(4)}</span>
+                  </CommonTable.Cell>
+                  <CommonTable.Cell>
+                    <Chip color={row.status === 'settled' ? 'success' : 'default'} size="sm" variant="soft">
+                      {row.status === 'settled' ? t('referral.status_settled') : t('referral.status_reversed')}
+                    </Chip>
+                  </CommonTable.Cell>
+                  <CommonTable.Cell>
+                    {row.status === 'settled' ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-danger"
+                        onPress={() => {
+                          setReverseTarget({
+                            id: row.id,
+                            amount: row.amount,
+                            email: row.kind === 'rebate' ? row.inviter_email : row.invitee_email,
+                          });
+                          reverseModal.open();
+                        }}
+                      >
+                        {t('referral_admin.reverse')}
+                      </Button>
+                    ) : (
+                      <span style={{ color: 'var(--ag-text-tertiary)' }}>-</span>
+                    )}
+                  </CommonTable.Cell>
+                </CommonTable.Row>
+              ))
+            )}
+          </CommonTable.Body>
+        </CommonTable>
+      </div>
+
+      {/* 设置比例弹窗 */}
+      <CommonModal
+        state={rateModal}
+        size="sm"
+        title={t('referral_admin.set_rate')}
+        footer={(
+          <div className="flex w-full items-center justify-between gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              onPress={() => submitRate(true)}
+              isPending={setRateMutation.isPending}
+            >
+              {t('referral_admin.clear_override')}
+            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="secondary" onPress={rateModal.close}>{t('common.cancel')}</Button>
+              <Button size="sm" variant="primary" onPress={() => submitRate(false)} isPending={setRateMutation.isPending}>
+                {t('common.save')}
+              </Button>
+            </div>
+          </div>
+        )}
+      >
+        <div className="space-y-4">
+          {rateTarget ? (
+            <div className="text-sm" style={{ color: 'var(--ag-text-secondary)' }}>{rateTarget.email}</div>
+          ) : (
+            <div>
+              <Label className="mb-1.5 block text-xs" style={{ color: 'var(--ag-text-tertiary)' }}>
+                {t('referral_admin.user_id')}
+              </Label>
+              <Input value={rateUserId} onChange={(e) => setRateUserId(e.target.value)} placeholder="42" />
+              <p className="mt-1 text-[11px]" style={{ color: 'var(--ag-text-tertiary)' }}>
+                {t('referral_admin.user_id_hint')}
+              </p>
+            </div>
+          )}
+          <div>
+            <Label className="mb-1.5 block text-xs" style={{ color: 'var(--ag-text-tertiary)' }}>
+              {t('referral_admin.rate_override_label')}
+            </Label>
+            <div className="flex items-center gap-2">
+              <Input value={rateInput} onChange={(e) => setRateInput(e.target.value)} placeholder="10" />
+              <span className="text-sm" style={{ color: 'var(--ag-text-tertiary)' }}>%</span>
+            </div>
+            <p className="mt-1 text-[11px]" style={{ color: 'var(--ag-text-tertiary)' }}>
+              {t('referral_admin.rate_override_hint')}
+            </p>
+          </div>
+        </div>
+      </CommonModal>
+
+      {/* 回冲确认弹窗 */}
+      <CommonModal
+        state={reverseModal}
+        size="sm"
+        title={t('referral_admin.reverse')}
+        footer={(
+          <div className="flex w-full justify-end gap-2">
+            <Button size="sm" variant="secondary" onPress={reverseModal.close}>{t('common.cancel')}</Button>
+            <Button
+              size="sm"
+              variant="danger"
+              onPress={() => reverseTarget && reverseMutation.mutate(reverseTarget.id)}
+              isPending={reverseMutation.isPending}
+            >
+              {t('referral_admin.reverse_confirm')}
+            </Button>
+          </div>
+        )}
+      >
+        <div className="space-y-2">
+          <p className="text-sm" style={{ color: 'var(--ag-text-secondary)' }}>
+            {t('referral_admin.reverse_hint', {
+              amount: reverseTarget ? `$${reverseTarget.amount.toFixed(4)}` : '',
+              email: reverseTarget?.email ?? '',
+            })}
+          </p>
+        </div>
+      </CommonModal>
+    </div>
+  );
+}

@@ -114,3 +114,6 @@ func (stubAuthRepo) FindUserByIdentity(_ context.Context, _, _ string) (appauth.
 func (stubAuthRepo) LinkIdentity(_ context.Context, _ int, _ appauth.IdentityInput) error {
 	return nil
 }
+func (stubAuthRepo) FindUserIDByInviteCode(_ context.Context, _ string) (int, error) {
+	return 0, appauth.ErrUserNotFound
+}

@@ -44,9 +44,11 @@ export const UsagePage = lazyWithPreload(() => import('../pages/admin/UsagePage'
 export const RelayDetectionPage = lazyWithPreload(() => import('../pages/admin/RelayDetectionPage'));
 export const PluginsPage = lazyWithPreload(() => import('../pages/admin/PluginsPage'));
 export const SettingsPage = lazyWithPreload(() => import('../pages/admin/SettingsPage'));
+export const ReferralPage = lazyWithPreload(() => import('../pages/admin/ReferralPage'));
 export const ProfilePage = lazyWithPreload(() => import('../pages/user/ProfilePage'));
 export const UserKeysPage = lazyWithPreload(() => import('../pages/user/UserKeysPage'));
 export const UserUsagePage = lazyWithPreload(() => import('../pages/user/UserUsagePage'));
+export const InvitePage = lazyWithPreload(() => import('../pages/user/InvitePage'));
 
 export const ADMIN_IDLE_PRELOADS = [
   DashboardPage,
@@ -70,6 +72,7 @@ const ROUTE_PRELOADS = new Map<string, AnyPreloadableLazyComponent[]>([
   ['/profile', [ProfilePage]],
   ['/keys', [UserKeysPage]],
   ['/usage', [UserUsagePage]],
+  ['/invite', [InvitePage]],
   ['/chat', [PluginPage]],
   ['/studio', [PluginPage]],
   ['/admin/users', [UsersPage]],
@@ -82,6 +85,7 @@ const ROUTE_PRELOADS = new Map<string, AnyPreloadableLazyComponent[]>([
   ['/admin/relay-detection', [RelayDetectionPage]],
   ['/admin/plugins', [PluginsPage]],
   ['/admin/settings', [SettingsPage]],
+  ['/admin/referral', [ReferralPage]],
 ]);
 
 function normalizePreloadPath(path: string) {

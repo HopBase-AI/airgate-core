@@ -43,6 +43,12 @@ const (
 	FieldStatus = "status"
 	// FieldSignupSource holds the string denoting the signup_source field in the database.
 	FieldSignupSource = "signup_source"
+	// FieldInviteCode holds the string denoting the invite_code field in the database.
+	FieldInviteCode = "invite_code"
+	// FieldInviterID holds the string denoting the inviter_id field in the database.
+	FieldInviterID = "inviter_id"
+	// FieldReferralRate holds the string denoting the referral_rate field in the database.
+	FieldReferralRate = "referral_rate"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
@@ -120,6 +126,9 @@ var Columns = []string{
 	FieldBalanceAlertNotified,
 	FieldStatus,
 	FieldSignupSource,
+	FieldInviteCode,
+	FieldInviterID,
+	FieldReferralRate,
 	FieldCreatedAt,
 	FieldUpdatedAt,
 }
@@ -165,6 +174,8 @@ var (
 	DefaultSignupSource string
 	// SignupSourceValidator is a validator for the "signup_source" field. It is called by the builders before save.
 	SignupSourceValidator func(string) error
+	// InviteCodeValidator is a validator for the "invite_code" field. It is called by the builders before save.
+	InviteCodeValidator func(string) error
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -291,6 +302,21 @@ func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 // BySignupSource orders the results by the signup_source field.
 func BySignupSource(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSignupSource, opts...).ToFunc()
+}
+
+// ByInviteCode orders the results by the invite_code field.
+func ByInviteCode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldInviteCode, opts...).ToFunc()
+}
+
+// ByInviterID orders the results by the inviter_id field.
+func ByInviterID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldInviterID, opts...).ToFunc()
+}
+
+// ByReferralRate orders the results by the referral_rate field.
+func ByReferralRate(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldReferralRate, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

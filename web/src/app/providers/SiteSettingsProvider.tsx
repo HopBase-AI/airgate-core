@@ -41,6 +41,8 @@ interface SiteSettings {
   email_verify_enabled: boolean;
   oauth_google_enabled: boolean;
   oauth_github_enabled: boolean;
+  // 分销邀请开关（控制台据此显示「我的邀请」入口）
+  referral_enabled: boolean;
   // 整站通知横幅（管理员在站点设置里配置，公开设置接口下发）
   announcement_enabled: boolean;
   announcement_level: string;
@@ -61,6 +63,7 @@ const defaults: SiteSettings = {
   email_verify_enabled: false,
   oauth_google_enabled: false,
   oauth_github_enabled: false,
+  referral_enabled: false,
   announcement_enabled: false,
   announcement_level: 'info',
   announcement_content: '',
@@ -90,6 +93,7 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
     email_verify_enabled: data?.email_verify_enabled === 'true',
     oauth_google_enabled: data?.oauth_google_enabled === 'true',
     oauth_github_enabled: data?.oauth_github_enabled === 'true',
+    referral_enabled: data?.referral_enabled === 'true',
     announcement_enabled: data?.announcement_enabled === 'true',
     announcement_level: data?.announcement_level || 'info',
     announcement_content: data?.announcement_content || '',

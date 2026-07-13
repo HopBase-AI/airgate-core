@@ -18,6 +18,7 @@ import {
   AccountsPage,
   ADMIN_IDLE_PRELOADS,
   DashboardPage,
+  InvitePage,
   DocsPage,
   LegalTermsPage,
   GroupsPage,
@@ -30,6 +31,7 @@ import {
   PrivacyPolicyPage,
   ProfilePage,
   ProxiesPage,
+  ReferralPage,
   SettingsPage,
   SetupPage,
   SubscriptionsPage,
@@ -283,8 +285,10 @@ const adminUsageRoute = createRoute({ getParentRoute: () => adminLayout, path: '
 const adminRelayDetectionRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/relay-detection', component: renderPage(RelayDetectionPage) });
 const adminPluginsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/plugins', component: renderPage(PluginsPage) });
 const adminSettingsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/settings', component: renderPage(SettingsPage) });
+const adminReferralRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/referral', component: renderPage(ReferralPage) });
 
 const profileRoute = createRoute({ getParentRoute: () => authLayout, path: '/profile', component: renderPage(ProfilePage) });
+const inviteRoute = createRoute({ getParentRoute: () => authLayout, path: '/invite', component: renderPage(InvitePage) });
 const userKeysRoute = createRoute({ getParentRoute: () => authLayout, path: '/keys', component: renderPage(UserKeysPage) });
 const userUsageRoute = createRoute({ getParentRoute: () => authLayout, path: '/usage', component: renderPage(UserUsagePage) });
 
@@ -377,8 +381,10 @@ const routeTree = rootRoute.addChildren([
       adminRelayDetectionRoute,
       adminPluginsRoute,
       adminSettingsRoute,
+      adminReferralRoute,
     ]),
     profileRoute,
+    inviteRoute,
     userKeysRoute,
     userUsageRoute,
     pluginRoute,

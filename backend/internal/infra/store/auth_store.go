@@ -52,7 +52,8 @@ func (s *AuthStore) Create(ctx context.Context, input appauth.CreateUserInput) (
 		SetStatus(entuser.Status(input.Status)).
 		SetBalance(input.Balance).
 		SetMaxConcurrency(input.MaxConcurrency).
-		SetSignupSource(input.SignupSource)
+		SetSignupSource(input.SignupSource).
+		SetNillableInviterID(input.InviterID)
 
 	item, err := builder.Save(ctx)
 	if err != nil {
@@ -204,6 +205,24 @@ func (s *AuthStore) LinkIdentity(ctx context.Context, userID int, identity appau
 		}
 	}
 	return err
+}
+
+// FindUserIDByInviteCode 按邀请码查邀请人 ID（仅 active 用户可作为邀请人）。
+func (s *AuthStore) FindUserIDByInviteCode(ctx context.Context, code string) (int, error) {
+	item, err := s.db.User.Query().
+		Where(
+			entuser.InviteCodeEQ(code),
+			entuser.StatusEQ(entuser.StatusActive),
+		).
+		Select(entuser.FieldID).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return 0, appauth.ErrUserNotFound
+		}
+		return 0, err
+	}
+	return item.ID, nil
 }
 
 // hashAPIKey 对 API Key 进行 SHA256 哈希（与 auth 包的 HashAPIKey 逻辑一致）。

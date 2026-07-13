@@ -39,7 +39,9 @@ import {
   MessageCircle,
   Github,
   Activity,
+  Gift,
   HelpCircle,
+  Megaphone,
   Radar,
   TriangleAlert,
   ChevronLeft,
@@ -68,6 +70,8 @@ const adminMenuItems: MenuItem[] = [
   { path: '/admin/proxies', labelKey: 'nav.proxies', icon: <Globe className="h-5 w-5" /> },
   { path: '/admin/usage', labelKey: 'nav.usage', icon: <ChartNoAxesCombined className="h-5 w-5" /> },
   { path: '/admin/relay-detection', labelKey: 'nav.relay_detection', icon: <Radar className="h-5 w-5" /> },
+  // 营销分组：分销返利是首个成员，后续营销玩法（阶梯比例/活动）都挂这里
+  { path: '/admin/referral', labelKey: 'nav.referral_admin', icon: <Megaphone className="h-5 w-5" />, sectionKey: 'nav.marketing' },
   { path: '/admin/plugins', labelKey: 'nav.plugins', icon: <Puzzle className="h-5 w-5" />, sectionKey: 'nav.system' },
   { path: '/admin/settings', labelKey: 'nav.settings', icon: <Settings className="h-5 w-5" /> },
 ];
@@ -78,6 +82,9 @@ const userMenuItems: MenuItem[] = [
   { path: '/keys', labelKey: 'nav.my_keys', icon: <KeyRound className="h-5 w-5" /> },
   { path: '/usage', labelKey: 'nav.my_usage', icon: <ReceiptText className="h-5 w-5" /> },
 ];
+
+// 「我的邀请」仅在分销开关（公开设置 referral_enabled）打开时挂进个人菜单。
+const inviteMenuItem: MenuItem = { path: '/invite', labelKey: 'nav.my_invite', icon: <Gift className="h-5 w-5" /> };
 
 // API Key 登录只能看使用记录
 const apiKeyMenuItems: MenuItem[] = [
@@ -217,7 +224,8 @@ export function AppShell({ children }: AppShellProps) {
   const { adminItems: pluginAdminItems, userItems: pluginUserItems, healthInstalled } = usePluginMenuItems(isAdmin, isAPIKeySession);
   const showStatusEntry = healthInstalled;
   const sections = useMemo(() => {
-    const adminUserItems = userMenuItems
+    const userItemsWithInvite = site.referral_enabled ? [...userMenuItems, inviteMenuItem] : userMenuItems;
+    const adminUserItems = userItemsWithInvite
       .filter((item) => item.path !== '/')
       .map((item, i) => (i === 0 ? { ...item, sectionKey: 'nav.personal' } : item));
     // 不论 admin 还是普通用户视图，pluginUserItems 都会紧跟一个已有的「个人中心」section
@@ -230,7 +238,7 @@ export function AppShell({ children }: AppShellProps) {
       ? apiKeyMenuItems
       : isAdmin
         ? [...adminMenuItems, ...pluginAdminItems, ...adminUserItems, ...pluginUserItemsMerged]
-        : [...userMenuItems, ...pluginUserItemsMerged];
+        : [...userItemsWithInvite, ...pluginUserItemsMerged];
 
     const nextSections: Array<{ titleKey?: string; items: MenuItem[] }> = [];
     let currentSection: { titleKey?: string; items: MenuItem[] } | null = null;
@@ -248,7 +256,7 @@ export function AppShell({ children }: AppShellProps) {
     });
 
     return nextSections;
-  }, [isAPIKeySession, isAdmin, pluginAdminItems, pluginUserItems]);
+  }, [isAPIKeySession, isAdmin, pluginAdminItems, pluginUserItems, site.referral_enabled]);
 
   const changeLanguage = (nextLang: string) => {
     i18n.changeLanguage(nextLang);

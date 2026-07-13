@@ -44,6 +44,63 @@ func TestRegisterRejectsWhenDisabled(t *testing.T) {
 	}
 }
 
+// 邮箱注册携带邀请码：合法码绑定邀请人，非法/不存在的码静默忽略不阻断注册。
+func TestRegisterBindsInviter(t *testing.T) {
+	var created *CreateUserInput
+	service := NewService(authStubRepository{
+		create: func(input CreateUserInput) (User, error) {
+			created = &input
+			return User{ID: 1, Email: input.Email, Role: "user", Status: "active"}, nil
+		},
+		findUserIDByInviteCode: func(code string) (int, error) {
+			if code == "abcd2345" {
+				return 99, nil
+			}
+			return 0, ErrUserNotFound
+		},
+	}, corauth.NewJWTManager("secret", 24))
+
+	// 大写输入应归一化后命中
+	if _, err := service.Register(t.Context(), RegisterInput{
+		Email: "u@test.com", Password: "password123", InviteCode: "ABCD2345",
+	}); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	if created == nil || created.InviterID == nil || *created.InviterID != 99 {
+		t.Fatalf("应绑定邀请人 99, got %+v", created)
+	}
+}
+
+func TestRegisterIgnoresInvalidInviteCode(t *testing.T) {
+	cases := []struct {
+		name string
+		code string
+	}{
+		{"非法格式", "!!bad code!!"},
+		{"不存在的码", "zzzz9999"},
+		{"空码", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var created *CreateUserInput
+			service := NewService(authStubRepository{
+				create: func(input CreateUserInput) (User, error) {
+					created = &input
+					return User{ID: 1, Email: input.Email, Role: "user", Status: "active"}, nil
+				},
+			}, corauth.NewJWTManager("secret", 24))
+			if _, err := service.Register(t.Context(), RegisterInput{
+				Email: "u@test.com", Password: "password123", InviteCode: tc.code,
+			}); err != nil {
+				t.Fatalf("邀请码问题不应阻断注册: %v", err)
+			}
+			if created == nil || created.InviterID != nil {
+				t.Fatalf("不应绑定邀请人: %+v", created)
+			}
+		})
+	}
+}
+
 // stubSettingsLister 设置桩实现。
 type stubSettingsLister struct {
 	data map[string][]Setting
@@ -243,6 +300,14 @@ type authStubRepository struct {
 	getAPIKeyBrief         func(keyID int) (APIKeyBrief, error)
 	findUserByIdentity     func(provider, providerUserID string) (User, error)
 	linkIdentity           func(userID int, identity IdentityInput) error
+	findUserIDByInviteCode func(code string) (int, error)
+}
+
+func (s authStubRepository) FindUserIDByInviteCode(_ context.Context, code string) (int, error) {
+	if s.findUserIDByInviteCode == nil {
+		return 0, ErrUserNotFound
+	}
+	return s.findUserIDByInviteCode(code)
 }
 
 func (s authStubRepository) FindUserByIdentity(_ context.Context, provider, providerUserID string) (User, error) {

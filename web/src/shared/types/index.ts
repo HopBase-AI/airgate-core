@@ -50,6 +50,8 @@ export interface RegisterReq {
   verify_code?: string;
   /** 注册来源站点 ID（ToC 落地页 ?site= 归因） */
   source_site?: string;
+  /** 分销邀请码（?inv= 归因） */
+  invite_code?: string;
 }
 
 export interface RefreshResp {

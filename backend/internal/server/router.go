@@ -100,6 +100,10 @@ func (s *Server) registerRoutes() {
 		accountGroup.POST("/oneclick/setup-token", handlers.OneClick.IssueSetupToken)
 		accountGroup.GET("/oneclick/setup-token/:token", handlers.OneClick.SetupTokenStatus)
 
+		// 分销邀请：我的邀请码/概览 + 返利流水
+		accountGroup.GET("/referral/me", handlers.Referral.MyReferral)
+		accountGroup.GET("/referral/commissions", handlers.Referral.MyCommissions)
+
 		// 分组
 		accountGroup.GET("/groups", handlers.Group.ListAvailableGroups)
 
@@ -131,6 +135,12 @@ func (s *Server) registerRoutes() {
 		adminGroup.POST("/users/:id/balance", handlers.User.AdjustBalance)
 		adminGroup.GET("/users/:id/balance-history", handlers.User.GetUserBalanceHistory)
 		adminGroup.GET("/users/:id/api-keys", handlers.User.AdminListUserKeys)
+
+		// 分销管理（营销）：推广官汇总/全量流水/回冲/用户级比例覆盖
+		adminGroup.GET("/referral/summary", handlers.Referral.AdminSummary)
+		adminGroup.GET("/referral/commissions", handlers.Referral.AdminCommissions)
+		adminGroup.POST("/referral/commissions/:id/reverse", handlers.Referral.ReverseCommission)
+		adminGroup.PUT("/referral/users/:id/rate", handlers.Referral.SetUserReferralRate)
 
 		// 账号管理
 		adminGroup.GET("/accounts", handlers.Account.ListAccounts)

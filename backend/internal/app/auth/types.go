@@ -54,6 +54,15 @@ type RegisterInput struct {
 	VerifyCode string
 	// SourceSite 注册来源站点 ID（ToC 落地页 ?site= 归因），可为空。
 	SourceSite string
+	// InviteCode 分销邀请码（?inv= 归因），可为空；非法/不存在的码静默忽略，不阻断注册。
+	InviteCode string
+}
+
+// OAuthAttribution OAuth 登录发起时携带的注册归因；经 state 签名往返穿透
+// （第三方授权页跳转会丢 query 参数，归因只能藏在 state 里）。
+type OAuthAttribution struct {
+	SourceSite string
+	InviteCode string
 }
 
 // SendVerifyCodeInput 发送验证码输入。
@@ -102,6 +111,8 @@ type CreateUserInput struct {
 	MaxConcurrency int
 	// SignupSource 注册来源站点 ID，已经过 sanitizeSiteID 归一化。
 	SignupSource string
+	// InviterID 邀请人 user id（分销归因），nil 表示无邀请人；落库后终身不变。
+	InviterID *int
 }
 
 // Setting 设置键值对（从设置服务透传）。
@@ -132,4 +143,6 @@ type Repository interface {
 	FindUserByIdentity(ctx context.Context, provider, providerUserID string) (User, error)
 	// LinkIdentity 绑定第三方身份到用户（同一身份重复绑定同一用户应幂等）。
 	LinkIdentity(ctx context.Context, userID int, identity IdentityInput) error
+	// FindUserIDByInviteCode 按邀请码查邀请人 ID（仅 active 用户）；未命中返回 ErrUserNotFound。
+	FindUserIDByInviteCode(ctx context.Context, code string) (int, error)
 }

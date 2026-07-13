@@ -27,6 +27,8 @@ type RegisterReq struct {
 	VerifyCode string `json:"verify_code"`
 	// SourceSite 注册来源站点 ID（ToC 落地页 ?site= 归因），可选。
 	SourceSite string `json:"source_site" binding:"omitempty,max=64"`
+	// InviteCode 分销邀请码（?inv= 归因），可选；非法码静默忽略。
+	InviteCode string `json:"invite_code" binding:"omitempty,max=16"`
 }
 
 // SendVerifyCodeReq 发送验证码请求

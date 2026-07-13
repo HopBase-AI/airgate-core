@@ -190,6 +190,48 @@ func (uc *UserCreate) SetNillableSignupSource(s *string) *UserCreate {
 	return uc
 }
 
+// SetInviteCode sets the "invite_code" field.
+func (uc *UserCreate) SetInviteCode(s string) *UserCreate {
+	uc.mutation.SetInviteCode(s)
+	return uc
+}
+
+// SetNillableInviteCode sets the "invite_code" field if the given value is not nil.
+func (uc *UserCreate) SetNillableInviteCode(s *string) *UserCreate {
+	if s != nil {
+		uc.SetInviteCode(*s)
+	}
+	return uc
+}
+
+// SetInviterID sets the "inviter_id" field.
+func (uc *UserCreate) SetInviterID(i int) *UserCreate {
+	uc.mutation.SetInviterID(i)
+	return uc
+}
+
+// SetNillableInviterID sets the "inviter_id" field if the given value is not nil.
+func (uc *UserCreate) SetNillableInviterID(i *int) *UserCreate {
+	if i != nil {
+		uc.SetInviterID(*i)
+	}
+	return uc
+}
+
+// SetReferralRate sets the "referral_rate" field.
+func (uc *UserCreate) SetReferralRate(f float64) *UserCreate {
+	uc.mutation.SetReferralRate(f)
+	return uc
+}
+
+// SetNillableReferralRate sets the "referral_rate" field if the given value is not nil.
+func (uc *UserCreate) SetNillableReferralRate(f *float64) *UserCreate {
+	if f != nil {
+		uc.SetReferralRate(*f)
+	}
+	return uc
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (uc *UserCreate) SetCreatedAt(t time.Time) *UserCreate {
 	uc.mutation.SetCreatedAt(t)
@@ -459,6 +501,11 @@ func (uc *UserCreate) check() error {
 			return &ValidationError{Name: "signup_source", err: fmt.Errorf(`ent: validator failed for field "User.signup_source": %w`, err)}
 		}
 	}
+	if v, ok := uc.mutation.InviteCode(); ok {
+		if err := user.InviteCodeValidator(v); err != nil {
+			return &ValidationError{Name: "invite_code", err: fmt.Errorf(`ent: validator failed for field "User.invite_code": %w`, err)}
+		}
+	}
 	if _, ok := uc.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "User.created_at"`)}
 	}
@@ -546,6 +593,18 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := uc.mutation.SignupSource(); ok {
 		_spec.SetField(user.FieldSignupSource, field.TypeString, value)
 		_node.SignupSource = value
+	}
+	if value, ok := uc.mutation.InviteCode(); ok {
+		_spec.SetField(user.FieldInviteCode, field.TypeString, value)
+		_node.InviteCode = &value
+	}
+	if value, ok := uc.mutation.InviterID(); ok {
+		_spec.SetField(user.FieldInviterID, field.TypeInt, value)
+		_node.InviterID = &value
+	}
+	if value, ok := uc.mutation.ReferralRate(); ok {
+		_spec.SetField(user.FieldReferralRate, field.TypeFloat64, value)
+		_node.ReferralRate = &value
 	}
 	if value, ok := uc.mutation.CreatedAt(); ok {
 		_spec.SetField(user.FieldCreatedAt, field.TypeTime, value)

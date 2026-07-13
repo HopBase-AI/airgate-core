@@ -253,6 +253,53 @@ func (uu *UserUpdate) SetNillableSignupSource(s *string) *UserUpdate {
 	return uu
 }
 
+// SetInviteCode sets the "invite_code" field.
+func (uu *UserUpdate) SetInviteCode(s string) *UserUpdate {
+	uu.mutation.SetInviteCode(s)
+	return uu
+}
+
+// SetNillableInviteCode sets the "invite_code" field if the given value is not nil.
+func (uu *UserUpdate) SetNillableInviteCode(s *string) *UserUpdate {
+	if s != nil {
+		uu.SetInviteCode(*s)
+	}
+	return uu
+}
+
+// ClearInviteCode clears the value of the "invite_code" field.
+func (uu *UserUpdate) ClearInviteCode() *UserUpdate {
+	uu.mutation.ClearInviteCode()
+	return uu
+}
+
+// SetReferralRate sets the "referral_rate" field.
+func (uu *UserUpdate) SetReferralRate(f float64) *UserUpdate {
+	uu.mutation.ResetReferralRate()
+	uu.mutation.SetReferralRate(f)
+	return uu
+}
+
+// SetNillableReferralRate sets the "referral_rate" field if the given value is not nil.
+func (uu *UserUpdate) SetNillableReferralRate(f *float64) *UserUpdate {
+	if f != nil {
+		uu.SetReferralRate(*f)
+	}
+	return uu
+}
+
+// AddReferralRate adds f to the "referral_rate" field.
+func (uu *UserUpdate) AddReferralRate(f float64) *UserUpdate {
+	uu.mutation.AddReferralRate(f)
+	return uu
+}
+
+// ClearReferralRate clears the value of the "referral_rate" field.
+func (uu *UserUpdate) ClearReferralRate() *UserUpdate {
+	uu.mutation.ClearReferralRate()
+	return uu
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (uu *UserUpdate) SetUpdatedAt(t time.Time) *UserUpdate {
 	uu.mutation.SetUpdatedAt(t)
@@ -553,6 +600,11 @@ func (uu *UserUpdate) check() error {
 			return &ValidationError{Name: "signup_source", err: fmt.Errorf(`ent: validator failed for field "User.signup_source": %w`, err)}
 		}
 	}
+	if v, ok := uu.mutation.InviteCode(); ok {
+		if err := user.InviteCodeValidator(v); err != nil {
+			return &ValidationError{Name: "invite_code", err: fmt.Errorf(`ent: validator failed for field "User.invite_code": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -627,6 +679,24 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := uu.mutation.SignupSource(); ok {
 		_spec.SetField(user.FieldSignupSource, field.TypeString, value)
+	}
+	if value, ok := uu.mutation.InviteCode(); ok {
+		_spec.SetField(user.FieldInviteCode, field.TypeString, value)
+	}
+	if uu.mutation.InviteCodeCleared() {
+		_spec.ClearField(user.FieldInviteCode, field.TypeString)
+	}
+	if uu.mutation.InviterIDCleared() {
+		_spec.ClearField(user.FieldInviterID, field.TypeInt)
+	}
+	if value, ok := uu.mutation.ReferralRate(); ok {
+		_spec.SetField(user.FieldReferralRate, field.TypeFloat64, value)
+	}
+	if value, ok := uu.mutation.AddedReferralRate(); ok {
+		_spec.AddField(user.FieldReferralRate, field.TypeFloat64, value)
+	}
+	if uu.mutation.ReferralRateCleared() {
+		_spec.ClearField(user.FieldReferralRate, field.TypeFloat64)
 	}
 	if value, ok := uu.mutation.UpdatedAt(); ok {
 		_spec.SetField(user.FieldUpdatedAt, field.TypeTime, value)
@@ -1140,6 +1210,53 @@ func (uuo *UserUpdateOne) SetNillableSignupSource(s *string) *UserUpdateOne {
 	return uuo
 }
 
+// SetInviteCode sets the "invite_code" field.
+func (uuo *UserUpdateOne) SetInviteCode(s string) *UserUpdateOne {
+	uuo.mutation.SetInviteCode(s)
+	return uuo
+}
+
+// SetNillableInviteCode sets the "invite_code" field if the given value is not nil.
+func (uuo *UserUpdateOne) SetNillableInviteCode(s *string) *UserUpdateOne {
+	if s != nil {
+		uuo.SetInviteCode(*s)
+	}
+	return uuo
+}
+
+// ClearInviteCode clears the value of the "invite_code" field.
+func (uuo *UserUpdateOne) ClearInviteCode() *UserUpdateOne {
+	uuo.mutation.ClearInviteCode()
+	return uuo
+}
+
+// SetReferralRate sets the "referral_rate" field.
+func (uuo *UserUpdateOne) SetReferralRate(f float64) *UserUpdateOne {
+	uuo.mutation.ResetReferralRate()
+	uuo.mutation.SetReferralRate(f)
+	return uuo
+}
+
+// SetNillableReferralRate sets the "referral_rate" field if the given value is not nil.
+func (uuo *UserUpdateOne) SetNillableReferralRate(f *float64) *UserUpdateOne {
+	if f != nil {
+		uuo.SetReferralRate(*f)
+	}
+	return uuo
+}
+
+// AddReferralRate adds f to the "referral_rate" field.
+func (uuo *UserUpdateOne) AddReferralRate(f float64) *UserUpdateOne {
+	uuo.mutation.AddReferralRate(f)
+	return uuo
+}
+
+// ClearReferralRate clears the value of the "referral_rate" field.
+func (uuo *UserUpdateOne) ClearReferralRate() *UserUpdateOne {
+	uuo.mutation.ClearReferralRate()
+	return uuo
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (uuo *UserUpdateOne) SetUpdatedAt(t time.Time) *UserUpdateOne {
 	uuo.mutation.SetUpdatedAt(t)
@@ -1453,6 +1570,11 @@ func (uuo *UserUpdateOne) check() error {
 			return &ValidationError{Name: "signup_source", err: fmt.Errorf(`ent: validator failed for field "User.signup_source": %w`, err)}
 		}
 	}
+	if v, ok := uuo.mutation.InviteCode(); ok {
+		if err := user.InviteCodeValidator(v); err != nil {
+			return &ValidationError{Name: "invite_code", err: fmt.Errorf(`ent: validator failed for field "User.invite_code": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -1544,6 +1666,24 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 	}
 	if value, ok := uuo.mutation.SignupSource(); ok {
 		_spec.SetField(user.FieldSignupSource, field.TypeString, value)
+	}
+	if value, ok := uuo.mutation.InviteCode(); ok {
+		_spec.SetField(user.FieldInviteCode, field.TypeString, value)
+	}
+	if uuo.mutation.InviteCodeCleared() {
+		_spec.ClearField(user.FieldInviteCode, field.TypeString)
+	}
+	if uuo.mutation.InviterIDCleared() {
+		_spec.ClearField(user.FieldInviterID, field.TypeInt)
+	}
+	if value, ok := uuo.mutation.ReferralRate(); ok {
+		_spec.SetField(user.FieldReferralRate, field.TypeFloat64, value)
+	}
+	if value, ok := uuo.mutation.AddedReferralRate(); ok {
+		_spec.AddField(user.FieldReferralRate, field.TypeFloat64, value)
+	}
+	if uuo.mutation.ReferralRateCleared() {
+		_spec.ClearField(user.FieldReferralRate, field.TypeFloat64)
 	}
 	if value, ok := uuo.mutation.UpdatedAt(); ok {
 		_spec.SetField(user.FieldUpdatedAt, field.TypeTime, value)

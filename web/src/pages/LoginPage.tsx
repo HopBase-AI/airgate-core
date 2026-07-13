@@ -9,6 +9,7 @@ import { usersApi } from '../shared/api/users';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { useStatusPageEnabled } from '../shared/hooks/useStatusPageEnabled';
 import { getOriginSite } from '../shared/originSite';
+import { getInviteCode } from '../shared/inviteCode';
 import { ApiError, setToken } from '../shared/api/client';
 import { Mail, Lock, User, ArrowRight, Sun, Moon, ShieldCheck, Activity, Layers, Gauge, BarChart3 } from 'lucide-react';
 
@@ -69,7 +70,15 @@ function OAuthButtons({
                 onAgreementMissing();
                 return;
               }
-              window.location.href = `/api/v1/auth/oauth/${provider.id}/authorize`;
+              // 注册归因（来源站/邀请码）经 query 交给后端签进 OAuth state 往返穿透，
+              // 否则第三方授权跳转会丢归因（OAuth 注册用户查不到来源）。
+              const attribution = new URLSearchParams();
+              const site = getOriginSite();
+              const invite = getInviteCode();
+              if (site) attribution.set('source_site', site);
+              if (invite) attribution.set('invite_code', invite);
+              const query = attribution.toString();
+              window.location.href = `/api/v1/auth/oauth/${provider.id}/authorize${query ? `?${query}` : ''}`;
             }}
           >
             {provider.icon}
@@ -358,6 +367,7 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
         username: username || undefined,
         verify_code: needVerify ? verifiedCode : undefined,
         source_site: getOriginSite() || undefined,
+        invite_code: getInviteCode() || undefined,
       });
       onSuccess();
     } catch (err) {

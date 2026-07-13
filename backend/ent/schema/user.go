@@ -5,6 +5,7 @@ import (
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/index"
 )
 
 // User 用户表
@@ -33,8 +34,21 @@ func (User) Fields() []ent.Field {
 		field.Enum("status").Values("active", "disabled").Default("active"),
 		field.String("signup_source").Default("").MaxLen(64).
 			Comment("注册来源站点 ID（ToC 落地页 ?site= 归因）；空表示直接注册或来源未知。"),
+		field.String("invite_code").Optional().Nillable().MaxLen(16).Unique().
+			Comment("本人的推广邀请码；惰性生成（首次访问我的邀请页），NULL 表示尚未生成。"),
+		field.Int("inviter_id").Optional().Nillable().Immutable().
+			Comment("邀请人 user id；注册时经邀请码绑定，终身不变。刻意不做外键，邀请人删除后保留归因。"),
+		field.Float("referral_rate").Optional().Nillable().
+			Comment("作为推广官的返利比例覆盖（0~1）；NULL 表示使用全局默认 referral_default_rate。"),
 		field.Time("created_at").Default(timeNow).Immutable(),
 		field.Time("updated_at").Default(timeNow).UpdateDefault(timeNow),
+	}
+}
+
+func (User) Indexes() []ent.Index {
+	return []ent.Index{
+		// 邀请人数统计 / 我的被邀请人列表按邀请人查询
+		index.Fields("inviter_id"),
 	}
 }
 

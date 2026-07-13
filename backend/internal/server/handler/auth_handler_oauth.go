@@ -13,9 +13,13 @@ import (
 
 // OAuthAuthorize 跳转第三方授权页。浏览器直接导航到本端点，失败也用重定向回登录页
 // 携带 oauth_error 提示，而非返回 JSON（用户看不到 XHR 响应）。
+// 注册归因（来源站/邀请码）由前端经 query 传入，服务层签进 state 往返穿透。
 func (h *AuthHandler) OAuthAuthorize(c *gin.Context) {
 	provider := c.Param("provider")
-	authorizeURL, err := h.service.OAuthAuthorizeURL(c.Request.Context(), provider)
+	authorizeURL, err := h.service.OAuthAuthorizeURL(c.Request.Context(), provider, appauth.OAuthAttribution{
+		SourceSite: c.Query("source_site"),
+		InviteCode: c.Query("invite_code"),
+	})
 	if err != nil {
 		c.Redirect(http.StatusFound, oauthErrorRedirect(err))
 		return

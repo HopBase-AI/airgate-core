@@ -23,6 +23,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/plugin"
 	"github.com/DouDOU-start/airgate-core/ent/pluginsource"
 	"github.com/DouDOU-start/airgate-core/ent/proxy"
+	"github.com/DouDOU-start/airgate-core/ent/referralcommission"
 	"github.com/DouDOU-start/airgate-core/ent/setting"
 	"github.com/DouDOU-start/airgate-core/ent/task"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
@@ -52,6 +53,8 @@ type Client struct {
 	PluginSource *PluginSourceClient
 	// Proxy is the client for interacting with the Proxy builders.
 	Proxy *ProxyClient
+	// ReferralCommission is the client for interacting with the ReferralCommission builders.
+	ReferralCommission *ReferralCommissionClient
 	// Setting is the client for interacting with the Setting builders.
 	Setting *SettingClient
 	// Task is the client for interacting with the Task builders.
@@ -83,6 +86,7 @@ func (c *Client) init() {
 	c.Plugin = NewPluginClient(c.config)
 	c.PluginSource = NewPluginSourceClient(c.config)
 	c.Proxy = NewProxyClient(c.config)
+	c.ReferralCommission = NewReferralCommissionClient(c.config)
 	c.Setting = NewSettingClient(c.config)
 	c.Task = NewTaskClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
@@ -179,22 +183,23 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:              ctx,
-		config:           cfg,
-		APIKey:           NewAPIKeyClient(cfg),
-		Account:          NewAccountClient(cfg),
-		AccountEvent:     NewAccountEventClient(cfg),
-		BalanceLog:       NewBalanceLogClient(cfg),
-		Group:            NewGroupClient(cfg),
-		Plugin:           NewPluginClient(cfg),
-		PluginSource:     NewPluginSourceClient(cfg),
-		Proxy:            NewProxyClient(cfg),
-		Setting:          NewSettingClient(cfg),
-		Task:             NewTaskClient(cfg),
-		UsageLog:         NewUsageLogClient(cfg),
-		User:             NewUserClient(cfg),
-		UserIdentity:     NewUserIdentityClient(cfg),
-		UserSubscription: NewUserSubscriptionClient(cfg),
+		ctx:                ctx,
+		config:             cfg,
+		APIKey:             NewAPIKeyClient(cfg),
+		Account:            NewAccountClient(cfg),
+		AccountEvent:       NewAccountEventClient(cfg),
+		BalanceLog:         NewBalanceLogClient(cfg),
+		Group:              NewGroupClient(cfg),
+		Plugin:             NewPluginClient(cfg),
+		PluginSource:       NewPluginSourceClient(cfg),
+		Proxy:              NewProxyClient(cfg),
+		ReferralCommission: NewReferralCommissionClient(cfg),
+		Setting:            NewSettingClient(cfg),
+		Task:               NewTaskClient(cfg),
+		UsageLog:           NewUsageLogClient(cfg),
+		User:               NewUserClient(cfg),
+		UserIdentity:       NewUserIdentityClient(cfg),
+		UserSubscription:   NewUserSubscriptionClient(cfg),
 	}, nil
 }
 
@@ -212,22 +217,23 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:              ctx,
-		config:           cfg,
-		APIKey:           NewAPIKeyClient(cfg),
-		Account:          NewAccountClient(cfg),
-		AccountEvent:     NewAccountEventClient(cfg),
-		BalanceLog:       NewBalanceLogClient(cfg),
-		Group:            NewGroupClient(cfg),
-		Plugin:           NewPluginClient(cfg),
-		PluginSource:     NewPluginSourceClient(cfg),
-		Proxy:            NewProxyClient(cfg),
-		Setting:          NewSettingClient(cfg),
-		Task:             NewTaskClient(cfg),
-		UsageLog:         NewUsageLogClient(cfg),
-		User:             NewUserClient(cfg),
-		UserIdentity:     NewUserIdentityClient(cfg),
-		UserSubscription: NewUserSubscriptionClient(cfg),
+		ctx:                ctx,
+		config:             cfg,
+		APIKey:             NewAPIKeyClient(cfg),
+		Account:            NewAccountClient(cfg),
+		AccountEvent:       NewAccountEventClient(cfg),
+		BalanceLog:         NewBalanceLogClient(cfg),
+		Group:              NewGroupClient(cfg),
+		Plugin:             NewPluginClient(cfg),
+		PluginSource:       NewPluginSourceClient(cfg),
+		Proxy:              NewProxyClient(cfg),
+		ReferralCommission: NewReferralCommissionClient(cfg),
+		Setting:            NewSettingClient(cfg),
+		Task:               NewTaskClient(cfg),
+		UsageLog:           NewUsageLogClient(cfg),
+		User:               NewUserClient(cfg),
+		UserIdentity:       NewUserIdentityClient(cfg),
+		UserSubscription:   NewUserSubscriptionClient(cfg),
 	}, nil
 }
 
@@ -258,8 +264,8 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.APIKey, c.Account, c.AccountEvent, c.BalanceLog, c.Group, c.Plugin,
-		c.PluginSource, c.Proxy, c.Setting, c.Task, c.UsageLog, c.User, c.UserIdentity,
-		c.UserSubscription,
+		c.PluginSource, c.Proxy, c.ReferralCommission, c.Setting, c.Task, c.UsageLog,
+		c.User, c.UserIdentity, c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -270,8 +276,8 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.APIKey, c.Account, c.AccountEvent, c.BalanceLog, c.Group, c.Plugin,
-		c.PluginSource, c.Proxy, c.Setting, c.Task, c.UsageLog, c.User, c.UserIdentity,
-		c.UserSubscription,
+		c.PluginSource, c.Proxy, c.ReferralCommission, c.Setting, c.Task, c.UsageLog,
+		c.User, c.UserIdentity, c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -296,6 +302,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.PluginSource.mutate(ctx, m)
 	case *ProxyMutation:
 		return c.Proxy.mutate(ctx, m)
+	case *ReferralCommissionMutation:
+		return c.ReferralCommission.mutate(ctx, m)
 	case *SettingMutation:
 		return c.Setting.mutate(ctx, m)
 	case *TaskMutation:
@@ -1617,6 +1625,139 @@ func (c *ProxyClient) mutate(ctx context.Context, m *ProxyMutation) (Value, erro
 	}
 }
 
+// ReferralCommissionClient is a client for the ReferralCommission schema.
+type ReferralCommissionClient struct {
+	config
+}
+
+// NewReferralCommissionClient returns a client for the ReferralCommission from the given config.
+func NewReferralCommissionClient(c config) *ReferralCommissionClient {
+	return &ReferralCommissionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `referralcommission.Hooks(f(g(h())))`.
+func (c *ReferralCommissionClient) Use(hooks ...Hook) {
+	c.hooks.ReferralCommission = append(c.hooks.ReferralCommission, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `referralcommission.Intercept(f(g(h())))`.
+func (c *ReferralCommissionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ReferralCommission = append(c.inters.ReferralCommission, interceptors...)
+}
+
+// Create returns a builder for creating a ReferralCommission entity.
+func (c *ReferralCommissionClient) Create() *ReferralCommissionCreate {
+	mutation := newReferralCommissionMutation(c.config, OpCreate)
+	return &ReferralCommissionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ReferralCommission entities.
+func (c *ReferralCommissionClient) CreateBulk(builders ...*ReferralCommissionCreate) *ReferralCommissionCreateBulk {
+	return &ReferralCommissionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ReferralCommissionClient) MapCreateBulk(slice any, setFunc func(*ReferralCommissionCreate, int)) *ReferralCommissionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ReferralCommissionCreateBulk{err: fmt.Errorf("calling to ReferralCommissionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ReferralCommissionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ReferralCommissionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ReferralCommission.
+func (c *ReferralCommissionClient) Update() *ReferralCommissionUpdate {
+	mutation := newReferralCommissionMutation(c.config, OpUpdate)
+	return &ReferralCommissionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ReferralCommissionClient) UpdateOne(rc *ReferralCommission) *ReferralCommissionUpdateOne {
+	mutation := newReferralCommissionMutation(c.config, OpUpdateOne, withReferralCommission(rc))
+	return &ReferralCommissionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ReferralCommissionClient) UpdateOneID(id int) *ReferralCommissionUpdateOne {
+	mutation := newReferralCommissionMutation(c.config, OpUpdateOne, withReferralCommissionID(id))
+	return &ReferralCommissionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ReferralCommission.
+func (c *ReferralCommissionClient) Delete() *ReferralCommissionDelete {
+	mutation := newReferralCommissionMutation(c.config, OpDelete)
+	return &ReferralCommissionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ReferralCommissionClient) DeleteOne(rc *ReferralCommission) *ReferralCommissionDeleteOne {
+	return c.DeleteOneID(rc.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ReferralCommissionClient) DeleteOneID(id int) *ReferralCommissionDeleteOne {
+	builder := c.Delete().Where(referralcommission.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ReferralCommissionDeleteOne{builder}
+}
+
+// Query returns a query builder for ReferralCommission.
+func (c *ReferralCommissionClient) Query() *ReferralCommissionQuery {
+	return &ReferralCommissionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeReferralCommission},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ReferralCommission entity by its id.
+func (c *ReferralCommissionClient) Get(ctx context.Context, id int) (*ReferralCommission, error) {
+	return c.Query().Where(referralcommission.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ReferralCommissionClient) GetX(ctx context.Context, id int) *ReferralCommission {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ReferralCommissionClient) Hooks() []Hook {
+	return c.hooks.ReferralCommission
+}
+
+// Interceptors returns the client interceptors.
+func (c *ReferralCommissionClient) Interceptors() []Interceptor {
+	return c.inters.ReferralCommission
+}
+
+func (c *ReferralCommissionClient) mutate(ctx context.Context, m *ReferralCommissionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ReferralCommissionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ReferralCommissionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ReferralCommissionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ReferralCommissionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ReferralCommission mutation op: %q", m.Op())
+	}
+}
+
 // SettingClient is a client for the Setting schema.
 type SettingClient struct {
 	config
@@ -2627,10 +2768,12 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 type (
 	hooks struct {
 		APIKey, Account, AccountEvent, BalanceLog, Group, Plugin, PluginSource, Proxy,
-		Setting, Task, UsageLog, User, UserIdentity, UserSubscription []ent.Hook
+		ReferralCommission, Setting, Task, UsageLog, User, UserIdentity,
+		UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountEvent, BalanceLog, Group, Plugin, PluginSource, Proxy,
-		Setting, Task, UsageLog, User, UserIdentity, UserSubscription []ent.Interceptor
+		ReferralCommission, Setting, Task, UsageLog, User, UserIdentity,
+		UserSubscription []ent.Interceptor
 	}
 )

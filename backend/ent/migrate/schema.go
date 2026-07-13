@@ -261,6 +261,45 @@ var (
 		Columns:    ProxiesColumns,
 		PrimaryKey: []*schema.Column{ProxiesColumns[0]},
 	}
+	// ReferralCommissionsColumns holds the columns for the "referral_commissions" table.
+	ReferralCommissionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "inviter_id", Type: field.TypeInt},
+		{Name: "inviter_email", Type: field.TypeString, Default: ""},
+		{Name: "invitee_id", Type: field.TypeInt},
+		{Name: "invitee_email", Type: field.TypeString, Default: ""},
+		{Name: "out_trade_no", Type: field.TypeString},
+		{Name: "kind", Type: field.TypeEnum, Enums: []string{"rebate", "first_bonus"}},
+		{Name: "paid_amount", Type: field.TypeFloat64, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "rate", Type: field.TypeFloat64},
+		{Name: "amount", Type: field.TypeFloat64, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"settled", "reversed"}, Default: "settled"},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "reversed_at", Type: field.TypeTime, Nullable: true},
+	}
+	// ReferralCommissionsTable holds the schema information for the "referral_commissions" table.
+	ReferralCommissionsTable = &schema.Table{
+		Name:       "referral_commissions",
+		Columns:    ReferralCommissionsColumns,
+		PrimaryKey: []*schema.Column{ReferralCommissionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "referralcommission_out_trade_no_kind",
+				Unique:  true,
+				Columns: []*schema.Column{ReferralCommissionsColumns[5], ReferralCommissionsColumns[6]},
+			},
+			{
+				Name:    "referralcommission_inviter_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{ReferralCommissionsColumns[1], ReferralCommissionsColumns[11]},
+			},
+			{
+				Name:    "referralcommission_invitee_id_kind",
+				Unique:  false,
+				Columns: []*schema.Column{ReferralCommissionsColumns[3], ReferralCommissionsColumns[6]},
+			},
+		},
+	}
 	// SettingsColumns holds the columns for the "settings" table.
 	SettingsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -485,6 +524,9 @@ var (
 		{Name: "balance_alert_notified", Type: field.TypeBool, Default: false},
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "disabled"}, Default: "active"},
 		{Name: "signup_source", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "invite_code", Type: field.TypeString, Unique: true, Nullable: true, Size: 16},
+		{Name: "inviter_id", Type: field.TypeInt, Nullable: true},
+		{Name: "referral_rate", Type: field.TypeFloat64, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 	}
@@ -493,6 +535,13 @@ var (
 		Name:       "users",
 		Columns:    UsersColumns,
 		PrimaryKey: []*schema.Column{UsersColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "user_inviter_id",
+				Unique:  false,
+				Columns: []*schema.Column{UsersColumns[16]},
+			},
+		},
 	}
 	// UserIdentitiesColumns holds the columns for the "user_identities" table.
 	UserIdentitiesColumns = []*schema.Column{
@@ -623,6 +672,7 @@ var (
 		PluginsTable,
 		PluginSourcesTable,
 		ProxiesTable,
+		ReferralCommissionsTable,
 		SettingsTable,
 		TasksTable,
 		UsageLogsTable,

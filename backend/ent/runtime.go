@@ -13,6 +13,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/plugin"
 	"github.com/DouDOU-start/airgate-core/ent/pluginsource"
 	"github.com/DouDOU-start/airgate-core/ent/proxy"
+	"github.com/DouDOU-start/airgate-core/ent/referralcommission"
 	"github.com/DouDOU-start/airgate-core/ent/schema"
 	"github.com/DouDOU-start/airgate-core/ent/setting"
 	"github.com/DouDOU-start/airgate-core/ent/task"
@@ -318,6 +319,24 @@ func init() {
 	proxy.DefaultUpdatedAt = proxyDescUpdatedAt.Default.(func() time.Time)
 	// proxy.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	proxy.UpdateDefaultUpdatedAt = proxyDescUpdatedAt.UpdateDefault.(func() time.Time)
+	referralcommissionFields := schema.ReferralCommission{}.Fields()
+	_ = referralcommissionFields
+	// referralcommissionDescInviterEmail is the schema descriptor for inviter_email field.
+	referralcommissionDescInviterEmail := referralcommissionFields[1].Descriptor()
+	// referralcommission.DefaultInviterEmail holds the default value on creation for the inviter_email field.
+	referralcommission.DefaultInviterEmail = referralcommissionDescInviterEmail.Default.(string)
+	// referralcommissionDescInviteeEmail is the schema descriptor for invitee_email field.
+	referralcommissionDescInviteeEmail := referralcommissionFields[3].Descriptor()
+	// referralcommission.DefaultInviteeEmail holds the default value on creation for the invitee_email field.
+	referralcommission.DefaultInviteeEmail = referralcommissionDescInviteeEmail.Default.(string)
+	// referralcommissionDescOutTradeNo is the schema descriptor for out_trade_no field.
+	referralcommissionDescOutTradeNo := referralcommissionFields[4].Descriptor()
+	// referralcommission.OutTradeNoValidator is a validator for the "out_trade_no" field. It is called by the builders before save.
+	referralcommission.OutTradeNoValidator = referralcommissionDescOutTradeNo.Validators[0].(func(string) error)
+	// referralcommissionDescCreatedAt is the schema descriptor for created_at field.
+	referralcommissionDescCreatedAt := referralcommissionFields[10].Descriptor()
+	// referralcommission.DefaultCreatedAt holds the default value on creation for the created_at field.
+	referralcommission.DefaultCreatedAt = referralcommissionDescCreatedAt.Default.(func() time.Time)
 	settingFields := schema.Setting{}.Fields()
 	_ = settingFields
 	// settingDescKey is the schema descriptor for key field.
@@ -628,12 +647,16 @@ func init() {
 	user.DefaultSignupSource = userDescSignupSource.Default.(string)
 	// user.SignupSourceValidator is a validator for the "signup_source" field. It is called by the builders before save.
 	user.SignupSourceValidator = userDescSignupSource.Validators[0].(func(string) error)
+	// userDescInviteCode is the schema descriptor for invite_code field.
+	userDescInviteCode := userFields[14].Descriptor()
+	// user.InviteCodeValidator is a validator for the "invite_code" field. It is called by the builders before save.
+	user.InviteCodeValidator = userDescInviteCode.Validators[0].(func(string) error)
 	// userDescCreatedAt is the schema descriptor for created_at field.
-	userDescCreatedAt := userFields[14].Descriptor()
+	userDescCreatedAt := userFields[17].Descriptor()
 	// user.DefaultCreatedAt holds the default value on creation for the created_at field.
 	user.DefaultCreatedAt = userDescCreatedAt.Default.(func() time.Time)
 	// userDescUpdatedAt is the schema descriptor for updated_at field.
-	userDescUpdatedAt := userFields[15].Descriptor()
+	userDescUpdatedAt := userFields[18].Descriptor()
 	// user.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	user.DefaultUpdatedAt = userDescUpdatedAt.Default.(func() time.Time)
 	// user.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

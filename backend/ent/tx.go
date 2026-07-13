@@ -28,6 +28,8 @@ type Tx struct {
 	PluginSource *PluginSourceClient
 	// Proxy is the client for interacting with the Proxy builders.
 	Proxy *ProxyClient
+	// ReferralCommission is the client for interacting with the ReferralCommission builders.
+	ReferralCommission *ReferralCommissionClient
 	// Setting is the client for interacting with the Setting builders.
 	Setting *SettingClient
 	// Task is the client for interacting with the Task builders.
@@ -179,6 +181,7 @@ func (tx *Tx) init() {
 	tx.Plugin = NewPluginClient(tx.config)
 	tx.PluginSource = NewPluginSourceClient(tx.config)
 	tx.Proxy = NewProxyClient(tx.config)
+	tx.ReferralCommission = NewReferralCommissionClient(tx.config)
 	tx.Setting = NewSettingClient(tx.config)
 	tx.Task = NewTaskClient(tx.config)
 	tx.UsageLog = NewUsageLogClient(tx.config)

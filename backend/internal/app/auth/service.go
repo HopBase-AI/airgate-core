@@ -177,6 +177,37 @@ func sanitizeSiteID(raw string) string {
 	return strings.ToLower(trimmed)
 }
 
+// inviteCodePattern 邀请码合法形态（生成规则为 8 位小写字母数字，宽放到 4~16 位）。
+var inviteCodePattern = regexp.MustCompile(`^[A-Za-z0-9]{4,16}$`)
+
+// sanitizeInviteCode 归一化邀请码：统一小写，不合法输入直接置空。
+func sanitizeInviteCode(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if !inviteCodePattern.MatchString(trimmed) {
+		return ""
+	}
+	return strings.ToLower(trimmed)
+}
+
+// resolveInviterID 邀请码 → 邀请人 ID。非法码/不存在/邀请人已禁用一律返回 nil——
+// 归因失败绝不阻断注册，只丢邀请关系。
+func (s *Service) resolveInviterID(ctx context.Context, rawCode string) *int {
+	code := sanitizeInviteCode(rawCode)
+	if code == "" {
+		return nil
+	}
+	id, err := s.repo.FindUserIDByInviteCode(ctx, code)
+	if err != nil {
+		if IsUserMissing(err) {
+			sdk.LoggerFromContext(ctx).Info("invite_code_unresolved", "code", code)
+		} else {
+			sdk.LoggerFromContext(ctx).Warn("invite_code_lookup_failed", sdk.LogFieldError, err)
+		}
+		return nil
+	}
+	return &id
+}
+
 // Register 用户注册（含注册开关/验证码/默认值等业务编排）。
 func (s *Service) Register(ctx context.Context, input RegisterInput) (LoginResult, error) {
 	logger := sdk.LoggerFromContext(ctx)
@@ -216,6 +247,7 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (LoginResul
 	}
 
 	signupSource := sanitizeSiteID(input.SourceSite)
+	inviterID := s.resolveInviterID(ctx, input.InviteCode)
 	user, err := s.repo.Create(ctx, CreateUserInput{
 		Email:          input.Email,
 		PasswordHash:   string(hash),
@@ -225,6 +257,7 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (LoginResul
 		Balance:        defaultBalance,
 		MaxConcurrency: defaultConcurrency,
 		SignupSource:   signupSource,
+		InviterID:      inviterID,
 	})
 	if err != nil {
 		logger.Error("user_register_failed", sdk.LogFieldReason, "create_user", sdk.LogFieldError, err)
@@ -237,7 +270,11 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (LoginResul
 		return LoginResult{}, err
 	}
 
-	logger.Info("user_register_succeeded", sdk.LogFieldUserID, user.ID, "signup_source", signupSource)
+	logger.Info("user_register_succeeded",
+		sdk.LogFieldUserID, user.ID,
+		"signup_source", signupSource,
+		"invited", inviterID != nil,
+	)
 
 	return LoginResult{
 		Token: token,

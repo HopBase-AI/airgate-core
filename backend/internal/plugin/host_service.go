@@ -20,6 +20,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/setting"
 	"github.com/DouDOU-start/airgate-core/ent/user"
+	appreferral "github.com/DouDOU-start/airgate-core/internal/app/referral"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
 	"github.com/DouDOU-start/airgate-core/internal/routing"
@@ -48,6 +49,7 @@ type HostService struct {
 	calculator  *billing.Calculator
 	recorder    *billing.Recorder
 	users       *appuser.Service
+	referral    *appreferral.Service
 }
 
 // NewHostService 构造 HostService 工厂。
@@ -63,6 +65,7 @@ func NewHostService(
 	calculator *billing.Calculator,
 	recorder *billing.Recorder,
 	users *appuser.Service,
+	referral *appreferral.Service,
 ) *HostService {
 	return &HostService{
 		db:          db,
@@ -74,6 +77,8 @@ func NewHostService(
 		// users.update_balance 复用 app/user 的业务逻辑（流水落库 + 幂等键），
 		// 不在 host 层手写余额 SQL；实例由 server 注入（plugin 包不能 import store，会成环）
 		users: users,
+		// users.notify_topup 的处理方：分销返利等「充值入账后动作」在 app/referral 闭环
+		referral: referral,
 	}
 }
 
@@ -187,6 +192,7 @@ const (
 	hostMethodModelsRefresh          = "models.refresh"
 	hostMethodUsersGet               = "users.get"
 	hostMethodUsersUpdateBalance     = "users.update_balance"
+	hostMethodUsersNotifyTopup       = "users.notify_topup"
 	hostMethodAssetsStore            = "assets.store"
 	hostMethodAssetsStoreURL         = "assets.store_url"
 	hostMethodAssetsGetURL           = "assets.get_url"
@@ -273,6 +279,12 @@ func (h *HostService) invoke(
 			req.IdempotencyKey = idempotencyKey
 		}
 		return h.updateUserBalance(ctx, pluginID, req)
+	case hostMethodUsersNotifyTopup:
+		var req hostNotifyTopupRequest
+		if err := decodeHostPayload(payload, &req); err != nil {
+			return nil, err
+		}
+		return h.notifyTopup(ctx, pluginID, req)
 	case hostMethodAssetsStore:
 		var req hostStoreAssetRequest
 		if err := decodeHostPayload(payload, &req); err != nil {
@@ -1597,6 +1609,58 @@ func (h *HostService) updateUserBalance(ctx context.Context, pluginID string, re
 		"user_id": int64(u.ID),
 		"balance": u.Balance,
 	}, nil
+}
+
+// hostNotifyTopupRequest users.notify_topup 请求体。
+type hostNotifyTopupRequest struct {
+	UserID     int64  `json:"user_id"`
+	OutTradeNo string `json:"out_trade_no"`
+	// PaidAmount 实付金额（返利计算基数）；BonusAmount 套餐赠送，仅记录。
+	PaidAmount  float64 `json:"paid_amount"`
+	BonusAmount float64 `json:"bonus_amount"`
+	// FirstTopup 调用插件视角：是否该用户首笔支付成功。
+	FirstTopup bool `json:"first_topup"`
+}
+
+// notifyTopup 通用「一笔充值已入账」平台事件（当前动作：分销返利/首充加赠）。
+//
+// 失败语义与调用方（支付插件）的回调重试对齐：业务上不适用（功能关闭/无邀请人）
+// 返回 ok；只有基础设施错误才返回 error——调用方应在订单标记完成前调用本方法，
+// 失败让支付平台重试回调，配合幂等键保证不重不漏。
+func (h *HostService) notifyTopup(ctx context.Context, pluginID string, req hostNotifyTopupRequest) (map[string]interface{}, error) {
+	if req.UserID <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "user_id 必须 > 0")
+	}
+	if req.OutTradeNo == "" {
+		return nil, status.Error(codes.InvalidArgument, "out_trade_no 必填")
+	}
+	if req.PaidAmount <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "paid_amount 必须 > 0")
+	}
+	slog.Info("host_service_notify_topup",
+		"module", "host",
+		sdk.LogFieldPluginID, pluginID,
+		sdk.LogFieldUserID, req.UserID,
+		"out_trade_no", req.OutTradeNo,
+		"paid_amount", req.PaidAmount,
+		"first_topup", req.FirstTopup,
+	)
+	if h.referral == nil {
+		return map[string]interface{}{"handled": false}, nil
+	}
+	if err := h.referral.HandleTopup(ctx, appreferral.TopupEvent{
+		UserID:      int(req.UserID),
+		OutTradeNo:  req.OutTradeNo,
+		PaidAmount:  req.PaidAmount,
+		BonusAmount: req.BonusAmount,
+		FirstTopup:  req.FirstTopup,
+	}); err != nil {
+		if cerr := hostContextError(err); cerr != nil {
+			return nil, cerr
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return map[string]interface{}{"handled": true}, nil
 }
 
 func (h *HostService) storeAsset(ctx context.Context, req hostStoreAssetRequest) (map[string]interface{}, error) {
