@@ -2397,23 +2397,29 @@ func (s *Service) probeCCGate(ctx context.Context, baseURL, apiKey string, platf
 	plain := s.probeBasicWithOptions(ctx, baseURL, apiKey, platform, target, prompt, probeRequestOptions{headers: plainSDKProbeHeaders()})
 	cc := s.probeBasicWithOptions(ctx, baseURL, apiKey, platform, target, prompt, probeRequestOptions{headers: claudeCodeProbeHeaders("gate"), systemPrompt: claudeCodeSystemBlock})
 	probe := CCGateProbe{
-		Tested:         true,
-		PlainStatus:    plain.statusCode,
-		CCStatus:       cc.statusCode,
-		PlainAvailable: plain.basicAvailable(),
-		CCAvailable:    cc.basicAvailable(),
-		PlainHasID:     strings.TrimSpace(plain.responseID) != "",
-		PlainHasUsage:  plain.promptUsageTokens() > 0,
+		Tested:            true,
+		PlainStatus:       plain.statusCode,
+		CCStatus:          cc.statusCode,
+		PlainAvailable:    plain.basicAvailable(),
+		CCAvailable:       cc.basicAvailable(),
+		PlainHasID:        strings.TrimSpace(plain.responseID) != "",
+		PlainHasUsage:     plain.promptUsageTokens() > 0,
+		PlainPromptTokens: plain.promptUsageTokens(),
+		CCPromptTokens:    cc.promptUsageTokens(),
 	}
 	if plain.err == nil {
 		probe.PlainBodyExcerpt = truncateText(plain.text, 200)
 	}
-	probe.Verdict, probe.ForgedCCGate, probe.PlainGated = classifyCCGate(plain, cc)
+	probe.Verdict, probe.ForgedCCGate, probe.PlainGated, probe.CCOnlyInjection = classifyCCGate(plain, cc)
 	return probe
 }
 
+// ccOnlyInjectionThreshold:CC 身份比 plain 多计的 prompt token 超过此阈值即判 cc-only 注入。
+// 我们自己给 CC 请求注入的 system 首块只有 ~12 token,阈值取 80 足以把它和号池的大段模板(数百~上万 token)分开。
+const ccOnlyInjectionThreshold = 80
+
 // classifyCCGate 从 plain / cc 两次响应判决闸门形态。纯函数,便于表驱动单测(不打网络)。
-func classifyCCGate(plain, cc probeResult) (verdict string, forgedCCGate, plainGated bool) {
+func classifyCCGate(plain, cc probeResult) (verdict string, forgedCCGate, plainGated, ccOnlyInjection bool) {
 	plainText := strings.ToLower(plain.text)
 	nudgesToCC := strings.Contains(plainText, "claude code") ||
 		strings.Contains(plainText, "claude-code") ||
@@ -2421,17 +2427,23 @@ func classifyCCGate(plain, cc probeResult) (verdict string, forgedCCGate, plainG
 		strings.Contains(plainText, "claude-cli")
 	plainHasID := strings.TrimSpace(plain.responseID) != ""
 	plainHasUsage := plain.promptUsageTokens() > 0
+	// cc-only 注入差分(标准 #2/#3 最决定性的号池套壳信号):同一条裸 prompt 下,CC 身份比 plain
+	// 多计的 prompt token 扣掉我们自己的 system 首块后仍超阈值,说明号池只对 Claude Code 身份塞了大段模板。
+	bothUsable := plain.basicAvailable() && cc.basicAvailable() && plain.promptUsageTokens() > 0 && cc.promptUsageTokens() > 0
+	ccOnlyInjection = bothUsable && (cc.promptUsageTokens()-plain.promptUsageTokens()) >= ccOnlyInjectionThreshold
 	switch {
 	// 伪 CC 闸门:plain 收到"请用 Claude Code"之类话术正文,却没有 id/usage —— 官方 1P/Bedrock 绝不会这样。
 	case plain.err == nil && plainText != "" && nudgesToCC && (!plainHasID || !plainHasUsage):
-		return "forged_cc_gate", true, false
+		return "forged_cc_gate", true, false, ccOnlyInjection
 	// plain 被闸门但 CC 放行:只放行 Claude Code 客户端的订阅号池,第三方 agent 用不了(兼容风险,非造假)。
 	case cc.basicAvailable() && !plain.basicAvailable():
-		return "plain_sdk_gated", false, true
+		return "plain_sdk_gated", false, true, ccOnlyInjection
+	case ccOnlyInjection:
+		return "cc_only_injection", false, false, true
 	case plain.basicAvailable() && cc.basicAvailable():
-		return "ungated", false, false
+		return "ungated", false, false, false
 	default:
-		return "inconclusive", false, false
+		return "inconclusive", false, false, false
 	}
 }
 
@@ -2635,8 +2647,33 @@ func (s *Service) probeNegativeModels(ctx context.Context, baseURL, apiKey strin
 				Detail:   detail,
 			})
 		}
+		// 外来家族模型聚合探针:发一个"另一家族"的真实模型名。真·单一上游应拒绝;
+		// 若成功返回内容,说明该渠道同时供多家族,实为多上游聚合层(号池/中转套壳)。
+		foreignModel := foreignModelForProtocol(protocol)
+		foreignResult := s.probeBasic(ctx, baseURL, apiKey, platform, probeTarget{model: foreignModel, protocol: protocol}, "Reply with exactly: PONG")
+		if foreignResult.err == nil && foreignResult.basicAvailable() {
+			out.risks = append(out.risks, RiskFinding{
+				Severity: "high",
+				Code:     "foreign_model_accepted",
+				Message:  fmt.Sprintf("外来家族模型 %s 被成功服务,渠道实为多上游聚合层(套壳)", foreignModel),
+				Detail: map[string]any{
+					"protocol":       protocol,
+					"foreign_model":  foreignModel,
+					"http_status":    foreignResult.statusCode,
+					"returned_model": foreignResult.returnedModel,
+				},
+			})
+		}
 	}
 	return out
+}
+
+// foreignModelForProtocol 给出一个与当前协议家族"不同家族"的真实模型名,用于外来模型聚合探针。
+func foreignModelForProtocol(protocol string) string {
+	if protocol == "anthropic" {
+		return "gpt-5.5" // 往 Claude 渠道发 GPT 名
+	}
+	return "claude-opus-4-8" // 往 OpenAI/GLM 渠道发 Claude 名
 }
 
 func (s *Service) probeAWSBedrockBrokerFalsification(ctx context.Context, baseURL, apiKey string) negativeProbeResult {
@@ -2726,14 +2763,30 @@ func classifyAWSBrokerErrorShape(detail map[string]any) string {
 }
 
 func containsAggregatorLeak(text string) bool {
-	return strings.Contains(text, "no available channel") ||
-		strings.Contains(text, "new_api") ||
-		strings.Contains(text, "new-api") ||
-		strings.Contains(text, "one-api") ||
-		strings.Contains(text, "litellm") ||
-		strings.Contains(text, "distributor") ||
+	lower := strings.ToLower(text)
+	// 聚合层基础设施痕迹
+	if strings.Contains(lower, "no available channel") ||
+		strings.Contains(lower, "new_api") ||
+		strings.Contains(lower, "new-api") ||
+		strings.Contains(lower, "one-api") ||
+		strings.Contains(lower, "oneapi") ||
+		strings.Contains(lower, "litellm") ||
+		strings.Contains(lower, "openrouter") ||
+		strings.Contains(lower, "sub2api") ||
+		strings.Contains(lower, "distributor") ||
 		strings.Contains(text, "渠道") ||
-		strings.Contains(text, "channel")
+		strings.Contains(text, "分组") ||
+		strings.Contains(lower, "channel") {
+		return true
+	}
+	// 错误信封里泄漏了其它厂商模型/上游名 = 多上游聚合(单一真上游不会在错误里提到别家)。
+	// 注:不含 glm/zhipu —— 那是 GLM 渠道自己的厂商,放进来会误伤 GLM 渠道。
+	for _, vendor := range []string{"deepseek", "qwen", "kimi", "moonshot", "ernie", "hunyuan", "minimax"} {
+		if strings.Contains(lower, vendor) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) probeConcurrency(ctx context.Context, baseURL, apiKey string, platform PlatformType, target probeTarget, level int) ConcurrencyProbe {
@@ -3869,6 +3922,9 @@ func buildModelResult(target probeTarget, probe probeResult) ModelResult {
 		} else if probe.ccGate.PlainGated {
 			risks = append(risks, "plain_sdk_gated")
 		}
+		if probe.ccGate.CCOnlyInjection {
+			risks = append(risks, "cc_only_injection")
+		}
 	}
 	grade := modelGrade(available, risks, modelMatch, probe)
 	var errMsg string
@@ -4224,6 +4280,8 @@ func riskFromCode(code, model string, result ModelResult) RiskFinding {
 		return RiskFinding{Severity: "critical", Code: code, Model: model, Message: "伪 Claude Code 闸门:plain 请求被话术正文挡回且无 id/usage,坐实订阅号池按客户端指纹套壳(官方 1P/Bedrock 绝不会如此)", Detail: map[string]any{"cc_gate": result.CCGate}}
 	case "plain_sdk_gated":
 		return RiskFinding{Severity: "medium", Code: code, Model: model, Message: "plain SDK 被闸门:仅放行 Claude Code 客户端的订阅制渠道,第三方非 CC agent 接入受限(兼容风险,非上游造假)", Detail: map[string]any{"cc_gate": result.CCGate}}
+	case "cc_only_injection":
+		return RiskFinding{Severity: "high", Code: code, Model: model, Message: "cc-only 注入:Claude Code 身份下 prompt token 显著高于 plain,号池只对 CC 身份塞了大段隐藏模板(套壳/注水强信号)", Detail: map[string]any{"cc_gate": result.CCGate}}
 	case "claude_code_cache_failed":
 		return RiskFinding{Severity: "high", Code: code, Model: model, Message: "Claude Code 场景 prompt cache 未达标", Detail: map[string]any{"client_profiles": result.ClientProfiles}}
 	case "claude_code_interaction_failed":
@@ -4326,9 +4384,9 @@ func buildReport(baseURL string, platform PlatformType, startedAt, completedAt t
 			OverallScore:           score,
 			ScoreEligible:          scoreEligible,
 			ScoreEligibilityReason: scoreEligibilityReason,
-			ChannelLabel:           channelLabel(grade),
+			ChannelLabel:           classifyChannel(risks, scoreEligible),
 			Confidence:             confidenceFromCoverage(len(models), available, coverage),
-			ProductionReady:        scoreEligible && (grade == "A" || grade == "B") && !hasSevereFinding(risks),
+			ProductionReady:        scoreEligible && (grade == "A" || grade == "B") && !hasSevereFinding(risks) && !hasAgentCompatVeto(risks),
 			ModelCount:             len(models),
 			AvailableModels:        available,
 			RiskModels:             riskModels,
@@ -6980,6 +7038,38 @@ func channelLabel(grade string) string {
 	}
 }
 
+// classifyChannel 从已采集的证据(聚合层泄漏/外来模型/号池闸门/换模/注水等风险码)推出"渠道类型"结论,
+// 而不是像旧 channelLabel 那样把等级换个说法。这是各标准最核心的采购结论。纯函数,便于单测。
+func classifyChannel(risks []RiskFinding, scoreEligible bool) string {
+	codes := make(map[string]bool, len(risks))
+	for _, r := range risks {
+		codes[r.Code] = true
+	}
+	has := func(cs ...string) bool {
+		for _, c := range cs {
+			if codes[c] {
+				return true
+			}
+		}
+		return false
+	}
+	switch {
+	// 聚合层:非法/外来模型被接受或错误信封泄漏多上游 —— 多家族聚合调度。
+	case has("invalid_model_wrapper_leak", "foreign_model_accepted", "invalid_model_accepted", "aws_bedrock_invalid_model_wrapper_leak", "aws_bedrock_parameter_probe_failed"):
+		return "聚合层·多上游(套壳)"
+	// 订阅号池:只认 Claude Code 指纹的闸门/伪 CC 话术/cc-only 注水。
+	case has("forged_cc_gate", "cc_only_injection", "plain_sdk_gated"):
+		return "订阅号池·反代(套壳)"
+	// 换模/注水/假身份:返回模型≠请求、逆向来源不符、thinking 签名假、注入痕迹。
+	case has("model_mismatch", "source_identity_mismatch", "thinking_signature_mismatch", "prompt_injection_signal", "hidden_injection_tokens"):
+		return "换模/注水·可信度低"
+	case !scoreEligible:
+		return "证据不足·待复核"
+	default:
+		return "直连或透明代理"
+	}
+}
+
 func confidenceLabel(total, available, riskCount int) string {
 	if total == 0 {
 		return "low"
@@ -7055,6 +7145,17 @@ func confidenceFromCoverage(total, available int, coverage CoverageSummary) stri
 func hasSevereFinding(risks []RiskFinding) bool {
 	for _, r := range risks {
 		if r.Severity == "high" || r.Severity == "critical" {
+			return true
+		}
+	}
+	return false
+}
+
+// hasAgentCompatVeto:即使上游生成侧是真的、不算造假,若渠道只放行特定客户端(plain SDK 被闸门),
+// 第三方非 CC agent 就用不了 —— 标准 §6 明确 plain_sdk 属"接入否决",不能判 production_ready。
+func hasAgentCompatVeto(risks []RiskFinding) bool {
+	for _, r := range risks {
+		if r.Code == "plain_sdk_gated" {
 			return true
 		}
 	}
@@ -7333,9 +7434,9 @@ func refreshReportSummary(report *Report) {
 	report.Summary.OverallScore = score
 	report.Summary.ScoreEligible = scoreEligible
 	report.Summary.ScoreEligibilityReason = scoreEligibilityReason
-	report.Summary.ChannelLabel = channelLabel(grade)
+	report.Summary.ChannelLabel = classifyChannel(report.Risks, scoreEligible)
 	report.Summary.Confidence = confidenceFromCoverage(len(report.Models), available, coverage)
-	report.Summary.ProductionReady = scoreEligible && (grade == "A" || grade == "B") && !hasSevereFinding(report.Risks)
+	report.Summary.ProductionReady = scoreEligible && (grade == "A" || grade == "B") && !hasSevereFinding(report.Risks) && !hasAgentCompatVeto(report.Risks)
 	report.Summary.ModelCount = len(report.Models)
 	report.Summary.AvailableModels = available
 	report.Summary.RiskModels = countRiskModels(report.Models)
@@ -7810,18 +7911,29 @@ func promptKeywordHits(text string) []string {
 	keywords := []string{
 		"claude code",
 		"please use claude code cli",
+		"you are codex",
+		"codex cli",
 		"system prompt",
 		"developer message",
 		"hidden instruction",
 		"internal instruction",
 		"new-api",
 		"one-api",
+		"openrouter",
 		"telegram",
 		"qq",
+		// 跨厂商模型名出现在正文=套壳/注水痕迹
+		"deepseek",
+		"qwen",
+		"kimi",
 		"系统提示",
 		"开发者提示",
 		"隐藏规则",
 		"内部指令",
+		"充值",
+		"余额",
+		"渠道池",
+		"客服",
 	}
 	hits := make([]string, 0)
 	for _, keyword := range keywords {

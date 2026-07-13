@@ -2568,6 +2568,7 @@ func TestClassifyCCGate(t *testing.T) {
 		wantVerdict string
 		wantForged  bool
 		wantGated   bool
+		wantCCOnly  bool
 	}{
 		{
 			name:        "forged_cc_body_no_id_no_usage",
@@ -2588,6 +2589,18 @@ func TestClassifyCCGate(t *testing.T) {
 			wantVerdict: "plain_sdk_gated", wantGated: true,
 		},
 		{
+			name:        "cc_only_injection_large_delta",
+			plain:       probeResult{statusCode: 200, text: "PONG", responseID: "msg_p", inputTokens: 12},
+			cc:          probeResult{statusCode: 200, text: "PONG", responseID: "msg_c", inputTokens: 512},
+			wantVerdict: "cc_only_injection", wantCCOnly: true,
+		},
+		{
+			name:        "small_cc_delta_is_not_injection",
+			plain:       probeResult{statusCode: 200, text: "PONG", responseID: "msg_p2", inputTokens: 12},
+			cc:          probeResult{statusCode: 200, text: "PONG", responseID: "msg_c2", inputTokens: 24}, // ~我们自己的 system 首块,< 阈值
+			wantVerdict: "ungated",
+		},
+		{
 			name:        "both_ok_is_ungated",
 			plain:       probeResult{statusCode: 200, text: "PONG", responseID: "msg_05", inputTokens: 12},
 			cc:          probeResult{statusCode: 200, text: "PONG", responseID: "msg_06", inputTokens: 12},
@@ -2602,9 +2615,9 @@ func TestClassifyCCGate(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			verdict, forged, gated := classifyCCGate(tc.plain, tc.cc)
-			if verdict != tc.wantVerdict || forged != tc.wantForged || gated != tc.wantGated {
-				t.Fatalf("classifyCCGate = (%q,%v,%v), want (%q,%v,%v)", verdict, forged, gated, tc.wantVerdict, tc.wantForged, tc.wantGated)
+			verdict, forged, gated, ccOnly := classifyCCGate(tc.plain, tc.cc)
+			if verdict != tc.wantVerdict || forged != tc.wantForged || gated != tc.wantGated || ccOnly != tc.wantCCOnly {
+				t.Fatalf("classifyCCGate = (%q,%v,%v,%v), want (%q,%v,%v,%v)", verdict, forged, gated, ccOnly, tc.wantVerdict, tc.wantForged, tc.wantGated, tc.wantCCOnly)
 			}
 		})
 	}
@@ -2646,5 +2659,48 @@ func TestGateRiskSeverities(t *testing.T) {
 		if got.Severity != sev {
 			t.Fatalf("riskFromCode(%q).Severity = %q, want %q", code, got.Severity, sev)
 		}
+	}
+}
+
+// TestClassifyChannel 锁定"从证据推渠道类型"的判决(替代旧的等级别名)。
+func TestClassifyChannel(t *testing.T) {
+	rf := func(codes ...string) []RiskFinding {
+		out := make([]RiskFinding, 0, len(codes))
+		for _, c := range codes {
+			out = append(out, RiskFinding{Code: c, Severity: "high"})
+		}
+		return out
+	}
+	cases := []struct {
+		name          string
+		risks         []RiskFinding
+		scoreEligible bool
+		want          string
+	}{
+		{"aggregator_foreign_model", rf("foreign_model_accepted"), true, "聚合层·多上游(套壳)"},
+		{"aggregator_wrapper_leak", rf("invalid_model_wrapper_leak"), true, "聚合层·多上游(套壳)"},
+		{"subscription_forged_cc", rf("forged_cc_gate"), true, "订阅号池·反代(套壳)"},
+		{"subscription_cc_only_inj", rf("cc_only_injection"), true, "订阅号池·反代(套壳)"},
+		{"impersonation_model_swap", rf("model_mismatch"), true, "换模/注水·可信度低"},
+		{"clean_eligible_is_direct", rf(), true, "直连或透明代理"},
+		{"clean_ineligible_is_unknown", rf(), false, "证据不足·待复核"},
+		{"aggregator_precedes_subscription", rf("foreign_model_accepted", "forged_cc_gate"), true, "聚合层·多上游(套壳)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := classifyChannel(tc.risks, tc.scoreEligible); got != tc.want {
+				t.Fatalf("classifyChannel = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestForeignModelForProtocol 锁定外来家族模型选择(往 Claude 渠道发 GPT 名,反之亦然)。
+func TestForeignModelForProtocol(t *testing.T) {
+	if got := foreignModelForProtocol("anthropic"); got != "gpt-5.5" {
+		t.Fatalf("anthropic foreign = %q, want gpt-5.5", got)
+	}
+	if got := foreignModelForProtocol("openai"); got != "claude-opus-4-8" {
+		t.Fatalf("openai foreign = %q, want claude-opus-4-8", got)
 	}
 }

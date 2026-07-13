@@ -283,17 +283,20 @@ type RuntimeCheck struct {
 // (真 UA + anthropic-beta + "You are Claude Code" system 首块)打同一条裸请求,识别
 // "只认 Claude Code 指纹的订阅号池"。这是标准里的 #2 决定性反作弊信号,不需要第二把真值 key。
 type CCGateProbe struct {
-	Tested           bool   `json:"tested"`
-	PlainStatus      int    `json:"plain_status"`
-	CCStatus         int    `json:"cc_status"`
-	PlainAvailable   bool   `json:"plain_available"`
-	CCAvailable      bool   `json:"cc_available"`
-	PlainHasID       bool   `json:"plain_has_id"`
-	PlainHasUsage    bool   `json:"plain_has_usage"`
-	ForgedCCGate     bool   `json:"forged_cc_gate"`
-	PlainGated       bool   `json:"plain_gated"`
-	Verdict          string `json:"verdict"`
-	PlainBodyExcerpt string `json:"plain_body_excerpt,omitempty"`
+	Tested            bool   `json:"tested"`
+	PlainStatus       int    `json:"plain_status"`
+	CCStatus          int    `json:"cc_status"`
+	PlainAvailable    bool   `json:"plain_available"`
+	CCAvailable       bool   `json:"cc_available"`
+	PlainHasID        bool   `json:"plain_has_id"`
+	PlainHasUsage     bool   `json:"plain_has_usage"`
+	PlainPromptTokens int    `json:"plain_prompt_tokens"`
+	CCPromptTokens    int    `json:"cc_prompt_tokens"`
+	ForgedCCGate      bool   `json:"forged_cc_gate"`
+	PlainGated        bool   `json:"plain_gated"`
+	CCOnlyInjection   bool   `json:"cc_only_injection"`
+	Verdict           string `json:"verdict"`
+	PlainBodyExcerpt  string `json:"plain_body_excerpt,omitempty"`
 }
 
 type ClientProfileProbe struct {
