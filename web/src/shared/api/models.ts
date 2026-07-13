@@ -32,6 +32,9 @@ export interface PublicPricingModel {
   cached_input?: number;
   output: number;
   long_context?: PublicModelLongContext;
+  // 视频生成模型的桶价：bucket（<分辨率>_{no,with}_ref）→ $/1M video_tokens。
+  // 有值时按桶铺价，无 input/output。
+  video_tokens?: Record<string, number>;
 }
 
 export interface PublicPlatformPricing {

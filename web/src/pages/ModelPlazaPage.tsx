@@ -67,22 +67,27 @@ function mergeCatalog(platforms: Awaited<ReturnType<typeof modelsApi.pricing>>):
   return [...merged.values()];
 }
 
+// resolveMultiplier 解析该模型生效的售价倍率（board 单模型 > 平台 > default）与汇率。
+// 无 config 或未命中倍率 → multiplier=null（展示端只显示官方原价）。
+function resolveMultiplier(model: ModelLedgerItem, config: TocPricingConfig | null): { multiplier: number | null; fx: number } {
+  const fx = typeof config?.fx === 'number' && config.fx > 0 ? config.fx : 6.8;
+  if (!config) return { multiplier: null, fx };
+  const modelMultiplier = config.board?.find((row) => row?.id === model.id)?.multiplier;
+  const platformMultiplier = config.multipliers?.[model.platform];
+  const defaultMultiplier = config.multipliers?.default;
+  const multiplier = [modelMultiplier, platformMultiplier, defaultMultiplier]
+    .find((value) => typeof value === 'number' && value > 0);
+  return { multiplier: typeof multiplier === 'number' ? multiplier : null, fx };
+}
+
 function resolvePrice(model: ModelLedgerItem, config: TocPricingConfig | null): DisplayPrice {
   const officialValues = {
     input: model.input,
     cachedInput: model.cached_input ?? 0,
     output: model.output,
   };
-  const official = { ...officialValues, officialOnly: true, official: officialValues };
-  if (!config) return official;
-
-  const fx = typeof config.fx === 'number' && config.fx > 0 ? config.fx : 6.8;
-  const modelMultiplier = config.board?.find((row) => row?.id === model.id)?.multiplier;
-  const platformMultiplier = config.multipliers?.[model.platform];
-  const defaultMultiplier = config.multipliers?.default;
-  const multiplier = [modelMultiplier, platformMultiplier, defaultMultiplier]
-    .find((value) => typeof value === 'number' && value > 0);
-  if (typeof multiplier !== 'number') return official;
+  const { multiplier, fx } = resolveMultiplier(model, config);
+  if (multiplier == null) return { ...officialValues, officialOnly: true, official: officialValues };
 
   return {
     input: model.input * multiplier / fx,
@@ -91,6 +96,50 @@ function resolvePrice(model: ModelLedgerItem, config: TocPricingConfig | null): 
     officialOnly: false,
     official: officialValues,
   };
+}
+
+interface VideoBucketPrice {
+  bucket: string;
+  label: string;
+  sale: number;
+  official: number;
+  officialOnly: boolean;
+}
+
+// 分辨率展示序：低→高，4k 垫底；no_ref 在前、with_ref 在后。
+const VIDEO_RES_ORDER = ['480p', '720p', '1080p', '4k'];
+function videoBucketRank(bucket: string): number {
+  const parts = bucket.split('_');
+  const ri = VIDEO_RES_ORDER.indexOf(parts[0] ?? '');
+  const resRank = ri < 0 ? VIDEO_RES_ORDER.length : ri;
+  return resRank * 2 + (parts.slice(1).join('_') === 'with_ref' ? 1 : 0);
+}
+
+function isVideoModel(model: ModelLedgerItem): boolean {
+  return !!model.video_tokens && Object.keys(model.video_tokens).length > 0;
+}
+
+// resolveVideoPrices 把视频桶价（bucket→官方牌价）铺成有序展示行，套用售价倍率。
+function resolveVideoPrices(
+  model: ModelLedgerItem,
+  config: TocPricingConfig | null,
+  t: (k: string) => string,
+): VideoBucketPrice[] {
+  const { multiplier, fx } = resolveMultiplier(model, config);
+  return Object.entries(model.video_tokens ?? {})
+    .sort(([a], [b]) => videoBucketRank(a) - videoBucketRank(b))
+    .map(([bucket, official]) => {
+      const parts = bucket.split('_');
+      const res = parts[0] ?? bucket;
+      const refKey = parts.slice(1).join('_') === 'with_ref' ? 'model_plaza.video_with_ref' : 'model_plaza.video_no_ref';
+      return {
+        bucket,
+        label: `${res.toUpperCase()} · ${t(refKey)}`,
+        official,
+        sale: multiplier == null ? official : official * multiplier / fx,
+        officialOnly: multiplier == null,
+      };
+    });
 }
 
 function formatCompact(value: number | undefined) {
@@ -126,9 +175,23 @@ function PriceCell({ label, sale, official, officialOnly, officialTitle }: {
   );
 }
 
-function PriceGrid({ model, price }: { model: ModelLedgerItem; price: DisplayPrice }) {
+function PriceGrid({ model, price, video }: { model: ModelLedgerItem; price: DisplayPrice | null; video: VideoBucketPrice[] | null }) {
   const { t } = useTranslation();
   const officialTitle = t('model_plaza.official_price');
+  // 视频生成模型：按桶（分辨率 × 是否带参考图）铺价，替代 input/cached/output。
+  if (video) {
+    return (
+      <div className="ag-model-price-wrap">
+        <dl className="ag-model-price-grid ag-model-price-grid-video">
+          {video.map((b) => (
+            <PriceCell key={b.bucket} label={b.label} sale={b.sale} official={b.official} officialOnly={b.officialOnly} officialTitle={officialTitle} />
+          ))}
+        </dl>
+        {video[0]?.officialOnly ? <p className="ag-model-official-label">{officialTitle}</p> : null}
+      </div>
+    );
+  }
+  if (!price) return null;
   return (
     <div className="ag-model-price-wrap">
       <dl className="ag-model-price-grid">
@@ -330,7 +393,9 @@ export default function ModelPlazaPage() {
             </thead>
             <tbody>
               {filteredModels.map((model) => {
-                const price = resolvePrice(model, pricingConfig);
+                const video = isVideoModel(model) ? resolveVideoPrices(model, pricingConfig, t) : null;
+                const price = video ? null : resolvePrice(model, pricingConfig);
+                const officialOnly = video ? (video[0]?.officialOnly ?? true) : price!.officialOnly;
                 return (
                   <tr key={model.id}>
                     <td data-label={t('model_plaza.model')}>
@@ -359,8 +424,8 @@ export default function ModelPlazaPage() {
                     <td data-label={t('model_plaza.context')}>
                       <span className="ag-model-context">{formatCompact(model.context_window) ?? t('model_plaza.not_provided')}</span>
                     </td>
-                    <td data-label={price.officialOnly ? t('model_plaza.official_price') : t('model_plaza.standard_price')}>
-                      <PriceGrid model={model} price={price} />
+                    <td data-label={officialOnly ? t('model_plaza.official_price') : t('model_plaza.standard_price')}>
+                      <PriceGrid model={model} price={price} video={video} />
                     </td>
                   </tr>
                 );

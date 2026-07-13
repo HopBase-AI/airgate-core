@@ -93,6 +93,7 @@ func toPublicModelPricingResp(items []apppluginadmin.PublicPlatformPricing) []dt
 				Input:         m.Input,
 				CachedInput:   m.CachedInput,
 				Output:        m.Output,
+				VideoTokens:   m.VideoTokens,
 			}
 			if m.LongContextThreshold > 0 {
 				resp.LongContext = &dto.PublicLongContextResp{

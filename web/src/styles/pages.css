@@ -301,6 +301,11 @@
   font-weight: 600;
 }
 
+/* 视频桶价：桶数不定（4~8 个，分辨率 × 是否带参考图），自适应列宽换行，替代固定三列 */
+.ag-model-price-grid-video {
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+}
+
 /* 划线官方原价：售价下方一行，弱化展示 */
 .ag-model-price-grid dd del {
   display: block;

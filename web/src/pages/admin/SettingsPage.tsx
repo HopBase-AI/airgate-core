@@ -71,13 +71,24 @@ const STORAGE_KEYS = [
 // 这里只负责前端展示 / 回填。keep in sync。
 // 模型目录覆盖层:每平台一个 JSON key。值 = 覆盖条目数组。
 // 存储层复用 settings(group=models);插件经 Host.Invoke("models.catalog") 读取。
-const MODELS_KEYS = ['models.catalog.claude', 'models.catalog.openai', 'models.catalog.kiro'] as const;
+const MODELS_KEYS = ['models.catalog.claude', 'models.catalog.openai', 'models.catalog.kiro', 'models.catalog.seedance'] as const;
 type ModelCatalogSettingKey = typeof MODELS_KEYS[number];
 const MODEL_CATALOG_PLATFORMS: Array<{ key: ModelCatalogSettingKey; labelKey: string }> = [
   { key: 'models.catalog.claude', labelKey: 'settings.models_platform_claude' },
   { key: 'models.catalog.openai', labelKey: 'settings.models_platform_openai' },
   { key: 'models.catalog.kiro', labelKey: 'settings.models_platform_kiro' },
+  { key: 'models.catalog.seedance', labelKey: 'settings.models_platform_seedance' },
 ];
+
+// Seedance 视频桶价：分辨率 × 是否带参考图。桶键 = `${分辨率}_${no|with}_ref`。
+// 与插件 registry / models.catalog.seedance overlay 的桶命名一致。
+const SEEDANCE_RESOLUTIONS = ['480p', '720p', '1080p', '4k'] as const;
+const SEEDANCE_REFS = [
+  { suffix: 'no_ref', labelKey: 'settings.models_video_no_ref' },
+  { suffix: 'with_ref', labelKey: 'settings.models_video_with_ref' },
+] as const;
+const SEEDANCE_BUCKETS: string[] = SEEDANCE_RESOLUTIONS.flatMap((res) => SEEDANCE_REFS.map((r) => `${res}_${r.suffix}`));
+const SEEDANCE_TIERS = ['standard', 'fast', 'mini'] as const;
 
 const OPENCLAW_KEYS = [
   'openclaw.enabled',
@@ -1733,6 +1744,9 @@ interface CatalogRow {
   lcInputMult: string;
   lcCachedMult: string;
   lcOutputMult: string;
+  // Seedance 专属:档位(新增模型声明桶价基底)与桶价表(桶键 → 价字符串)
+  tier: string;
+  buckets: Record<string, string>;
   // 原始 JSON 条目,序列化时作合并底座(未知字段无损保留)
   raw: Record<string, unknown>;
 }
@@ -1744,11 +1758,12 @@ function emptyCatalogRow(): CatalogRow {
     input: '', cachedInput: '', cacheWrite5m: '', cacheWrite1h: '', output: '',
     prioInput: '', prioCached: '', prioOutput: '', flexInput: '', flexCached: '', flexOutput: '',
     lcThreshold: '', lcInputMult: '', lcCachedMult: '', lcOutputMult: '',
+    tier: '', buckets: {},
     raw: {},
   };
 }
 
-function parseCatalogRows(raw: string): CatalogRow[] {
+function parseCatalogRows(raw: string, isSeedance = false): CatalogRow[] {
   const trimmed = (raw ?? '').trim();
   if (!trimmed) return [];
   let arr: unknown;
@@ -1762,6 +1777,11 @@ function parseCatalogRows(raw: string): CatalogRow[] {
     const e = asObj(item);
     const p = asObj(e.pricing);
     const lc = asObj(e.long_context);
+    // Seedance:pricing 是桶价 map(桶键 → 价),不是 token 的 input/output。
+    const buckets: Record<string, string> = {};
+    if (isSeedance) {
+      for (const [k, v] of Object.entries(p)) buckets[k] = priceStr(v);
+    }
     return {
       uid: nextCatalogUid(),
       id: typeof e.id === 'string' ? e.id : '',
@@ -1785,12 +1805,35 @@ function parseCatalogRows(raw: string): CatalogRow[] {
       lcInputMult: priceStr(lc.input_multiplier),
       lcCachedMult: priceStr(lc.cached_multiplier),
       lcOutputMult: priceStr(lc.output_multiplier),
+      tier: typeof e.tier === 'string' ? e.tier : '',
+      buckets,
       raw: e,
     };
   });
 }
 
-function serializeCatalogRows(rows: CatalogRow[], isOpenAI: boolean): string {
+// serializeSeedanceRow 序列化视频模型条目:{ id, name?, tier?, enabled?, pricing:{桶→价} }。
+// 只写填了正数的桶(空=沿用内置地板价);不写 token 价 / context / long_context。
+function serializeSeedanceRow(
+  r: CatalogRow,
+  setNum: (obj: Record<string, unknown>, key: string, value: string) => void,
+): Record<string, unknown> {
+  const entry: Record<string, unknown> = { ...r.raw, id: r.id.trim() };
+  if (r.name.trim()) entry.name = r.name.trim(); else delete entry.name;
+  if (r.tier.trim()) entry.tier = r.tier.trim(); else delete entry.tier;
+  // 清掉 token 平台残留字段,防形状污染
+  delete entry.upstream_id; delete entry.kiro_id;
+  delete entry.context_window; delete entry.max_output_tokens; delete entry.long_context;
+  if (!r.enabled) entry.enabled = false; else delete entry.enabled;
+
+  const rawPricing = (entry.pricing && typeof entry.pricing === 'object' && !Array.isArray(entry.pricing))
+    ? { ...(entry.pricing as Record<string, unknown>) } : {};
+  for (const bucket of SEEDANCE_BUCKETS) setNum(rawPricing, bucket, r.buckets[bucket] ?? '');
+  if (Object.keys(rawPricing).length > 0) entry.pricing = rawPricing; else delete entry.pricing;
+  return entry;
+}
+
+function serializeCatalogRows(rows: CatalogRow[], isOpenAI: boolean, isSeedance = false): string {
   const setNum = (obj: Record<string, unknown>, key: string, value: string) => {
     const n = Number(value);
     if (value.trim() && Number.isFinite(n) && n > 0) obj[key] = n; else delete obj[key];
@@ -1798,6 +1841,7 @@ function serializeCatalogRows(rows: CatalogRow[], isOpenAI: boolean): string {
   const out = rows
     .filter((r) => r.id.trim() !== '')
     .map((r) => {
+      if (isSeedance) return serializeSeedanceRow(r, setNum);
       const entry: Record<string, unknown> = { ...r.raw, id: r.id.trim() };
       if (r.name.trim()) entry.name = r.name.trim(); else delete entry.name;
       // upstream_id 与 kiro_id 是同义旧写法,统一写 upstream_id、清掉旧键防漂移
@@ -1839,7 +1883,8 @@ function serializeCatalogRows(rows: CatalogRow[], isOpenAI: boolean): string {
   return JSON.stringify(out, null, 2);
 }
 
-function catalogPriceFields(r: CatalogRow, isOpenAI: boolean): string[] {
+function catalogPriceFields(r: CatalogRow, isOpenAI: boolean, isSeedance: boolean): string[] {
+  if (isSeedance) return SEEDANCE_BUCKETS.map((b) => r.buckets[b] ?? '');
   const shared = [r.input, r.cachedInput, r.output];
   return isOpenAI
     ? [...shared, r.prioInput, r.prioCached, r.prioOutput, r.flexInput, r.flexCached, r.flexOutput,
@@ -1847,7 +1892,7 @@ function catalogPriceFields(r: CatalogRow, isOpenAI: boolean): string[] {
     : [...shared, r.cacheWrite5m, r.cacheWrite1h];
 }
 
-function validateCatalogRows(rows: CatalogRow[], isOpenAI: boolean, t: (k: string, o?: Record<string, unknown>) => string): string[] {
+function validateCatalogRows(rows: CatalogRow[], isOpenAI: boolean, isSeedance: boolean, t: (k: string, o?: Record<string, unknown>) => string): string[] {
   const errs: string[] = [];
   const seen = new Set<string>();
   // 允许 org/model 形式(如 zai-org/glm-5.2-fp8)——上游标准命名带斜杠,插件侧 normalizeID 原样匹配
@@ -1861,7 +1906,7 @@ function validateCatalogRows(rows: CatalogRow[], isOpenAI: boolean, t: (k: strin
     }
     if (seen.has(id)) errs.push(t('settings.models_err_dup', { id }));
     seen.add(id);
-    catalogPriceFields(r, isOpenAI).forEach((p) => {
+    catalogPriceFields(r, isOpenAI, isSeedance).forEach((p) => {
       if (p.trim() !== '' && !(Number(p) > 0)) errs.push(t('settings.models_err_price', { id }));
     });
   });
@@ -1924,7 +1969,13 @@ function builtinPriceSummary(meta: Record<string, string> | undefined, cachedLab
   if (!meta) return '';
   const input = meta['price.input'];
   const output = meta['price.output'];
-  if (!input && !output) return '';
+  if (!input && !output) {
+    // 视频模型:无 input/output,取一个代表桶价(优先 480p_no_ref)作提示。
+    const videoPrefix = 'price.video_tokens.';
+    const repKey = meta[`${videoPrefix}480p_no_ref`] ? `${videoPrefix}480p_no_ref`
+      : Object.keys(meta).find((k) => k.startsWith(videoPrefix));
+    return repKey ? `$${meta[repKey]} · ${repKey.slice(videoPrefix.length).toUpperCase()}` : '';
+  }
   let s = `$${input ?? '—'} / $${output ?? '—'}`;
   if (meta['price.cached_input']) s += ` · ${cachedLabel} $${meta['price.cached_input']}`;
   return s;
@@ -1940,9 +1991,10 @@ function ModelCatalogEditor({ label, settingKey, set, value, builtinModels, onVa
 }) {
   const { t } = useTranslation();
   const isOpenAI = settingKey === 'models.catalog.openai';
+  const isSeedance = settingKey === 'models.catalog.seedance';
   // 本地 state 保证数字输入流畅(避免每键 parse→serialize 丢失尾字符);挂载时从 setting 初始化。
   // 页面在 settings 加载完成前显示全局 spinner,故挂载时 values 已就绪。
-  const [rows, setRows] = useState<CatalogRow[]>(() => parseCatalogRows(value));
+  const [rows, setRows] = useState<CatalogRow[]>(() => parseCatalogRows(value, isSeedance));
   // Provider 分区可折叠：默认只展开"有覆盖条目"的平台，空平台收起省地方。
   const [sectionOpen, setSectionOpen] = useState<boolean>(() => rows.length > 0);
   // 每行展开态按 uid 记（不用下标，删中间行不会错位）；默认仅展开尚未填 id 的新行。
@@ -1955,10 +2007,12 @@ function ModelCatalogEditor({ label, settingKey, set, value, builtinModels, onVa
 
   function commit(next: CatalogRow[]) {
     setRows(next);
-    set(settingKey, next.some((r) => r.id.trim() !== '') ? serializeCatalogRows(next, isOpenAI) : '');
+    set(settingKey, next.some((r) => r.id.trim() !== '') ? serializeCatalogRows(next, isOpenAI, isSeedance) : '');
   }
   const update = (i: number, patch: Partial<CatalogRow>) =>
     commit(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const updateBucket = (i: number, bucket: string, value: string) =>
+    commit(rows.map((r, idx) => (idx === i ? { ...r, buckets: { ...r.buckets, [bucket]: value } } : r)));
   const addRow = () => {
     const row = emptyCatalogRow();
     setSectionOpen(true);
@@ -1977,7 +2031,7 @@ function ModelCatalogEditor({ label, settingKey, set, value, builtinModels, onVa
     commit([...rows, row]);
   };
 
-  const errors = validateCatalogRows(rows, isOpenAI, t);
+  const errors = validateCatalogRows(rows, isOpenAI, isSeedance, t);
   const errorKey = errors.join('\n');
   useEffect(() => {
     onValidationChange(settingKey, errors);
@@ -2022,7 +2076,9 @@ function ModelCatalogEditor({ label, settingKey, set, value, builtinModels, onVa
                   <span className="truncate font-mono text-[13px] text-text">{r.id.trim() || '—'}</span>
                   {r.name.trim() ? <span className="truncate text-[12px] text-text-tertiary">{r.name.trim()}</span> : null}
                   {!r.enabled ? <span className="shrink-0 text-[10px] font-medium uppercase text-text-tertiary">off</span> : null}
-                  <span className="ml-auto shrink-0 font-mono text-[12px] tabular-nums text-text-tertiary">{`$${r.input.trim() || '—'} / $${r.output.trim() || '—'}`}</span>
+                  <span className="ml-auto shrink-0 font-mono text-[12px] tabular-nums text-text-tertiary">{isSeedance
+                    ? `${r.tier.trim() || t('settings.models_tier_inherit')} · $${SEEDANCE_BUCKETS.map((b) => r.buckets[b]).find((v) => v && v.trim()) ?? '—'}`
+                    : `$${r.input.trim() || '—'} / $${r.output.trim() || '—'}`}</span>
                 </button>
                 <Button size="sm" variant="ghost" onPress={() => removeRow(i)} aria-label={t('common.delete')}>
                   <Trash2 className="w-3.5 h-3.5" />
@@ -2032,21 +2088,61 @@ function ModelCatalogEditor({ label, settingKey, set, value, builtinModels, onVa
               <div className="border-t border-glass-border p-3 space-y-2.5">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <Field label={t('settings.models_field_id')}>
-                  <Input value={r.id} onChange={(e) => update(i, { id: e.target.value })} placeholder="claude-xxx / gpt-xxx" />
+                  <Input value={r.id} onChange={(e) => update(i, { id: e.target.value })} placeholder={isSeedance ? 'dreamina-seedance-2-0-xxx' : 'claude-xxx / gpt-xxx'} />
                 </Field>
-                <Field label={t('settings.models_field_upstream')}>
-                  <Input value={r.upstreamID} onChange={(e) => update(i, { upstreamID: e.target.value })} placeholder="optional upstream id" />
-                </Field>
+                {!isSeedance && (
+                  <Field label={t('settings.models_field_upstream')}>
+                    <Input value={r.upstreamID} onChange={(e) => update(i, { upstreamID: e.target.value })} placeholder="optional upstream id" />
+                  </Field>
+                )}
                 <Field label={t('settings.models_field_name')}>
-                  <Input value={r.name} onChange={(e) => update(i, { name: e.target.value })} placeholder="Claude XXX / GPT XXX" />
+                  <Input value={r.name} onChange={(e) => update(i, { name: e.target.value })} placeholder={isSeedance ? 'Seedance 2.0 XXX' : 'Claude XXX / GPT XXX'} />
                 </Field>
-                <Field label={t('settings.models_field_context')}>
-                  <Input type="number" value={r.contextWindow} onChange={(e) => update(i, { contextWindow: e.target.value })} placeholder="1000000" />
-                </Field>
-                <Field label={t('settings.models_field_maxout')}>
-                  <Input type="number" value={r.maxOutput} onChange={(e) => update(i, { maxOutput: e.target.value })} placeholder="128000" />
-                </Field>
+                {isSeedance && (
+                  <Field label={t('settings.models_field_tier')}>
+                    <select
+                      className="w-full rounded-md border border-glass-border bg-transparent px-2 py-2 text-[13px] text-text"
+                      value={r.tier}
+                      onChange={(e) => update(i, { tier: e.target.value })}
+                    >
+                      <option value="">{t('settings.models_tier_inherit')}</option>
+                      {SEEDANCE_TIERS.map((tr) => <option key={tr} value={tr}>{tr}</option>)}
+                    </select>
+                  </Field>
+                )}
+                {!isSeedance && (
+                  <Field label={t('settings.models_field_context')}>
+                    <Input type="number" value={r.contextWindow} onChange={(e) => update(i, { contextWindow: e.target.value })} placeholder="1000000" />
+                  </Field>
+                )}
+                {!isSeedance && (
+                  <Field label={t('settings.models_field_maxout')}>
+                    <Input type="number" value={r.maxOutput} onChange={(e) => update(i, { maxOutput: e.target.value })} placeholder="128000" />
+                  </Field>
+                )}
               </div>
+              {isSeedance ? (
+                <div>
+                  <Label className="block text-[13px] font-medium text-text-secondary mb-1.5">
+                    {t('settings.models_price_video_label')}
+                  </Label>
+                  <div className="space-y-2">
+                    {SEEDANCE_RESOLUTIONS.map((res) => (
+                      <div key={res} className="grid grid-cols-[3rem_1fr_1fr] items-end gap-3">
+                        <span className="pb-2 font-mono text-[12px] uppercase text-text-secondary">{res}</span>
+                        {SEEDANCE_REFS.map((ref) => {
+                          const bucket = `${res}_${ref.suffix}`;
+                          return (
+                            <Field key={bucket} label={t(ref.labelKey)}>
+                              <Input type="number" value={r.buckets[bucket] ?? ''} onChange={(e) => updateBucket(i, bucket, e.target.value)} placeholder="0" />
+                            </Field>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
               <div>
                 <Label className="block text-[13px] font-medium text-text-secondary mb-1.5">
                   {t('settings.models_price_label')}
@@ -2073,6 +2169,7 @@ function ModelCatalogEditor({ label, settingKey, set, value, builtinModels, onVa
                   </Field>
                 </div>
               </div>
+              )}
               {isOpenAI && (
                 <div>
                   <Label className="block text-[13px] font-medium text-text-secondary mb-1.5">

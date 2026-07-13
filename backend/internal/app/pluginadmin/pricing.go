@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"strconv"
+	"strings"
 )
 
 // OverlayReader 按平台读取模型目录覆盖层原文（settings 哑存储 models.catalog.<platform>，
@@ -32,6 +33,9 @@ type PublicPricingModel struct {
 	LongContextInputMultiplier  float64
 	LongContextCachedMultiplier float64
 	LongContextOutputMultiplier float64
+	// 视频生成模型的桶价：bucket（<分辨率>_{no,with}_ref）→ 美元 / 百万 video_tokens。
+	// 非视频模型为 nil；有值时展示端按桶铺价，忽略 Input/Output。
+	VideoTokens map[string]float64
 }
 
 // PublicPlatformPricing 单平台的公开定价清单。
@@ -42,22 +46,46 @@ type PublicPlatformPricing struct {
 
 // overlayModel 覆盖层条目的解析结构（与后台「模型目录」编辑器写入的 schema 一致，
 // 字段语义同各网关插件的 overlay 解析；这里只取公开展示需要的子集）。
+//
+// pricing 有两种形态，靠键名区分而非平台特判：
+//   - token 模型：{input, cached_input, output}
+//   - 视频模型（seedance）：{"480p_no_ref": 7, "720p_with_ref": 4.3, ...}（桶价）
+//
+// 故 pricing 存为原文 json.RawMessage，按需解析成 map[string]float64，
+// 有 input/output 键即 token 价、否则按视频桶价合并。
 type overlayModel struct {
-	ID            string   `json:"id"`
-	Name          string   `json:"name"`
-	ContextWindow int      `json:"context_window"`
-	Enabled       *bool    `json:"enabled"`
-	Pricing       *struct {
-		Input       float64 `json:"input"`
-		CachedInput float64 `json:"cached_input"`
-		Output      float64 `json:"output"`
-	} `json:"pricing"`
-	LongContext *struct {
+	ID            string          `json:"id"`
+	Name          string          `json:"name"`
+	ContextWindow int             `json:"context_window"`
+	Enabled       *bool           `json:"enabled"`
+	Pricing       json.RawMessage `json:"pricing"`
+	LongContext   *struct {
 		Threshold        int     `json:"threshold"`
 		InputMultiplier  float64 `json:"input_multiplier"`
 		CachedMultiplier float64 `json:"cached_multiplier"`
 		OutputMultiplier float64 `json:"output_multiplier"`
 	} `json:"long_context"`
+}
+
+// pricingMap 把 pricing 原文解析为 map[string]float64（空/非法 → nil）。
+func (m overlayModel) pricingMap() map[string]float64 {
+	if len(m.Pricing) == 0 {
+		return nil
+	}
+	var out map[string]float64
+	if err := json.Unmarshal(m.Pricing, &out); err != nil {
+		return nil
+	}
+	return out
+}
+
+// isTokenPricing 判定一份 pricing map 是否为 token 价形态（含 input/output 键）。
+func isTokenPricing(p map[string]float64) bool {
+	if _, ok := p["input"]; ok {
+		return true
+	}
+	_, ok := p["output"]
+	return ok
 }
 
 // PublicModelPricing 汇总各网关平台"当前生效"的模型官方基础价：
@@ -113,10 +141,11 @@ func (s *Service) applyOverlay(ctx context.Context, platform string, models []Pu
 			disabled[entry.ID] = true
 			continue
 		}
+		pricing := entry.pricingMap()
 		pos, exists := index[entry.ID]
 		if !exists {
 			// 覆盖层新增模型：必须自带价格才可公开展示。
-			if entry.Pricing == nil {
+			if len(pricing) == 0 {
 				continue
 			}
 			index[entry.ID] = len(models)
@@ -130,10 +159,32 @@ func (s *Service) applyOverlay(ctx context.Context, platform string, models []Pu
 		if entry.ContextWindow > 0 {
 			target.ContextWindow = entry.ContextWindow
 		}
-		if entry.Pricing != nil {
-			target.Input = entry.Pricing.Input
-			target.CachedInput = entry.Pricing.CachedInput
-			target.Output = entry.Pricing.Output
+		// 视频模型：基座已有桶价，或本条 pricing 是桶价形态（非 token 键）。
+		// 桶价 map 逐桶覆盖（价>0 覆盖、=0 收回该桶），忽略 token/长上下文字段。
+		if target.VideoTokens != nil || (len(pricing) > 0 && !isTokenPricing(pricing)) {
+			if len(pricing) > 0 {
+				if target.VideoTokens == nil {
+					target.VideoTokens = make(map[string]float64, len(pricing))
+				}
+				for bucket, price := range pricing {
+					if price > 0 {
+						target.VideoTokens[bucket] = price
+					} else {
+						delete(target.VideoTokens, bucket)
+					}
+				}
+			}
+			continue
+		}
+		// token 模型：只覆盖 pricing 中实际出现的键，避免把内置底价意外清零。
+		if v, ok := pricing["input"]; ok {
+			target.Input = v
+		}
+		if v, ok := pricing["cached_input"]; ok {
+			target.CachedInput = v
+		}
+		if v, ok := pricing["output"]; ok {
+			target.Output = v
 		}
 		if entry.LongContext != nil {
 			target.LongContextThreshold = entry.LongContext.Threshold
@@ -157,6 +208,16 @@ func (s *Service) applyOverlay(ctx context.Context, platform string, models []Pu
 // parseBuiltinPricing 把插件上报的 price.*/long_context.* metadata 解析为公开定价。
 // 无 price.input 或 price.output 视为"无价格提示"（老插件），跳过。
 func parseBuiltinPricing(id, name string, contextWindow int, capabilities []string, metadata map[string]string) (PublicPricingModel, bool) {
+	// 视频生成模型：价格是 price.video_tokens.<bucket> 桶价，没有 input/output。
+	if buckets := parseVideoBuckets(metadata); len(buckets) > 0 {
+		return PublicPricingModel{
+			ID:            id,
+			Name:          name,
+			ContextWindow: contextWindow,
+			Capabilities:  append([]string(nil), capabilities...),
+			VideoTokens:   buckets,
+		}, true
+	}
 	input, okIn := parsePriceValue(metadata["price.input"])
 	output, okOut := parsePriceValue(metadata["price.output"])
 	if !okIn || !okOut {
@@ -190,4 +251,27 @@ func parsePriceValue(raw string) (float64, bool) {
 		return 0, false
 	}
 	return value, true
+}
+
+// videoTokenPricePrefix 视频桶价 metadata 键前缀（seedance 等视频插件上报）。
+const videoTokenPricePrefix = "price.video_tokens."
+
+// parseVideoBuckets 从 metadata 抽取所有 price.video_tokens.<bucket> 桶价（无则 nil）。
+func parseVideoBuckets(metadata map[string]string) map[string]float64 {
+	var out map[string]float64
+	for key, raw := range metadata {
+		bucket, ok := strings.CutPrefix(key, videoTokenPricePrefix)
+		if !ok || bucket == "" {
+			continue
+		}
+		value, ok := parsePriceValue(raw)
+		if !ok {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]float64)
+		}
+		out[bucket] = value
+	}
+	return out
 }

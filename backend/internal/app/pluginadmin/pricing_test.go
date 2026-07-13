@@ -99,3 +99,80 @@ func TestPublicModelPricingMergesOverlay(t *testing.T) {
 		})
 	}
 }
+
+// TestPublicModelPricingVideoBuckets 视频生成模型（seedance）的桶价投影：
+// 内置 price.video_tokens.* 铺出 → 覆盖层桶价合并（含 =0 收回、修复历史 $0 注入 bug）。
+func TestPublicModelPricingVideoBuckets(t *testing.T) {
+	manager := &fakeCatalogManager{
+		metas: []plugin.PluginMeta{{Name: "airgate-seedance", Type: "gateway", Platform: "seedance"}},
+		models: map[string][]sdk.ModelInfo{
+			"seedance": {
+				{ID: "dreamina-seedance-2-0-hc", Name: "Seedance 2.0 (hc)",
+					Capabilities: []string{"video_generation"},
+					Metadata: map[string]string{
+						"family":                           "seedance-video",
+						"tier":                             "standard",
+						"price.video_tokens.480p_no_ref":   "8.9744",
+						"price.video_tokens.480p_with_ref": "5.5128",
+					}},
+			},
+		},
+	}
+	svc := NewService(manager, nil)
+
+	cases := []struct {
+		name    string
+		overlay string
+		verify  func(t *testing.T, m PublicPricingModel)
+	}{
+		{
+			name:    "无覆盖层：内置桶价铺出，无 input/output",
+			overlay: "",
+			verify: func(t *testing.T, m PublicPricingModel) {
+				if m.Input != 0 || m.Output != 0 {
+					t.Fatalf("视频模型不应有 token 价: %+v", m)
+				}
+				if m.VideoTokens["480p_no_ref"] != 8.9744 || m.VideoTokens["480p_with_ref"] != 5.5128 {
+					t.Fatalf("内置桶价缺失: %+v", m.VideoTokens)
+				}
+			},
+		},
+		{
+			name:    "覆盖层桶价：改价 + 收回某桶",
+			overlay: `[{"id":"dreamina-seedance-2-0-hc","pricing":{"480p_no_ref":7,"480p_with_ref":0}}]`,
+			verify: func(t *testing.T, m PublicPricingModel) {
+				if m.VideoTokens["480p_no_ref"] != 7 {
+					t.Fatalf("覆盖改价失败: %+v", m.VideoTokens)
+				}
+				if _, ok := m.VideoTokens["480p_with_ref"]; ok {
+					t.Fatalf("桶价=0 应收回该桶: %+v", m.VideoTokens)
+				}
+			},
+		},
+		{
+			name:    "历史 stray 桶价 overlay 不再注入 $0 token 价",
+			overlay: `[{"id":"dreamina-seedance-2-0-hc","pricing":{"480p_no_ref":5.0}}]`,
+			verify: func(t *testing.T, m PublicPricingModel) {
+				if m.Input != 0 || m.Output != 0 {
+					t.Fatalf("桶价 overlay 不应产生 token 价: %+v", m)
+				}
+				if m.VideoTokens["480p_no_ref"] != 5.0 {
+					t.Fatalf("桶价应生效: %+v", m.VideoTokens)
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc.SetModelOverlayReader(func(ctx context.Context, platform string) (string, error) {
+				return tc.overlay, nil
+			})
+			result := svc.PublicModelPricing(context.Background())
+			if len(result) != 1 || len(result[0].Models) != 1 {
+				t.Fatalf("result = %+v", result)
+			}
+			tc.verify(t, result[0].Models[0])
+		})
+	}
+}
