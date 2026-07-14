@@ -14,17 +14,24 @@ a:hover{text-decoration:underline}
 .blog-header{border-bottom:1px solid var(--border)}
 .blog-header-inner,.blog-wrap{max-width:760px;margin:0 auto;padding:0 20px}
 .blog-header-inner{display:flex;align-items:center;gap:10px;height:60px}
-.blog-header img{height:26px;width:auto}
+.blog-header img{height:28px;width:auto;display:block}
+.blog-logo-link{display:inline-flex;align-items:center}
 .blog-brand{font-weight:600;font-size:16px;color:var(--fg)}
-.blog-wrap{padding-top:32px;padding-bottom:64px}
-.blog-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:20px;margin-top:24px}
+.blog-wrap{padding-top:40px;padding-bottom:72px}
+.blog-intro{margin-bottom:28px}
+.blog-intro-title{font-size:28px;font-weight:700;letter-spacing:-.01em;margin:0 0 8px}
+.blog-intro-sub{color:var(--muted);font-size:15px;margin:0}
+.blog-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px;margin-top:8px}
 .blog-card{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--card);display:flex;flex-direction:column}
 .blog-card img{width:100%;height:160px;object-fit:cover;display:block}
 .blog-card-body{padding:16px}
 .blog-card-title{font-size:17px;font-weight:600;margin:0 0 8px;color:var(--fg)}
 .blog-card-summary{font-size:14px;color:var(--muted);margin:0 0 10px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .blog-card-date{font-size:12px;color:var(--muted)}
-.blog-empty{color:var(--muted);margin-top:32px}
+.blog-empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:64px 20px;color:var(--muted)}
+.blog-empty svg{width:44px;height:44px;opacity:.5;margin-bottom:16px}
+.blog-empty-title{font-size:17px;font-weight:600;color:var(--fg);margin:0 0 6px}
+.blog-empty-sub{font-size:14px;margin:0}
 .article-title{font-size:30px;font-weight:700;line-height:1.3;margin:8px 0 12px}
 .article-meta{color:var(--muted);font-size:14px;margin-bottom:24px}
 .article-cover{width:100%;border-radius:12px;margin:8px 0 24px;display:block}
@@ -67,10 +74,14 @@ const listTmplStr = `<!doctype html>
 </head>
 <body>
 <header class="blog-header"><div class="blog-header-inner">
-<a href="/blog">{{if .LogoURL}}<img src="{{.LogoURL}}" alt="{{.SiteName}}">{{end}}</a>
+<a href="/blog" class="blog-logo-link">{{if .LogoURL}}<img src="{{.LogoSrc}}" alt="{{.SiteName}}">{{end}}</a>
 <a href="/blog" class="blog-brand">{{if .SiteName}}{{.SiteName}}{{end}} Blog</a>
 </div></header>
 <main class="blog-wrap">
+<div class="blog-intro">
+<h1 class="blog-intro-title">{{if .SiteName}}{{.SiteName}} {{end}}博客</h1>
+<p class="blog-intro-sub">AI 使用方法、模型技巧与实践分享</p>
+</div>
 {{if .Posts}}
 <div class="blog-list">
 {{range .Posts}}
@@ -85,7 +96,11 @@ const listTmplStr = `<!doctype html>
 {{end}}
 </div>
 {{else}}
-<p class="blog-empty">暂无文章。</p>
+<div class="blog-empty">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h8l6 6v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+<p class="blog-empty-title">文章正在路上</p>
+<p class="blog-empty-sub">我们正在准备第一批内容,敬请期待。</p>
+</div>
 {{end}}
 </main>
 <footer class="blog-footer">© {{.SiteName}}</footer>
@@ -118,7 +133,7 @@ const detailTmplStr = `<!doctype html>
 </head>
 <body>
 <header class="blog-header"><div class="blog-header-inner">
-<a href="/blog">{{if .LogoURL}}<img src="{{.LogoURL}}" alt="{{.SiteName}}">{{end}}</a>
+<a href="/blog" class="blog-logo-link">{{if .LogoURL}}<img src="{{.LogoSrc}}" alt="{{.SiteName}}">{{end}}</a>
 <a href="/blog" class="blog-brand">{{if .SiteName}}{{.SiteName}}{{end}} Blog</a>
 </div></header>
 <main class="blog-wrap">

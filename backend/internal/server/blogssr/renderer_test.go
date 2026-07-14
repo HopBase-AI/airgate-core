@@ -187,6 +187,45 @@ func TestSSR_Detail_UnknownSlug404(t *testing.T) {
 	}
 }
 
+// dataLogoSettings 返回 data:image/svg+xml 形式的 logo(site_logo 常见形态)。
+type dataLogoSettings struct{}
+
+func (dataLogoSettings) List(_ context.Context, group string) ([]appsettings.Setting, error) {
+	if group != "site" {
+		return nil, nil
+	}
+	return []appsettings.Setting{
+		{Key: "site_name", Value: "HopBase", Group: "site"},
+		{Key: "site_logo", Value: "data:image/svg+xml;base64,PHN2Zw==", Group: "site"},
+		{Key: "api_base_url", Value: "https://api.hop-base.com", Group: "site"},
+	}, nil
+}
+
+// TestSSR_DataURILogoNotFiltered 回归:data: 形式的 logo 不应被 html/template 过滤成 #ZgotmplZ。
+func TestSSR_DataURILogoNotFiltered(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	pub := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
+	repo := &ssrRepo{posts: []appblog.Post{
+		{ID: 1, Title: "P", Slug: "p", Status: appblog.StatusPublished, ContentHTML: "<p>x</p>", PublishedAt: &pub, UpdatedAt: pub},
+	}}
+	r := gin.New()
+	rend := NewRenderer(appblog.NewService(repo), dataLogoSettings{})
+	r.GET("/blog", rend.RenderList)
+	r.GET("/blog/:slug", rend.RenderDetail)
+
+	for _, path := range []string{"/blog", "/blog/p"} {
+		w := doGet(t, r, path)
+		body := w.Body.String()
+		if strings.Contains(body, "ZgotmplZ") {
+			t.Errorf("%s: data: logo 被 html/template 过滤(应用 template.URL 绕过)", path)
+		}
+		// data URI 保留即可(属性上下文里 + 会被转义成 &#43;,浏览器会还原,无害)。
+		if !strings.Contains(body, "data:image/svg") || !strings.Contains(body, "base64,PHN2Zw==") {
+			t.Errorf("%s: 渲染结果缺少 data: logo 的 <img src>", path)
+		}
+	}
+}
+
 // TestSSR_HostileTitleEscaped 验证恶意标题在 HTML 与 JSON-LD 两处上下文都被转义,无法突破。
 func TestSSR_HostileTitleEscaped(t *testing.T) {
 	gin.SetMode(gin.TestMode)

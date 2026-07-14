@@ -24,6 +24,10 @@ type Branding struct {
 	LogoURL    string
 	ConsoleURL string // 控制台/登录基址,如 https://api.hop-base.com
 	OriginBase string // 当前博客站点基址 scheme://host,用于 canonical/OG 绝对化
+	// LogoSrc 是给 <img src> 用的 logo 地址,类型 template.URL 以绕过 html/template 的
+	// URL 过滤——否则 site_logo 常见的 data:image/svg+xml URI 会被替换成 #ZgotmplZ(logo 裂图)。
+	// 值来自可信的后台设置,且以 <img> 呈现(非脚本上下文),安全。
+	LogoSrc template.URL
 }
 
 // listItem 列表项视图。
@@ -142,6 +146,8 @@ func buildListView(b Branding, posts []appblog.Post) ListView {
 	} else {
 		title = title + " · Blog"
 	}
+	b.LogoURL = absURL(b.OriginBase, b.LogoURL)
+	b.LogoSrc = template.URL(b.LogoURL) //nolint:gosec // 可信后台设置,<img> 呈现
 	return ListView{Branding: b, PageTitle: title, Posts: items}
 }
 
@@ -173,10 +179,11 @@ func buildDetailView(b Branding, p appblog.Post, reqInvite string) DetailView {
 		gatePos = 100
 	}
 
-	jsonLD := buildJSONLD(seoTitle, metaDesc, canonical, ogImage, publishedISO, modifiedISO, b.SiteName, absURL(b.OriginBase, b.LogoURL))
+	logoURL := absURL(b.OriginBase, b.LogoURL)
+	jsonLD := buildJSONLD(seoTitle, metaDesc, canonical, ogImage, publishedISO, modifiedISO, b.SiteName, logoURL)
 
 	return DetailView{
-		Branding:        Branding{SiteName: b.SiteName, LogoURL: absURL(b.OriginBase, b.LogoURL), ConsoleURL: b.ConsoleURL, OriginBase: b.OriginBase},
+		Branding:        Branding{SiteName: b.SiteName, LogoURL: logoURL, LogoSrc: template.URL(logoURL), ConsoleURL: b.ConsoleURL, OriginBase: b.OriginBase}, //nolint:gosec // 可信后台设置,<img> 呈现
 		Title:           seoTitle,
 		MetaDescription: metaDesc,
 		Content:         template.HTML(p.ContentHTML), //nolint:gosec // 已在 service 层经 bluemonday 净化
