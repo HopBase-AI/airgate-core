@@ -1257,8 +1257,8 @@
     "max_concurrency_label": "Maximum concurrency",
     "max_concurrency_hint": "Leave blank or set to 0 for no limit",
     "rate_suffix": "multiplier",
-    "group_discount": "≈{{off}}% off",
-    "rate_tooltip": "Billing multiplier {{rate}}x"
+    "rate_tooltip": "Billing multiplier {{rate}}x",
+    "group_quote": "¥{{m}} per official $1 · ≈{{off}}% off"
   },
   "setup": {
     "title": "System Setup",
@@ -1494,6 +1494,11 @@
     "studio_delete": "Delete",
     "studio_queue_position": "In queue · #{{pos}}",
     "studio_eta": "{{elapsed}}s elapsed · ~{{eta}}s",
+    "studio_eta_flex": "{{elapsed}} elapsed · ~{{eta}}",
+    "studio_eta_overtime": "{{elapsed}} elapsed · taking longer than usual",
+    "studio_time_seconds": "{{count}}s",
+    "studio_video_expiring": "Video link expires in {{time}} — download soon",
+    "studio_image_unavailable": "Image failed to load — it may have expired",
     "studio_retry": "Retry",
     "studio_confirm_regenerate": "Regenerate? This uses one generation credit.",
     "studio_confirm_delete": "Delete this image?",

@@ -1257,8 +1257,8 @@
     "max_concurrency_label": "最大並行數",
     "max_concurrency_hint": "留空或設為 0，代表不設限制",
     "rate_suffix": "倍率",
-    "group_discount": "約 {{zhe}} 折",
-    "rate_tooltip": "結算倍率 {{rate}}x"
+    "rate_tooltip": "結算倍率 {{rate}}x",
+    "group_quote": "¥{{m}}/$1 · 約 {{zhe}} 折"
   },
   "setup": {
     "title": "系統安裝向導",
@@ -1494,6 +1494,11 @@
     "studio_delete": "刪除",
     "studio_queue_position": "佇列中 · 第 {{pos}} 位",
     "studio_eta": "已用 {{elapsed}}s · 約 {{eta}}s",
+    "studio_eta_flex": "已用 {{elapsed}} · 約 {{eta}}",
+    "studio_eta_overtime": "已用 {{elapsed}} · 比平時久一些，仍在生成",
+    "studio_time_seconds": "{{count}} 秒",
+    "studio_video_expiring": "影片連結 {{time}} 後失效，請盡快下載",
+    "studio_image_unavailable": "圖片載入失敗，可能已過保留期",
     "studio_retry": "重試",
     "studio_confirm_regenerate": "確定要重新生成嗎？將消耗一次生成額度。",
     "studio_confirm_delete": "確定要刪除這張圖片嗎？",

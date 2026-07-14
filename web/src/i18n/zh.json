@@ -1257,8 +1257,8 @@
     "max_concurrency_label": "最大并发数",
     "max_concurrency_hint": "留空或 0 表示不限制",
     "rate_suffix": "倍率",
-    "group_discount": "约 {{zhe}} 折",
-    "rate_tooltip": "结算倍率 {{rate}}x"
+    "rate_tooltip": "结算倍率 {{rate}}x",
+    "group_quote": "¥{{m}}/$1 · 约 {{zhe}} 折"
   },
   "setup": {
     "title": "系统安装向导",
@@ -1494,6 +1494,11 @@
     "studio_delete": "删除",
     "studio_queue_position": "队列中 · 第 {{pos}} 位",
     "studio_eta": "已用 {{elapsed}}s · 约 {{eta}}s",
+    "studio_eta_flex": "已用 {{elapsed}} · 约 {{eta}}",
+    "studio_eta_overtime": "已用 {{elapsed}} · 比平时久一些，仍在生成",
+    "studio_time_seconds": "{{count}} 秒",
+    "studio_video_expiring": "视频链接 {{time}} 后失效，请尽快下载",
+    "studio_image_unavailable": "图片加载失败，可能已过保留期",
     "studio_retry": "重试",
     "studio_confirm_regenerate": "确定要重新生成吗？将消耗一次生成额度。",
     "studio_confirm_delete": "确定要删除这张图片吗？",

@@ -240,36 +240,43 @@ export default function UserKeysPage() {
 
   const hasAvailableGroups = groupList.length > 0;
 
-  // 分组选项：右侧展示对官方直付的折扣（统一口径：实付 ÷ 官方直付，倍率降级为 tooltip）；
+  // 分组选项：右侧按统一口径展示报价——「¥X/$1 · 约X折」
+  // （倍率语义 = 每消耗官方 $1 扣多少 ¥ 余额；折 = 倍率 ÷ fx，全站同一定义）。
   // 报价不可用/无折扣意义（如倍率 0 的特殊分组）时回退旧倍率文案。
-  // 用户有专属倍率时显示划线标准折扣 + 专属折扣。
+  // 用户有专属倍率时显示划线标准报价 + 专属报价。
   const userGroupRates = user?.group_rates;
   const formatGroupZhe = (zhe: number) => {
     const value = zhe * 10;
     return value < 1 ? value.toFixed(2) : value.toFixed(1);
   };
+  const formatMultiplier = (m: number) => (Math.round(m * 100) / 100).toString();
   const groupOptions = useMemo(() => groupList.map((g) => {
     const override = userGroupRates?.[g.id];
     const hasOverride = override != null && override > 0 && override !== g.rate_multiplier;
     const quote = groupQuotes.get(g.id);
-    // 折 = usd_multiplier ÷ fx（quote 已按用户专属倍率计算）；标准折按分组标准倍率同比例还原
-    const zhe = quote && (quote.usd_multiplier ?? 0) > 0 && quote.effective_rate > 0
-      ? (quote.usd_multiplier ?? 0) / pricingFx
+    // usd_multiplier = 每官方 $1 扣多少 ¥（quote 已按用户专属倍率计算）；标准报价按分组标准倍率同比例还原
+    const usdMult = quote && (quote.usd_multiplier ?? 0) > 0 && quote.effective_rate > 0
+      ? (quote.usd_multiplier ?? 0)
       : null;
-    const standardZhe = quote && zhe != null && quote.group_rate > 0 && quote.effective_rate !== quote.group_rate
-      ? zhe * (quote.group_rate / quote.effective_rate)
+    const standardMult = quote && usdMult != null && quote.group_rate > 0 && quote.effective_rate !== quote.group_rate
+      ? usdMult * (quote.group_rate / quote.effective_rate)
       : null;
+    const quoteText = (m: number) => t('user_keys.group_quote', {
+      m: formatMultiplier(m),
+      zhe: formatGroupZhe(m / pricingFx),
+      off: Math.round((1 - m / pricingFx) * 100),
+    });
     const rateTooltip = t('user_keys.rate_tooltip', { rate: hasOverride ? override : g.rate_multiplier });
     let suffix: ReactNode;
-    if (zhe != null && zhe > 0 && zhe < 1 && g.rate_multiplier > 0) {
-      suffix = standardZhe != null ? (
+    if (usdMult != null && usdMult / pricingFx < 1 && g.rate_multiplier > 0) {
+      suffix = standardMult != null ? (
         <span className="text-text-tertiary" title={rateTooltip}>
-          <span className="line-through opacity-60">{t('user_keys.group_discount', { zhe: formatGroupZhe(standardZhe), off: Math.round((1 - standardZhe) * 100) })}</span>{' '}
-          <span className="text-primary font-medium">{t('user_keys.group_discount', { zhe: formatGroupZhe(zhe), off: Math.round((1 - zhe) * 100) })}</span>
+          <span className="line-through opacity-60">{quoteText(standardMult)}</span>{' '}
+          <span className="text-primary font-medium">{quoteText(usdMult)}</span>
         </span>
       ) : (
         <span className="text-text-tertiary" title={rateTooltip}>
-          {t('user_keys.group_discount', { zhe: formatGroupZhe(zhe), off: Math.round((1 - zhe) * 100) })}
+          {quoteText(usdMult)}
         </span>
       );
     } else {

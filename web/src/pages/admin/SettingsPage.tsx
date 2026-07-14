@@ -173,11 +173,11 @@ const DEFAULT_LANDING_PRICING_JSON = `{
       "title": "GLM 模型",
       "tag": "OpenAI 兼容",
       "tagStyle": "key",
-      "lead": "GLM 5.2 通过 OpenAI 兼容协议接入，实付约为智谱官方直付价的 4.6 折，适合中文推理、长上下文和高并发文本任务。",
+      "lead": "GLM 5.2 通过 OpenAI 兼容协议接入，按官方直付价 5.5 折结算（每官方 $1 扣 ¥3.74），适合中文推理、长上下文和高并发文本任务。",
       "minWidth": "900px",
       "headers": ["模型 ID", "官方直付价（$）", {"deal":true,"badge":"新品特惠","text":"GLM 专属通道"}, "折扣", "说明"],
       "rows": [
-        {"hl":true,"cells":[{"model":"glm-5.2","tag":"1M 上下文","tagStyle":"key"},{"strike":"$1.40 / $4.40","note":"z.ai 官方牌价 · 缓存 $0.26"},{"deal":true,"strong":"$0.65 / $2.26","save":"约 4.6 折 · 缓存 $0.16"},{"pill":"省约 54%"},{"text":"OpenAI 兼容 /v1/chat/completions"}]}
+        {"hl":true,"cells":[{"model":"glm-5.2","tag":"1M 上下文","tagStyle":"key"},{"strike":"$1.40 / $4.40","note":"z.ai 官方牌价 · 缓存 $0.26"},{"deal":true,"strong":"$0.77 / $2.42","save":"5.5 折 · 缓存 $0.14"},{"pill":"省约 45%"},{"text":"OpenAI 兼容 /v1/chat/completions"}]}
       ],
       "units": "› 价格单位：美元 / 百万 Token（输入 / 输出）。缓存为 Prompt Cache 命中读取价；折扣 = 实付价 ÷ 官方直付价（按 ¥6.8/$ 参考汇率，以输入价计）；价格会因汇率和渠道成本波动略有差异，实际可用模型与扣费以控制台为准。"
     }

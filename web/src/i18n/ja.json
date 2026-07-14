@@ -1255,8 +1255,8 @@
     "max_concurrency_label": "最大同時実行数",
     "max_concurrency_hint": "空欄または 0 の場合は無制限です",
     "rate_suffix": "倍率",
-    "group_discount": "約{{off}}%オフ",
-    "rate_tooltip": "課金倍率 {{rate}}x"
+    "rate_tooltip": "課金倍率 {{rate}}x",
+    "group_quote": "公式$1あたり¥{{m}} · 約{{off}}%オフ"
   },
   "setup": {
     "title": "システムインストールウィザード",
@@ -1492,6 +1492,11 @@
     "studio_delete": "削除",
     "studio_queue_position": "キュー · {{pos}}番目",
     "studio_eta": "経過 {{elapsed}}s · 約 {{eta}}s",
+    "studio_eta_flex": "経過 {{elapsed}} · 約 {{eta}}",
+    "studio_eta_overtime": "経過 {{elapsed}} · いつもより時間がかかっています",
+    "studio_time_seconds": "{{count}} 秒",
+    "studio_video_expiring": "動画リンクはあと {{time}} で失効します。お早めにダウンロードを",
+    "studio_image_unavailable": "画像を読み込めません。保存期限切れの可能性があります",
     "studio_retry": "再試行",
     "studio_confirm_regenerate": "再生成しますか？生成枠を1回消費します。",
     "studio_confirm_delete": "この画像を削除しますか？",
