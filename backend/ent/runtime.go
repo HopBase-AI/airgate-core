@@ -9,6 +9,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/accountevent"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
+	"github.com/DouDOU-start/airgate-core/ent/blogpost"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/plugin"
 	"github.com/DouDOU-start/airgate-core/ent/pluginsource"
@@ -191,6 +192,104 @@ func init() {
 	balancelogDescCreatedAt := balancelogFields[8].Descriptor()
 	// balancelog.DefaultCreatedAt holds the default value on creation for the created_at field.
 	balancelog.DefaultCreatedAt = balancelogDescCreatedAt.Default.(func() time.Time)
+	blogpostFields := schema.BlogPost{}.Fields()
+	_ = blogpostFields
+	// blogpostDescTitle is the schema descriptor for title field.
+	blogpostDescTitle := blogpostFields[0].Descriptor()
+	// blogpost.TitleValidator is a validator for the "title" field. It is called by the builders before save.
+	blogpost.TitleValidator = blogpostDescTitle.Validators[0].(func(string) error)
+	// blogpostDescSlug is the schema descriptor for slug field.
+	blogpostDescSlug := blogpostFields[1].Descriptor()
+	// blogpost.SlugValidator is a validator for the "slug" field. It is called by the builders before save.
+	blogpost.SlugValidator = func() func(string) error {
+		validators := blogpostDescSlug.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(slug string) error {
+			for _, fn := range fns {
+				if err := fn(slug); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// blogpostDescSummary is the schema descriptor for summary field.
+	blogpostDescSummary := blogpostFields[2].Descriptor()
+	// blogpost.DefaultSummary holds the default value on creation for the summary field.
+	blogpost.DefaultSummary = blogpostDescSummary.Default.(string)
+	// blogpostDescCoverImage is the schema descriptor for cover_image field.
+	blogpostDescCoverImage := blogpostFields[3].Descriptor()
+	// blogpost.DefaultCoverImage holds the default value on creation for the cover_image field.
+	blogpost.DefaultCoverImage = blogpostDescCoverImage.Default.(string)
+	// blogpostDescContentHTML is the schema descriptor for content_html field.
+	blogpostDescContentHTML := blogpostFields[4].Descriptor()
+	// blogpost.DefaultContentHTML holds the default value on creation for the content_html field.
+	blogpost.DefaultContentHTML = blogpostDescContentHTML.Default.(string)
+	// blogpostDescInviteCode is the schema descriptor for invite_code field.
+	blogpostDescInviteCode := blogpostFields[6].Descriptor()
+	// blogpost.InviteCodeValidator is a validator for the "invite_code" field. It is called by the builders before save.
+	blogpost.InviteCodeValidator = blogpostDescInviteCode.Validators[0].(func(string) error)
+	// blogpostDescGateEnabled is the schema descriptor for gate_enabled field.
+	blogpostDescGateEnabled := blogpostFields[7].Descriptor()
+	// blogpost.DefaultGateEnabled holds the default value on creation for the gate_enabled field.
+	blogpost.DefaultGateEnabled = blogpostDescGateEnabled.Default.(bool)
+	// blogpostDescGatePosition is the schema descriptor for gate_position field.
+	blogpostDescGatePosition := blogpostFields[8].Descriptor()
+	// blogpost.DefaultGatePosition holds the default value on creation for the gate_position field.
+	blogpost.DefaultGatePosition = blogpostDescGatePosition.Default.(int)
+	// blogpost.GatePositionValidator is a validator for the "gate_position" field. It is called by the builders before save.
+	blogpost.GatePositionValidator = func() func(int) error {
+		validators := blogpostDescGatePosition.Validators
+		fns := [...]func(int) error{
+			validators[0].(func(int) error),
+			validators[1].(func(int) error),
+		}
+		return func(gate_position int) error {
+			for _, fn := range fns {
+				if err := fn(gate_position); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// blogpostDescLang is the schema descriptor for lang field.
+	blogpostDescLang := blogpostFields[9].Descriptor()
+	// blogpost.DefaultLang holds the default value on creation for the lang field.
+	blogpost.DefaultLang = blogpostDescLang.Default.(string)
+	// blogpost.LangValidator is a validator for the "lang" field. It is called by the builders before save.
+	blogpost.LangValidator = blogpostDescLang.Validators[0].(func(string) error)
+	// blogpostDescSeoTitle is the schema descriptor for seo_title field.
+	blogpostDescSeoTitle := blogpostFields[11].Descriptor()
+	// blogpost.DefaultSeoTitle holds the default value on creation for the seo_title field.
+	blogpost.DefaultSeoTitle = blogpostDescSeoTitle.Default.(string)
+	// blogpostDescSeoDescription is the schema descriptor for seo_description field.
+	blogpostDescSeoDescription := blogpostFields[12].Descriptor()
+	// blogpost.DefaultSeoDescription holds the default value on creation for the seo_description field.
+	blogpost.DefaultSeoDescription = blogpostDescSeoDescription.Default.(string)
+	// blogpostDescOgImage is the schema descriptor for og_image field.
+	blogpostDescOgImage := blogpostFields[13].Descriptor()
+	// blogpost.DefaultOgImage holds the default value on creation for the og_image field.
+	blogpost.DefaultOgImage = blogpostDescOgImage.Default.(string)
+	// blogpostDescViewCount is the schema descriptor for view_count field.
+	blogpostDescViewCount := blogpostFields[15].Descriptor()
+	// blogpost.DefaultViewCount holds the default value on creation for the view_count field.
+	blogpost.DefaultViewCount = blogpostDescViewCount.Default.(int)
+	// blogpost.ViewCountValidator is a validator for the "view_count" field. It is called by the builders before save.
+	blogpost.ViewCountValidator = blogpostDescViewCount.Validators[0].(func(int) error)
+	// blogpostDescCreatedAt is the schema descriptor for created_at field.
+	blogpostDescCreatedAt := blogpostFields[17].Descriptor()
+	// blogpost.DefaultCreatedAt holds the default value on creation for the created_at field.
+	blogpost.DefaultCreatedAt = blogpostDescCreatedAt.Default.(func() time.Time)
+	// blogpostDescUpdatedAt is the schema descriptor for updated_at field.
+	blogpostDescUpdatedAt := blogpostFields[18].Descriptor()
+	// blogpost.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	blogpost.DefaultUpdatedAt = blogpostDescUpdatedAt.Default.(func() time.Time)
+	// blogpost.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	blogpost.UpdateDefaultUpdatedAt = blogpostDescUpdatedAt.UpdateDefault.(func() time.Time)
 	groupFields := schema.Group{}.Fields()
 	_ = groupFields
 	// groupDescName is the schema descriptor for name field.

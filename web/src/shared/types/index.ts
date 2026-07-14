@@ -966,3 +966,53 @@ export interface ModelInfo {
   id: string;
   name: string;
 }
+
+// ==================== Blog（博客） ====================
+
+export type BlogStatus = 'draft' | 'published';
+
+export interface BlogPostResp {
+  id: number;
+  title: string;
+  slug: string;
+  summary: string;
+  cover_image: string;
+  content_html: string;
+  status: BlogStatus;
+  invite_code: string;
+  gate_enabled: boolean;
+  gate_position: number;
+  lang: string;
+  tags: string[] | null;
+  seo_title: string;
+  seo_description: string;
+  og_image: string;
+  author_id: number;
+  view_count: number;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateBlogPostReq {
+  title: string;
+  slug?: string;
+  summary?: string;
+  cover_image?: string;
+  content_html?: string;
+  status?: BlogStatus;
+  invite_code?: string;
+  gate_enabled?: boolean;
+  gate_position?: number;
+  lang?: string;
+  tags?: string[];
+  seo_title?: string;
+  seo_description?: string;
+  og_image?: string;
+}
+
+export type UpdateBlogPostReq = Partial<CreateBlogPostReq>;
+
+export interface BlogUploadResp {
+  url: string;
+}

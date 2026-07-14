@@ -33,6 +33,8 @@ import {
   ProfilePage,
   ProxiesPage,
   ReferralPage,
+  BlogListPage,
+  BlogEditorPage,
   SettingsPage,
   SetupPage,
   SubscriptionsPage,
@@ -293,6 +295,15 @@ const adminRelayDetectionRoute = createRoute({ getParentRoute: () => adminLayout
 const adminPluginsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/plugins', component: renderPage(PluginsPage) });
 const adminSettingsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/settings', component: renderPage(SettingsPage) });
 const adminReferralRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/referral', component: renderPage(ReferralPage) });
+const adminBlogRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/blog', component: renderPage(BlogListPage) });
+const adminBlogEditRoute = createRoute({
+  getParentRoute: () => adminLayout,
+  path: '/admin/blog/edit',
+  component: renderPage(BlogEditorPage),
+  validateSearch: (search: Record<string, unknown>): { id?: number } => ({
+    id: typeof search.id === 'number' ? search.id : undefined,
+  }),
+});
 
 const profileRoute = createRoute({ getParentRoute: () => authLayout, path: '/profile', component: renderPage(ProfilePage) });
 const inviteRoute = createRoute({ getParentRoute: () => authLayout, path: '/invite', component: renderPage(InvitePage) });
@@ -390,6 +401,8 @@ const routeTree = rootRoute.addChildren([
       adminPluginsRoute,
       adminSettingsRoute,
       adminReferralRoute,
+      adminBlogRoute,
+      adminBlogEditRoute,
     ]),
     profileRoute,
     inviteRoute,

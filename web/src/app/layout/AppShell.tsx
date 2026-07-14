@@ -42,6 +42,7 @@ import {
   Gift,
   HelpCircle,
   Megaphone,
+  FileText,
   Radar,
   TriangleAlert,
   ChevronLeft,
@@ -74,6 +75,7 @@ const adminMenuItems: MenuItem[] = [
   { path: '/admin/relay-detection', labelKey: 'nav.relay_detection', icon: <Radar className="h-5 w-5" /> },
   // 营销分组：分销返利是首个成员，后续营销玩法（阶梯比例/活动）都挂这里
   { path: '/admin/referral', labelKey: 'nav.referral_admin', icon: <Megaphone className="h-5 w-5" />, sectionKey: 'nav.marketing' },
+  { path: '/admin/blog', labelKey: 'nav.blog', icon: <FileText className="h-5 w-5" /> },
   { path: '/admin/plugins', labelKey: 'nav.plugins', icon: <Puzzle className="h-5 w-5" />, sectionKey: 'nav.system' },
   { path: '/admin/settings', labelKey: 'nav.settings', icon: <Settings className="h-5 w-5" /> },
 ];

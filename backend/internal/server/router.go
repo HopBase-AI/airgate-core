@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/DouDOU-start/airgate-core/internal/plugin"
+	"github.com/DouDOU-start/airgate-core/internal/server/blogssr"
 	"github.com/DouDOU-start/airgate-core/internal/server/middleware"
 	"github.com/DouDOU-start/airgate-core/internal/setup"
 	webfs "github.com/DouDOU-start/airgate-core/internal/web"
@@ -180,6 +181,15 @@ func (s *Server) registerRoutes() {
 
 		// 账号异常事件（异常监控页）
 		adminGroup.GET("/account-events", handlers.AccountEvent.ListAccountEvents)
+
+		// 博客文章管理（营销内容：撰写/发布，落地页 SSR 展示）
+		adminGroup.GET("/blog/posts", handlers.Blog.ListBlogPosts)
+		adminGroup.POST("/blog/posts", handlers.Blog.CreateBlogPost)
+		adminGroup.GET("/blog/posts/:id", handlers.Blog.GetBlogPost)
+		adminGroup.PUT("/blog/posts/:id", handlers.Blog.UpdateBlogPost)
+		adminGroup.DELETE("/blog/posts/:id", handlers.Blog.DeleteBlogPost)
+		// 正文/封面图片上传（TipTap）：走 AssetStorage，需 *ent.Client 故为 Server 方法
+		adminGroup.POST("/blog/upload", s.handleBlogImageUpload)
 
 		// 分组管理
 		adminGroup.GET("/groups", handlers.Group.ListGroups)
@@ -351,6 +361,14 @@ func (s *Server) registerRoutes() {
 		oneclickGroup.POST("/exchange", handlers.OneClick.HandleExchange)
 		oneclickGroup.POST("/verify", handlers.OneClick.HandleVerify)
 	}
+
+	// === 公开博客(SSR，无需认证） ===
+	// 落地页(hop-base.com/blog、essevin.com/blog 经反代)展示的文章页:一实例渲染
+	// 自己 DB 的已发布文章,品牌随实例(site 设置)天然区分。必须在 NoRoute 之前注册,
+	// 否则会被 SPA / API Key 转发逻辑吃掉。
+	blogRenderer := blogssr.NewRenderer(handlers.BlogService, handlers.SettingsService)
+	r.GET("/blog", blogRenderer.RenderList)
+	r.GET("/blog/:slug", blogRenderer.RenderDetail)
 
 	// 上传文件静态服务（这部分仍然在磁盘上，因为是用户上传的运行时数据）
 	//

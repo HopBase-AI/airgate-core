@@ -19,6 +19,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/accountevent"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
+	"github.com/DouDOU-start/airgate-core/ent/blogpost"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/plugin"
 	"github.com/DouDOU-start/airgate-core/ent/pluginsource"
@@ -45,6 +46,8 @@ type Client struct {
 	AccountEvent *AccountEventClient
 	// BalanceLog is the client for interacting with the BalanceLog builders.
 	BalanceLog *BalanceLogClient
+	// BlogPost is the client for interacting with the BlogPost builders.
+	BlogPost *BlogPostClient
 	// Group is the client for interacting with the Group builders.
 	Group *GroupClient
 	// Plugin is the client for interacting with the Plugin builders.
@@ -82,6 +85,7 @@ func (c *Client) init() {
 	c.Account = NewAccountClient(c.config)
 	c.AccountEvent = NewAccountEventClient(c.config)
 	c.BalanceLog = NewBalanceLogClient(c.config)
+	c.BlogPost = NewBlogPostClient(c.config)
 	c.Group = NewGroupClient(c.config)
 	c.Plugin = NewPluginClient(c.config)
 	c.PluginSource = NewPluginSourceClient(c.config)
@@ -189,6 +193,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		Account:            NewAccountClient(cfg),
 		AccountEvent:       NewAccountEventClient(cfg),
 		BalanceLog:         NewBalanceLogClient(cfg),
+		BlogPost:           NewBlogPostClient(cfg),
 		Group:              NewGroupClient(cfg),
 		Plugin:             NewPluginClient(cfg),
 		PluginSource:       NewPluginSourceClient(cfg),
@@ -223,6 +228,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		Account:            NewAccountClient(cfg),
 		AccountEvent:       NewAccountEventClient(cfg),
 		BalanceLog:         NewBalanceLogClient(cfg),
+		BlogPost:           NewBlogPostClient(cfg),
 		Group:              NewGroupClient(cfg),
 		Plugin:             NewPluginClient(cfg),
 		PluginSource:       NewPluginSourceClient(cfg),
@@ -263,9 +269,9 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.APIKey, c.Account, c.AccountEvent, c.BalanceLog, c.Group, c.Plugin,
-		c.PluginSource, c.Proxy, c.ReferralCommission, c.Setting, c.Task, c.UsageLog,
-		c.User, c.UserIdentity, c.UserSubscription,
+		c.APIKey, c.Account, c.AccountEvent, c.BalanceLog, c.BlogPost, c.Group,
+		c.Plugin, c.PluginSource, c.Proxy, c.ReferralCommission, c.Setting, c.Task,
+		c.UsageLog, c.User, c.UserIdentity, c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -275,9 +281,9 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.APIKey, c.Account, c.AccountEvent, c.BalanceLog, c.Group, c.Plugin,
-		c.PluginSource, c.Proxy, c.ReferralCommission, c.Setting, c.Task, c.UsageLog,
-		c.User, c.UserIdentity, c.UserSubscription,
+		c.APIKey, c.Account, c.AccountEvent, c.BalanceLog, c.BlogPost, c.Group,
+		c.Plugin, c.PluginSource, c.Proxy, c.ReferralCommission, c.Setting, c.Task,
+		c.UsageLog, c.User, c.UserIdentity, c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -294,6 +300,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.AccountEvent.mutate(ctx, m)
 	case *BalanceLogMutation:
 		return c.BalanceLog.mutate(ctx, m)
+	case *BlogPostMutation:
+		return c.BlogPost.mutate(ctx, m)
 	case *GroupMutation:
 		return c.Group.mutate(ctx, m)
 	case *PluginMutation:
@@ -994,6 +1002,139 @@ func (c *BalanceLogClient) mutate(ctx context.Context, m *BalanceLogMutation) (V
 		return (&BalanceLogDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown BalanceLog mutation op: %q", m.Op())
+	}
+}
+
+// BlogPostClient is a client for the BlogPost schema.
+type BlogPostClient struct {
+	config
+}
+
+// NewBlogPostClient returns a client for the BlogPost from the given config.
+func NewBlogPostClient(c config) *BlogPostClient {
+	return &BlogPostClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `blogpost.Hooks(f(g(h())))`.
+func (c *BlogPostClient) Use(hooks ...Hook) {
+	c.hooks.BlogPost = append(c.hooks.BlogPost, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `blogpost.Intercept(f(g(h())))`.
+func (c *BlogPostClient) Intercept(interceptors ...Interceptor) {
+	c.inters.BlogPost = append(c.inters.BlogPost, interceptors...)
+}
+
+// Create returns a builder for creating a BlogPost entity.
+func (c *BlogPostClient) Create() *BlogPostCreate {
+	mutation := newBlogPostMutation(c.config, OpCreate)
+	return &BlogPostCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of BlogPost entities.
+func (c *BlogPostClient) CreateBulk(builders ...*BlogPostCreate) *BlogPostCreateBulk {
+	return &BlogPostCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *BlogPostClient) MapCreateBulk(slice any, setFunc func(*BlogPostCreate, int)) *BlogPostCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &BlogPostCreateBulk{err: fmt.Errorf("calling to BlogPostClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*BlogPostCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &BlogPostCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for BlogPost.
+func (c *BlogPostClient) Update() *BlogPostUpdate {
+	mutation := newBlogPostMutation(c.config, OpUpdate)
+	return &BlogPostUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *BlogPostClient) UpdateOne(bp *BlogPost) *BlogPostUpdateOne {
+	mutation := newBlogPostMutation(c.config, OpUpdateOne, withBlogPost(bp))
+	return &BlogPostUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *BlogPostClient) UpdateOneID(id int) *BlogPostUpdateOne {
+	mutation := newBlogPostMutation(c.config, OpUpdateOne, withBlogPostID(id))
+	return &BlogPostUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for BlogPost.
+func (c *BlogPostClient) Delete() *BlogPostDelete {
+	mutation := newBlogPostMutation(c.config, OpDelete)
+	return &BlogPostDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *BlogPostClient) DeleteOne(bp *BlogPost) *BlogPostDeleteOne {
+	return c.DeleteOneID(bp.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *BlogPostClient) DeleteOneID(id int) *BlogPostDeleteOne {
+	builder := c.Delete().Where(blogpost.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &BlogPostDeleteOne{builder}
+}
+
+// Query returns a query builder for BlogPost.
+func (c *BlogPostClient) Query() *BlogPostQuery {
+	return &BlogPostQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeBlogPost},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a BlogPost entity by its id.
+func (c *BlogPostClient) Get(ctx context.Context, id int) (*BlogPost, error) {
+	return c.Query().Where(blogpost.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *BlogPostClient) GetX(ctx context.Context, id int) *BlogPost {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *BlogPostClient) Hooks() []Hook {
+	return c.hooks.BlogPost
+}
+
+// Interceptors returns the client interceptors.
+func (c *BlogPostClient) Interceptors() []Interceptor {
+	return c.inters.BlogPost
+}
+
+func (c *BlogPostClient) mutate(ctx context.Context, m *BlogPostMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&BlogPostCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&BlogPostUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&BlogPostUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&BlogPostDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown BlogPost mutation op: %q", m.Op())
 	}
 }
 
@@ -2767,13 +2908,13 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		APIKey, Account, AccountEvent, BalanceLog, Group, Plugin, PluginSource, Proxy,
-		ReferralCommission, Setting, Task, UsageLog, User, UserIdentity,
-		UserSubscription []ent.Hook
+		APIKey, Account, AccountEvent, BalanceLog, BlogPost, Group, Plugin,
+		PluginSource, Proxy, ReferralCommission, Setting, Task, UsageLog, User,
+		UserIdentity, UserSubscription []ent.Hook
 	}
 	inters struct {
-		APIKey, Account, AccountEvent, BalanceLog, Group, Plugin, PluginSource, Proxy,
-		ReferralCommission, Setting, Task, UsageLog, User, UserIdentity,
-		UserSubscription []ent.Interceptor
+		APIKey, Account, AccountEvent, BalanceLog, BlogPost, Group, Plugin,
+		PluginSource, Proxy, ReferralCommission, Setting, Task, UsageLog, User,
+		UserIdentity, UserSubscription []ent.Interceptor
 	}
 )

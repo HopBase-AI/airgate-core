@@ -18,6 +18,9 @@ type AccountEvent func(*sql.Selector)
 // BalanceLog is the predicate function for balancelog builders.
 type BalanceLog func(*sql.Selector)
 
+// BlogPost is the predicate function for blogpost builders.
+type BlogPost func(*sql.Selector)
+
 // Group is the predicate function for group builders.
 type Group func(*sql.Selector)
 

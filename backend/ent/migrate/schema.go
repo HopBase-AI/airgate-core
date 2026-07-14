@@ -182,6 +182,47 @@ var (
 			},
 		},
 	}
+	// BlogPostsColumns holds the columns for the "blog_posts" table.
+	BlogPostsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "title", Type: field.TypeString},
+		{Name: "slug", Type: field.TypeString, Size: 200},
+		{Name: "summary", Type: field.TypeString, Default: ""},
+		{Name: "cover_image", Type: field.TypeString, Default: ""},
+		{Name: "content_html", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"draft", "published"}, Default: "draft"},
+		{Name: "invite_code", Type: field.TypeString, Nullable: true, Size: 16},
+		{Name: "gate_enabled", Type: field.TypeBool, Default: false},
+		{Name: "gate_position", Type: field.TypeInt, Default: 50},
+		{Name: "lang", Type: field.TypeString, Size: 16, Default: "zh"},
+		{Name: "tags", Type: field.TypeJSON, Nullable: true},
+		{Name: "seo_title", Type: field.TypeString, Default: ""},
+		{Name: "seo_description", Type: field.TypeString, Default: ""},
+		{Name: "og_image", Type: field.TypeString, Default: ""},
+		{Name: "author_id", Type: field.TypeInt, Nullable: true},
+		{Name: "view_count", Type: field.TypeInt, Default: 0},
+		{Name: "published_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// BlogPostsTable holds the schema information for the "blog_posts" table.
+	BlogPostsTable = &schema.Table{
+		Name:       "blog_posts",
+		Columns:    BlogPostsColumns,
+		PrimaryKey: []*schema.Column{BlogPostsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "blogpost_slug",
+				Unique:  true,
+				Columns: []*schema.Column{BlogPostsColumns[2]},
+			},
+			{
+				Name:    "blogpost_status_published_at",
+				Unique:  false,
+				Columns: []*schema.Column{BlogPostsColumns[6], BlogPostsColumns[17]},
+			},
+		},
+	}
 	// GroupsColumns holds the columns for the "groups" table.
 	GroupsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -668,6 +709,7 @@ var (
 		AccountsTable,
 		AccountEventsTable,
 		BalanceLogsTable,
+		BlogPostsTable,
 		GroupsTable,
 		PluginsTable,
 		PluginSourcesTable,

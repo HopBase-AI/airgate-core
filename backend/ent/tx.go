@@ -20,6 +20,8 @@ type Tx struct {
 	AccountEvent *AccountEventClient
 	// BalanceLog is the client for interacting with the BalanceLog builders.
 	BalanceLog *BalanceLogClient
+	// BlogPost is the client for interacting with the BlogPost builders.
+	BlogPost *BlogPostClient
 	// Group is the client for interacting with the Group builders.
 	Group *GroupClient
 	// Plugin is the client for interacting with the Plugin builders.
@@ -177,6 +179,7 @@ func (tx *Tx) init() {
 	tx.Account = NewAccountClient(tx.config)
 	tx.AccountEvent = NewAccountEventClient(tx.config)
 	tx.BalanceLog = NewBalanceLogClient(tx.config)
+	tx.BlogPost = NewBlogPostClient(tx.config)
 	tx.Group = NewGroupClient(tx.config)
 	tx.Plugin = NewPluginClient(tx.config)
 	tx.PluginSource = NewPluginSourceClient(tx.config)

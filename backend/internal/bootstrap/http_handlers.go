@@ -16,6 +16,7 @@ import (
 	appaccountevent "github.com/DouDOU-start/airgate-core/internal/app/accountevent"
 	appapikey "github.com/DouDOU-start/airgate-core/internal/app/apikey"
 	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
+	appblog "github.com/DouDOU-start/airgate-core/internal/app/blog"
 	appdashboard "github.com/DouDOU-start/airgate-core/internal/app/dashboard"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 	appmodelpricing "github.com/DouDOU-start/airgate-core/internal/app/modelpricing"
@@ -72,8 +73,12 @@ type HTTPHandlers struct {
 	AccountEvent   *handler.AccountEventHandler
 	Referral       *handler.ReferralHandler
 	ModelPricing   *handler.ModelPricingHandler
+	Blog           *handler.BlogHandler
 
 	AccountService *appaccount.Service
+	// BlogService 供公开 SSR 博客页(server 包)复用同一份博客用例。
+	BlogService     *appblog.Service
+	SettingsService *appsettings.Service
 }
 
 // NewHTTPHandlers 统一构造 HTTP 处理器。
@@ -104,6 +109,8 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 	relayDetectionService := apprelaydetect.NewService(dep.DB, dep.Config.APIKeySecret())
 	accountEventStore := store.NewAccountEventStore(dep.DB)
 	accountEventService := appaccountevent.NewService(accountEventStore)
+	blogStore := store.NewBlogStore(dep.DB)
+	blogService := appblog.NewService(blogStore)
 
 	// 公开定价投影需要读模型目录覆盖层（settings group=models 的 models.catalog.<platform>）
 	pluginAdminService.SetModelOverlayReader(func(ctx context.Context, platform string) (string, error) {
@@ -163,7 +170,11 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 		AccountEvent:   handler.NewAccountEventHandler(accountEventService),
 		Referral:       handler.NewReferralHandler(referralService),
 		ModelPricing:   handler.NewModelPricingHandler(modelPricingService),
+		Blog:           handler.NewBlogHandler(blogService),
 		AccountService: accountService,
+
+		BlogService:     blogService,
+		SettingsService: settingsService,
 	}
 }
 

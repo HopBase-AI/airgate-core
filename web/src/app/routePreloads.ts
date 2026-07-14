@@ -46,6 +46,8 @@ export const RelayDetectionPage = lazyWithPreload(() => import('../pages/admin/R
 export const PluginsPage = lazyWithPreload(() => import('../pages/admin/PluginsPage'));
 export const SettingsPage = lazyWithPreload(() => import('../pages/admin/SettingsPage'));
 export const ReferralPage = lazyWithPreload(() => import('../pages/admin/ReferralPage'));
+export const BlogListPage = lazyWithPreload(() => import('../pages/admin/BlogListPage'));
+export const BlogEditorPage = lazyWithPreload(() => import('../pages/admin/BlogEditorPage'));
 export const ProfilePage = lazyWithPreload(() => import('../pages/user/ProfilePage'));
 export const UserKeysPage = lazyWithPreload(() => import('../pages/user/UserKeysPage'));
 export const UserUsagePage = lazyWithPreload(() => import('../pages/user/UserUsagePage'));
@@ -88,6 +90,8 @@ const ROUTE_PRELOADS = new Map<string, AnyPreloadableLazyComponent[]>([
   ['/admin/plugins', [PluginsPage]],
   ['/admin/settings', [SettingsPage]],
   ['/admin/referral', [ReferralPage]],
+  ['/admin/blog', [BlogListPage]],
+  ['/admin/blog/edit', [BlogEditorPage]],
 ]);
 
 function normalizePreloadPath(path: string) {

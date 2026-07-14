@@ -16,6 +16,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/accountevent"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
+	"github.com/DouDOU-start/airgate-core/ent/blogpost"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/plugin"
 	"github.com/DouDOU-start/airgate-core/ent/pluginsource"
@@ -91,6 +92,7 @@ func checkColumn(table, column string) error {
 			account.Table:            account.ValidColumn,
 			accountevent.Table:       accountevent.ValidColumn,
 			balancelog.Table:         balancelog.ValidColumn,
+			blogpost.Table:           blogpost.ValidColumn,
 			group.Table:              group.ValidColumn,
 			plugin.Table:             plugin.ValidColumn,
 			pluginsource.Table:       pluginsource.ValidColumn,
