@@ -248,7 +248,6 @@
     "be_mailer_not_configured": "メールサービスが設定されていません",
     "login_failed": "ログインに失敗しました。しばらくしてから再度お試しください",
     "register_failed": "新規登録に失敗しました。しばらくしてから再度お試しください",
-    "register_success": "新規登録が完了しました！メールアドレスとパスワードでログインしてください。",
     "password_mismatch": "入力した2つのパスワードが一致しません",
     "password_too_short": "パスワードは8文字以上必要です",
     "welcome_title": "インテリジェントAI APIゲートウェイ",

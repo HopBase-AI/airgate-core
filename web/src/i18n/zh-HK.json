@@ -248,7 +248,6 @@
     "be_mailer_not_configured": "郵件服務未設定",
     "login_failed": "登入失敗，請稍後重試",
     "register_failed": "註冊失敗，請稍後重試",
-    "register_success": "註冊成功！請使用電郵和密碼登入。",
     "password_mismatch": "兩次輸入的密碼不一致",
     "password_too_short": "密碼至少需要 8 個字元",
     "welcome_title": "智能 AI API 閘道",

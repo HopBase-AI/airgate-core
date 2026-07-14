@@ -248,7 +248,6 @@
     "be_mailer_not_configured": "Email service is not configured",
     "login_failed": "Login failed, please try again later",
     "register_failed": "Registration failed, please try again later",
-    "register_success": "Registration successful! Please login with your email and password.",
     "password_mismatch": "Passwords do not match",
     "password_too_short": "Password must be at least 8 characters",
     "welcome_title": "AI API Gateway",

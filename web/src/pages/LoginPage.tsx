@@ -249,8 +249,10 @@ function LoginForm() {
 
 /* ==================== 注册表单 ==================== */
 
-function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
+function RegisterForm() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { login } = useAuth();
   const site = useSiteSettings();
   const settingsReady = site.settings_loaded;
   const needVerify = site.email_verify_enabled;
@@ -361,7 +363,8 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
     setLoading(true);
     setError('');
     try {
-      await authApi.register({
+      // 注册接口与登录同构返回 token+user，直接入会话免去二次登录
+      const resp = await authApi.register({
         email: registrationEmail,
         password,
         username: username || undefined,
@@ -369,7 +372,8 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
         source_site: getOriginSite() || undefined,
         invite_code: getInviteCode() || undefined,
       });
-      onSuccess();
+      login(resp.token, resp.user);
+      navigate({ to: '/' });
     } catch (err) {
       if (err instanceof ApiError) {
         // 验证码错误则回到第一步(判断用后端原文,展示用本地化文案)
@@ -558,7 +562,6 @@ export default function LoginPage() {
   const site = useSiteSettings();
   const showStatusEntry = useStatusPageEnabled();
   const [activeTab, setActiveTab] = useState<TabKey>('login');
-  const [registerSuccess, setRegisterSuccess] = useState(false);
   const [oauthError, setOauthError] = useState('');
   const [oauthLoading, setOauthLoading] = useState(false);
 
@@ -593,11 +596,6 @@ export default function LoginPage() {
       });
     // 仅在挂载时消费一次回调参数
   }, []);
-
-  const handleRegisterSuccess = () => {
-    setRegisterSuccess(true);
-    setActiveTab('login');
-  };
 
   return (
     <div className="min-h-screen flex relative overflow-hidden bg-bg-deep text-text">
@@ -701,10 +699,7 @@ export default function LoginPage() {
           <Tabs
             className="mb-6 w-full"
             selectedKey={activeTab}
-            onSelectionChange={(key) => {
-              setActiveTab(key as TabKey);
-              setRegisterSuccess(false);
-            }}
+            onSelectionChange={(key) => setActiveTab(key as TabKey)}
             variant="secondary"
           >
             <Tabs.List className="w-full">
@@ -721,13 +716,6 @@ export default function LoginPage() {
             style={{ boxShadow: '0 20px 50px -18px rgba(0,0,0,0.35), 0 0 0 1px color-mix(in oklab, var(--ag-primary) 5%, transparent)' }}
           >
             <Card.Content className="p-6 sm:p-7">
-            {registerSuccess && activeTab === 'login' && (
-              <Alert status="success" className="mb-5">
-                <Alert.Content>
-                  <Alert.Description>{t('auth.register_success')}</Alert.Description>
-                </Alert.Content>
-              </Alert>
-            )}
             {oauthError && (
               <Alert status="danger" className="mb-5">
                 <Alert.Content>
@@ -744,7 +732,7 @@ export default function LoginPage() {
             )}
 
             {activeTab === 'register' && site.registration_enabled ? (
-              <RegisterForm onSuccess={handleRegisterSuccess} />
+              <RegisterForm />
             ) : (
               <LoginForm />
             )}
