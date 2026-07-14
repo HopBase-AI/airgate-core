@@ -37,6 +37,9 @@ func testService(userRates map[int64]float64) *Service {
 		{Platform: "claude", Models: []apppluginadmin.PublicPricingModel{
 			{ID: "claude-fable-5", Input: 10, Output: 50},
 		}},
+		{Platform: "seedance", Models: []apppluginadmin.PublicPricingModel{
+			{ID: "dreamina-seedance-2-0-hc", VideoTokens: map[string]float64{"480p_no_ref": 8.97}},
+		}},
 	}}
 	groups := &fakeGroups{groups: []appgroup.Group{
 		{ID: 1, Name: "Codex Plus", Platform: "openai", RateMultiplier: 0.45,
@@ -46,6 +49,7 @@ func testService(userRates map[int64]float64) *Service {
 		{ID: 17, Name: "GLM", Platform: "openai", RateMultiplier: 0.55,
 			ModelRouting: map[string][]int64{"glm-5.2": {32}}},
 		{ID: 2, Name: "Claude Max", Platform: "claude", RateMultiplier: 2.5},
+		{ID: 21, Name: "Seedance", Platform: "seedance", RateMultiplier: 6.12},
 	}}
 	return NewService(catalog, groups, &fakeUsers{user: appuser.User{GroupRates: userRates}})
 }
@@ -90,6 +94,10 @@ func TestUserPricingPicksBestEligibleGroup(t *testing.T) {
 	}
 	if g := groupQuotes[2]; g.USDMultiplier != 2.5 {
 		t.Fatalf("Claude usd_multiplier = %v", g.USDMultiplier)
+	}
+	// 视频模型分组：桶价即官方美元牌价，倍率直接可比
+	if g := groupQuotes[21]; g.USDMultiplier != 6.12 {
+		t.Fatalf("Seedance usd_multiplier = %v", g.USDMultiplier)
 	}
 }
 

@@ -83,9 +83,10 @@ func (s *Service) UserPricing(ctx context.Context, userID int) (Result, error) {
 }
 
 // groupUSDMultiplier 计算分组相对官方美元价的有效倍率（输入价口径）：
-// 遍历该分组可路由的 token 模型，比值 = 实付倍率 × 基准输入价 / 官方美元输入价，
-// 取最低者（最优惠口径）。常规模型（基准价即官方美元价）比值即实付倍率；
-// CNY 基准模型（如 GLM）需 official_pricing 提供官方美元价，缺失则跳过。
+// 遍历该分组可路由的模型，比值 = 实付倍率 × 基准输入价 / 官方美元输入价，
+// 取最低者（最优惠口径）。常规模型（基准价即官方美元价）与视频模型（桶价即
+// 官方美元牌价）比值即实付倍率；CNY 基准模型需 official_pricing 提供官方
+// 美元价，缺失则跳过（宁缺勿错，避免把 1:1 记账数值当美元换算）。
 func groupUSDMultiplier(catalog []apppluginadmin.PublicPlatformPricing, g appgroup.Group, effectiveRate float64) float64 {
 	best := 0.0
 	for _, platform := range catalog {
@@ -93,19 +94,28 @@ func groupUSDMultiplier(catalog []apppluginadmin.PublicPlatformPricing, g appgro
 			continue
 		}
 		for _, model := range platform.Models {
-			if model.Input <= 0 || !groupServesModel(g.ModelRouting, model.ID) {
+			if !groupServesModel(g.ModelRouting, model.ID) {
 				continue
 			}
-			officialInput := model.Input
-			if model.Official != nil {
-				officialInput = model.Official.Input
-			} else if model.Currency == "CNY" {
-				continue // 人民币基准且无官方美元参考价：无法换算
-			}
-			if officialInput <= 0 {
+			var ratio float64
+			switch {
+			case len(model.VideoTokens) > 0:
+				// 视频桶价（seedance）：官方美元牌价 × 分组倍率，比值即实付倍率
+				ratio = effectiveRate
+			case model.Input > 0:
+				officialInput := model.Input
+				if model.Official != nil {
+					officialInput = model.Official.Input
+				} else if model.Currency == "CNY" {
+					continue // 人民币基准且无官方美元参考价：无法换算
+				}
+				if officialInput <= 0 {
+					continue
+				}
+				ratio = effectiveRate * model.Input / officialInput
+			default:
 				continue
 			}
-			ratio := effectiveRate * model.Input / officialInput
 			if best == 0 || ratio < best {
 				best = ratio
 			}
