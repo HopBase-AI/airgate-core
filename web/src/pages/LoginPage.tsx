@@ -77,6 +77,9 @@ function OAuthButtons({
               const invite = getInviteCode();
               if (site) attribution.set('source_site', site);
               if (invite) attribution.set('invite_code', invite);
+              // 回跳源：回调固定落 api_base_url 域，控制台与 api 不同域时（ToC）据此跳回本域，
+              // 否则登录态落回调域、回到本域显示未登录。后端按白名单校验后才采用。
+              attribution.set('return_origin', window.location.origin);
               const query = attribution.toString();
               window.location.href = `/api/v1/auth/oauth/${provider.id}/authorize${query ? `?${query}` : ''}`;
             }}

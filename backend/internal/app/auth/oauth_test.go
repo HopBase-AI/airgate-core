@@ -175,7 +175,7 @@ func TestOAuthStateRoundTrip(t *testing.T) {
 }
 
 func TestOAuthStateCarriesAttribution(t *testing.T) {
-	state, err := newOAuthState(oauthStateAttrs{SourceSite: "ink", InviteCode: "abcd2345"})
+	state, err := newOAuthState(oauthStateAttrs{SourceSite: "ink", InviteCode: "abcd2345", Origin: "https://console.essevin.com"})
 	if err != nil {
 		t.Fatalf("newOAuthState() error = %v", err)
 	}
@@ -183,8 +183,43 @@ func TestOAuthStateCarriesAttribution(t *testing.T) {
 	if !ok {
 		t.Fatal("携带归因的 state 应通过校验")
 	}
-	if attrs.SourceSite != "ink" || attrs.InviteCode != "abcd2345" {
+	if attrs.SourceSite != "ink" || attrs.InviteCode != "abcd2345" || attrs.Origin != "https://console.essevin.com" {
 		t.Fatalf("归因载荷往返不一致: %+v", attrs)
+	}
+}
+
+// resolveReturnOrigin 白名单：同源 / 同父域兄弟子域放行，外域与降级一律拒绝（防 token 经 fragment 泄露到恶意域）。
+func TestResolveReturnOrigin(t *testing.T) {
+	cases := []struct {
+		name     string
+		apiBase  string
+		extra    string // oauth_return_origins 设置
+		raw      string
+		want     string
+	}{
+		{name: "同源放行", apiBase: "https://api.essevin.com/", raw: "https://api.essevin.com", want: "https://api.essevin.com"},
+		{name: "同父域兄弟子域放行(ToC 主场景)", apiBase: "https://api.essevin.com/", raw: "https://console.essevin.com", want: "https://console.essevin.com"},
+		{name: "带路径归一化为源", apiBase: "https://api.essevin.com/", raw: "https://console.essevin.com/login?x=1#frag", want: "https://console.essevin.com"},
+		{name: "外域拒绝", apiBase: "https://api.essevin.com/", raw: "https://evil.com", want: ""},
+		{name: "冒充子域的外域拒绝", apiBase: "https://api.essevin.com/", raw: "https://essevin.com.evil.com", want: ""},
+		{name: "https→http 降级拒绝", apiBase: "https://api.essevin.com/", raw: "http://console.essevin.com", want: ""},
+		{name: "顶级域不作父域(evil 与 good 皆 .com 不放行)", apiBase: "https://api.hopbase.com/", raw: "https://api.evilbase.com", want: ""},
+		{name: "显式白名单放行异父域", apiBase: "https://api.essevin.com/", extra: "https://panel.other-brand.com", raw: "https://panel.other-brand.com", want: "https://panel.other-brand.com"},
+		{name: "空值放行空(回退相对跳转)", apiBase: "https://api.essevin.com/", raw: "", want: ""},
+		{name: "api_base 未配置则保守拒绝", apiBase: "", raw: "https://console.essevin.com", want: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			settings := map[string][]Setting{"site": {{Key: "api_base_url", Value: tc.apiBase}}}
+			if tc.extra != "" {
+				settings["oauth"] = []Setting{{Key: "oauth_return_origins", Value: tc.extra}}
+			}
+			service := NewService(authStubRepository{}, corauth.NewJWTManager("secret", 24))
+			service.SetSettingsLister(&stubSettingsLister{data: settings})
+			if got := service.resolveReturnOrigin(t.Context(), tc.raw); got != tc.want {
+				t.Fatalf("resolveReturnOrigin(%q) = %q, want %q", tc.raw, got, tc.want)
+			}
+		})
 	}
 }
 

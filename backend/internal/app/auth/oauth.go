@@ -127,31 +127,125 @@ func (s *Service) loadOAuthConfig(ctx context.Context, provider string) oauthPro
 	return cfg
 }
 
-// oauthRedirectURI 回调地址：以 site.api_base_url 为准（需与平台侧登记完全一致）。
-func (s *Service) oauthRedirectURI(ctx context.Context, provider string) (string, error) {
+// siteAPIBaseURL 读取 site.api_base_url（未配置返回空串）。
+func (s *Service) siteAPIBaseURL(ctx context.Context) string {
 	if s.settings == nil {
-		return "", ErrOAuthNotConfigured
+		return ""
 	}
 	items, err := s.settings.List(ctx, "site")
 	if err != nil {
-		return "", err
+		return ""
 	}
-	base := ""
 	for _, item := range items {
 		if item.Key == "api_base_url" {
-			base = strings.TrimSpace(item.Value)
+			return strings.TrimSpace(item.Value)
 		}
 	}
+	return ""
+}
+
+// oauthRedirectURI 回调地址：以 site.api_base_url 为准（需与平台侧登记完全一致）。
+func (s *Service) oauthRedirectURI(ctx context.Context, provider string) (string, error) {
+	base := s.siteAPIBaseURL(ctx)
 	if base == "" {
 		return "", ErrOAuthNotConfigured
 	}
 	return strings.TrimRight(base, "/") + "/api/v1/auth/oauth/" + provider + "/callback", nil
 }
 
+// allowedReturnOrigins 设置分组 oauth 的 oauth_return_origins（逗号分隔）显式白名单，
+// 供控制台域与 api 域非同父域的特殊部署兜底；常规同父域场景无需配置。
+func (s *Service) allowedReturnOrigins(ctx context.Context) []string {
+	if s.settings == nil {
+		return nil
+	}
+	items, err := s.settings.List(ctx, "oauth")
+	if err != nil {
+		return nil
+	}
+	for _, item := range items {
+		if item.Key != "oauth_return_origins" {
+			continue
+		}
+		var out []string
+		for _, part := range strings.Split(item.Value, ",") {
+			if v := strings.TrimRight(strings.TrimSpace(part), "/"); v != "" {
+				out = append(out, v)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// parentDomain 去掉 host 首段后的父域；父域须≥2 段（含至少一个点）才算有效，
+// 从而 "evil.com"→"com" 判无效、杜绝外域借同父域规则放行。
+func parentDomain(host string) string {
+	host = strings.ToLower(strings.Trim(strings.TrimSpace(host), "."))
+	i := strings.IndexByte(host, '.')
+	if i < 0 {
+		return ""
+	}
+	parent := host[i+1:]
+	if !strings.Contains(parent, ".") {
+		return ""
+	}
+	return parent
+}
+
+// resolveReturnOrigin 归一化并校验前端传入的回跳源；通不过一律返回空串（回退相对跳转，
+// 即回调域），确保只会跳回可信第一方域，杜绝开放重定向导致 token 经 fragment 泄露。
+// 放行条件（任一）：与 api 域同源 / 显式白名单 / 与 api 域同父域的兄弟子域（console.X 对 api.X）。
+func (s *Service) resolveReturnOrigin(ctx context.Context, raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
+		return ""
+	}
+	origin := u.Scheme + "://" + u.Host // 归一化：仅留 scheme+host(+port)，丢弃 path/query/fragment
+
+	apiBase, err := url.Parse(s.siteAPIBaseURL(ctx))
+	if err != nil || apiBase.Host == "" {
+		return "" // api_base_url 未配置则无从判定可信域，保守回退
+	}
+	// 与 api 域同源恒允许（ToB：控制台与 api 同域时即此分支）
+	if strings.EqualFold(u.Host, apiBase.Host) {
+		return origin
+	}
+	// 显式白名单
+	for _, allowed := range s.allowedReturnOrigins(ctx) {
+		if strings.EqualFold(origin, allowed) {
+			return origin
+		}
+	}
+	// 同父域兄弟子域：console.essevin.com 对 api.essevin.com，父域同为 essevin.com。
+	// 要求同 scheme，避免 https→http 降级回跳。
+	if u.Scheme == apiBase.Scheme {
+		if p := parentDomain(u.Hostname()); p != "" && p == parentDomain(apiBase.Hostname()) {
+			return origin
+		}
+	}
+	return ""
+}
+
+// OAuthReturnOriginFromState 从已签名 state 解出并复校验回跳源，供 handler 构造回跳地址。
+func (s *Service) OAuthReturnOriginFromState(ctx context.Context, state string) string {
+	attrs, ok := verifyOAuthState(state)
+	if !ok {
+		return ""
+	}
+	return s.resolveReturnOrigin(ctx, attrs.Origin)
+}
+
 // oauthStateAttrs 藏在 state 里往返穿透的注册归因（第三方授权页跳转会丢 query 参数）。
 type oauthStateAttrs struct {
 	SourceSite string `json:"site,omitempty"`
 	InviteCode string `json:"inv,omitempty"`
+	// Origin 发起登录的前端源（已校验），跨域控制台据此跳回原域；空则回退相对跳转。
+	Origin string `json:"o,omitempty"`
 }
 
 // newOAuthState 生成带时间戳与归因载荷的 HMAC 签名 state（防 CSRF + 归因穿透）。
@@ -235,6 +329,7 @@ func (s *Service) OAuthAuthorizeURL(ctx context.Context, provider string, attrib
 	state, err := newOAuthState(oauthStateAttrs{
 		SourceSite: sanitizeSiteID(attribution.SourceSite),
 		InviteCode: sanitizeInviteCode(attribution.InviteCode),
+		Origin:     s.resolveReturnOrigin(ctx, attribution.ReturnOrigin),
 	})
 	if err != nil {
 		return "", err

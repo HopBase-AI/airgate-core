@@ -63,6 +63,10 @@ type RegisterInput struct {
 type OAuthAttribution struct {
 	SourceSite string
 	InviteCode string
+	// ReturnOrigin 发起登录的前端源（scheme://host）。回调固定落在 api_base_url 域，
+	// 当控制台与 api 不同域时（如 ToC：console.essevin.com 发起、api.essevin.com 回调），
+	// 据此把用户跳回原域，否则登录态会落在回调域、回到原域显示未登录。经白名单校验后签进 state。
+	ReturnOrigin string
 }
 
 // SendVerifyCodeInput 发送验证码输入。
