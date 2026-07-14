@@ -173,13 +173,13 @@ const DEFAULT_LANDING_PRICING_JSON = `{
       "title": "GLM 模型",
       "tag": "OpenAI 兼容",
       "tagStyle": "key",
-      "lead": "GLM 5.2 通过 OpenAI 兼容协议接入，按 5.5 折对外结算（销售倍率 0.55x），适合中文推理、长上下文和高并发文本任务。",
+      "lead": "GLM 5.2 通过 OpenAI 兼容协议接入，实付约为智谱官方直付价的 4.6 折，适合中文推理、长上下文和高并发文本任务。",
       "minWidth": "900px",
-      "headers": ["模型 ID", "折前参考价（¥）", {"deal":true,"badge":"新品特惠","text":"GLM · 0.55x"}, "折扣", "说明"],
+      "headers": ["模型 ID", "官方直付价（$）", {"deal":true,"badge":"新品特惠","text":"GLM 专属通道"}, "折扣", "说明"],
       "rows": [
-        {"hl":true,"cells":[{"model":"glm-5.2","tag":"1M 上下文","tagStyle":"key"},{"strike":"¥8.00 / ¥28.00","note":"折前参考 · 缓存 ¥2.00"},{"deal":true,"strong":"¥4.40 / ¥15.40","save":"5.5 折 · 缓存 ¥1.10"},{"pill":"省约 45%"},{"text":"OpenAI 兼容 /v1/chat/completions"}]}
+        {"hl":true,"cells":[{"model":"glm-5.2","tag":"1M 上下文","tagStyle":"key"},{"strike":"$1.40 / $4.40","note":"z.ai 官方牌价 · 缓存 $0.26"},{"deal":true,"strong":"$0.65 / $2.26","save":"约 4.6 折 · 缓存 $0.16"},{"pill":"省约 54%"},{"text":"OpenAI 兼容 /v1/chat/completions"}]}
       ],
-      "units": "› 价格单位：人民币 / 百万 Token（输入 / 输出）。缓存为 Prompt Cache 命中读取价；价格会因汇率和渠道成本波动略有差异，实际可用模型与扣费以控制台为准。"
+      "units": "› 价格单位：美元 / 百万 Token（输入 / 输出）。缓存为 Prompt Cache 命中读取价；折扣 = 实付价 ÷ 官方直付价（按 ¥6.8/$ 参考汇率，以输入价计）；价格会因汇率和渠道成本波动略有差异，实际可用模型与扣费以控制台为准。"
     }
   ]
 }`;
@@ -1744,6 +1744,12 @@ interface CatalogRow {
   lcInputMult: string;
   lcCachedMult: string;
   lcOutputMult: string;
+  // 展示口径(不影响计费):currency="CNY" 表示基准价是官方人民币牌价按 1:1 记账;
+  // official* 为官方美元直付参考价,供前台划线对比与折扣换算
+  currency: string;
+  officialInput: string;
+  officialCached: string;
+  officialOutput: string;
   // Seedance 专属:档位(新增模型声明桶价基底)与桶价表(桶键 → 价字符串)
   tier: string;
   buckets: Record<string, string>;
@@ -1758,6 +1764,7 @@ function emptyCatalogRow(): CatalogRow {
     input: '', cachedInput: '', cacheWrite5m: '', cacheWrite1h: '', output: '',
     prioInput: '', prioCached: '', prioOutput: '', flexInput: '', flexCached: '', flexOutput: '',
     lcThreshold: '', lcInputMult: '', lcCachedMult: '', lcOutputMult: '',
+    currency: '', officialInput: '', officialCached: '', officialOutput: '',
     tier: '', buckets: {},
     raw: {},
   };
@@ -1777,6 +1784,7 @@ function parseCatalogRows(raw: string, isSeedance = false): CatalogRow[] {
     const e = asObj(item);
     const p = asObj(e.pricing);
     const lc = asObj(e.long_context);
+    const official = asObj(e.official_pricing);
     // Seedance:pricing 是桶价 map(桶键 → 价),不是 token 的 input/output。
     const buckets: Record<string, string> = {};
     if (isSeedance) {
@@ -1805,6 +1813,10 @@ function parseCatalogRows(raw: string, isSeedance = false): CatalogRow[] {
       lcInputMult: priceStr(lc.input_multiplier),
       lcCachedMult: priceStr(lc.cached_multiplier),
       lcOutputMult: priceStr(lc.output_multiplier),
+      currency: typeof e.currency === 'string' ? e.currency : '',
+      officialInput: priceStr(official.input),
+      officialCached: priceStr(official.cached_input),
+      officialOutput: priceStr(official.output),
       tier: typeof e.tier === 'string' ? e.tier : '',
       buckets,
       raw: e,
@@ -1878,6 +1890,19 @@ function serializeCatalogRows(rows: CatalogRow[], isOpenAI: boolean, isSeedance 
         setNum(rawLC, 'output_multiplier', r.lcOutputMult);
         if (Object.keys(rawLC).length > 0) entry.long_context = rawLC; else delete entry.long_context;
       }
+
+      // 展示口径(不影响计费):currency 仅在非默认(CNY)时落库;官方美元参考价同 raw 合并
+      if (r.currency.trim() && r.currency.trim().toUpperCase() !== 'USD') {
+        entry.currency = r.currency.trim().toUpperCase();
+      } else {
+        delete entry.currency;
+      }
+      const rawOfficial = (entry.official_pricing && typeof entry.official_pricing === 'object' && !Array.isArray(entry.official_pricing))
+        ? { ...(entry.official_pricing as Record<string, unknown>) } : {};
+      setNum(rawOfficial, 'input', r.officialInput);
+      setNum(rawOfficial, 'cached_input', r.officialCached);
+      setNum(rawOfficial, 'output', r.officialOutput);
+      if (Object.keys(rawOfficial).length > 0) entry.official_pricing = rawOfficial; else delete entry.official_pricing;
       return entry;
     });
   return JSON.stringify(out, null, 2);
@@ -1885,7 +1910,7 @@ function serializeCatalogRows(rows: CatalogRow[], isOpenAI: boolean, isSeedance 
 
 function catalogPriceFields(r: CatalogRow, isOpenAI: boolean, isSeedance: boolean): string[] {
   if (isSeedance) return SEEDANCE_BUCKETS.map((b) => r.buckets[b] ?? '');
-  const shared = [r.input, r.cachedInput, r.output];
+  const shared = [r.input, r.cachedInput, r.output, r.officialInput, r.officialCached, r.officialOutput];
   return isOpenAI
     ? [...shared, r.prioInput, r.prioCached, r.prioOutput, r.flexInput, r.flexCached, r.flexOutput,
       r.lcThreshold, r.lcInputMult, r.lcCachedMult, r.lcOutputMult]
@@ -2086,7 +2111,7 @@ function ModelCatalogEditor({ label, settingKey, set, value, builtinModels, onVa
                   {!r.enabled ? <span className="shrink-0 text-[10px] font-medium uppercase text-text-tertiary">off</span> : null}
                   <span className="ml-auto shrink-0 font-mono text-[12px] tabular-nums text-text-tertiary">{isSeedance
                     ? `${r.tier.trim() || t('settings.models_tier_inherit')} · $${seedanceRepPrice}`
-                    : `$${r.input.trim() || '—'} / $${r.output.trim() || '—'}`}</span>
+                    : `${r.currency.trim().toUpperCase() === 'CNY' ? '¥' : '$'}${r.input.trim() || '—'} / ${r.currency.trim().toUpperCase() === 'CNY' ? '¥' : '$'}${r.output.trim() || '—'}`}</span>
                 </button>
                 <Button size="sm" variant="ghost" onPress={() => removeRow(i)} aria-label={t('common.delete')}>
                   <Trash2 className="w-3.5 h-3.5" />
@@ -2233,6 +2258,35 @@ function ModelCatalogEditor({ label, settingKey, set, value, builtinModels, onVa
                       <Input type="number" value={r.lcOutputMult} onChange={(e) => update(i, { lcOutputMult: e.target.value })} placeholder="1.5" />
                     </Field>
                   </div>
+                </div>
+              )}
+              {!isSeedance && (
+                <div>
+                  <Label className="block text-[13px] font-medium text-text-secondary mb-1.5">
+                    {t('settings.models_display_label')}
+                  </Label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <Field label={t('settings.models_display_currency')}>
+                      <select
+                        className="w-full rounded-md border border-glass-border bg-transparent px-2 py-2 text-[13px] text-text"
+                        value={r.currency.trim().toUpperCase() === 'CNY' ? 'CNY' : 'USD'}
+                        onChange={(e) => update(i, { currency: e.target.value })}
+                      >
+                        <option value="USD">{t('settings.models_currency_usd')}</option>
+                        <option value="CNY">{t('settings.models_currency_cny')}</option>
+                      </select>
+                    </Field>
+                    <Field label={t('settings.models_official_input')}>
+                      <Input type="number" value={r.officialInput} onChange={(e) => update(i, { officialInput: e.target.value })} placeholder="1.4" />
+                    </Field>
+                    <Field label={t('settings.models_official_cached')}>
+                      <Input type="number" value={r.officialCached} onChange={(e) => update(i, { officialCached: e.target.value })} placeholder="0.26" />
+                    </Field>
+                    <Field label={t('settings.models_official_output')}>
+                      <Input type="number" value={r.officialOutput} onChange={(e) => update(i, { officialOutput: e.target.value })} placeholder="4.4" />
+                    </Field>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-4 text-text-tertiary">{t('settings.models_display_desc')}</p>
                 </div>
               )}
               <div className="pt-1">

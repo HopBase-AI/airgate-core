@@ -7,18 +7,29 @@ type PublicModelPricingResp struct {
 	Models   []PublicPricingModelResp `json:"models"`
 }
 
-// PublicPricingModelResp 单模型公开定价。价格单位：美元 / 百万 token。
+// PublicPricingModelResp 单模型公开定价。input/cached_input/output 是计费基准价
+//（余额单位 / 百万 token；常规模型即官方美元价）。currency="CNY" 表示基准价是官方
+// 人民币牌价按 1:1 记账，展示端须按 official（官方美元参考价）做划线对比与折扣换算。
 // 视频生成模型无 input/output，价格在 video_tokens（桶 → $/1M video_tokens）。
 type PublicPricingModelResp struct {
-	ID            string                 `json:"id"`
-	Name          string                 `json:"name,omitempty"`
-	ContextWindow int                    `json:"context_window,omitempty"`
-	Capabilities  []string               `json:"capabilities,omitempty"`
-	Input         float64                `json:"input"`
-	CachedInput   float64                `json:"cached_input,omitempty"`
-	Output        float64                `json:"output"`
-	LongContext   *PublicLongContextResp `json:"long_context,omitempty"`
-	VideoTokens   map[string]float64     `json:"video_tokens,omitempty"`
+	ID            string                     `json:"id"`
+	Name          string                     `json:"name,omitempty"`
+	ContextWindow int                        `json:"context_window,omitempty"`
+	Capabilities  []string                   `json:"capabilities,omitempty"`
+	Input         float64                    `json:"input"`
+	CachedInput   float64                    `json:"cached_input,omitempty"`
+	Output        float64                    `json:"output"`
+	Currency      string                     `json:"currency,omitempty"`
+	Official      *PublicOfficialPricingResp `json:"official,omitempty"`
+	LongContext   *PublicLongContextResp     `json:"long_context,omitempty"`
+	VideoTokens   map[string]float64         `json:"video_tokens,omitempty"`
+}
+
+// PublicOfficialPricingResp 官方直付参考价（美元 / 百万 token）。
+type PublicOfficialPricingResp struct {
+	Input       float64 `json:"input"`
+	CachedInput float64 `json:"cached_input,omitempty"`
+	Output      float64 `json:"output"`
 }
 
 // PublicLongContextResp 长上下文阶梯倍率。
@@ -27,4 +38,36 @@ type PublicLongContextResp struct {
 	InputMultiplier  float64 `json:"input_multiplier,omitempty"`
 	CachedMultiplier float64 `json:"cached_multiplier,omitempty"`
 	OutputMultiplier float64 `json:"output_multiplier,omitempty"`
+}
+
+// MyModelPricingResp 当前登录用户的实付价视图（模型广场/分组选择数据源）。
+type MyModelPricingResp struct {
+	Platforms []MyPlatformPricingResp `json:"platforms"`
+	Groups    []MyGroupQuoteResp      `json:"groups"`
+}
+
+// MyPlatformPricingResp 单平台的用户报价清单。
+type MyPlatformPricingResp struct {
+	Platform string               `json:"platform"`
+	Models   []MyPricingModelResp `json:"models"`
+}
+
+// MyPricingModelResp 单模型的用户报价：公开定价 + 最优可用分组的实付倍率。
+// user_rate=0（省略）表示无可用分组能路由到该模型，展示端回退官方价。
+type MyPricingModelResp struct {
+	PublicPricingModelResp
+	UserRate  float64 `json:"user_rate,omitempty"`
+	GroupID   int     `json:"group_id,omitempty"`
+	GroupName string  `json:"group_name,omitempty"`
+}
+
+// MyGroupQuoteResp 单分组的报价摘要。usd_multiplier 是相对官方美元价的有效倍率
+//（输入价口径），展示端 折扣 = usd_multiplier / 汇率；0 表示无法计算。
+type MyGroupQuoteResp struct {
+	ID            int     `json:"id"`
+	Name          string  `json:"name"`
+	Platform      string  `json:"platform"`
+	GroupRate     float64 `json:"group_rate"`
+	EffectiveRate float64 `json:"effective_rate"`
+	USDMultiplier float64 `json:"usd_multiplier,omitempty"`
 }

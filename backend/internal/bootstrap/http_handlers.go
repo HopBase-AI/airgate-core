@@ -18,6 +18,7 @@ import (
 	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
 	appdashboard "github.com/DouDOU-start/airgate-core/internal/app/dashboard"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
+	appmodelpricing "github.com/DouDOU-start/airgate-core/internal/app/modelpricing"
 	apponeclick "github.com/DouDOU-start/airgate-core/internal/app/oneclick"
 	appopenclaw "github.com/DouDOU-start/airgate-core/internal/app/openclaw"
 	apppluginadmin "github.com/DouDOU-start/airgate-core/internal/app/pluginadmin"
@@ -70,6 +71,7 @@ type HTTPHandlers struct {
 	RelayDetection *handler.RelayDetectionHandler
 	AccountEvent   *handler.AccountEventHandler
 	Referral       *handler.ReferralHandler
+	ModelPricing   *handler.ModelPricingHandler
 
 	AccountService *appaccount.Service
 }
@@ -136,6 +138,9 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 	// 分销返利：入账复用 userService（含余额预警回调），配置读 settings referral 分组
 	referralService := appreferral.NewService(store.NewReferralStore(dep.DB), userService, settingsService)
 
+	// 用户实付价视图：模型目录（含覆盖层）× 可用分组 × 用户专属倍率
+	modelPricingService := appmodelpricing.NewService(pluginAdminService, groupStore, userService)
+
 	upgradeService := upgrade.NewService(upgrade.DetectMode(), dep.Redis)
 
 	return &HTTPHandlers{
@@ -157,6 +162,7 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 		RelayDetection: handler.NewRelayDetectionHandler(relayDetectionService),
 		AccountEvent:   handler.NewAccountEventHandler(accountEventService),
 		Referral:       handler.NewReferralHandler(referralService),
+		ModelPricing:   handler.NewModelPricingHandler(modelPricingService),
 		AccountService: accountService,
 	}
 }

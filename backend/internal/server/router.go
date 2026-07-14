@@ -119,6 +119,9 @@ func (s *Server) registerRoutes() {
 		// 分组
 		accountGroup.GET("/groups", handlers.Group.ListAvailableGroups)
 
+		// 用户实付价视图（模型广场/分组选择数据源）
+		accountGroup.GET("/models/pricing/me", handlers.ModelPricing.MyModelPricing)
+
 		// 订阅
 		accountGroup.GET("/subscriptions", handlers.Subscription.UserSubscriptions)
 		accountGroup.GET("/subscriptions/active", handlers.Subscription.ActiveSubscriptions)

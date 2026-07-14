@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apikeysApi } from '../../shared/api/apikeys';
 import { usePagination } from '../../shared/hooks/usePagination';
 import { groupsApi } from '../../shared/api/groups';
+import { modelsApi } from '../../shared/api/models';
+import { settingsApi } from '../../shared/api/settings';
 import { useToast } from '../../shared/ui';
 import { Alert, AlertDialog, Button, Dropdown, EmptyState, Modal, Spinner, useOverlayState } from '@heroui/react';
 import { DialogTriggerShim } from '../../shared/components/DialogTriggerShim';
@@ -81,6 +83,32 @@ export default function UserKeysPage() {
     queryKey: queryKeys.groupsForKeys(),
     queryFn: () => groupsApi.listAvailable(FETCH_ALL_PARAMS),
   });
+
+  // 分组报价（折扣展示）：usd_multiplier ÷ fx = 对官方直付的折扣；获取失败时回退倍率文案
+  const { data: myPricing } = useQuery({
+    queryKey: queryKeys.myModelPricing(),
+    queryFn: modelsApi.myPricing,
+    staleTime: 60_000,
+    retry: 1,
+  });
+  const { data: publicSettings } = useQuery({
+    queryKey: queryKeys.siteSettings(),
+    queryFn: settingsApi.getPublic,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const pricingFx = useMemo(() => {
+    try {
+      const config = JSON.parse(publicSettings?.toc_landing_pricing ?? '{}') as { fx?: number };
+      return typeof config.fx === 'number' && config.fx > 0 ? config.fx : 6.8;
+    } catch {
+      return 6.8;
+    }
+  }, [publicSettings?.toc_landing_pricing]);
+  const groupQuotes = useMemo(
+    () => new Map((myPricing?.groups ?? []).map((quote) => [quote.id, quote])),
+    [myPricing?.groups],
+  );
 
   // 创建密钥
   const createMutation = useCrudMutation<{ key?: string }, CreateAPIKeyReq>({
@@ -212,24 +240,54 @@ export default function UserKeysPage() {
 
   const hasAvailableGroups = groupList.length > 0;
 
-  // 分组选项（如果用户有专属倍率，右侧显示划线原价 + 专属倍率）
+  // 分组选项：右侧展示对官方直付的折扣（统一口径：实付 ÷ 官方直付，倍率降级为 tooltip）；
+  // 报价不可用/无折扣意义（如倍率 0 的特殊分组）时回退旧倍率文案。
+  // 用户有专属倍率时显示划线标准折扣 + 专属折扣。
   const userGroupRates = user?.group_rates;
+  const formatGroupZhe = (zhe: number) => {
+    const value = zhe * 10;
+    return value < 1 ? value.toFixed(2) : value.toFixed(1);
+  };
   const groupOptions = useMemo(() => groupList.map((g) => {
     const override = userGroupRates?.[g.id];
     const hasOverride = override != null && override > 0 && override !== g.rate_multiplier;
-    return {
-      value: String(g.id),
-      label: g.name,
-      suffix: hasOverride ? (
+    const quote = groupQuotes.get(g.id);
+    // 折 = usd_multiplier ÷ fx（quote 已按用户专属倍率计算）；标准折按分组标准倍率同比例还原
+    const zhe = quote && (quote.usd_multiplier ?? 0) > 0 && quote.effective_rate > 0
+      ? (quote.usd_multiplier ?? 0) / pricingFx
+      : null;
+    const standardZhe = quote && zhe != null && quote.group_rate > 0 && quote.effective_rate !== quote.group_rate
+      ? zhe * (quote.group_rate / quote.effective_rate)
+      : null;
+    const rateTooltip = t('user_keys.rate_tooltip', { rate: hasOverride ? override : g.rate_multiplier });
+    let suffix: ReactNode;
+    if (zhe != null && zhe > 0 && zhe < 1 && g.rate_multiplier > 0) {
+      suffix = standardZhe != null ? (
+        <span className="text-text-tertiary" title={rateTooltip}>
+          <span className="line-through opacity-60">{t('user_keys.group_discount', { zhe: formatGroupZhe(standardZhe), off: Math.round((1 - standardZhe) * 100) })}</span>{' '}
+          <span className="text-primary font-medium">{t('user_keys.group_discount', { zhe: formatGroupZhe(zhe), off: Math.round((1 - zhe) * 100) })}</span>
+        </span>
+      ) : (
+        <span className="text-text-tertiary" title={rateTooltip}>
+          {t('user_keys.group_discount', { zhe: formatGroupZhe(zhe), off: Math.round((1 - zhe) * 100) })}
+        </span>
+      );
+    } else {
+      suffix = hasOverride ? (
         <span className="text-text-tertiary">
           <span className="line-through opacity-60">{g.rate_multiplier}x</span>{' '}
           <span className="text-primary font-medium">{override}x</span>
         </span>
       ) : (
         <span className="text-text-tertiary">{g.rate_multiplier}x {t('user_keys.rate_suffix', '倍率')}</span>
-      ),
+      );
+    }
+    return {
+      value: String(g.id),
+      label: g.name,
+      suffix,
     };
-  }), [groupList, t, userGroupRates]);
+  }), [groupList, groupQuotes, pricingFx, t, userGroupRates]);
 
   // 使用配置弹窗
   const {

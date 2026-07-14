@@ -28,9 +28,13 @@ export interface PublicPricingModel {
   name?: string;
   context_window?: number;
   capabilities?: string[];
+  // input/cached_input/output 是计费基准价（余额单位 / 1M tokens，¥1=$1 平价；常规模型即官方美元价）。
   input: number;
   cached_input?: number;
   output: number;
+  // currency="CNY"：基准价是官方人民币牌价按 1:1 记账，展示须按 official（官方美元参考价）换算。
+  currency?: string;
+  official?: { input: number; cached_input?: number; output: number };
   long_context?: PublicModelLongContext;
   // 视频生成模型的桶价：bucket（<分辨率>_{no,with}_ref）→ $/1M video_tokens。
   // 有值时按桶铺价，无 input/output。
@@ -42,7 +46,36 @@ export interface PublicPlatformPricing {
   models: PublicPricingModel[];
 }
 
+// 用户实付价视图（/models/pricing/me）：公开定价 + 最优可用分组的实付倍率。
+export interface MyPricingModel extends PublicPricingModel {
+  // 实付倍率（计费口径，含用户专属调价）；缺省 = 无可用分组能路由到该模型。
+  user_rate?: number;
+  group_id?: number;
+  group_name?: string;
+}
+
+export interface MyPlatformPricing {
+  platform: string;
+  models: MyPricingModel[];
+}
+
+// usd_multiplier：相对官方美元价的有效倍率（输入价口径），折扣 = usd_multiplier / 汇率。
+export interface MyGroupQuote {
+  id: number;
+  name: string;
+  platform: string;
+  group_rate: number;
+  effective_rate: number;
+  usd_multiplier?: number;
+}
+
+export interface MyModelPricing {
+  platforms: MyPlatformPricing[];
+  groups: MyGroupQuote[];
+}
+
 export const modelsApi = {
   builtin: () => get<BuiltinPlatformModels[]>('/api/v1/admin/models/builtin'),
   pricing: () => get<PublicPlatformPricing[]>('/api/v1/models/pricing'),
+  myPricing: () => get<MyModelPricing>('/api/v1/models/pricing/me'),
 };

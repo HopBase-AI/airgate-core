@@ -100,6 +100,59 @@ func TestPublicModelPricingMergesOverlay(t *testing.T) {
 	}
 }
 
+// TestPublicModelPricingCurrencyOfficial 货币口径与官方参考价：
+// 覆盖层新增 CNY 基准模型（GLM 形态）带 currency + official_pricing；
+// 内置 price.currency / price.official_* metadata 同样可解析；残缺参考价不生效。
+func TestPublicModelPricingCurrencyOfficial(t *testing.T) {
+	manager := &fakeCatalogManager{
+		metas: []plugin.PluginMeta{{Name: "airgate-openai", Type: "gateway", Platform: "openai"}},
+		models: map[string][]sdk.ModelInfo{
+			"openai": {
+				{ID: "gpt-5.5", Name: "GPT 5.5",
+					Metadata: map[string]string{"price.input": "5", "price.output": "30"}},
+				{ID: "cn-builtin", Name: "内置人民币基准模型",
+					Metadata: map[string]string{
+						"price.input": "8", "price.output": "28", "price.currency": "CNY",
+						"price.official_input": "1.4", "price.official_cached_input": "0.26", "price.official_output": "4.4",
+					}},
+			},
+		},
+	}
+	svc := NewService(manager, nil)
+	svc.SetModelOverlayReader(func(ctx context.Context, platform string) (string, error) {
+		return `[
+			{"id":"glm-5.2","name":"GLM-5.2","context_window":1000000,
+			 "pricing":{"input":8,"cached_input":2,"output":28},
+			 "currency":"CNY","official_pricing":{"input":1.4,"cached_input":0.26,"output":4.4}},
+			{"id":"glm-broken","pricing":{"input":8,"output":28},
+			 "currency":"CNY","official_pricing":{"input":1.4}}
+		]`, nil
+	})
+
+	result := svc.PublicModelPricing(context.Background())
+	if len(result) != 1 {
+		t.Fatalf("result = %+v", result)
+	}
+	byID := map[string]PublicPricingModel{}
+	for _, m := range result[0].Models {
+		byID[m.ID] = m
+	}
+	if got := byID["glm-5.2"]; got.Currency != "CNY" || got.Official == nil ||
+		got.Official.Input != 1.4 || got.Official.CachedInput != 0.26 || got.Official.Output != 4.4 ||
+		got.Input != 8 || got.Output != 28 {
+		t.Fatalf("glm-5.2 = %+v official = %+v", got, got.Official)
+	}
+	if got := byID["glm-broken"]; got.Official != nil {
+		t.Fatalf("残缺 official_pricing 不应生效: %+v", got.Official)
+	}
+	if got := byID["cn-builtin"]; got.Currency != "CNY" || got.Official == nil || got.Official.Input != 1.4 {
+		t.Fatalf("内置 price.currency/official 解析失败: %+v official = %+v", got, got.Official)
+	}
+	if got := byID["gpt-5.5"]; got.Currency != "" || got.Official != nil {
+		t.Fatalf("常规模型不应带货币口径: %+v", got)
+	}
+}
+
 // TestPublicModelPricingVideoBuckets 视频生成模型（seedance）的桶价投影：
 // 内置 price.video_tokens.* 铺出 → 覆盖层桶价合并（含 =0 收回、修复历史 $0 注入 bug）。
 func TestPublicModelPricingVideoBuckets(t *testing.T) {

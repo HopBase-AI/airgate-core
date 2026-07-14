@@ -24,10 +24,18 @@ type PublicPricingModel struct {
 	Name          string
 	ContextWindow int
 	Capabilities  []string
-	// 官方基础价，美元 / 百万 token。
+	// 计费基准价：余额单位（¥1=$1 平价）/ 百万 token。绝大多数模型基准价即官方美元价；
+	// Currency=CNY 的模型（如 GLM）基准价是官方人民币牌价数字按 1:1 记账，展示端须按
+	// Currency 换算，不能直接当美元标注。
 	Input       float64
 	CachedInput float64
 	Output      float64
+	// Currency 基准价的货币口径："" / "USD"（默认，官方美元价）或 "CNY"（官方人民币牌价 1:1 记账）。
+	// 只影响展示换算，计费永远直接用基准价数值。
+	Currency string
+	// Official 官方直付参考价（美元 / 百万 token），供展示端做划线对比与折扣计算。
+	// 为 nil 时视基准价本身为官方美元价（Currency=USD 的常规情形）。
+	Official *OfficialPricing
 	// 长上下文阶梯（无则 Threshold=0）。
 	LongContextThreshold        int
 	LongContextInputMultiplier  float64
@@ -36,6 +44,13 @@ type PublicPricingModel struct {
 	// 视频生成模型的桶价：bucket（<分辨率>_{no,with}_ref）→ 美元 / 百万 video_tokens。
 	// 非视频模型为 nil；有值时展示端按桶铺价，忽略 Input/Output。
 	VideoTokens map[string]float64
+}
+
+// OfficialPricing 官方直付参考价（美元 / 百万 token）。
+type OfficialPricing struct {
+	Input       float64
+	CachedInput float64
+	Output      float64
 }
 
 // PublicPlatformPricing 单平台的公开定价清单。
@@ -59,7 +74,12 @@ type overlayModel struct {
 	ContextWindow int             `json:"context_window"`
 	Enabled       *bool           `json:"enabled"`
 	Pricing       json.RawMessage `json:"pricing"`
-	LongContext   *struct {
+	// Currency 基准价货币口径（"CNY" 表示官方人民币牌价按 1:1 记账），
+	// OfficialPricing 官方直付参考价（美元，键 input/cached_input/output）。
+	// 两者只影响展示换算，插件计费侧不读取。
+	Currency        string             `json:"currency"`
+	OfficialPricing map[string]float64 `json:"official_pricing"`
+	LongContext     *struct {
 		Threshold        int     `json:"threshold"`
 		InputMultiplier  float64 `json:"input_multiplier"`
 		CachedMultiplier float64 `json:"cached_multiplier"`
@@ -186,6 +206,12 @@ func (s *Service) applyOverlay(ctx context.Context, platform string, models []Pu
 		if v, ok := pricing["output"]; ok {
 			target.Output = v
 		}
+		if entry.Currency != "" {
+			target.Currency = entry.Currency
+		}
+		if official := parseOfficialPricing(entry.OfficialPricing); official != nil {
+			target.Official = official
+		}
 		if entry.LongContext != nil {
 			target.LongContextThreshold = entry.LongContext.Threshold
 			target.LongContextInputMultiplier = entry.LongContext.InputMultiplier
@@ -232,6 +258,14 @@ func parseBuiltinPricing(id, name string, contextWindow int, capabilities []stri
 		Input:         input,
 		CachedInput:   cached,
 		Output:        output,
+		Currency:      metadata["price.currency"],
+	}
+	// 官方直付参考价（price.official_*，美元）：input/output 齐备才生效，与主价同规则。
+	if offIn, ok := parsePriceValue(metadata["price.official_input"]); ok {
+		if offOut, ok := parsePriceValue(metadata["price.official_output"]); ok {
+			offCached, _ := parsePriceValue(metadata["price.official_cached_input"])
+			item.Official = &OfficialPricing{Input: offIn, CachedInput: offCached, Output: offOut}
+		}
 	}
 	if threshold, err := strconv.Atoi(metadata["long_context.threshold"]); err == nil && threshold > 0 {
 		item.LongContextThreshold = threshold
@@ -240,6 +274,22 @@ func parseBuiltinPricing(id, name string, contextWindow int, capabilities []stri
 		item.LongContextOutputMultiplier, _ = parsePriceValue(metadata["long_context.output_multiplier"])
 	}
 	return item, true
+}
+
+// parseOfficialPricing 把覆盖层 official_pricing map 解析为官方参考价。
+// input/output 齐备（>0）才生效，避免残缺参考价误导展示端。
+func parseOfficialPricing(raw map[string]float64) *OfficialPricing {
+	if raw == nil {
+		return nil
+	}
+	if raw["input"] <= 0 || raw["output"] <= 0 {
+		return nil
+	}
+	return &OfficialPricing{
+		Input:       raw["input"],
+		CachedInput: raw["cached_input"],
+		Output:      raw["output"],
+	}
 }
 
 func parsePriceValue(raw string) (float64, bool) {

@@ -189,7 +189,13 @@
     "capability_tts": "Text-to-speech",
     "capability_stt": "Speech-to-text",
     "capability_code_execution": "Code execution",
-    "capability_embedding": "Embeddings"
+    "capability_embedding": "Embeddings",
+    "subtitle_user": "Prices show what you actually pay with your best available group; struck-through values are official direct-pay references.",
+    "your_price": "Your price",
+    "discount_badge": "Save ≈{{off}}%",
+    "via_group": "Group: {{group}}",
+    "pricing_note_cny": "Balance is topped up at ¥1 = $1. Your price = official base price × your group multiplier. Discounts compare your price with official direct pay (USD list converted at ¥{{fx}}/$).",
+    "pricing_note_usd": "Prices are USD equivalents converted at ¥{{fx}}/$. Discounts compare your price with the official list price."
   },
   "account_events": {
     "title": "Error Monitor",
@@ -1128,7 +1134,15 @@
     "announcement_content": "Content",
     "announcement_content_ph": "e.g. Scheduled maintenance tonight 22:00–23:00; brief interruptions possible.",
     "announcement_popup_title": "Site Announcement",
-    "announcement_popup_dismiss": "Got it"
+    "announcement_popup_dismiss": "Got it",
+    "models_display_label": "Display basis (billing unaffected)",
+    "models_display_currency": "Base price currency",
+    "models_currency_usd": "USD · official USD list",
+    "models_currency_cny": "CNY · CNY list recorded 1:1",
+    "models_official_input": "Official input $",
+    "models_official_cached": "Official cached $",
+    "models_official_output": "Official output $",
+    "models_display_desc": "For CNY-list models (e.g. GLM), pick CNY and fill the official USD reference prices so the storefront can show the correct list price and discount; billing always uses base price × group multiplier."
   },
   "docs": {
     "cta_hint": "Ready to start? Jump in now.",
@@ -1242,7 +1256,9 @@
     "sell_rate_hint": "Leave blank or set to 0 to bill at the platform list price",
     "max_concurrency_label": "Maximum concurrency",
     "max_concurrency_hint": "Leave blank or set to 0 for no limit",
-    "rate_suffix": "multiplier"
+    "rate_suffix": "multiplier",
+    "group_discount": "≈{{off}}% off",
+    "rate_tooltip": "Billing multiplier {{rate}}x"
   },
   "setup": {
     "title": "System Setup",

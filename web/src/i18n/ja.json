@@ -189,7 +189,13 @@
     "capability_tts": "音声合成（TTS）",
     "capability_stt": "音声認識（STT）",
     "capability_code_execution": "コード実行",
-    "capability_embedding": "埋め込み"
+    "capability_embedding": "埋め込み",
+    "subtitle_user": "利用可能なグループでの実質価格を表示します。取り消し線は公式直接支払いの参考価格です。",
+    "your_price": "実質価格",
+    "discount_badge": "約{{off}}%オフ",
+    "via_group": "グループ: {{group}}",
+    "pricing_note_cny": "残高は ¥1 = $1 でチャージされます。実質価格 = 公式基準価格 × グループ倍率。割引率は公式直接支払い（USD 定価を ¥{{fx}}/$ で換算）との比較です。",
+    "pricing_note_usd": "価格は ¥{{fx}}/$ で換算した USD 相当額です。割引率は公式定価との比較です。"
   },
   "account_events": {
     "title": "異常モニター",
@@ -1126,7 +1132,15 @@
     "announcement_level_warning": "注意",
     "announcement_level_danger": "緊急",
     "announcement_content": "内容",
-    "announcement_content_ph": "例：本日 22:00〜23:00 にメンテナンスを実施します。短時間の中断が発生する場合があります。"
+    "announcement_content_ph": "例：本日 22:00〜23:00 にメンテナンスを実施します。短時間の中断が発生する場合があります。",
+    "models_display_label": "表示基準（課金に影響なし）",
+    "models_display_currency": "基準価格の通貨",
+    "models_currency_usd": "USD・公式 USD 定価",
+    "models_currency_cny": "CNY・人民元定価を 1:1 記帳",
+    "models_official_input": "公式入力価格 $",
+    "models_official_cached": "公式キャッシュ価格 $",
+    "models_official_output": "公式出力価格 $",
+    "models_display_desc": "人民元定価モデル（GLM など）は CNY を選び、公式 USD 参考価格を入力してください。課金は常に基準価格 × グループ倍率で行われます。"
   },
   "docs": {
     "cta_hint": "準備はできましたか？今すぐ利用を始めましょう。",
@@ -1240,7 +1254,9 @@
     "sell_rate_hint": "空欄または 0 の場合はプラットフォームの定価で請求します",
     "max_concurrency_label": "最大同時実行数",
     "max_concurrency_hint": "空欄または 0 の場合は無制限です",
-    "rate_suffix": "倍率"
+    "rate_suffix": "倍率",
+    "group_discount": "約{{off}}%オフ",
+    "rate_tooltip": "課金倍率 {{rate}}x"
   },
   "setup": {
     "title": "システムインストールウィザード",

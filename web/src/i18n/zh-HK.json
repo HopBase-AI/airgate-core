@@ -189,7 +189,13 @@
     "capability_tts": "語音合成",
     "capability_stt": "語音識別",
     "capability_code_execution": "程式碼執行",
-    "capability_embedding": "向量嵌入"
+    "capability_embedding": "向量嵌入",
+    "subtitle_user": "展示你可用分組中最優的實付價，劃線為官方直付參考價；模型 ID 可直接用於 API 請求。",
+    "your_price": "你的實付價",
+    "discount_badge": "約 {{zhe}} 折 · 省 {{off}}%",
+    "via_group": "分組：{{group}}",
+    "pricing_note_cny": "餘額按 ¥1 = $1 充值；實付價 = 官方基準價 × 你的分組倍率；「約 X 折」= 實付價 ÷ 官方直付價（美元官方價按 ¥{{fx}}/$ 參考匯率折算）。",
+    "pricing_note_usd": "實付價為按 ¥{{fx}}/$ 參考匯率折算的美元等值價格；「約 X 折」= 實付價 ÷ 官方直付價。"
   },
   "account_events": {
     "title": "異常監控",
@@ -1128,7 +1134,15 @@
     "announcement_content": "通知內容",
     "announcement_content_ph": "例如:今晚 22:00-23:00 系統維護,期間服務可能短暫中斷。",
     "announcement_popup_title": "網站公告",
-    "announcement_popup_dismiss": "我知道了"
+    "announcement_popup_dismiss": "我知道了",
+    "models_display_label": "展示口徑（不影響計費）",
+    "models_display_currency": "基準價貨幣",
+    "models_currency_usd": "USD · 官方美元價",
+    "models_currency_cny": "CNY · 人民幣牌價按 1:1 記賬",
+    "models_official_input": "官方輸入價 $",
+    "models_official_cached": "官方緩存價 $",
+    "models_official_output": "官方輸出價 $",
+    "models_display_desc": "人民幣牌價模型（如 GLM）需選 CNY 並填官方美元參考價，前台才能正確顯示劃線官方價與折扣；計費始終按上方基準價 × 分組倍率。"
   },
   "docs": {
     "cta_hint": "準備好了嗎？立即開始使用。",
@@ -1242,7 +1256,9 @@
     "sell_rate_hint": "留空或設為 0，代表按平台原價計費",
     "max_concurrency_label": "最大並行數",
     "max_concurrency_hint": "留空或設為 0，代表不設限制",
-    "rate_suffix": "倍率"
+    "rate_suffix": "倍率",
+    "group_discount": "約 {{zhe}} 折",
+    "rate_tooltip": "結算倍率 {{rate}}x"
   },
   "setup": {
     "title": "系統安裝向導",

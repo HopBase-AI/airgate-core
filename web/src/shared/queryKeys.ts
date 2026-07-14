@@ -43,6 +43,7 @@ export const queryKeys = {
   oneclickStatus: (...args: unknown[]) => ['oneclick-status', ...args] as const,
   builtinModels: () => ['builtin-models'] as const,
   modelPricing: () => ['model-pricing'] as const,
+  myModelPricing: () => ['my-model-pricing'] as const,
   userBalanceHistory: (...args: unknown[]) => ['user-balance-history', ...args] as const,
   userTrend: (...args: unknown[]) => ['user-trend', ...args] as const,
   statusPageEnabled: () => ['status-page-enabled'] as const,

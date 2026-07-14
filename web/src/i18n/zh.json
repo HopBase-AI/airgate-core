@@ -189,7 +189,13 @@
     "capability_tts": "语音合成",
     "capability_stt": "语音识别",
     "capability_code_execution": "代码执行",
-    "capability_embedding": "向量嵌入"
+    "capability_embedding": "向量嵌入",
+    "subtitle_user": "展示你可用分组中最优的实付价，划线为官方直付参考价；模型 ID 可直接用于 API 请求。",
+    "your_price": "你的实付价",
+    "discount_badge": "约 {{zhe}} 折 · 省 {{off}}%",
+    "via_group": "分组：{{group}}",
+    "pricing_note_cny": "余额按 ¥1 = $1 充值；实付价 = 官方基准价 × 你的分组倍率；「约 X 折」= 实付价 ÷ 官方直付价（美元官方价按 ¥{{fx}}/$ 参考汇率折算）。",
+    "pricing_note_usd": "实付价为按 ¥{{fx}}/$ 参考汇率折算的美元等值价格；「约 X 折」= 实付价 ÷ 官方直付价。"
   },
   "account_events": {
     "title": "异常监控",
@@ -1128,7 +1134,15 @@
     "announcement_content": "通知内容",
     "announcement_content_ph": "例如:今晚 22:00-23:00 系统维护,期间服务可能短暂中断。",
     "announcement_popup_title": "站点公告",
-    "announcement_popup_dismiss": "我知道了"
+    "announcement_popup_dismiss": "我知道了",
+    "models_display_label": "展示口径（不影响计费）",
+    "models_display_currency": "基准价货币",
+    "models_currency_usd": "USD · 官方美元价",
+    "models_currency_cny": "CNY · 人民币牌价按 1:1 记账",
+    "models_official_input": "官方输入价 $",
+    "models_official_cached": "官方缓存价 $",
+    "models_official_output": "官方输出价 $",
+    "models_display_desc": "人民币牌价模型（如 GLM）需选 CNY 并填官方美元参考价，前台才能正确显示划线官方价与折扣；计费始终按上方基准价 × 分组倍率。"
   },
   "docs": {
     "cta_hint": "准备好了吗？立即开始使用。",
@@ -1242,7 +1256,9 @@
     "sell_rate_hint": "留空或 0 表示按平台原价计费",
     "max_concurrency_label": "最大并发数",
     "max_concurrency_hint": "留空或 0 表示不限制",
-    "rate_suffix": "倍率"
+    "rate_suffix": "倍率",
+    "group_discount": "约 {{zhe}} 折",
+    "rate_tooltip": "结算倍率 {{rate}}x"
   },
   "setup": {
     "title": "系统安装向导",
