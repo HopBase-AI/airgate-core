@@ -50,6 +50,8 @@ func testService(userRates map[int64]float64) *Service {
 			ModelRouting: map[string][]int64{"glm-5.2": {32}}},
 		{ID: 2, Name: "Claude Max", Platform: "claude", RateMultiplier: 2.5},
 		{ID: 21, Name: "Seedance", Platform: "seedance", RateMultiplier: 6.12},
+		// 固定图价哨兵组：倍率 0 + 空路由（匹配所有 openai 模型），不得污染 token 报价
+		{ID: 7, Name: "Image 4k", Platform: "openai", RateMultiplier: 0, ModelRouting: map[string][]int64{}},
 	}}
 	return NewService(catalog, groups, &fakeUsers{user: appuser.User{GroupRates: userRates}})
 }
@@ -118,6 +120,48 @@ func TestUserPricingHonorsUserRateOverride(t *testing.T) {
 	for _, g := range result.Groups {
 		if g.ID == 3 && (g.EffectiveRate != 0.3 || g.GroupRate != 0.6 || g.USDMultiplier != 0.3) {
 			t.Fatalf("Codex Pro quote = %+v", g)
+		}
+	}
+}
+
+// TestUserPricingExcludesFixedPriceSentinel 复现生产 bug：4k 超分图组（倍率 0 + 空路由）
+// 会以 billing 的 1.0 兜底价污染 Gemini/GLM/图像等 >1.0 倍率模型的广场折扣（1.5 折假象）。
+func TestUserPricingExcludesFixedPriceSentinel(t *testing.T) {
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{
+		{Platform: "openai", Models: []apppluginadmin.PublicPricingModel{
+			{ID: "gemini-3.5-flash", Input: 5, Output: 15}, // 官方美元基准
+			{ID: "gpt-image-1", Input: 5, Output: 30},      // 仅哨兵组能匹配 → 应回退官方价
+		}},
+	}}
+	groups := &fakeGroups{groups: []appgroup.Group{
+		{ID: 18, Name: "Azure Gemini", Platform: "openai", RateMultiplier: 3.1,
+			ModelRouting: map[string][]int64{"gemini-3.5-flash": {29}}},
+		{ID: 7, Name: "Image 4k", Platform: "openai", RateMultiplier: 0, ModelRouting: map[string][]int64{}},
+	}}
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{}})
+
+	result, err := svc.UserPricing(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	quotes := map[string]ModelQuote{}
+	for _, p := range result.Platforms {
+		for _, m := range p.Models {
+			quotes[m.ID] = m
+		}
+	}
+	// Gemini：真实分组 3.1 胜出，不是哨兵组的 1.0 兜底
+	if q := quotes["gemini-3.5-flash"]; q.UserRate != 3.1 || q.GroupID != 18 {
+		t.Fatalf("gemini 被哨兵组污染: %+v", q)
+	}
+	// 仅哨兵组能匹配的图像模型：无有效分组 → UserRate 0（前端回退官方价），不是 1.0
+	if q := quotes["gpt-image-1"]; q.UserRate != 0 {
+		t.Fatalf("gpt-image-1 应回退官方价（UserRate 0），实际 %+v", q)
+	}
+	// 哨兵组自身报价摘要 usd_multiplier=0（前端回退「0x 倍率」文案）
+	for _, g := range result.Groups {
+		if g.ID == 7 && g.USDMultiplier != 0 {
+			t.Fatalf("哨兵组 usd_multiplier 应为 0: %+v", g)
 		}
 	}
 }

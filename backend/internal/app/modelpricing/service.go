@@ -55,7 +55,10 @@ func (s *Service) UserPricing(ctx context.Context, userID int) (Result, error) {
 				if g.Platform != platform.Platform || !groupServesModel(g.ModelRouting, model.ID) {
 					continue
 				}
-				rate := billing.ResolveBillingRateForGroup(u.GroupRates, g.ID, g.RateMultiplier)
+				rate, ok := effectiveGroupRate(u.GroupRates, g)
+				if !ok {
+					continue // 固定图价/特殊分组（倍率哨兵 0）：不参与 token 报价
+				}
 				if quote.UserRate == 0 || rate < quote.UserRate {
 					quote.UserRate = rate
 					quote.GroupID = g.ID
@@ -76,10 +79,27 @@ func (s *Service) UserPricing(ctx context.Context, userID int) (Result, error) {
 			Platform:      g.Platform,
 			GroupRate:     g.RateMultiplier,
 			EffectiveRate: effective,
-			USDMultiplier: groupUSDMultiplier(catalog, g, effective),
+			USDMultiplier: groupUSDMultiplier(catalog, g, u.GroupRates),
 		})
 	}
 	return result, nil
+}
+
+// effectiveGroupRate 返回分组对该用户的有效 token 倍率。
+// ok=false 表示这是固定图价/特殊分组：rate_multiplier<=0 且无正的用户专属倍率。
+// 倍率 0 是「按固定图价计费、token 倍率不适用」的哨兵，不能当 token 折扣参与广场选价，
+// 否则 billing 的 1.0 兜底会把 GLM/Gemini/图像等模型污染成「1.5 折」的假象
+//（空 model_routing 的 4k 超分图组即此坑）。
+func effectiveGroupRate(userGroupRates map[int64]float64, g appgroup.Group) (float64, bool) {
+	if userGroupRates != nil {
+		if r, ok := userGroupRates[int64(g.ID)]; ok && r > 0 {
+			return r, true
+		}
+	}
+	if g.RateMultiplier > 0 {
+		return g.RateMultiplier, true
+	}
+	return 0, false
 }
 
 // groupUSDMultiplier 计算分组相对官方美元价的有效倍率（输入价口径）：
@@ -87,7 +107,11 @@ func (s *Service) UserPricing(ctx context.Context, userID int) (Result, error) {
 // 取最低者（最优惠口径）。常规模型（基准价即官方美元价）与视频模型（桶价即
 // 官方美元牌价）比值即实付倍率；CNY 基准模型需 official_pricing 提供官方
 // 美元价，缺失则跳过（宁缺勿错，避免把 1:1 记账数值当美元换算）。
-func groupUSDMultiplier(catalog []apppluginadmin.PublicPlatformPricing, g appgroup.Group, effectiveRate float64) float64 {
+func groupUSDMultiplier(catalog []apppluginadmin.PublicPlatformPricing, g appgroup.Group, userGroupRates map[int64]float64) float64 {
+	effectiveRate, ok := effectiveGroupRate(userGroupRates, g)
+	if !ok {
+		return 0 // 固定图价/特殊分组：无有效 token 倍率，前端回退「Nx 倍率」文案
+	}
 	best := 0.0
 	for _, platform := range catalog {
 		if platform.Platform != g.Platform {
