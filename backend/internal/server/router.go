@@ -118,8 +118,6 @@ func (s *Server) registerRoutes() {
 		// 分销邀请：我的邀请码/概览 + 返利流水
 		accountGroup.GET("/referral/me", handlers.Referral.MyReferral)
 		accountGroup.GET("/referral/commissions", handlers.Referral.MyCommissions)
-		// 已发布文章清单（「分享文章」软入口:拼 <blog>/blog/<slug>?inv=<我的码> 分发)
-		accountGroup.GET("/blog/articles", handlers.Blog.ListPublishedArticles)
 
 		// 分组
 		accountGroup.GET("/groups", handlers.Group.ListAvailableGroups)
@@ -373,8 +371,6 @@ func (s *Server) registerRoutes() {
 	// 否则会被 SPA / API Key 转发逻辑吃掉。
 	blogRenderer := blogssr.NewRenderer(handlers.BlogService, handlers.SettingsService)
 	r.GET("/blog", blogRenderer.RenderList)
-	// sitemap 须在 :slug 之前注册;gin v1.10 静态路径优先于同层 param,不会被当作 slug。
-	r.GET("/blog/sitemap.xml", blogRenderer.RenderSitemap)
 	r.GET("/blog/:slug", blogRenderer.RenderDetail)
 
 	// 上传文件静态服务（这部分仍然在磁盘上，因为是用户上传的运行时数据）
