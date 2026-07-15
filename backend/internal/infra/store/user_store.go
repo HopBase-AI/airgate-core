@@ -393,6 +393,9 @@ func applyUserMutationCreate(builder *ent.UserCreate, mutation appuser.Mutation)
 	if mutation.Role != nil {
 		builder.SetRole(entuser.Role(*mutation.Role))
 	}
+	if mutation.CanAuthorBlog != nil {
+		builder.SetCanAuthorBlog(*mutation.CanAuthorBlog)
+	}
 	if mutation.MaxConcurrency != nil {
 		builder.SetMaxConcurrency(*mutation.MaxConcurrency)
 	}
@@ -416,6 +419,9 @@ func applyUserMutationUpdate(builder *ent.UserUpdateOne, mutation appuser.Mutati
 	}
 	if mutation.Role != nil {
 		builder.SetRole(entuser.Role(*mutation.Role))
+	}
+	if mutation.CanAuthorBlog != nil {
+		builder.SetCanAuthorBlog(*mutation.CanAuthorBlog)
 	}
 	if mutation.MaxConcurrency != nil {
 		builder.SetMaxConcurrency(*mutation.MaxConcurrency)
@@ -465,6 +471,7 @@ func mapUser(item *ent.User) appuser.User {
 		PasswordHash:          item.PasswordHash,
 		Balance:               item.Balance,
 		Role:                  item.Role.String(),
+		CanAuthorBlog:         item.CanAuthorBlog,
 		MaxConcurrency:        item.MaxConcurrency,
 		GroupRates:            cloneUserGroupRates(item.GroupRates),
 		GroupPluginSettings:   cloneUserGroupPluginSettings(item.GroupPluginSettings),

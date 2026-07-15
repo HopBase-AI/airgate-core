@@ -100,6 +100,9 @@ func (s *BlogStore) Create(ctx context.Context, input appblog.CreateInput) (appb
 	if len(input.Tags) > 0 {
 		builder = builder.SetTags(input.Tags)
 	}
+	if len(input.Sites) > 0 {
+		builder = builder.SetSites(input.Sites)
+	}
 	if input.PublishedAt != nil {
 		builder = builder.SetPublishedAt(*input.PublishedAt)
 	}
@@ -155,6 +158,9 @@ func (s *BlogStore) Update(ctx context.Context, id int, input appblog.UpdateInpu
 	}
 	if input.Tags != nil {
 		builder = builder.SetTags(*input.Tags)
+	}
+	if input.Sites != nil {
+		builder = builder.SetSites(*input.Sites)
 	}
 	if input.SEOTitle != nil {
 		builder = builder.SetSeoTitle(*input.SEOTitle)
@@ -238,6 +244,7 @@ func mapPost(m *ent.BlogPost) appblog.Post {
 		GatePosition:   m.GatePosition,
 		Lang:           m.Lang,
 		Tags:           m.Tags,
+		Sites:          m.Sites,
 		SEOTitle:       m.SeoTitle,
 		SEODescription: m.SeoDescription,
 		OGImage:        m.OgImage,

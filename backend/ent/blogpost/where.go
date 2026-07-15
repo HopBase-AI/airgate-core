@@ -684,6 +684,16 @@ func TagsNotNil() predicate.BlogPost {
 	return predicate.BlogPost(sql.FieldNotNull(FieldTags))
 }
 
+// SitesIsNil applies the IsNil predicate on the "sites" field.
+func SitesIsNil() predicate.BlogPost {
+	return predicate.BlogPost(sql.FieldIsNull(FieldSites))
+}
+
+// SitesNotNil applies the NotNil predicate on the "sites" field.
+func SitesNotNil() predicate.BlogPost {
+	return predicate.BlogPost(sql.FieldNotNull(FieldSites))
+}
+
 // SeoTitleEQ applies the EQ predicate on the "seo_title" field.
 func SeoTitleEQ(v string) predicate.BlogPost {
 	return predicate.BlogPost(sql.FieldEQ(FieldSeoTitle, v))

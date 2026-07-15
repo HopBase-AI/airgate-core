@@ -8,6 +8,7 @@ type UserResp struct {
 	DisplayBadge          string                                 `json:"display_badge"`
 	Balance               float64                                `json:"balance"`
 	Role                  string                                 `json:"role"` // admin / user / api_key
+	CanAuthorBlog         bool                                   `json:"can_author_blog"` // 是否可进入后台写博客(管理员天然可)
 	MaxConcurrency        int                                    `json:"max_concurrency"`
 	GroupRates            map[int64]float64                      `json:"group_rates,omitempty"`           // 用户专属分组倍率
 	GroupPluginSettings   map[int64]map[string]map[string]string `json:"group_plugin_settings,omitempty"` // 用户专属插件配置
@@ -57,6 +58,7 @@ type UpdateUserReq struct {
 	DisplayBadge        *string                                `json:"display_badge" binding:"omitempty,max=128"`
 	Password            *string                                `json:"password" binding:"omitempty,min=6"`
 	Role                *string                                `json:"role" binding:"omitempty,oneof=admin user"`
+	CanAuthorBlog       *bool                                  `json:"can_author_blog"` // nil=不修改
 	MaxConcurrency      *int                                   `json:"max_concurrency"`
 	GroupRates          map[int64]float64                      `json:"group_rates"`
 	GroupPluginSettings map[int64]map[string]map[string]string `json:"group_plugin_settings"`

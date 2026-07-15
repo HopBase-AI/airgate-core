@@ -31,6 +31,28 @@ function parseSitesBranding(raw: string | undefined): Record<string, SiteBrandin
   return {};
 }
 
+// 博客可投放站点选项：设置项 blog_sites 是 [{key,label}] 的 JSON 数组;
+// 供后台编辑器「发布站点」多选。配置非法/为空时回退空数组(编辑器隐藏该选择器)。
+export interface BlogSiteOption {
+  key: string;
+  label: string;
+}
+
+function parseBlogSites(raw: string | undefined): BlogSiteOption[] {
+  if (!raw || !raw.trim()) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter((o): o is BlogSiteOption => !!o && typeof o === 'object' && typeof (o as BlogSiteOption).key === 'string')
+        .map((o) => ({ key: o.key, label: o.label || o.key }));
+    }
+  } catch {
+    // 非法 JSON 静默回退
+  }
+  return [];
+}
+
 interface SiteSettings {
   site_name: string;
   site_subtitle: string;
@@ -50,6 +72,8 @@ interface SiteSettings {
   announcement_enabled: boolean;
   announcement_level: string;
   announcement_content: string;
+  // 博客可投放站点选项(后台编辑器「发布站点」多选);空=未配置多站,编辑器隐藏该选择器
+  blog_sites: BlogSiteOption[];
   settings_loaded: boolean;
 }
 
@@ -70,6 +94,7 @@ const defaults: SiteSettings = {
   announcement_enabled: false,
   announcement_level: 'info',
   announcement_content: '',
+  blog_sites: [],
   settings_loaded: false,
 };
 
@@ -104,6 +129,7 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
     announcement_enabled: data?.announcement_enabled === 'true',
     announcement_level: data?.announcement_level || 'info',
     announcement_content: data?.announcement_content || '',
+    blog_sites: parseBlogSites(data?.blog_sites),
     settings_loaded: !isPending,
     };
   }, [data, isPending, originSite]);

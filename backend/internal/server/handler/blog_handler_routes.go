@@ -36,6 +36,33 @@ func (h *BlogHandler) ListBlogPosts(c *gin.Context) {
 	response.Success(c, response.PagedData(list, result.Total, result.Page, result.PageSize))
 }
 
+// ListPublishedArticles 返回已发布文章的轻量列表,供用户「分享文章」选择器使用。
+// 数据本就公开(落地页 /blog 可见),故仅需登录、无需管理员;返回不含正文与邀请码。
+func (h *BlogHandler) ListPublishedArticles(c *gin.Context) {
+	result, err := h.service.List(c.Request.Context(), appblog.ListFilter{
+		Status:   appblog.StatusPublished,
+		Page:     1,
+		PageSize: 200,
+	})
+	if err != nil {
+		httpCode, message := h.handleError("查询已发布文章失败", "查询失败", err)
+		response.Error(c, httpCode, httpCode, message)
+		return
+	}
+
+	list := make([]dto.BlogArticleBriefResp, 0, len(result.List))
+	for _, item := range result.List {
+		list = append(list, dto.BlogArticleBriefResp{
+			Slug:        item.Slug,
+			Title:       item.Title,
+			Summary:     item.Summary,
+			CoverImage:  item.CoverImage,
+			PublishedAt: item.PublishedAt,
+		})
+	}
+	response.Success(c, list)
+}
+
 // GetBlogPost 获取文章详情(管理员编辑回填)。
 func (h *BlogHandler) GetBlogPost(c *gin.Context) {
 	id, err := parseBlogID(c.Param("id"))
@@ -75,6 +102,7 @@ func (h *BlogHandler) CreateBlogPost(c *gin.Context) {
 		GatePosition:   req.GatePosition,
 		Lang:           req.Lang,
 		Tags:           req.Tags,
+		Sites:          req.Sites,
 		SEOTitle:       req.SEOTitle,
 		SEODescription: req.SEODescription,
 		OGImage:        req.OGImage,
@@ -114,6 +142,7 @@ func (h *BlogHandler) UpdateBlogPost(c *gin.Context) {
 		GatePosition:   req.GatePosition,
 		Lang:           req.Lang,
 		Tags:           req.Tags,
+		Sites:          req.Sites,
 		SEOTitle:       req.SEOTitle,
 		SEODescription: req.SEODescription,
 		OGImage:        req.OGImage,

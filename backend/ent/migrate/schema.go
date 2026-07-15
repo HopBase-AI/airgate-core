@@ -196,6 +196,7 @@ var (
 		{Name: "gate_position", Type: field.TypeInt, Default: 50},
 		{Name: "lang", Type: field.TypeString, Size: 16, Default: "zh"},
 		{Name: "tags", Type: field.TypeJSON, Nullable: true},
+		{Name: "sites", Type: field.TypeJSON, Nullable: true},
 		{Name: "seo_title", Type: field.TypeString, Default: ""},
 		{Name: "seo_description", Type: field.TypeString, Default: ""},
 		{Name: "og_image", Type: field.TypeString, Default: ""},
@@ -219,7 +220,7 @@ var (
 			{
 				Name:    "blogpost_status_published_at",
 				Unique:  false,
-				Columns: []*schema.Column{BlogPostsColumns[6], BlogPostsColumns[17]},
+				Columns: []*schema.Column{BlogPostsColumns[6], BlogPostsColumns[18]},
 			},
 		},
 	}
@@ -557,6 +558,7 @@ var (
 		{Name: "display_badge", Type: field.TypeString, Size: 128, Default: ""},
 		{Name: "balance", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "role", Type: field.TypeEnum, Enums: []string{"admin", "user"}, Default: "user"},
+		{Name: "can_author_blog", Type: field.TypeBool, Default: false},
 		{Name: "max_concurrency", Type: field.TypeInt, Default: 0},
 		{Name: "totp_secret", Type: field.TypeString, Nullable: true},
 		{Name: "group_rates", Type: field.TypeJSON, Nullable: true},
@@ -582,7 +584,7 @@ var (
 			{
 				Name:    "user_inviter_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsersColumns[16]},
+				Columns: []*schema.Column{UsersColumns[17]},
 			},
 		},
 	}

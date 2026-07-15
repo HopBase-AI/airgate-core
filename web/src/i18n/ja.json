@@ -424,7 +424,8 @@
     "all_users_accessible": "全ユーザー利用可能",
     "generate_password": "パスワードをランダム生成",
     "disable_title": "ユーザーを無効化",
-    "disable_confirm": "ユーザー {{email}} を無効化してもよろしいですか？無効化するとこのユーザーはログインおよび API の使用ができなくなります。"
+    "disable_confirm": "ユーザー {{email}} を無効化してもよろしいですか？無効化するとこのユーザーはログインおよび API の使用ができなくなります。",
+    "can_author_blog": "ブログ執筆権限(ブログ管理画面で記事を作成可能)"
   },
   "accounts": {
     "title": "アカウント管理",
@@ -1140,7 +1141,12 @@
     "models_official_input": "公式入力価格 $",
     "models_official_cached": "公式キャッシュ価格 $",
     "models_official_output": "公式出力価格 $",
-    "models_display_desc": "人民元定価モデル（GLM など）は CNY を選び、公式 USD 参考価格を入力してください。課金は常に基準価格 × グループ倍率で行われます。"
+    "models_display_desc": "人民元定価モデル（GLM など）は CNY を選び、公式 USD 参考価格を入力してください。課金は常に基準価格 × グループ倍率で行われます。",
+    "blog_sites_title": "ブログ配信サイト",
+    "blog_sites_desc": "本インスタンスのサイトキー(blog_site_key)が /blog に表示する記事を決定します。配信サイト(blog_sites)はエディタの複数選択の選択肢です。空欄=サイトフィルタなし。",
+    "blog_sites_invalid": "[{ \"key\": \"...\", \"label\": \"...\" }] の配列である必要があります",
+    "blog_site_key": "本サイトのキー",
+    "blog_site_key_hint": "例:essevin / hopbase。記事の配信サイトにこのキーが含まれるか未指定の場合のみ本サイトの /blog に表示。空欄=すべて表示。"
   },
   "docs": {
     "cta_hint": "準備はできましたか？今すぐ利用を始めましょう。",
@@ -2050,8 +2056,10 @@
       "undo": "元に戻す",
       "redo": "やり直し",
       "video_prompt": "YouTube / Bilibili の動画 URL を貼り付け",
-      "link_prompt": "リンク先 URL"
-    }
+      "link_prompt": "リンク先 URL",
+      "paste_hint": "スクリーンショットを貼り付けるか、画像をドラッグすると自動でアップロードされます"
+    },
+    "field_sites": "配信サイト(未選択=全サイトで表示)"
   },
   "referral_admin": {
     "config_title": "紹介プログラム設定",

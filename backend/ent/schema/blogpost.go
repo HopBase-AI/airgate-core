@@ -37,6 +37,8 @@ func (BlogPost) Fields() []ent.Field {
 			Comment("文章语言；多语言预留，MVP 单语言。"),
 		field.JSON("tags", []string{}).Optional().
 			Comment("轻量标签/分类。"),
+		field.JSON("sites", []string{}).Optional().
+			Comment("发布站点 key 列表;空=所有站点可见。SSR 按当前实例 site key(设置 blog_site_key)过滤,选项来自设置 blog_sites。"),
 		field.String("seo_title").Default("").
 			Comment("SEO 标题覆盖;空则回退 title。"),
 		field.String("seo_description").Default("").

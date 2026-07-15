@@ -4,58 +4,89 @@ package blogssr
 // html/template 自动按上下文转义;正文 Content 已在 service 层净化,以 template.HTML 注入。
 
 const baseStyle = `
-:root{color-scheme:light dark;--bg:#ffffff;--fg:#1a1a1a;--muted:#666;--border:#e5e7eb;--card:#fafafa;--accent:#2563eb;--accent-fg:#fff}
-@media (prefers-color-scheme:dark){:root{--bg:#0f0f10;--fg:#ededed;--muted:#9a9a9a;--border:#2a2a2c;--card:#17181a;--accent:#3b82f6;--accent-fg:#fff}}
+:root{color-scheme:light dark;--bg:#ffffff;--fg:#0f172a;--muted:#64748b;--border:#e5e7eb;--card:#f8fafc;--accent:#4f46e5;--accent-fg:#ffffff;--accent-soft:#eef2ff;--code-bg:#0b1020;--code-fg:#e5e9f2;--maxw:704px;--mono:"SFMono-Regular",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;--shadow:0 1px 2px rgba(16,24,40,.05),0 16px 40px rgba(16,24,40,.08)}
+@media (prefers-color-scheme:dark){:root{--bg:#0c0d10;--fg:#e7e9ee;--muted:#9aa2b1;--border:#23262d;--card:#15171c;--accent:#818cf8;--accent-fg:#0c0d10;--accent-soft:rgba(129,140,248,.14);--shadow:0 1px 2px rgba(0,0,0,.3),0 16px 40px rgba(0,0,0,.4)}}
 *{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
 html,body{margin:0;padding:0}
-body{background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.7;-webkit-font-smoothing:antialiased}
+body{background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;line-height:1.75;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
-.blog-header{border-bottom:1px solid var(--border)}
-.blog-header-inner,.blog-wrap{max-width:760px;margin:0 auto;padding:0 20px}
-.blog-header-inner{display:flex;align-items:center;gap:10px;height:60px}
-.blog-header img{height:28px;width:auto;display:block}
+img{max-width:100%}
+.blog-header{border-bottom:1px solid var(--border);position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:saturate(1.4) blur(10px);-webkit-backdrop-filter:saturate(1.4) blur(10px)}
+.blog-header-inner,.blog-wrap{max-width:var(--maxw);margin:0 auto;padding:0 22px}
+.blog-header-inner{display:flex;align-items:center;gap:10px;height:58px}
+.blog-header img{height:26px;width:auto;display:block}
 .blog-logo-link{display:inline-flex;align-items:center}
-.blog-brand{font-weight:600;font-size:16px;color:var(--fg)}
-.blog-wrap{padding-top:40px;padding-bottom:72px}
-.blog-intro{margin-bottom:28px}
-.blog-intro-title{font-size:28px;font-weight:700;letter-spacing:-.01em;margin:0 0 8px}
-.blog-intro-sub{color:var(--muted);font-size:15px;margin:0}
-.blog-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px;margin-top:8px}
-.blog-card{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--card);display:flex;flex-direction:column}
-.blog-card img{width:100%;height:160px;object-fit:cover;display:block}
-.blog-card-body{padding:16px}
-.blog-card-title{font-size:17px;font-weight:600;margin:0 0 8px;color:var(--fg)}
-.blog-card-summary{font-size:14px;color:var(--muted);margin:0 0 10px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.blog-card-date{font-size:12px;color:var(--muted)}
-.blog-empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:64px 20px;color:var(--muted)}
+.blog-brand{font-weight:600;font-size:15.5px;color:var(--fg);letter-spacing:-.01em}
+.blog-wrap{padding-top:46px;padding-bottom:90px}
+.blog-intro{margin-bottom:34px}
+.blog-intro-title{font-size:32px;font-weight:750;letter-spacing:-.025em;margin:0 0 9px;line-height:1.15}
+.blog-intro-sub{color:var(--muted);font-size:16px;margin:0}
+.blog-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:22px;margin-top:8px}
+.blog-card{border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--card);display:flex;flex-direction:column;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.blog-card:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:color-mix(in srgb,var(--accent) 40%,var(--border));text-decoration:none}
+.blog-card img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block}
+.blog-card-body{padding:15px 18px 18px}
+.blog-card-title{font-size:17px;font-weight:600;margin:0 0 8px;color:var(--fg);line-height:1.4;letter-spacing:-.01em}
+.blog-card-summary{font-size:14px;color:var(--muted);margin:0 0 12px;line-height:1.6;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.blog-card-date{font-size:12.5px;color:var(--muted)}
+.blog-empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:72px 20px;color:var(--muted)}
 .blog-empty svg{width:44px;height:44px;opacity:.5;margin-bottom:16px}
 .blog-empty-title{font-size:17px;font-weight:600;color:var(--fg);margin:0 0 6px}
 .blog-empty-sub{font-size:14px;margin:0}
-.article-title{font-size:30px;font-weight:700;line-height:1.3;margin:8px 0 12px}
-.article-meta{color:var(--muted);font-size:14px;margin-bottom:24px}
-.article-cover{width:100%;border-radius:12px;margin:8px 0 24px;display:block}
-.article-content{font-size:17px}
-.article-content img{max-width:100%;height:auto;border-radius:8px}
-.article-content h2{font-size:23px;margin-top:1.8em}
-.article-content h3{font-size:20px;margin-top:1.6em}
-.article-content pre{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px;overflow-x:auto}
-.article-content code{font-family:"SFMono-Regular",Consolas,monospace;font-size:.9em}
-.article-content blockquote{border-left:3px solid var(--border);margin:1em 0;padding:0 1em;color:var(--muted)}
-.article-content iframe{max-width:100%;aspect-ratio:16/9;width:100%;border:0;border-radius:8px}
-.article-content table{border-collapse:collapse;width:100%;overflow-x:auto;display:block}
-.article-content th,.article-content td{border:1px solid var(--border);padding:8px 12px}
-.article-tags{margin-top:32px;display:flex;flex-wrap:wrap;gap:8px}
-.article-tag{font-size:12px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:3px 10px}
-.blog-back{display:inline-block;margin-bottom:20px;font-size:14px}
-.blog-footer{border-top:1px solid var(--border);color:var(--muted);font-size:13px;text-align:center;padding:24px 20px;margin-top:40px}
-.blog-gate{position:fixed;left:0;right:0;bottom:0;height:52vh;pointer-events:none;display:flex;align-items:flex-end;justify-content:center;background:linear-gradient(to bottom,rgba(0,0,0,0) 0%,var(--bg) 55%);z-index:50}
-.blog-gate-card{pointer-events:auto;text-align:center;max-width:420px;width:calc(100% - 40px);margin-bottom:8vh;padding:24px;border:1px solid var(--border);border-radius:16px;background:var(--card);box-shadow:0 12px 40px rgba(0,0,0,.18)}
-.blog-gate-title{font-size:18px;font-weight:600;margin:0 0 8px}
-.blog-gate-desc{font-size:14px;color:var(--muted);margin:0 0 16px}
+.article-eyebrow{display:inline-block;font-size:12.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:0 0 14px}
+.article-title{font-size:39px;font-weight:750;line-height:1.16;letter-spacing:-.025em;margin:0 0 16px;text-wrap:balance}
+.article-byline{display:flex;flex-wrap:wrap;align-items:center;gap:8px;color:var(--muted);font-size:14px;margin-bottom:30px}
+.article-byline .dot{width:3px;height:3px;border-radius:50%;background:currentColor;opacity:.5}
+.article-avatar{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 45%,#000));display:inline-block;flex:none}
+.article-cover{width:100%;border-radius:16px;margin:0 0 36px;display:block;box-shadow:var(--shadow)}
+.article-content{font-size:18px;line-height:1.78;overflow-wrap:break-word}
+.article-content>*:first-child{margin-top:0}
+.article-content p{margin:0 0 1.35em}
+.article-content>p:first-child{font-size:20px;line-height:1.6;color:var(--fg)}
+.article-content h2{font-size:27px;font-weight:700;letter-spacing:-.02em;line-height:1.3;margin:2em 0 .7em;scroll-margin-top:76px}
+.article-content h3{font-size:21px;font-weight:600;line-height:1.4;margin:1.7em 0 .5em;scroll-margin-top:76px}
+.article-content h4{font-size:17.5px;font-weight:600;margin:1.4em 0 .4em}
+.article-content a{color:var(--accent);text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1px;text-decoration-color:color-mix(in srgb,var(--accent) 40%,transparent)}
+.article-content a:hover{text-decoration-color:var(--accent)}
+.article-content strong{font-weight:650;color:var(--fg)}
+.article-content ul,.article-content ol{padding-left:1.5em;margin:0 0 1.35em}
+.article-content li{margin:.5em 0;padding-left:.25em}
+.article-content li::marker{color:var(--accent)}
+.article-content img{display:block;height:auto;margin:0 auto;border-radius:14px}
+.article-content p>img,.article-content>img{margin:2.4em auto;border:1px solid var(--border);box-shadow:var(--shadow)}
+.article-content figure{margin:2.4em 0}
+.article-content figure img{border:1px solid var(--border);box-shadow:var(--shadow)}
+.article-content figcaption{text-align:center;font-size:13.5px;color:var(--muted);margin-top:12px;font-style:italic;line-height:1.55}
+.article-content :not(pre)>code{background:var(--accent-soft);color:var(--accent);border-radius:6px;padding:.12em .42em;font-family:var(--mono);font-size:.82em;font-weight:500}
+.article-content pre{background:var(--code-bg);color:var(--code-fg);border-radius:14px;padding:18px 20px;overflow-x:auto;margin:1.8em 0;line-height:1.7;box-shadow:var(--shadow)}
+.article-content pre code{font-family:var(--mono);font-size:.85em;color:inherit;background:none;border:0;padding:0}
+.article-content blockquote{margin:2em 0;padding:4px 0 4px 24px;border-left:3px solid var(--accent);font-size:21px;line-height:1.5;color:var(--fg)}
+.article-content blockquote p{margin:0}
+.article-content hr{border:0;height:1px;background:var(--border);margin:3em 0}
+.article-content iframe{max-width:100%;aspect-ratio:16/9;width:100%;border:0;border-radius:14px;margin:2em 0;display:block}
+.article-content table{border-collapse:collapse;width:100%;font-size:15px;margin:1.8em 0;display:block;overflow-x:auto}
+.article-content thead th{text-align:left;font-weight:600;color:var(--muted);font-size:12.5px;letter-spacing:.04em;text-transform:uppercase;padding:0 14px 10px;border-bottom:1px solid var(--border)}
+.article-content tbody td{padding:11px 14px;border-bottom:1px solid var(--border)}
+.article-tags{margin-top:40px;display:flex;flex-wrap:wrap;gap:8px}
+.article-tag{font-size:12.5px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:5px 13px}
+.blog-back{display:inline-block;margin-bottom:22px;font-size:14px;color:var(--muted)}
+.blog-back:hover{color:var(--accent);text-decoration:none}
+.blog-footer{border-top:1px solid var(--border);color:var(--muted);font-size:13px;text-align:center;padding:26px 20px;margin-top:48px}
+.blog-gate{position:fixed;left:0;right:0;bottom:0;height:56vh;pointer-events:none;display:flex;align-items:flex-end;justify-content:center;background:linear-gradient(to bottom,rgba(0,0,0,0) 0%,var(--bg) 58%);z-index:50}
+.blog-gate-card{pointer-events:auto;text-align:center;max-width:428px;width:calc(100% - 40px);margin-bottom:8vh;padding:26px;border:1px solid var(--border);border-radius:18px;background:var(--card);box-shadow:0 14px 44px rgba(0,0,0,.2)}
+.blog-gate-title{font-size:18px;font-weight:650;margin:0 0 8px}
+.blog-gate-desc{font-size:14px;color:var(--muted);margin:0 0 16px;line-height:1.6}
 .blog-gate-btn{display:inline-block;background:var(--accent);color:var(--accent-fg);font-weight:600;padding:11px 28px;border-radius:10px}
 .blog-gate-btn:hover{text-decoration:none;opacity:.92}
 .blog-gate-dismiss{display:block;margin:12px auto 0;background:none;border:0;color:var(--muted);font-size:13px;cursor:pointer}
+.blog-cta{margin:52px 0 8px;border:1px solid color-mix(in srgb,var(--accent) 24%,var(--border));border-radius:18px;background:linear-gradient(135deg,var(--accent-soft),var(--card) 75%);padding:30px 28px}
+.blog-cta-title{font-size:19px;font-weight:700;margin:0 0 8px;color:var(--fg);letter-spacing:-.01em}
+.blog-cta-desc{font-size:14.5px;color:var(--muted);margin:0 0 18px;line-height:1.6}
+.blog-cta-btn{display:inline-block;background:var(--accent);color:var(--accent-fg);font-weight:600;padding:11px 26px;border-radius:11px;font-size:15px}
+.blog-cta-btn:hover{text-decoration:none;opacity:.92}
+@media (max-width:560px){.article-title{font-size:30px}.article-content{font-size:17px}.article-content>p:first-child{font-size:18px}.blog-intro-title{font-size:27px}}
 `
 
 const listTmplStr = `<!doctype html>
@@ -74,8 +105,8 @@ const listTmplStr = `<!doctype html>
 </head>
 <body>
 <header class="blog-header"><div class="blog-header-inner">
-<a href="/blog" class="blog-logo-link">{{if .LogoURL}}<img src="{{.LogoSrc}}" alt="{{.SiteName}}">{{end}}</a>
-<a href="/blog" class="blog-brand">{{if .SiteName}}{{.SiteName}}{{end}} Blog</a>
+<a href="{{.HomeURL}}" class="blog-logo-link">{{if .LogoURL}}<img src="{{.LogoSrc}}" alt="{{.SiteName}}">{{end}}</a>
+<a href="{{.HomeURL}}" class="blog-brand">{{if .SiteName}}{{.SiteName}}{{end}} Blog</a>
 </div></header>
 <main class="blog-wrap">
 <div class="blog-intro">
@@ -129,22 +160,34 @@ const detailTmplStr = `<!doctype html>
 <meta name="twitter:description" content="{{.MetaDescription}}">
 {{if .OGImage}}<meta name="twitter:image" content="{{.OGImage}}">{{end}}
 <script type="application/ld+json">{{.JSONLD}}</script>
+<script type="application/ld+json">{{.BreadcrumbLD}}</script>
 <style>` + baseStyle + `</style>
 </head>
 <body>
 <header class="blog-header"><div class="blog-header-inner">
-<a href="/blog" class="blog-logo-link">{{if .LogoURL}}<img src="{{.LogoSrc}}" alt="{{.SiteName}}">{{end}}</a>
-<a href="/blog" class="blog-brand">{{if .SiteName}}{{.SiteName}}{{end}} Blog</a>
+<a href="{{.HomeURL}}" class="blog-logo-link">{{if .LogoURL}}<img src="{{.LogoSrc}}" alt="{{.SiteName}}">{{end}}</a>
+<a href="{{.HomeURL}}" class="blog-brand">{{if .SiteName}}{{.SiteName}}{{end}} Blog</a>
 </div></header>
 <main class="blog-wrap">
-<a href="/blog" class="blog-back">← 返回博客</a>
+<a href="{{.HomeURL}}" class="blog-back">← 返回博客</a>
 <article>
+{{if .Eyebrow}}<div class="article-eyebrow">{{.Eyebrow}}</div>{{end}}
 <h1 class="article-title">{{.Title}}</h1>
-{{if .PublishedHuman}}<div class="article-meta">{{.PublishedHuman}}</div>{{end}}
+<div class="article-byline">
+<span class="article-avatar" aria-hidden="true"></span>
+<span>{{.AuthorName}}</span>
+{{if .PublishedHuman}}<span class="dot" aria-hidden="true"></span><span>{{.PublishedHuman}}</span>{{end}}
+{{if .ReadingTime}}<span class="dot" aria-hidden="true"></span><span>{{.ReadingTime}}</span>{{end}}
+</div>
 {{if .CoverImage}}<img class="article-cover" src="{{.CoverImage}}" alt="{{.Title}}">{{end}}
 <div class="article-content" id="blog-content">{{.Content}}</div>
 {{if .Tags}}<div class="article-tags">{{range .Tags}}<span class="article-tag">{{.}}</span>{{end}}</div>{{end}}
 </article>
+<aside class="blog-cta">
+<p class="blog-cta-title">{{.CTATitle}}</p>
+<p class="blog-cta-desc">一个 API Key 直连 Claude、Codex、GPT 等主流模型,注册即领体验额度,几分钟接入,余额长期有效。</p>
+<a class="blog-cta-btn" href="{{.RegisterURL}}">免费开始 →</a>
+</aside>
 </main>
 <footer class="blog-footer">© {{.SiteName}}</footer>
 {{if .GateEnabled}}

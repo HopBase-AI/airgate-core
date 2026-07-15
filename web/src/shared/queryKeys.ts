@@ -54,4 +54,5 @@ export const queryKeys = {
   referralCommissions: (...args: unknown[]) => ['referral-commissions', ...args] as const,
   blog: (...args: unknown[]) => ['blog', ...args] as const,
   blogPost: (...args: unknown[]) => ['blog-post', ...args] as const,
+  blogPublishedArticles: () => ['blog-published-articles'] as const,
 } as const;

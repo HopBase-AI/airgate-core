@@ -36,6 +36,8 @@ const (
 	FieldLang = "lang"
 	// FieldTags holds the string denoting the tags field in the database.
 	FieldTags = "tags"
+	// FieldSites holds the string denoting the sites field in the database.
+	FieldSites = "sites"
 	// FieldSeoTitle holds the string denoting the seo_title field in the database.
 	FieldSeoTitle = "seo_title"
 	// FieldSeoDescription holds the string denoting the seo_description field in the database.
@@ -70,6 +72,7 @@ var Columns = []string{
 	FieldGatePosition,
 	FieldLang,
 	FieldTags,
+	FieldSites,
 	FieldSeoTitle,
 	FieldSeoDescription,
 	FieldOgImage,

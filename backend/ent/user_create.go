@@ -94,6 +94,20 @@ func (uc *UserCreate) SetNillableRole(u *user.Role) *UserCreate {
 	return uc
 }
 
+// SetCanAuthorBlog sets the "can_author_blog" field.
+func (uc *UserCreate) SetCanAuthorBlog(b bool) *UserCreate {
+	uc.mutation.SetCanAuthorBlog(b)
+	return uc
+}
+
+// SetNillableCanAuthorBlog sets the "can_author_blog" field if the given value is not nil.
+func (uc *UserCreate) SetNillableCanAuthorBlog(b *bool) *UserCreate {
+	if b != nil {
+		uc.SetCanAuthorBlog(*b)
+	}
+	return uc
+}
+
 // SetMaxConcurrency sets the "max_concurrency" field.
 func (uc *UserCreate) SetMaxConcurrency(i int) *UserCreate {
 	uc.mutation.SetMaxConcurrency(i)
@@ -429,6 +443,10 @@ func (uc *UserCreate) defaults() {
 		v := user.DefaultRole
 		uc.mutation.SetRole(v)
 	}
+	if _, ok := uc.mutation.CanAuthorBlog(); !ok {
+		v := user.DefaultCanAuthorBlog
+		uc.mutation.SetCanAuthorBlog(v)
+	}
 	if _, ok := uc.mutation.MaxConcurrency(); !ok {
 		v := user.DefaultMaxConcurrency
 		uc.mutation.SetMaxConcurrency(v)
@@ -506,6 +524,9 @@ func (uc *UserCreate) check() error {
 		if err := user.RoleValidator(v); err != nil {
 			return &ValidationError{Name: "role", err: fmt.Errorf(`ent: validator failed for field "User.role": %w`, err)}
 		}
+	}
+	if _, ok := uc.mutation.CanAuthorBlog(); !ok {
+		return &ValidationError{Name: "can_author_blog", err: errors.New(`ent: missing required field "User.can_author_blog"`)}
 	}
 	if _, ok := uc.mutation.MaxConcurrency(); !ok {
 		return &ValidationError{Name: "max_concurrency", err: errors.New(`ent: missing required field "User.max_concurrency"`)}
@@ -613,6 +634,10 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := uc.mutation.Role(); ok {
 		_spec.SetField(user.FieldRole, field.TypeEnum, value)
 		_node.Role = value
+	}
+	if value, ok := uc.mutation.CanAuthorBlog(); ok {
+		_spec.SetField(user.FieldCanAuthorBlog, field.TypeBool, value)
+		_node.CanAuthorBlog = value
 	}
 	if value, ok := uc.mutation.MaxConcurrency(); ok {
 		_spec.SetField(user.FieldMaxConcurrency, field.TypeInt, value)

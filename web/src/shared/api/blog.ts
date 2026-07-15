@@ -1,7 +1,7 @@
 import { get, post, put, del, upload } from './client';
 import type {
   BlogPostResp, CreateBlogPostReq, UpdateBlogPostReq, BlogUploadResp,
-  PageReq, PagedData,
+  BlogArticleBrief, PageReq, PagedData,
 } from '../types';
 
 export interface BlogListParams extends PageReq {
@@ -22,4 +22,6 @@ export const blogApi = {
     fd.append('file', file);
     return upload<BlogUploadResp>('/api/v1/admin/blog/upload', fd);
   },
+  // 已发布文章清单（用户「分享文章」软入口,仅需登录)。
+  publishedArticles: () => get<BlogArticleBrief[]>('/api/v1/blog/articles'),
 };

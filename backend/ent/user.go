@@ -30,6 +30,8 @@ type User struct {
 	Balance float64 `json:"balance,omitempty"`
 	// Role holds the value of the "role" field.
 	Role user.Role `json:"role,omitempty"`
+	// 是否可进入后台撰写/管理博客(授予非管理员的营销/运营用户);管理员天然可写。
+	CanAuthorBlog bool `json:"can_author_blog,omitempty"`
 	// 用户级并发上限：同一 user 所有 API Key 加起来同时在途的请求数。0 表示不限制（默认）。与 api_key.max_concurrency 是 AND 关系，两者都会检查。
 	MaxConcurrency int `json:"max_concurrency,omitempty"`
 	// TotpSecret holds the value of the "totp_secret" field.
@@ -146,7 +148,7 @@ func (*User) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case user.FieldGroupRates, user.FieldGroupPluginSettings:
 			values[i] = new([]byte)
-		case user.FieldBalanceAlertNotified:
+		case user.FieldCanAuthorBlog, user.FieldBalanceAlertNotified:
 			values[i] = new(sql.NullBool)
 		case user.FieldBalance, user.FieldBalanceAlertThreshold, user.FieldReferralRate:
 			values[i] = new(sql.NullFloat64)
@@ -212,6 +214,12 @@ func (u *User) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field role", values[i])
 			} else if value.Valid {
 				u.Role = user.Role(value.String)
+			}
+		case user.FieldCanAuthorBlog:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field can_author_blog", values[i])
+			} else if value.Valid {
+				u.CanAuthorBlog = value.Bool
 			}
 		case user.FieldMaxConcurrency:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -393,6 +401,9 @@ func (u *User) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("role=")
 	builder.WriteString(fmt.Sprintf("%v", u.Role))
+	builder.WriteString(", ")
+	builder.WriteString("can_author_blog=")
+	builder.WriteString(fmt.Sprintf("%v", u.CanAuthorBlog))
 	builder.WriteString(", ")
 	builder.WriteString("max_concurrency=")
 	builder.WriteString(fmt.Sprintf("%v", u.MaxConcurrency))

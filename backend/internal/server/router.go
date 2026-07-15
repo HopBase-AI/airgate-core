@@ -118,6 +118,8 @@ func (s *Server) registerRoutes() {
 		// 分销邀请：我的邀请码/概览 + 返利流水
 		accountGroup.GET("/referral/me", handlers.Referral.MyReferral)
 		accountGroup.GET("/referral/commissions", handlers.Referral.MyCommissions)
+		// 已发布文章清单（「分享文章」软入口:拼 <blog>/blog/<slug>?inv=<我的码> 分发)
+		accountGroup.GET("/blog/articles", handlers.Blog.ListPublishedArticles)
 
 		// 分组
 		accountGroup.GET("/groups", handlers.Group.ListAvailableGroups)
@@ -138,6 +140,19 @@ func (s *Server) registerRoutes() {
 		// 插件菜单（精简元信息：仅返回 name + frontend_pages，普通账号会话可访问，
 		// 用于前端 AppShell 渲染插件提供的页面菜单项）
 		accountGroup.GET("/plugins/menu", handlers.Plugin.ListPluginMenu)
+	}
+
+	// === 博客后台（允许 admin 或被授予 can_author_blog 的营销/运营用户） ===
+	blogAuthorGroup := v1.Group("/admin")
+	blogAuthorGroup.Use(middleware.JWTAuth(s.jwtMgr, s.db), middleware.RequireBlogAuthor(s.db))
+	{
+		blogAuthorGroup.GET("/blog/posts", handlers.Blog.ListBlogPosts)
+		blogAuthorGroup.POST("/blog/posts", handlers.Blog.CreateBlogPost)
+		blogAuthorGroup.GET("/blog/posts/:id", handlers.Blog.GetBlogPost)
+		blogAuthorGroup.PUT("/blog/posts/:id", handlers.Blog.UpdateBlogPost)
+		blogAuthorGroup.DELETE("/blog/posts/:id", handlers.Blog.DeleteBlogPost)
+		// 正文/封面图片上传（TipTap）：走 AssetStorage，需 *ent.Client 故为 Server 方法
+		blogAuthorGroup.POST("/blog/upload", s.handleBlogImageUpload)
 	}
 
 	// === 管理员路由（需要管理员 JWT + AdminOnly，支持 admin- 管理员 API Key） ===
@@ -185,14 +200,7 @@ func (s *Server) registerRoutes() {
 		// 账号异常事件（异常监控页）
 		adminGroup.GET("/account-events", handlers.AccountEvent.ListAccountEvents)
 
-		// 博客文章管理（营销内容：撰写/发布，落地页 SSR 展示）
-		adminGroup.GET("/blog/posts", handlers.Blog.ListBlogPosts)
-		adminGroup.POST("/blog/posts", handlers.Blog.CreateBlogPost)
-		adminGroup.GET("/blog/posts/:id", handlers.Blog.GetBlogPost)
-		adminGroup.PUT("/blog/posts/:id", handlers.Blog.UpdateBlogPost)
-		adminGroup.DELETE("/blog/posts/:id", handlers.Blog.DeleteBlogPost)
-		// 正文/封面图片上传（TipTap）：走 AssetStorage，需 *ent.Client 故为 Server 方法
-		adminGroup.POST("/blog/upload", s.handleBlogImageUpload)
+		// 博客后台路由已上移至 blogAuthorGroup(允许 admin 或 can_author_blog)
 
 		// 分组管理
 		adminGroup.GET("/groups", handlers.Group.ListGroups)
@@ -371,6 +379,8 @@ func (s *Server) registerRoutes() {
 	// 否则会被 SPA / API Key 转发逻辑吃掉。
 	blogRenderer := blogssr.NewRenderer(handlers.BlogService, handlers.SettingsService)
 	r.GET("/blog", blogRenderer.RenderList)
+	// sitemap 须在 :slug 之前注册;gin v1.10 静态路径优先于同层 param,不会被当作 slug。
+	r.GET("/blog/sitemap.xml", blogRenderer.RenderSitemap)
 	r.GET("/blog/:slug", blogRenderer.RenderDetail)
 
 	// 上传文件静态服务（这部分仍然在磁盘上，因为是用户上传的运行时数据）

@@ -8,6 +8,7 @@ import {
 } from '@heroui/react';
 import { NativeSwitch } from '../../shared/components/NativeSwitch';
 import { RichTextEditor } from '../../shared/components/RichTextEditor';
+import { useSiteSettings } from '../../app/providers/SiteSettingsProvider';
 import { blogApi } from '../../shared/api/blog';
 import { useCrudMutation } from '../../shared/hooks/useCrudMutation';
 import { queryKeys } from '../../shared/queryKeys';
@@ -26,6 +27,7 @@ interface BlogForm {
   gate_enabled: boolean;
   gate_position: number;
   tags: string;
+  sites: string[];
   seo_title: string;
   seo_description: string;
   og_image: string;
@@ -34,7 +36,7 @@ interface BlogForm {
 const emptyForm: BlogForm = {
   title: '', slug: '', summary: '', cover_image: '', content_html: '',
   status: 'draft', invite_code: '', gate_enabled: false, gate_position: 50,
-  tags: '', seo_title: '', seo_description: '', og_image: '',
+  tags: '', sites: [], seo_title: '', seo_description: '', og_image: '',
 };
 
 function fromPost(p: BlogPostResp): BlogForm {
@@ -42,7 +44,7 @@ function fromPost(p: BlogPostResp): BlogForm {
     title: p.title, slug: p.slug, summary: p.summary, cover_image: p.cover_image,
     content_html: p.content_html, status: p.status, invite_code: p.invite_code,
     gate_enabled: p.gate_enabled, gate_position: p.gate_position || 50,
-    tags: (p.tags ?? []).join(', '), seo_title: p.seo_title,
+    tags: (p.tags ?? []).join(', '), sites: p.sites ?? [], seo_title: p.seo_title,
     seo_description: p.seo_description, og_image: p.og_image,
   };
 }
@@ -59,6 +61,7 @@ function toPayload(f: BlogForm): CreateBlogPostReq {
     gate_enabled: f.gate_enabled,
     gate_position: f.gate_position,
     tags: f.tags.split(',').map((s) => s.trim()).filter(Boolean),
+    sites: f.sites,
     seo_title: f.seo_title,
     seo_description: f.seo_description,
     og_image: f.og_image,
@@ -68,6 +71,7 @@ function toPayload(f: BlogForm): CreateBlogPostReq {
 export default function BlogEditorPage() {
   const { t } = useTranslation();
   const { toast } = useToast();
+  const { blog_sites } = useSiteSettings();
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { id?: number };
   const editId = typeof search.id === 'number' ? search.id : undefined;
@@ -331,6 +335,35 @@ export default function BlogEditorPage() {
               placeholder="AI, Claude, 教程"
             />
           </HeroTextField>
+
+          {blog_sites.length > 0 && (
+            <div>
+              <Label>{t('blog.field_sites', '发布站点(不选=所有站点可见)')}</Label>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                {blog_sites.map((s) => {
+                  const active = form.sites.includes(s.key);
+                  return (
+                    <button
+                      key={s.key}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setForm((f) => ({
+                        ...f,
+                        sites: active ? f.sites.filter((k) => k !== s.key) : [...f.sites, s.key],
+                      }))}
+                      className={`rounded-full border px-3 py-1 text-sm transition-colors ${
+                        active
+                          ? 'border-accent bg-accent/10 text-accent'
+                          : 'border-border text-text-secondary hover:bg-surface'
+                      }`}
+                    >
+                      {s.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {shareSlug && (
             <div className="rounded-md bg-surface px-3 py-2 text-xs text-text-secondary flex items-center justify-between gap-2">

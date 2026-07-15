@@ -263,29 +263,29 @@ func init() {
 	// blogpost.LangValidator is a validator for the "lang" field. It is called by the builders before save.
 	blogpost.LangValidator = blogpostDescLang.Validators[0].(func(string) error)
 	// blogpostDescSeoTitle is the schema descriptor for seo_title field.
-	blogpostDescSeoTitle := blogpostFields[11].Descriptor()
+	blogpostDescSeoTitle := blogpostFields[12].Descriptor()
 	// blogpost.DefaultSeoTitle holds the default value on creation for the seo_title field.
 	blogpost.DefaultSeoTitle = blogpostDescSeoTitle.Default.(string)
 	// blogpostDescSeoDescription is the schema descriptor for seo_description field.
-	blogpostDescSeoDescription := blogpostFields[12].Descriptor()
+	blogpostDescSeoDescription := blogpostFields[13].Descriptor()
 	// blogpost.DefaultSeoDescription holds the default value on creation for the seo_description field.
 	blogpost.DefaultSeoDescription = blogpostDescSeoDescription.Default.(string)
 	// blogpostDescOgImage is the schema descriptor for og_image field.
-	blogpostDescOgImage := blogpostFields[13].Descriptor()
+	blogpostDescOgImage := blogpostFields[14].Descriptor()
 	// blogpost.DefaultOgImage holds the default value on creation for the og_image field.
 	blogpost.DefaultOgImage = blogpostDescOgImage.Default.(string)
 	// blogpostDescViewCount is the schema descriptor for view_count field.
-	blogpostDescViewCount := blogpostFields[15].Descriptor()
+	blogpostDescViewCount := blogpostFields[16].Descriptor()
 	// blogpost.DefaultViewCount holds the default value on creation for the view_count field.
 	blogpost.DefaultViewCount = blogpostDescViewCount.Default.(int)
 	// blogpost.ViewCountValidator is a validator for the "view_count" field. It is called by the builders before save.
 	blogpost.ViewCountValidator = blogpostDescViewCount.Validators[0].(func(int) error)
 	// blogpostDescCreatedAt is the schema descriptor for created_at field.
-	blogpostDescCreatedAt := blogpostFields[17].Descriptor()
+	blogpostDescCreatedAt := blogpostFields[18].Descriptor()
 	// blogpost.DefaultCreatedAt holds the default value on creation for the created_at field.
 	blogpost.DefaultCreatedAt = blogpostDescCreatedAt.Default.(func() time.Time)
 	// blogpostDescUpdatedAt is the schema descriptor for updated_at field.
-	blogpostDescUpdatedAt := blogpostFields[18].Descriptor()
+	blogpostDescUpdatedAt := blogpostFields[19].Descriptor()
 	// blogpost.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	blogpost.DefaultUpdatedAt = blogpostDescUpdatedAt.Default.(func() time.Time)
 	// blogpost.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -726,42 +726,46 @@ func init() {
 	userDescBalance := userFields[4].Descriptor()
 	// user.DefaultBalance holds the default value on creation for the balance field.
 	user.DefaultBalance = userDescBalance.Default.(float64)
+	// userDescCanAuthorBlog is the schema descriptor for can_author_blog field.
+	userDescCanAuthorBlog := userFields[6].Descriptor()
+	// user.DefaultCanAuthorBlog holds the default value on creation for the can_author_blog field.
+	user.DefaultCanAuthorBlog = userDescCanAuthorBlog.Default.(bool)
 	// userDescMaxConcurrency is the schema descriptor for max_concurrency field.
-	userDescMaxConcurrency := userFields[6].Descriptor()
+	userDescMaxConcurrency := userFields[7].Descriptor()
 	// user.DefaultMaxConcurrency holds the default value on creation for the max_concurrency field.
 	user.DefaultMaxConcurrency = userDescMaxConcurrency.Default.(int)
 	// user.MaxConcurrencyValidator is a validator for the "max_concurrency" field. It is called by the builders before save.
 	user.MaxConcurrencyValidator = userDescMaxConcurrency.Validators[0].(func(int) error)
 	// userDescBalanceAlertThreshold is the schema descriptor for balance_alert_threshold field.
-	userDescBalanceAlertThreshold := userFields[10].Descriptor()
+	userDescBalanceAlertThreshold := userFields[11].Descriptor()
 	// user.DefaultBalanceAlertThreshold holds the default value on creation for the balance_alert_threshold field.
 	user.DefaultBalanceAlertThreshold = userDescBalanceAlertThreshold.Default.(float64)
 	// userDescBalanceAlertNotified is the schema descriptor for balance_alert_notified field.
-	userDescBalanceAlertNotified := userFields[11].Descriptor()
+	userDescBalanceAlertNotified := userFields[12].Descriptor()
 	// user.DefaultBalanceAlertNotified holds the default value on creation for the balance_alert_notified field.
 	user.DefaultBalanceAlertNotified = userDescBalanceAlertNotified.Default.(bool)
 	// userDescSignupSource is the schema descriptor for signup_source field.
-	userDescSignupSource := userFields[13].Descriptor()
+	userDescSignupSource := userFields[14].Descriptor()
 	// user.DefaultSignupSource holds the default value on creation for the signup_source field.
 	user.DefaultSignupSource = userDescSignupSource.Default.(string)
 	// user.SignupSourceValidator is a validator for the "signup_source" field. It is called by the builders before save.
 	user.SignupSourceValidator = userDescSignupSource.Validators[0].(func(string) error)
 	// userDescInviteCode is the schema descriptor for invite_code field.
-	userDescInviteCode := userFields[14].Descriptor()
+	userDescInviteCode := userFields[15].Descriptor()
 	// user.InviteCodeValidator is a validator for the "invite_code" field. It is called by the builders before save.
 	user.InviteCodeValidator = userDescInviteCode.Validators[0].(func(string) error)
 	// userDescReferralDisplayName is the schema descriptor for referral_display_name field.
-	userDescReferralDisplayName := userFields[18].Descriptor()
+	userDescReferralDisplayName := userFields[19].Descriptor()
 	// user.DefaultReferralDisplayName holds the default value on creation for the referral_display_name field.
 	user.DefaultReferralDisplayName = userDescReferralDisplayName.Default.(string)
 	// user.ReferralDisplayNameValidator is a validator for the "referral_display_name" field. It is called by the builders before save.
 	user.ReferralDisplayNameValidator = userDescReferralDisplayName.Validators[0].(func(string) error)
 	// userDescCreatedAt is the schema descriptor for created_at field.
-	userDescCreatedAt := userFields[19].Descriptor()
+	userDescCreatedAt := userFields[20].Descriptor()
 	// user.DefaultCreatedAt holds the default value on creation for the created_at field.
 	user.DefaultCreatedAt = userDescCreatedAt.Default.(func() time.Time)
 	// userDescUpdatedAt is the schema descriptor for updated_at field.
-	userDescUpdatedAt := userFields[20].Descriptor()
+	userDescUpdatedAt := userFields[21].Descriptor()
 	// user.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	user.DefaultUpdatedAt = userDescUpdatedAt.Default.(func() time.Time)
 	// user.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

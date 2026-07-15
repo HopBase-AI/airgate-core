@@ -12,7 +12,7 @@ import { useAuth } from './providers/AuthProvider';
 import { ErrorBoundary } from './providers/ErrorBoundary';
 import { getToken, getTokenRole } from '../shared/api/client';
 import { ChatPageLoading, FullPageLoading, PageLoading } from '../shared/components/PageLoading';
-import { checkAdmin, withSetupCheck } from './routeGuards';
+import { checkAdmin, checkBlogAuthor, withSetupCheck } from './routeGuards';
 import {
   AccountEventsPage,
   AccountsPage,
@@ -259,6 +259,14 @@ const adminLayout = createRoute({
   component: Outlet,
 });
 
+// 博客后台布局（管理员 或 被授予 can_author_blog 的用户）
+const blogAuthorLayout = createRoute({
+  getParentRoute: () => authLayout,
+  id: 'blog-author',
+  beforeLoad: () => checkBlogAuthor(),
+  component: Outlet,
+});
+
 function renderPage(Page: ElementType) {
   return () => (
     <Suspense fallback={<PageLoading />}>
@@ -295,9 +303,9 @@ const adminRelayDetectionRoute = createRoute({ getParentRoute: () => adminLayout
 const adminPluginsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/plugins', component: renderPage(PluginsPage) });
 const adminSettingsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/settings', component: renderPage(SettingsPage) });
 const adminReferralRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/referral', component: renderPage(ReferralPage) });
-const adminBlogRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/blog', component: renderPage(BlogListPage) });
+const adminBlogRoute = createRoute({ getParentRoute: () => blogAuthorLayout, path: '/admin/blog', component: renderPage(BlogListPage) });
 const adminBlogEditRoute = createRoute({
-  getParentRoute: () => adminLayout,
+  getParentRoute: () => blogAuthorLayout,
   path: '/admin/blog/edit',
   component: renderPage(BlogEditorPage),
   validateSearch: (search: Record<string, unknown>): { id?: number } => ({
@@ -401,6 +409,8 @@ const routeTree = rootRoute.addChildren([
       adminPluginsRoute,
       adminSettingsRoute,
       adminReferralRoute,
+    ]),
+    blogAuthorLayout.addChildren([
       adminBlogRoute,
       adminBlogEditRoute,
     ]),

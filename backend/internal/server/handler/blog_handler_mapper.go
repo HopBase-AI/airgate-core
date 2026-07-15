@@ -23,6 +23,7 @@ func toBlogPostResp(p appblog.Post) dto.BlogPostResp {
 		SEOTitle:       p.SEOTitle,
 		SEODescription: p.SEODescription,
 		OGImage:        p.OGImage,
+		Sites:          p.Sites,
 		AuthorID:       int64(p.AuthorID),
 		ViewCount:      p.ViewCount,
 		PublishedAt:    p.PublishedAt,

@@ -80,6 +80,11 @@ func Balance(v float64) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldBalance, v))
 }
 
+// CanAuthorBlog applies equality check predicate on the "can_author_blog" field. It's identical to CanAuthorBlogEQ.
+func CanAuthorBlog(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldCanAuthorBlog, v))
+}
+
 // MaxConcurrency applies equality check predicate on the "max_concurrency" field. It's identical to MaxConcurrencyEQ.
 func MaxConcurrency(v int) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldMaxConcurrency, v))
@@ -453,6 +458,16 @@ func RoleIn(vs ...Role) predicate.User {
 // RoleNotIn applies the NotIn predicate on the "role" field.
 func RoleNotIn(vs ...Role) predicate.User {
 	return predicate.User(sql.FieldNotIn(FieldRole, vs...))
+}
+
+// CanAuthorBlogEQ applies the EQ predicate on the "can_author_blog" field.
+func CanAuthorBlogEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldCanAuthorBlog, v))
+}
+
+// CanAuthorBlogNEQ applies the NEQ predicate on the "can_author_blog" field.
+func CanAuthorBlogNEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldCanAuthorBlog, v))
 }
 
 // MaxConcurrencyEQ applies the EQ predicate on the "max_concurrency" field.

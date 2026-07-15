@@ -27,6 +27,8 @@ const SITE_KEYS = [
   'contact_info', 'doc_url', 'landing_pricing_json',
   // 多落地页品牌覆盖（siteId → { name, logo }）：登录页/控制台按 ?site= 来源站切换品牌
   'sites_branding',
+  // 博客多站点投放：blog_sites=[{key,label}] 供编辑器多选;blog_site_key=本实例站点 key,SSR 据此过滤
+  'blog_sites', 'blog_site_key',
   // 整站通知横幅（放 site 组：随站点 tab 保存，且 site 组全量走公开设置接口）
   'announcement_enabled', 'announcement_level', 'announcement_content',
 ] as const;
@@ -480,6 +482,20 @@ export default function SettingsPage() {
     }
   }
 
+  // 博客投放站点选项 JSON 的客户端校验（[{key,label}] 数组）：只提示不阻塞保存。
+  const blogSitesRaw = values['blog_sites'] ?? '';
+  let blogSitesError = '';
+  if (blogSitesRaw.trim() !== '') {
+    try {
+      const parsed = JSON.parse(blogSitesRaw);
+      if (!Array.isArray(parsed) || !parsed.every((o) => o && typeof o === 'object' && typeof o.key === 'string')) {
+        blogSitesError = t('settings.blog_sites_invalid');
+      }
+    } catch (e) {
+      blogSitesError = (e as Error).message;
+    }
+  }
+
   return (
     <div className="max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 md:py-8 flex flex-col gap-6 min-h-screen">
       <div className="mx-auto w-full max-w-full overflow-x-auto hide-scrollbar pb-1">
@@ -572,6 +588,25 @@ export default function SettingsPage() {
                   />
                   {sitesBrandingError && (
                     <p className="text-[11px] text-danger mt-1.5">{sitesBrandingError}</p>
+                  )}
+                </SettingsSection>
+
+                <SettingsSection
+                  description={t('settings.blog_sites_desc')}
+                  title={t('settings.blog_sites_title')}
+                >
+                  <Field label={t('settings.blog_site_key')} hint={t('settings.blog_site_key_hint')}>
+                    <Input value={val('blog_site_key')} onChange={(e) => set('blog_site_key', e.target.value)} placeholder="essevin" />
+                  </Field>
+                  <TextArea
+                    aria-label={t('settings.blog_sites_title')}
+                    value={blogSitesRaw}
+                    onChange={(e) => set('blog_sites', e.target.value)}
+                    className="h-32 w-full font-mono text-xs leading-5 mt-3"
+                    placeholder={'[\n  { "key": "essevin", "label": "Essevin 主站" },\n  { "key": "kite", "label": "KITE" }\n]'}
+                  />
+                  {blogSitesError && (
+                    <p className="text-[11px] text-danger mt-1.5">{blogSitesError}</p>
                   )}
                 </SettingsSection>
 

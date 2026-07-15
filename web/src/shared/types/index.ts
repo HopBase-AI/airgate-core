@@ -67,6 +67,7 @@ export interface UserResp {
   display_badge: string;
   balance: number;
   role: SessionRole;
+  can_author_blog?: boolean; // 是否可进入后台写博客(管理员天然可)
   max_concurrency: number;
   // 注册来源站点 ID（ToC 落地页 ?site= 归因），用于品牌/文档链接兜底
   signup_source?: string;
@@ -112,6 +113,7 @@ export interface UpdateUserReq {
   display_badge?: string;
   password?: string;
   role?: UserRole;
+  can_author_blog?: boolean;
   max_concurrency?: number;
   group_rates?: Record<number, number>;
   group_plugin_settings?: Record<number, Record<string, Record<string, string>>>;
@@ -984,6 +986,7 @@ export interface BlogPostResp {
   gate_position: number;
   lang: string;
   tags: string[] | null;
+  sites: string[] | null;
   seo_title: string;
   seo_description: string;
   og_image: string;
@@ -992,6 +995,15 @@ export interface BlogPostResp {
   published_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// 已发布文章的轻量视图(「分享文章」选择器)。
+export interface BlogArticleBrief {
+  slug: string;
+  title: string;
+  summary: string;
+  cover_image: string;
+  published_at: string | null;
 }
 
 export interface CreateBlogPostReq {
@@ -1006,6 +1018,7 @@ export interface CreateBlogPostReq {
   gate_position?: number;
   lang?: string;
   tags?: string[];
+  sites?: string[];
   seo_title?: string;
   seo_description?: string;
   og_image?: string;

@@ -19,11 +19,21 @@ type BlogPostResp struct {
 	SEOTitle       string     `json:"seo_title"`
 	SEODescription string     `json:"seo_description"`
 	OGImage        string     `json:"og_image"`
+	Sites          []string   `json:"sites"`
 	AuthorID       int64      `json:"author_id"`
 	ViewCount      int        `json:"view_count"`
 	PublishedAt    *time.Time `json:"published_at"`
 
 	TimeMixin
+}
+
+// BlogArticleBriefResp 已发布文章的轻量视图,供用户「分享文章」选择器使用(不含正文/邀请码)。
+type BlogArticleBriefResp struct {
+	Slug        string     `json:"slug"`
+	Title       string     `json:"title"`
+	Summary     string     `json:"summary"`
+	CoverImage  string     `json:"cover_image"`
+	PublishedAt *time.Time `json:"published_at"`
 }
 
 // CreateBlogPostReq 创建文章请求。
@@ -39,6 +49,7 @@ type CreateBlogPostReq struct {
 	GatePosition   int      `json:"gate_position"`
 	Lang           string   `json:"lang"`
 	Tags           []string `json:"tags"`
+	Sites          []string `json:"sites"`
 	SEOTitle       string   `json:"seo_title"`
 	SEODescription string   `json:"seo_description"`
 	OGImage        string   `json:"og_image"`
@@ -57,6 +68,7 @@ type UpdateBlogPostReq struct {
 	GatePosition   *int      `json:"gate_position"`
 	Lang           *string   `json:"lang"`
 	Tags           *[]string `json:"tags"`
+	Sites          *[]string `json:"sites"`
 	SEOTitle       *string   `json:"seo_title"`
 	SEODescription *string   `json:"seo_description"`
 	OGImage        *string   `json:"og_image"`

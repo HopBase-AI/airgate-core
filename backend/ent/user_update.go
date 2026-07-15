@@ -125,6 +125,20 @@ func (uu *UserUpdate) SetNillableRole(u *user.Role) *UserUpdate {
 	return uu
 }
 
+// SetCanAuthorBlog sets the "can_author_blog" field.
+func (uu *UserUpdate) SetCanAuthorBlog(b bool) *UserUpdate {
+	uu.mutation.SetCanAuthorBlog(b)
+	return uu
+}
+
+// SetNillableCanAuthorBlog sets the "can_author_blog" field if the given value is not nil.
+func (uu *UserUpdate) SetNillableCanAuthorBlog(b *bool) *UserUpdate {
+	if b != nil {
+		uu.SetCanAuthorBlog(*b)
+	}
+	return uu
+}
+
 // SetMaxConcurrency sets the "max_concurrency" field.
 func (uu *UserUpdate) SetMaxConcurrency(i int) *UserUpdate {
 	uu.mutation.ResetMaxConcurrency()
@@ -679,6 +693,9 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := uu.mutation.Role(); ok {
 		_spec.SetField(user.FieldRole, field.TypeEnum, value)
 	}
+	if value, ok := uu.mutation.CanAuthorBlog(); ok {
+		_spec.SetField(user.FieldCanAuthorBlog, field.TypeBool, value)
+	}
 	if value, ok := uu.mutation.MaxConcurrency(); ok {
 		_spec.SetField(user.FieldMaxConcurrency, field.TypeInt, value)
 	}
@@ -1122,6 +1139,20 @@ func (uuo *UserUpdateOne) SetRole(u user.Role) *UserUpdateOne {
 func (uuo *UserUpdateOne) SetNillableRole(u *user.Role) *UserUpdateOne {
 	if u != nil {
 		uuo.SetRole(*u)
+	}
+	return uuo
+}
+
+// SetCanAuthorBlog sets the "can_author_blog" field.
+func (uuo *UserUpdateOne) SetCanAuthorBlog(b bool) *UserUpdateOne {
+	uuo.mutation.SetCanAuthorBlog(b)
+	return uuo
+}
+
+// SetNillableCanAuthorBlog sets the "can_author_blog" field if the given value is not nil.
+func (uuo *UserUpdateOne) SetNillableCanAuthorBlog(b *bool) *UserUpdateOne {
+	if b != nil {
+		uuo.SetCanAuthorBlog(*b)
 	}
 	return uuo
 }
@@ -1709,6 +1740,9 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 	}
 	if value, ok := uuo.mutation.Role(); ok {
 		_spec.SetField(user.FieldRole, field.TypeEnum, value)
+	}
+	if value, ok := uuo.mutation.CanAuthorBlog(); ok {
+		_spec.SetField(user.FieldCanAuthorBlog, field.TypeBool, value)
 	}
 	if value, ok := uuo.mutation.MaxConcurrency(); ok {
 		_spec.SetField(user.FieldMaxConcurrency, field.TypeInt, value)

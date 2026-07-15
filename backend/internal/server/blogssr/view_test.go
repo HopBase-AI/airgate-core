@@ -127,6 +127,79 @@ func TestBuildDetailView_SEOAndCTA(t *testing.T) {
 	}
 }
 
+func TestReadingTimeAndEyebrow(t *testing.T) {
+	if got := eyebrowFromTags([]string{"教程", "接入", "Claude"}); got != "教程 · 接入" {
+		t.Errorf("eyebrow = %q, want 教程 · 接入", got)
+	}
+	if got := eyebrowFromTags([]string{" ", "只有一个"}); got != "只有一个" {
+		t.Errorf("eyebrow single = %q", got)
+	}
+	if got := eyebrowFromTags(nil); got != "" {
+		t.Errorf("eyebrow empty = %q", got)
+	}
+	// 800 个中文字符 → 约 2 分钟
+	long := "<p>" + strings.Repeat("字", 800) + "</p>"
+	if got := readingTimeLabel(long); got != "2 分钟阅读" {
+		t.Errorf("reading time = %q, want 2 分钟阅读", got)
+	}
+	if got := readingTimeLabel("<p>短</p>"); got != "1 分钟阅读" {
+		t.Errorf("reading time min = %q, want 1 分钟阅读", got)
+	}
+}
+
+func TestBuildDetailView_Byline(t *testing.T) {
+	b := Branding{SiteName: "HopBase", ConsoleURL: "https://api.hop-base.com", OriginBase: "https://hop-base.com"}
+	post := appblog.Post{Title: "T", Slug: "s", Tags: []string{"教程", "接入"}, ContentHTML: "<p>正文</p>"}
+	v := buildDetailView(b, post, "")
+	if v.Eyebrow != "教程 · 接入" {
+		t.Errorf("eyebrow = %q", v.Eyebrow)
+	}
+	if v.AuthorName != "HopBase" {
+		t.Errorf("author = %q", v.AuthorName)
+	}
+	if v.ReadingTime == "" {
+		t.Error("reading time should be set")
+	}
+	// 空站点名兜底
+	if v2 := buildDetailView(Branding{OriginBase: "https://x.com"}, post, ""); v2.AuthorName != "Blog" {
+		t.Errorf("author fallback = %q, want Blog", v2.AuthorName)
+	}
+}
+
+func TestPostVisibleOnSite(t *testing.T) {
+	cases := []struct {
+		name    string
+		sites   []string
+		siteKey string
+		want    bool
+	}{
+		{"no site key configured → all visible", []string{"hopbase"}, "", true},
+		{"post not restricted → visible", nil, "essevin", true},
+		{"post restricted, key matches", []string{"essevin", "kite"}, "essevin", true},
+		{"post restricted, key not in list → hidden", []string{"hopbase"}, "essevin", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := postVisibleOnSite(tc.sites, tc.siteKey); got != tc.want {
+				t.Errorf("postVisibleOnSite(%v,%q) = %v, want %v", tc.sites, tc.siteKey, got, tc.want)
+			}
+		})
+	}
+
+	posts := []appblog.Post{
+		{Slug: "a", Sites: []string{"essevin"}},
+		{Slug: "b", Sites: []string{"hopbase"}},
+		{Slug: "c"}, // 不限定 → 所有站可见
+	}
+	got := filterPostsBySite(posts, "essevin")
+	if len(got) != 2 || got[0].Slug != "a" || got[1].Slug != "c" {
+		t.Errorf("filterPostsBySite = %+v, want [a c]", got)
+	}
+	if all := filterPostsBySite(posts, ""); len(all) != 3 {
+		t.Errorf("empty site key should not filter, got %d", len(all))
+	}
+}
+
 func TestBuildDetailView_SEOOverrides(t *testing.T) {
 	b := Branding{SiteName: "S", ConsoleURL: "https://api.x.com", OriginBase: "https://x.com"}
 	post := appblog.Post{
@@ -151,7 +224,7 @@ func TestBuildListView(t *testing.T) {
 	posts := []appblog.Post{
 		{Title: "A", Slug: "a", Summary: "sa", CoverImage: "/c.png", PublishedAt: &pub},
 	}
-	v := buildListView(b, posts)
+	v := buildListView(b, posts, "")
 	if v.PageTitle != "HopBase · Blog" {
 		t.Errorf("page title = %q", v.PageTitle)
 	}
@@ -162,7 +235,10 @@ func TestBuildListView(t *testing.T) {
 	if it.URL != "/blog/a" {
 		t.Errorf("url = %q", it.URL)
 	}
-	if it.CoverImage != "https://hop-base.com/c.png" {
+	if v.HomeURL != "/blog" {
+		t.Errorf("home url = %q, want /blog", v.HomeURL)
+	}
+	if string(it.CoverImage) != "https://hop-base.com/c.png" {
 		t.Errorf("cover = %q", it.CoverImage)
 	}
 	if it.PublishedAt == "" {
@@ -170,11 +246,66 @@ func TestBuildListView(t *testing.T) {
 	}
 
 	// 空品牌名 + 空列表
-	v2 := buildListView(Branding{OriginBase: "https://x.com"}, nil)
+	v2 := buildListView(Branding{OriginBase: "https://x.com"}, nil, "")
 	if v2.PageTitle != "Blog" {
 		t.Errorf("empty brand page title = %q, want Blog", v2.PageTitle)
 	}
 	if len(v2.Posts) != 0 {
 		t.Error("empty posts expected")
+	}
+}
+
+// TestBuildListView_InviteThreading 读者带合法 ?inv= 时,列表卡片与顶栏链接均保留该码;非法/空则不加。
+func TestBuildListView_InviteThreading(t *testing.T) {
+	b := Branding{SiteName: "HopBase", OriginBase: "https://hop-base.com"}
+	posts := []appblog.Post{{Title: "A", Slug: "a"}}
+
+	v := buildListView(b, posts, "Share7")
+	if v.Posts[0].URL != "/blog/a?inv=share7" {
+		t.Errorf("threaded card url = %q, want /blog/a?inv=share7", v.Posts[0].URL)
+	}
+	if v.HomeURL != "/blog?inv=share7" {
+		t.Errorf("threaded home url = %q, want /blog?inv=share7", v.HomeURL)
+	}
+
+	// 非法码不透传
+	vBad := buildListView(b, posts, "!!")
+	if vBad.Posts[0].URL != "/blog/a" || vBad.HomeURL != "/blog" {
+		t.Errorf("invalid invite should not thread: url=%q home=%q", vBad.Posts[0].URL, vBad.HomeURL)
+	}
+}
+
+// TestBuildDetailView_InviteThreadingAndCTA 详情页顶栏/返回链接透传读者 ?inv=,且 CTA 标题带站点名。
+func TestBuildDetailView_InviteThreadingAndCTA(t *testing.T) {
+	b := Branding{SiteName: "HopBase", ConsoleURL: "https://api.hop-base.com", OriginBase: "https://hop-base.com"}
+	post := appblog.Post{Title: "T", Slug: "s", InviteCode: "builtin1"}
+
+	// 读者带码:顶栏透传读者码,CTA(RegisterURL)也用读者码
+	v := buildDetailView(b, post, "Reader9")
+	if v.HomeURL != "/blog?inv=reader9" {
+		t.Errorf("home url = %q, want /blog?inv=reader9", v.HomeURL)
+	}
+	if v.RegisterURL != "https://api.hop-base.com/login?inv=reader9" {
+		t.Errorf("register url = %q, want reader9", v.RegisterURL)
+	}
+	if v.CTATitle != "用 HopBase 亲手试试文中的用法" {
+		t.Errorf("cta title = %q", v.CTATitle)
+	}
+
+	// 读者无码:顶栏不透传,但 CTA 仍用文章内置码(软化转化路径始终在)
+	vNo := buildDetailView(b, post, "")
+	if vNo.HomeURL != "/blog" {
+		t.Errorf("no-invite home url = %q, want /blog", vNo.HomeURL)
+	}
+	if vNo.RegisterURL != "https://api.hop-base.com/login?inv=builtin1" {
+		t.Errorf("no-invite register url = %q, want builtin1", vNo.RegisterURL)
+	}
+
+	// 面包屑结构化数据含三级层级
+	bc := string(v.BreadcrumbLD)
+	for _, want := range []string{`"@type":"BreadcrumbList"`, "hop-base.com/blog", `"position":3`} {
+		if !strings.Contains(bc, want) {
+			t.Errorf("breadcrumb missing %q\n got: %s", want, bc)
+		}
 	}
 }

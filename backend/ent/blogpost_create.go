@@ -150,6 +150,12 @@ func (bpc *BlogPostCreate) SetTags(s []string) *BlogPostCreate {
 	return bpc
 }
 
+// SetSites sets the "sites" field.
+func (bpc *BlogPostCreate) SetSites(s []string) *BlogPostCreate {
+	bpc.mutation.SetSites(s)
+	return bpc
+}
+
 // SetSeoTitle sets the "seo_title" field.
 func (bpc *BlogPostCreate) SetSeoTitle(s string) *BlogPostCreate {
 	bpc.mutation.SetSeoTitle(s)
@@ -502,6 +508,10 @@ func (bpc *BlogPostCreate) createSpec() (*BlogPost, *sqlgraph.CreateSpec) {
 	if value, ok := bpc.mutation.Tags(); ok {
 		_spec.SetField(blogpost.FieldTags, field.TypeJSON, value)
 		_node.Tags = value
+	}
+	if value, ok := bpc.mutation.Sites(); ok {
+		_spec.SetField(blogpost.FieldSites, field.TypeJSON, value)
+		_node.Sites = value
 	}
 	if value, ok := bpc.mutation.SeoTitle(); ok {
 		_spec.SetField(blogpost.FieldSeoTitle, field.TypeString, value)

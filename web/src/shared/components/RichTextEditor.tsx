@@ -49,9 +49,35 @@ function Divider() {
   return <span className="mx-1 h-5 w-px self-center bg-border" aria-hidden />;
 }
 
+/** 从剪贴板/拖拽数据里挑出图片文件。 */
+function imageFilesFrom(dt: DataTransfer | null): File[] {
+  if (!dt) return [];
+  return Array.from(dt.files ?? []).filter((f) => f.type.startsWith('image/'));
+}
+
 export function RichTextEditor({ value, onChange, onImageUpload, placeholder }: RichTextEditorProps) {
   const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // editorProps 在 useEditor 创建时定义,此时 editor 尚不存在;用 ref 让粘贴/拖拽回调拿到实例。
+  const editorRef = useRef<Editor | null>(null);
+  const uploadRef = useRef(onImageUpload);
+  uploadRef.current = onImageUpload;
+
+  // 上传一组图片并按顺序插入(可指定插入位置,用于拖拽落点)。
+  const uploadAndInsert = async (files: File[], atPos?: number) => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    for (const file of files) {
+      try {
+        const url = await uploadRef.current(file);
+        const chain = ed.chain().focus();
+        if (typeof atPos === 'number') chain.setTextSelection(atPos);
+        chain.setImage({ src: url }).run();
+      } catch {
+        // onImageUpload 内部已 toast 错误
+      }
+    }
+  };
 
   const editor = useEditor({
     extensions: [
@@ -64,7 +90,30 @@ export function RichTextEditor({ value, onChange, onImageUpload, placeholder }: 
     ],
     content: value,
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
+    editorProps: {
+      // 粘贴截图/图片:直接上传并插入,跳过默认粘贴(避免落成 base64 巨串)。
+      handlePaste: (_view, event) => {
+        const files = imageFilesFrom(event.clipboardData);
+        if (files.length === 0) return false;
+        event.preventDefault();
+        void uploadAndInsert(files);
+        return true;
+      },
+      // 拖拽图片文件到编辑区:上传并插入到落点。
+      handleDrop: (view, event) => {
+        const files = imageFilesFrom(event.dataTransfer);
+        if (files.length === 0) return false;
+        event.preventDefault();
+        const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+        void uploadAndInsert(files, pos);
+        return true;
+      },
+    },
   });
+
+  useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
 
   // 外部 value 变化(如编辑态加载文章)时同步内容,避免每次 onChange 回写造成光标跳动。
   useEffect(() => {
@@ -79,15 +128,10 @@ export function RichTextEditor({ value, onChange, onImageUpload, placeholder }: 
   const insertImage = () => fileInputRef.current?.click();
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files ?? []);
     e.target.value = '';
-    if (!file) return;
-    try {
-      const url = await onImageUpload(file);
-      editor.chain().focus().setImage({ src: url }).run();
-    } catch {
-      // onImageUpload 内部已 toast 错误
-    }
+    if (files.length === 0) return;
+    await uploadAndInsert(files);
   };
 
   const insertVideo = () => {
@@ -115,21 +159,33 @@ export function RichTextEditor({ value, onChange, onImageUpload, placeholder }: 
         onVideo={insertVideo}
         onLink={setLink}
       />
-      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFile} />
       <EditorContent editor={editor} />
+      <div className="border-t border-border px-3 py-1.5 text-[11px]" style={{ color: 'var(--ag-text-tertiary)' }}>
+        {t('blog.editor.paste_hint', '可直接粘贴截图,或把图片拖进来自动上传')}
+      </div>
       <style>{`
-        .blog-editor .ProseMirror{min-height:360px;padding:16px 18px;outline:none;line-height:1.7;font-size:15px}
+        .blog-editor .ProseMirror{min-height:420px;padding:22px 24px;outline:none;line-height:1.78;font-size:17px}
         .blog-editor .ProseMirror>*:first-child{margin-top:0}
-        .blog-editor .ProseMirror h2{font-size:1.4em;font-weight:700;margin:1.4em 0 .5em}
-        .blog-editor .ProseMirror h3{font-size:1.2em;font-weight:600;margin:1.2em 0 .4em}
-        .blog-editor .ProseMirror h4{font-size:1.05em;font-weight:600;margin:1em 0 .4em}
-        .blog-editor .ProseMirror p{margin:.6em 0}
-        .blog-editor .ProseMirror ul,.blog-editor .ProseMirror ol{padding-left:1.4em;margin:.6em 0}
-        .blog-editor .ProseMirror blockquote{border-left:3px solid var(--border);padding-left:1em;color:var(--ag-text-tertiary,#888);margin:.8em 0}
-        .blog-editor .ProseMirror pre{background:var(--ag-surface,#f4f4f5);border-radius:8px;padding:12px 14px;overflow-x:auto;font-size:.9em}
-        .blog-editor .ProseMirror img{max-width:100%;height:auto;border-radius:8px}
-        .blog-editor .ProseMirror iframe{max-width:100%;aspect-ratio:16/9;width:100%;border:0;border-radius:8px}
-        .blog-editor .ProseMirror a{color:var(--ag-primary,#2563eb);text-decoration:underline}
+        .blog-editor .ProseMirror h2{font-size:1.5em;font-weight:700;letter-spacing:-.02em;margin:1.6em 0 .55em;line-height:1.3}
+        .blog-editor .ProseMirror h3{font-size:1.22em;font-weight:600;margin:1.4em 0 .4em;line-height:1.4}
+        .blog-editor .ProseMirror h4{font-size:1.05em;font-weight:600;margin:1.1em 0 .4em}
+        .blog-editor .ProseMirror p{margin:.75em 0}
+        .blog-editor .ProseMirror ul,.blog-editor .ProseMirror ol{padding-left:1.5em;margin:.75em 0}
+        .blog-editor .ProseMirror li{margin:.4em 0}
+        .blog-editor .ProseMirror li::marker{color:var(--ag-primary,#4f46e5)}
+        .blog-editor .ProseMirror blockquote{border-left:3px solid var(--ag-primary,#4f46e5);padding-left:20px;margin:1.3em 0;font-size:1.12em;line-height:1.5;color:var(--ag-text)}
+        .blog-editor .ProseMirror :not(pre)>code{background:color-mix(in srgb,var(--ag-primary,#4f46e5) 12%,transparent);color:var(--ag-primary,#4f46e5);border-radius:6px;padding:.12em .42em;font-size:.85em;font-weight:500}
+        .blog-editor .ProseMirror pre{background:#0b1020;color:#e5e9f2;border-radius:12px;padding:16px 18px;overflow-x:auto;font-size:.86em;line-height:1.7;margin:1.4em 0}
+        .blog-editor .ProseMirror pre code{background:none;color:inherit;padding:0;font-size:1em}
+        .blog-editor .ProseMirror img{display:block;max-width:100%;height:auto;margin:1.8em auto;border-radius:12px;border:1px solid var(--border);box-shadow:0 1px 2px rgba(16,24,40,.06),0 12px 30px rgba(16,24,40,.09)}
+        .blog-editor .ProseMirror img.ProseMirror-selectednode{outline:2px solid var(--ag-primary,#4f46e5);outline-offset:3px}
+        .blog-editor .ProseMirror iframe{max-width:100%;aspect-ratio:16/9;width:100%;border:0;border-radius:12px;margin:1.6em auto;display:block}
+        .blog-editor .ProseMirror table{border-collapse:collapse;width:100%;font-size:.92em;margin:1.4em 0}
+        .blog-editor .ProseMirror thead th{text-align:left;font-weight:600;color:var(--ag-text-tertiary);font-size:.82em;letter-spacing:.04em;text-transform:uppercase;padding:0 12px 8px;border-bottom:1px solid var(--border)}
+        .blog-editor .ProseMirror tbody td{padding:9px 12px;border-bottom:1px solid var(--border)}
+        .blog-editor .ProseMirror hr{border:0;height:1px;background:var(--border);margin:1.8em 0}
+        .blog-editor .ProseMirror a{color:var(--ag-primary,#4f46e5);text-decoration:underline;text-underline-offset:3px}
         .blog-editor .ProseMirror p.is-editor-empty:first-child::before{content:attr(data-placeholder);color:var(--ag-text-tertiary,#9ca3af);float:left;height:0;pointer-events:none}
       `}</style>
     </div>

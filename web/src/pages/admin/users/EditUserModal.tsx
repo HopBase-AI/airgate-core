@@ -21,6 +21,7 @@ export function EditUserModal({ open, user, onClose, onSubmit, loading }: EditUs
     display_badge: user.display_badge ?? '',
     max_concurrency: user.max_concurrency,
     role: editableRole,
+    can_author_blog: user.can_author_blog ?? false,
     status: user.status as 'active' | 'disabled',
     username: user.username,
   });
@@ -110,6 +111,14 @@ export function EditUserModal({ open, user, onClose, onSubmit, loading }: EditUs
                     setForm({ ...form, status: isSelected ? 'active' : 'disabled' })
                   }
                 />
+                {editableRole !== 'admin' && (
+                  <NativeSwitch
+                    isSelected={!!form.can_author_blog}
+                    contentClassName="text-xs"
+                    label={t('users.can_author_blog', '可写博客(授权后可进入博客后台撰写文章)')}
+                    onChange={(v) => setForm({ ...form, can_author_blog: v })}
+                  />
+                )}
               </div>
             </Modal.Body>
             <Modal.Footer>

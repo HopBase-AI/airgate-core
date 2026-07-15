@@ -424,7 +424,8 @@
     "all_users_accessible": "All users",
     "generate_password": "Generate random password",
     "disable_title": "Disable User",
-    "disable_confirm": "Are you sure you want to disable user {{email}}? The user will not be able to log in or use APIs."
+    "disable_confirm": "Are you sure you want to disable user {{email}}? The user will not be able to log in or use APIs.",
+    "can_author_blog": "Blog author (can access the blog admin to write posts)"
   },
   "accounts": {
     "title": "Accounts",
@@ -1142,7 +1143,12 @@
     "models_official_input": "Official input $",
     "models_official_cached": "Official cached $",
     "models_official_output": "Official output $",
-    "models_display_desc": "For CNY-list models (e.g. GLM), pick CNY and fill the official USD reference prices so the storefront can show the correct list price and discount; billing always uses base price × group multiplier."
+    "models_display_desc": "For CNY-list models (e.g. GLM), pick CNY and fill the official USD reference prices so the storefront can show the correct list price and discount; billing always uses base price × group multiplier.",
+    "blog_sites_title": "Blog site targeting",
+    "blog_sites_desc": "This instance's site key (blog_site_key) decides which posts /blog shows; the site options (blog_sites) drive the editor's multi-select. Leave empty to disable site filtering.",
+    "blog_sites_invalid": "Must be an array of [{ \"key\": \"...\", \"label\": \"...\" }]",
+    "blog_site_key": "This site's key",
+    "blog_site_key_hint": "e.g. essevin / hopbase; a post shows on this /blog only if its target sites include this key or it's unrestricted. Empty = show all."
   },
   "docs": {
     "cta_hint": "Ready to start? Jump in now.",
@@ -2052,8 +2058,10 @@
       "undo": "Undo",
       "redo": "Redo",
       "video_prompt": "Paste a YouTube / Bilibili video URL",
-      "link_prompt": "Link URL"
-    }
+      "link_prompt": "Link URL",
+      "paste_hint": "Paste a screenshot or drag an image in — it uploads automatically"
+    },
+    "field_sites": "Publish to sites (none = visible on all sites)"
   },
   "referral_admin": {
     "config_title": "Referral Program Settings",

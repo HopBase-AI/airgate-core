@@ -25,6 +25,7 @@ type Post struct {
 	GatePosition   int
 	Lang           string
 	Tags           []string
+	Sites          []string // 发布站点 key 列表;空=所有站点可见
 	SEOTitle       string
 	SEODescription string
 	OGImage        string
@@ -66,6 +67,7 @@ type CreateInput struct {
 	GatePosition   int
 	Lang           string
 	Tags           []string
+	Sites          []string
 	SEOTitle       string
 	SEODescription string
 	OGImage        string
@@ -87,6 +89,7 @@ type UpdateInput struct {
 	GatePosition   *int
 	Lang           *string
 	Tags           *[]string
+	Sites          *[]string
 	SEOTitle       *string
 	SEODescription *string
 	OGImage        *string

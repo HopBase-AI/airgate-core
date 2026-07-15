@@ -5163,6 +5163,8 @@ type BlogPostMutation struct {
 	lang             *string
 	tags             *[]string
 	appendtags       []string
+	sites            *[]string
+	appendsites      []string
 	seo_title        *string
 	seo_description  *string
 	og_image         *string
@@ -5735,6 +5737,71 @@ func (m *BlogPostMutation) ResetTags() {
 	delete(m.clearedFields, blogpost.FieldTags)
 }
 
+// SetSites sets the "sites" field.
+func (m *BlogPostMutation) SetSites(s []string) {
+	m.sites = &s
+	m.appendsites = nil
+}
+
+// Sites returns the value of the "sites" field in the mutation.
+func (m *BlogPostMutation) Sites() (r []string, exists bool) {
+	v := m.sites
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSites returns the old "sites" field's value of the BlogPost entity.
+// If the BlogPost object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BlogPostMutation) OldSites(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSites is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSites requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSites: %w", err)
+	}
+	return oldValue.Sites, nil
+}
+
+// AppendSites adds s to the "sites" field.
+func (m *BlogPostMutation) AppendSites(s []string) {
+	m.appendsites = append(m.appendsites, s...)
+}
+
+// AppendedSites returns the list of values that were appended to the "sites" field in this mutation.
+func (m *BlogPostMutation) AppendedSites() ([]string, bool) {
+	if len(m.appendsites) == 0 {
+		return nil, false
+	}
+	return m.appendsites, true
+}
+
+// ClearSites clears the value of the "sites" field.
+func (m *BlogPostMutation) ClearSites() {
+	m.sites = nil
+	m.appendsites = nil
+	m.clearedFields[blogpost.FieldSites] = struct{}{}
+}
+
+// SitesCleared returns if the "sites" field was cleared in this mutation.
+func (m *BlogPostMutation) SitesCleared() bool {
+	_, ok := m.clearedFields[blogpost.FieldSites]
+	return ok
+}
+
+// ResetSites resets all changes to the "sites" field.
+func (m *BlogPostMutation) ResetSites() {
+	m.sites = nil
+	m.appendsites = nil
+	delete(m.clearedFields, blogpost.FieldSites)
+}
+
 // SetSeoTitle sets the "seo_title" field.
 func (m *BlogPostMutation) SetSeoTitle(s string) {
 	m.seo_title = &s
@@ -6124,7 +6191,7 @@ func (m *BlogPostMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *BlogPostMutation) Fields() []string {
-	fields := make([]string, 0, 19)
+	fields := make([]string, 0, 20)
 	if m.title != nil {
 		fields = append(fields, blogpost.FieldTitle)
 	}
@@ -6157,6 +6224,9 @@ func (m *BlogPostMutation) Fields() []string {
 	}
 	if m.tags != nil {
 		fields = append(fields, blogpost.FieldTags)
+	}
+	if m.sites != nil {
+		fields = append(fields, blogpost.FieldSites)
 	}
 	if m.seo_title != nil {
 		fields = append(fields, blogpost.FieldSeoTitle)
@@ -6212,6 +6282,8 @@ func (m *BlogPostMutation) Field(name string) (ent.Value, bool) {
 		return m.Lang()
 	case blogpost.FieldTags:
 		return m.Tags()
+	case blogpost.FieldSites:
+		return m.Sites()
 	case blogpost.FieldSeoTitle:
 		return m.SeoTitle()
 	case blogpost.FieldSeoDescription:
@@ -6259,6 +6331,8 @@ func (m *BlogPostMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldLang(ctx)
 	case blogpost.FieldTags:
 		return m.OldTags(ctx)
+	case blogpost.FieldSites:
+		return m.OldSites(ctx)
 	case blogpost.FieldSeoTitle:
 		return m.OldSeoTitle(ctx)
 	case blogpost.FieldSeoDescription:
@@ -6360,6 +6434,13 @@ func (m *BlogPostMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetTags(v)
+		return nil
+	case blogpost.FieldSites:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSites(v)
 		return nil
 	case blogpost.FieldSeoTitle:
 		v, ok := value.(string)
@@ -6492,6 +6573,9 @@ func (m *BlogPostMutation) ClearedFields() []string {
 	if m.FieldCleared(blogpost.FieldTags) {
 		fields = append(fields, blogpost.FieldTags)
 	}
+	if m.FieldCleared(blogpost.FieldSites) {
+		fields = append(fields, blogpost.FieldSites)
+	}
 	if m.FieldCleared(blogpost.FieldAuthorID) {
 		fields = append(fields, blogpost.FieldAuthorID)
 	}
@@ -6517,6 +6601,9 @@ func (m *BlogPostMutation) ClearField(name string) error {
 		return nil
 	case blogpost.FieldTags:
 		m.ClearTags()
+		return nil
+	case blogpost.FieldSites:
+		m.ClearSites()
 		return nil
 	case blogpost.FieldAuthorID:
 		m.ClearAuthorID()
@@ -6564,6 +6651,9 @@ func (m *BlogPostMutation) ResetField(name string) error {
 		return nil
 	case blogpost.FieldTags:
 		m.ResetTags()
+		return nil
+	case blogpost.FieldSites:
+		m.ResetSites()
 		return nil
 	case blogpost.FieldSeoTitle:
 		m.ResetSeoTitle()
@@ -18125,6 +18215,7 @@ type UserMutation struct {
 	balance                    *float64
 	addbalance                 *float64
 	role                       *user.Role
+	can_author_blog            *bool
 	max_concurrency            *int
 	addmax_concurrency         *int
 	totp_secret                *string
@@ -18500,6 +18591,42 @@ func (m *UserMutation) OldRole(ctx context.Context) (v user.Role, err error) {
 // ResetRole resets all changes to the "role" field.
 func (m *UserMutation) ResetRole() {
 	m.role = nil
+}
+
+// SetCanAuthorBlog sets the "can_author_blog" field.
+func (m *UserMutation) SetCanAuthorBlog(b bool) {
+	m.can_author_blog = &b
+}
+
+// CanAuthorBlog returns the value of the "can_author_blog" field in the mutation.
+func (m *UserMutation) CanAuthorBlog() (r bool, exists bool) {
+	v := m.can_author_blog
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCanAuthorBlog returns the old "can_author_blog" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldCanAuthorBlog(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCanAuthorBlog is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCanAuthorBlog requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCanAuthorBlog: %w", err)
+	}
+	return oldValue.CanAuthorBlog, nil
+}
+
+// ResetCanAuthorBlog resets all changes to the "can_author_blog" field.
+func (m *UserMutation) ResetCanAuthorBlog() {
+	m.can_author_blog = nil
 }
 
 // SetMaxConcurrency sets the "max_concurrency" field.
@@ -19560,7 +19687,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 21)
+	fields := make([]string, 0, 22)
 	if m.email != nil {
 		fields = append(fields, user.FieldEmail)
 	}
@@ -19578,6 +19705,9 @@ func (m *UserMutation) Fields() []string {
 	}
 	if m.role != nil {
 		fields = append(fields, user.FieldRole)
+	}
+	if m.can_author_blog != nil {
+		fields = append(fields, user.FieldCanAuthorBlog)
 	}
 	if m.max_concurrency != nil {
 		fields = append(fields, user.FieldMaxConcurrency)
@@ -19644,6 +19774,8 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.Balance()
 	case user.FieldRole:
 		return m.Role()
+	case user.FieldCanAuthorBlog:
+		return m.CanAuthorBlog()
 	case user.FieldMaxConcurrency:
 		return m.MaxConcurrency()
 	case user.FieldTotpSecret:
@@ -19695,6 +19827,8 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldBalance(ctx)
 	case user.FieldRole:
 		return m.OldRole(ctx)
+	case user.FieldCanAuthorBlog:
+		return m.OldCanAuthorBlog(ctx)
 	case user.FieldMaxConcurrency:
 		return m.OldMaxConcurrency(ctx)
 	case user.FieldTotpSecret:
@@ -19775,6 +19909,13 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRole(v)
+		return nil
+	case user.FieldCanAuthorBlog:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCanAuthorBlog(v)
 		return nil
 	case user.FieldMaxConcurrency:
 		v, ok := value.(int)
@@ -20049,6 +20190,9 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldRole:
 		m.ResetRole()
+		return nil
+	case user.FieldCanAuthorBlog:
+		m.ResetCanAuthorBlog()
 		return nil
 	case user.FieldMaxConcurrency:
 		m.ResetMaxConcurrency()

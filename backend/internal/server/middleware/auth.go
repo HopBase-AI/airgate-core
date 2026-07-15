@@ -200,6 +200,32 @@ func RequireRoles(roles ...string) gin.HandlerFunc {
 	}
 }
 
+// RequireBlogAuthor 允许「管理员 或 被授予 can_author_blog 的用户」访问(需在 JWTAuth 之后)。
+// role 在 JWT 里,can_author_blog 是 DB 字段,故非管理员需按 user_id 查库判定。
+func RequireBlogAuthor(db *ent.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if role, _ := c.Get(CtxKeyRole); role == "admin" {
+			c.Next()
+			return
+		}
+		uid, ok := c.Get(CtxKeyUserID)
+		userID, ok2 := uid.(int)
+		if !ok || !ok2 || userID <= 0 {
+			response.Forbidden(c, "无权访问博客后台")
+			c.Abort()
+			return
+		}
+		u, err := db.User.Get(c.Request.Context(), userID)
+		if err != nil || !u.CanAuthorBlog {
+			slog.Warn("blog_author_access_denied", sdk.LogFieldUserID, userID, sdk.LogFieldRequestID, RequestIDFromGinContext(c))
+			response.Forbidden(c, "无权访问博客后台")
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
 // extractBearerToken 从 Authorization 头或 x-api-key 头提取 API Key
 // 优先使用 Authorization: Bearer <token>，回退到 x-api-key（Anthropic 标准格式）
 func extractBearerToken(c *gin.Context) string {

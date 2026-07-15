@@ -90,6 +90,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Post, error) {
 	input.Status = normalizeStatus(input.Status)
 	input.GatePosition = clampGate(input.GatePosition)
 	input.Lang = normalizeLang(input.Lang)
+	input.Sites = normalizeSites(input.Sites)
 	if input.Status == StatusPublished {
 		now := s.now()
 		input.PublishedAt = &now
@@ -168,6 +169,11 @@ func (s *Service) Update(ctx context.Context, id int, input UpdateInput) (Post, 
 	if input.Lang != nil {
 		l := normalizeLang(*input.Lang)
 		input.Lang = &l
+	}
+
+	if input.Sites != nil {
+		sites := normalizeSites(*input.Sites)
+		input.Sites = &sites
 	}
 
 	post, err := s.repo.Update(ctx, id, input)
@@ -267,4 +273,27 @@ func normalizeLang(lang string) string {
 		return "zh"
 	}
 	return lang
+}
+
+// normalizeSites 去空白、去空项、去重,保序;空/全空 → nil(表示所有站点可见)。
+func normalizeSites(sites []string) []string {
+	if len(sites) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(sites))
+	out := make([]string, 0, len(sites))
+	for _, s := range sites {
+		if s = strings.TrimSpace(s); s == "" {
+			continue
+		}
+		if _, dup := seen[s]; dup {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

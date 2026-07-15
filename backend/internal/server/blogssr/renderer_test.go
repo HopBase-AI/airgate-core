@@ -90,6 +90,7 @@ func newTestRouter() *gin.Engine {
 	r := gin.New()
 	rend := NewRenderer(svc, fakeSettings{})
 	r.GET("/blog", rend.RenderList)
+	r.GET("/blog/sitemap.xml", rend.RenderSitemap)
 	r.GET("/blog/:slug", rend.RenderDetail)
 	return r
 }
@@ -266,19 +267,126 @@ func TestSSR_HostileInviteNotReflected(t *testing.T) {
 	}
 }
 
-// TestSSR_NoGateWhenDisabled 验证未开注册墙的文章不注入 gate 脚本。
+// TestSSR_NoGateWhenDisabled 验证未开注册墙的文章不注入 gate 脚本,但常驻内联 CTA 仍在
+// (软化推荐的核心:gate 关掉也要有转化入口 + 内置邀请码露出)。
 func TestSSR_NoGateWhenDisabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	pub := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
 	repo := &ssrRepo{posts: []appblog.Post{
 		{ID: 1, Title: "No Gate", Slug: "no-gate", Status: appblog.StatusPublished,
-			ContentHTML: "<p>x</p>", GateEnabled: false, PublishedAt: &pub, UpdatedAt: pub},
+			ContentHTML: "<p>x</p>", GateEnabled: false, InviteCode: "promo42", PublishedAt: &pub, UpdatedAt: pub},
 	}}
 	r := gin.New()
 	rend := NewRenderer(appblog.NewService(repo), fakeSettings{})
 	r.GET("/blog/:slug", rend.RenderDetail)
 	w := doGet(t, r, "/blog/no-gate")
-	if strings.Contains(w.Body.String(), "id=\"blog-gate\"") {
+	body := w.Body.String()
+	if strings.Contains(body, "id=\"blog-gate\"") {
 		t.Error("gate should not be injected when disabled")
+	}
+	// 常驻内联 CTA 必须存在,且携带文章内置邀请码
+	if !strings.Contains(body, "blog-cta") {
+		t.Error("always-on inline CTA missing when gate disabled")
+	}
+	if !strings.Contains(body, "https://api.hop-base.com/login?inv=promo42") {
+		t.Error("inline CTA should carry the article's built-in invite code even without gate")
+	}
+}
+
+// TestSSR_Sitemap 验证博客动态 sitemap:含已发布文章与列表页,排除草稿,XML 头正确。
+func TestSSR_Sitemap(t *testing.T) {
+	r := newTestRouter()
+	w := doGet(t, r, "/blog/sitemap.xml")
+	if w.Code != http.StatusOK {
+		t.Fatalf("sitemap status = %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "xml") {
+		t.Errorf("sitemap content-type = %q", ct)
+	}
+	body := w.Body.String()
+	wants := []string{
+		`<?xml version="1.0"`,
+		"<urlset",
+		"https://hop-base.com/blog</loc>",
+		"https://hop-base.com/blog/published-post</loc>",
+		"<lastmod>2026-07-15</lastmod>",
+	}
+	for _, want := range wants {
+		if !strings.Contains(body, want) {
+			t.Errorf("sitemap missing %q", want)
+		}
+	}
+	if strings.Contains(body, "secret-draft") {
+		t.Error("draft leaked into sitemap")
+	}
+}
+
+// siteKeySettings 配置 blog_site_key=essevin,用于站点过滤测试。
+type siteKeySettings struct{}
+
+func (siteKeySettings) List(_ context.Context, group string) ([]appsettings.Setting, error) {
+	if group != "site" {
+		return nil, nil
+	}
+	return []appsettings.Setting{
+		{Key: "site_name", Value: "Essevin", Group: "site"},
+		{Key: "api_base_url", Value: "https://api.essevin.com", Group: "site"},
+		{Key: "blog_site_key", Value: "essevin", Group: "site"},
+	}, nil
+}
+
+// TestSSR_SiteFilter 验证:配置 blog_site_key 后,列表/详情/sitemap 只放出投放到本站(或未限定)的文章。
+func TestSSR_SiteFilter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	pub := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
+	repo := &ssrRepo{posts: []appblog.Post{
+		{ID: 1, Title: "Essevin 专属", Slug: "essevin-only", Status: appblog.StatusPublished,
+			ContentHTML: "<p>x</p>", Sites: []string{"essevin"}, PublishedAt: &pub, UpdatedAt: pub},
+		{ID: 2, Title: "HopBase 专属", Slug: "hopbase-only", Status: appblog.StatusPublished,
+			ContentHTML: "<p>x</p>", Sites: []string{"hopbase"}, PublishedAt: &pub, UpdatedAt: pub},
+		{ID: 3, Title: "全站通投", Slug: "all-sites", Status: appblog.StatusPublished,
+			ContentHTML: "<p>x</p>", PublishedAt: &pub, UpdatedAt: pub},
+	}}
+	r := gin.New()
+	rend := NewRenderer(appblog.NewService(repo), siteKeySettings{})
+	r.GET("/blog", rend.RenderList)
+	r.GET("/blog/sitemap.xml", rend.RenderSitemap)
+	r.GET("/blog/:slug", rend.RenderDetail)
+
+	// 列表:只出 essevin-only + all-sites,不出 hopbase-only
+	list := doGet(t, r, "/blog").Body.String()
+	if !strings.Contains(list, "essevin-only") || !strings.Contains(list, "all-sites") {
+		t.Error("list should show this-site and all-site posts")
+	}
+	if strings.Contains(list, "hopbase-only") {
+		t.Error("list must not show other-site-only post")
+	}
+	// 详情:本站文章 200,别站文章 404
+	if code := doGet(t, r, "/blog/essevin-only").Code; code != http.StatusOK {
+		t.Errorf("this-site detail = %d, want 200", code)
+	}
+	if code := doGet(t, r, "/blog/hopbase-only").Code; code != http.StatusNotFound {
+		t.Errorf("other-site detail = %d, want 404", code)
+	}
+	// sitemap:同样过滤
+	sm := doGet(t, r, "/blog/sitemap.xml").Body.String()
+	if strings.Contains(sm, "hopbase-only") {
+		t.Error("sitemap must not include other-site-only post")
+	}
+	if !strings.Contains(sm, "essevin-only") || !strings.Contains(sm, "all-sites") {
+		t.Error("sitemap should include this-site and all-site posts")
+	}
+}
+
+// TestSSR_ListInviteThreading 验证列表页读者带 ?inv= 时卡片链接透传该码且不缓存。
+func TestSSR_ListInviteThreading(t *testing.T) {
+	r := newTestRouter()
+	w := doGet(t, r, "/blog?inv=share7")
+	body := w.Body.String()
+	if !strings.Contains(body, "/blog/published-post?inv=share7") {
+		t.Error("list card should thread reader ?inv= into article link")
+	}
+	if cc := w.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
+		t.Errorf("inv-threaded list must not be cached, got %q", cc)
 	}
 }

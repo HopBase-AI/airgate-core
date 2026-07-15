@@ -27,6 +27,8 @@ const (
 	FieldBalance = "balance"
 	// FieldRole holds the string denoting the role field in the database.
 	FieldRole = "role"
+	// FieldCanAuthorBlog holds the string denoting the can_author_blog field in the database.
+	FieldCanAuthorBlog = "can_author_blog"
 	// FieldMaxConcurrency holds the string denoting the max_concurrency field in the database.
 	FieldMaxConcurrency = "max_concurrency"
 	// FieldTotpSecret holds the string denoting the totp_secret field in the database.
@@ -122,6 +124,7 @@ var Columns = []string{
 	FieldDisplayBadge,
 	FieldBalance,
 	FieldRole,
+	FieldCanAuthorBlog,
 	FieldMaxConcurrency,
 	FieldTotpSecret,
 	FieldGroupRates,
@@ -168,6 +171,8 @@ var (
 	DisplayBadgeValidator func(string) error
 	// DefaultBalance holds the default value on creation for the "balance" field.
 	DefaultBalance float64
+	// DefaultCanAuthorBlog holds the default value on creation for the "can_author_blog" field.
+	DefaultCanAuthorBlog bool
 	// DefaultMaxConcurrency holds the default value on creation for the "max_concurrency" field.
 	DefaultMaxConcurrency int
 	// MaxConcurrencyValidator is a validator for the "max_concurrency" field. It is called by the builders before save.
@@ -308,6 +313,11 @@ func ByBalance(opts ...sql.OrderTermOption) OrderOption {
 // ByRole orders the results by the role field.
 func ByRole(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRole, opts...).ToFunc()
+}
+
+// ByCanAuthorBlog orders the results by the can_author_blog field.
+func ByCanAuthorBlog(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCanAuthorBlog, opts...).ToFunc()
 }
 
 // ByMaxConcurrency orders the results by the max_concurrency field.

@@ -91,6 +91,10 @@ const userMenuItems: MenuItem[] = [
 // 「我的邀请」仅在分销开关（公开设置 referral_enabled）打开时挂进个人菜单。
 const inviteMenuItem: MenuItem = { path: '/invite', labelKey: 'nav.my_invite', icon: <Gift className="h-5 w-5" /> };
 
+// 「博客」:管理员天然可见(在 adminMenuItems 内);被授予 can_author_blog 的普通用户
+// 也在个人菜单下挂出该入口(单独成营销分组)。
+const blogAuthorMenuItem: MenuItem = { path: '/admin/blog', labelKey: 'nav.blog', icon: <FileText className="h-5 w-5" />, sectionKey: 'nav.marketing' };
+
 // API Key 登录只能看使用记录
 const apiKeyMenuItems: MenuItem[] = [
   { path: '/usage', labelKey: 'nav.my_usage', icon: <ReceiptText className="h-5 w-5" />, sectionKey: 'nav.personal' },
@@ -240,11 +244,13 @@ export function AppShell({ children }: AppShellProps) {
     const pluginUserItemsMerged = pluginUserItems.map((item, i) =>
       i === 0 ? { path: item.path, labelKey: item.labelKey, icon: item.icon } : item,
     );
+    // 非管理员但被授予 can_author_blog 的用户,在个人菜单后挂出「博客」入口。
+    const canBlog = !isAPIKeySession && !!user?.can_author_blog;
     const menuItems = isAPIKeySession
       ? apiKeyMenuItems
       : isAdmin
         ? [...adminMenuItems, ...pluginAdminItems, ...adminUserItems, ...pluginUserItemsMerged]
-        : [...userItemsWithInvite, ...pluginUserItemsMerged];
+        : [...userItemsWithInvite, ...(canBlog ? [blogAuthorMenuItem] : []), ...pluginUserItemsMerged];
 
     const nextSections: Array<{ titleKey?: string; items: MenuItem[] }> = [];
     let currentSection: { titleKey?: string; items: MenuItem[] } | null = null;
@@ -262,7 +268,7 @@ export function AppShell({ children }: AppShellProps) {
     });
 
     return nextSections;
-  }, [isAPIKeySession, isAdmin, pluginAdminItems, pluginUserItems, site.referral_enabled]);
+  }, [isAPIKeySession, isAdmin, user?.can_author_blog, pluginAdminItems, pluginUserItems, site.referral_enabled]);
 
   const changeLanguage = (nextLang: string) => {
     i18n.changeLanguage(nextLang);

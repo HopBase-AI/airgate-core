@@ -200,6 +200,24 @@ func (bpu *BlogPostUpdate) ClearTags() *BlogPostUpdate {
 	return bpu
 }
 
+// SetSites sets the "sites" field.
+func (bpu *BlogPostUpdate) SetSites(s []string) *BlogPostUpdate {
+	bpu.mutation.SetSites(s)
+	return bpu
+}
+
+// AppendSites appends s to the "sites" field.
+func (bpu *BlogPostUpdate) AppendSites(s []string) *BlogPostUpdate {
+	bpu.mutation.AppendSites(s)
+	return bpu
+}
+
+// ClearSites clears the value of the "sites" field.
+func (bpu *BlogPostUpdate) ClearSites() *BlogPostUpdate {
+	bpu.mutation.ClearSites()
+	return bpu
+}
+
 // SetSeoTitle sets the "seo_title" field.
 func (bpu *BlogPostUpdate) SetSeoTitle(s string) *BlogPostUpdate {
 	bpu.mutation.SetSeoTitle(s)
@@ -456,6 +474,17 @@ func (bpu *BlogPostUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if bpu.mutation.TagsCleared() {
 		_spec.ClearField(blogpost.FieldTags, field.TypeJSON)
 	}
+	if value, ok := bpu.mutation.Sites(); ok {
+		_spec.SetField(blogpost.FieldSites, field.TypeJSON, value)
+	}
+	if value, ok := bpu.mutation.AppendedSites(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, blogpost.FieldSites, value)
+		})
+	}
+	if bpu.mutation.SitesCleared() {
+		_spec.ClearField(blogpost.FieldSites, field.TypeJSON)
+	}
 	if value, ok := bpu.mutation.SeoTitle(); ok {
 		_spec.SetField(blogpost.FieldSeoTitle, field.TypeString, value)
 	}
@@ -677,6 +706,24 @@ func (bpuo *BlogPostUpdateOne) AppendTags(s []string) *BlogPostUpdateOne {
 // ClearTags clears the value of the "tags" field.
 func (bpuo *BlogPostUpdateOne) ClearTags() *BlogPostUpdateOne {
 	bpuo.mutation.ClearTags()
+	return bpuo
+}
+
+// SetSites sets the "sites" field.
+func (bpuo *BlogPostUpdateOne) SetSites(s []string) *BlogPostUpdateOne {
+	bpuo.mutation.SetSites(s)
+	return bpuo
+}
+
+// AppendSites appends s to the "sites" field.
+func (bpuo *BlogPostUpdateOne) AppendSites(s []string) *BlogPostUpdateOne {
+	bpuo.mutation.AppendSites(s)
+	return bpuo
+}
+
+// ClearSites clears the value of the "sites" field.
+func (bpuo *BlogPostUpdateOne) ClearSites() *BlogPostUpdateOne {
+	bpuo.mutation.ClearSites()
 	return bpuo
 }
 
@@ -965,6 +1012,17 @@ func (bpuo *BlogPostUpdateOne) sqlSave(ctx context.Context) (_node *BlogPost, er
 	}
 	if bpuo.mutation.TagsCleared() {
 		_spec.ClearField(blogpost.FieldTags, field.TypeJSON)
+	}
+	if value, ok := bpuo.mutation.Sites(); ok {
+		_spec.SetField(blogpost.FieldSites, field.TypeJSON, value)
+	}
+	if value, ok := bpuo.mutation.AppendedSites(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, blogpost.FieldSites, value)
+		})
+	}
+	if bpuo.mutation.SitesCleared() {
+		_spec.ClearField(blogpost.FieldSites, field.TypeJSON)
 	}
 	if value, ok := bpuo.mutation.SeoTitle(); ok {
 		_spec.SetField(blogpost.FieldSeoTitle, field.TypeString, value)

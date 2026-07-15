@@ -40,6 +40,8 @@ type BlogPost struct {
 	Lang string `json:"lang,omitempty"`
 	// 轻量标签/分类。
 	Tags []string `json:"tags,omitempty"`
+	// 发布站点 key 列表;空=所有站点可见。SSR 按当前实例 site key(设置 blog_site_key)过滤,选项来自设置 blog_sites。
+	Sites []string `json:"sites,omitempty"`
 	// SEO 标题覆盖;空则回退 title。
 	SeoTitle string `json:"seo_title,omitempty"`
 	// SEO 描述覆盖;空则回退 summary。
@@ -64,7 +66,7 @@ func (*BlogPost) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case blogpost.FieldTags:
+		case blogpost.FieldTags, blogpost.FieldSites:
 			values[i] = new([]byte)
 		case blogpost.FieldGateEnabled:
 			values[i] = new(sql.NullBool)
@@ -162,6 +164,14 @@ func (bp *BlogPost) assignValues(columns []string, values []any) error {
 			} else if value != nil && len(*value) > 0 {
 				if err := json.Unmarshal(*value, &bp.Tags); err != nil {
 					return fmt.Errorf("unmarshal field tags: %w", err)
+				}
+			}
+		case blogpost.FieldSites:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field sites", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &bp.Sites); err != nil {
+					return fmt.Errorf("unmarshal field sites: %w", err)
 				}
 			}
 		case blogpost.FieldSeoTitle:
@@ -284,6 +294,9 @@ func (bp *BlogPost) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("tags=")
 	builder.WriteString(fmt.Sprintf("%v", bp.Tags))
+	builder.WriteString(", ")
+	builder.WriteString("sites=")
+	builder.WriteString(fmt.Sprintf("%v", bp.Sites))
 	builder.WriteString(", ")
 	builder.WriteString("seo_title=")
 	builder.WriteString(bp.SeoTitle)

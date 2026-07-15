@@ -23,6 +23,8 @@ func (User) Fields() []ent.Field {
 		field.Float("balance").Default(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 		field.Enum("role").Values("admin", "user").Default("user"),
+		field.Bool("can_author_blog").Default(false).
+			Comment("是否可进入后台撰写/管理博客(授予非管理员的营销/运营用户);管理员天然可写。"),
 		field.Int("max_concurrency").Default(0).Min(0).
 			Comment("用户级并发上限：同一 user 所有 API Key 加起来同时在途的请求数。0 表示不限制（默认）。与 api_key.max_concurrency 是 AND 关系，两者都会检查。"),
 		field.String("totp_secret").Optional().Nillable().Sensitive(),

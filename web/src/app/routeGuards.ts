@@ -110,9 +110,49 @@ export function checkAdmin(): void | Promise<void> {
   });
 }
 
+// 博客后台守卫：管理员 或 被授予 can_author_blog 的用户可进入 /admin/blog。
+let blogAuthorVerified = false;
+let blogAuthorVerifiedToken: string | null = null;
+let blogAuthorCheckPromise: Promise<void> | null = null;
+let blogAuthorCheckToken: string | null = null;
+
+export function checkBlogAuthor(): void | Promise<void> {
+  const token = getToken();
+  if (getTokenRole(token) === 'admin') {
+    blogAuthorVerified = true;
+    blogAuthorVerifiedToken = token;
+    return;
+  }
+
+  if (blogAuthorVerified && blogAuthorVerifiedToken === token) return;
+  if (blogAuthorCheckPromise && blogAuthorCheckToken === token) return blogAuthorCheckPromise;
+
+  blogAuthorCheckToken = token;
+  blogAuthorCheckPromise = (async () => {
+    const user = await usersApi.me();
+    if (user.role !== 'admin' && !user.can_author_blog) {
+      throw redirect({ to: '/' });
+    }
+    blogAuthorVerified = true;
+    blogAuthorVerifiedToken = token;
+  })();
+
+  const p = blogAuthorCheckPromise;
+  return p.finally(() => {
+    if (blogAuthorCheckPromise === p) {
+      blogAuthorCheckPromise = null;
+      blogAuthorCheckToken = null;
+    }
+  });
+}
+
 export function resetAdminCache() {
   adminVerified = false;
   adminVerifiedToken = null;
   adminCheckPromise = null;
   adminCheckToken = null;
+  blogAuthorVerified = false;
+  blogAuthorVerifiedToken = null;
+  blogAuthorCheckPromise = null;
+  blogAuthorCheckToken = null;
 }

@@ -41,6 +41,7 @@ func NewRenderer(posts *appblog.Service, settings SettingsLister) *Renderer {
 // RenderList 渲染博客列表页(仅已发布)。
 func (r *Renderer) RenderList(c *gin.Context) {
 	b := r.branding(c)
+	reqInvite := c.Query("inv")
 	result, err := r.posts.List(c.Request.Context(), appblog.ListFilter{
 		Status:   appblog.StatusPublished,
 		Page:     1,
@@ -48,18 +49,24 @@ func (r *Renderer) RenderList(c *gin.Context) {
 	})
 	if err != nil {
 		c.Header("Cache-Control", "no-store")
-		r.write(c, http.StatusInternalServerError, r.listTmpl, buildListView(b, nil))
+		r.write(c, http.StatusInternalServerError, r.listTmpl, buildListView(b, nil, reqInvite))
 		return
 	}
-	c.Header("Cache-Control", "public, max-age=300")
-	r.write(c, http.StatusOK, r.listTmpl, buildListView(b, result.List))
+	if strings.TrimSpace(reqInvite) != "" {
+		// 带 ?inv= 的请求把邀请码透传进了站内链接,禁缓存以免代理把某人的邀请码串给别人。
+		c.Header("Cache-Control", "private, no-store")
+	} else {
+		c.Header("Cache-Control", "public, max-age=300")
+	}
+	r.write(c, http.StatusOK, r.listTmpl, buildListView(b, filterPostsBySite(result.List, b.SiteKey), reqInvite))
 }
 
 // RenderDetail 渲染文章详情页(未发布/不存在→404 页)。
 func (r *Renderer) RenderDetail(c *gin.Context) {
 	b := r.branding(c)
 	post, err := r.posts.GetPublishedBySlug(c.Request.Context(), c.Param("slug"))
-	if err != nil {
+	if err != nil || !postVisibleOnSite(post.Sites, b.SiteKey) {
+		// 文章不存在,或已发布但未投放到当前站点 → 一律 404(不泄露"存在但别站可见")。
 		c.Header("Cache-Control", "no-store")
 		r.write(c, http.StatusNotFound, r.notFoundTmpl, b)
 		return
@@ -83,6 +90,60 @@ func (r *Renderer) RenderDetail(c *gin.Context) {
 	r.write(c, http.StatusOK, r.detailTmpl, view)
 }
 
+// RenderSitemap 输出博客动态 sitemap:列表页 + 每篇已发布文章的规范 URL 与 lastmod。
+// 让搜索引擎 / AI 爬虫发现全部文章(静态 sitemap 无法随发文自动更新)。即使查询失败也至少输出列表页。
+func (r *Renderer) RenderSitemap(c *gin.Context) {
+	base := strings.TrimRight(originBase(c), "/")
+	siteKey := r.branding(c).SiteKey
+	result, err := r.posts.List(c.Request.Context(), appblog.ListFilter{
+		Status:   appblog.StatusPublished,
+		Page:     1,
+		PageSize: 1000,
+	})
+
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
+	b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` + "\n")
+	writeSitemapURL(&b, base+"/blog", "", "daily", "0.7")
+	if err == nil {
+		for _, p := range filterPostsBySite(result.List, siteKey) {
+			lastmod := ""
+			if !p.UpdatedAt.IsZero() {
+				lastmod = p.UpdatedAt.UTC().Format("2006-01-02")
+			} else if p.PublishedAt != nil {
+				lastmod = p.PublishedAt.UTC().Format("2006-01-02")
+			}
+			writeSitemapURL(&b, base+"/blog/"+p.Slug, lastmod, "weekly", "0.6")
+		}
+	}
+	b.WriteString(`</urlset>`)
+
+	if err != nil {
+		c.Header("Cache-Control", "no-store")
+	} else {
+		c.Header("Cache-Control", "public, max-age=600")
+	}
+	c.Data(http.StatusOK, "application/xml; charset=utf-8", []byte(b.String()))
+}
+
+// writeSitemapURL 追加一条 <url> 条目;loc 经 XML 文本转义(slug/host 通常安全,防御性处理)。
+func writeSitemapURL(b *strings.Builder, loc, lastmod, changefreq, priority string) {
+	b.WriteString("  <url><loc>")
+	b.WriteString(xmlEscape(loc))
+	b.WriteString("</loc>")
+	if lastmod != "" {
+		b.WriteString("<lastmod>" + lastmod + "</lastmod>")
+	}
+	b.WriteString("<changefreq>" + changefreq + "</changefreq>")
+	b.WriteString("<priority>" + priority + "</priority>")
+	b.WriteString("</url>\n")
+}
+
+func xmlEscape(s string) string {
+	replacer := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;")
+	return replacer.Replace(s)
+}
+
 // branding 从 site 设置构建品牌信息;失败时退化为空品牌(页面仍可渲染)。
 func (r *Renderer) branding(c *gin.Context) Branding {
 	b := Branding{OriginBase: originBase(c)}
@@ -96,6 +157,8 @@ func (r *Renderer) branding(c *gin.Context) Branding {
 				b.LogoURL = it.Value
 			case "api_base_url":
 				b.ConsoleURL = it.Value
+			case "blog_site_key":
+				b.SiteKey = strings.TrimSpace(it.Value)
 			}
 		}
 	}

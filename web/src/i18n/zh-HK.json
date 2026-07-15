@@ -424,7 +424,8 @@
     "all_users_accessible": "所有用戶可用",
     "generate_password": "隨機生成密碼",
     "disable_title": "停用用戶",
-    "disable_confirm": "確定要停用用戶 {{email}} 嗎？停用後該用戶將無法登入或使用 API。"
+    "disable_confirm": "確定要停用用戶 {{email}} 嗎？停用後該用戶將無法登入或使用 API。",
+    "can_author_blog": "可寫博客(授權後可進入博客後台撰寫文章)"
   },
   "accounts": {
     "title": "帳號管理",
@@ -1142,7 +1143,12 @@
     "models_official_input": "官方輸入價 $",
     "models_official_cached": "官方緩存價 $",
     "models_official_output": "官方輸出價 $",
-    "models_display_desc": "人民幣牌價模型（如 GLM）需選 CNY 並填官方美元參考價，前台才能正確顯示劃線官方價與折扣；計費始終按上方基準價 × 分組倍率。"
+    "models_display_desc": "人民幣牌價模型（如 GLM）需選 CNY 並填官方美元參考價，前台才能正確顯示劃線官方價與折扣；計費始終按上方基準價 × 分組倍率。",
+    "blog_sites_title": "博客投放站點",
+    "blog_sites_desc": "本實例的站點 key(blog_site_key)決定 /blog 展示哪些文章;可投放站點(blog_sites)是編輯器多選的選項。留空=不按站點過濾。",
+    "blog_sites_invalid": "格式應為 [{ \"key\": \"...\", \"label\": \"...\" }] 陣列",
+    "blog_site_key": "本站點 key",
+    "blog_site_key_hint": "如 essevin / hopbase;文章「發布站點」含此 key 或未限定時,本站 /blog 才展示。留空=展示全部。"
   },
   "docs": {
     "cta_hint": "準備好了嗎？立即開始使用。",
@@ -2052,8 +2058,10 @@
       "undo": "復原",
       "redo": "重做",
       "video_prompt": "貼上 YouTube / Bilibili 影片連結",
-      "link_prompt": "連結地址"
-    }
+      "link_prompt": "連結地址",
+      "paste_hint": "可直接貼上截圖,或把圖片拖進來自動上傳"
+    },
+    "field_sites": "發布站點(不選=所有站點可見)"
   },
   "referral_admin": {
     "config_title": "推廣回贈設定",
