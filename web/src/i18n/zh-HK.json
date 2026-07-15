@@ -1983,7 +1983,17 @@
     "col_status": "狀態",
     "status_settled": "已入帳",
     "status_reversed": "已沖回",
-    "empty": "暫無回贈紀錄"
+    "empty": "暫無回贈紀錄",
+    "share_articles": "分享文章",
+    "share_articles_hint": "分享一篇文章代替直接發邀請碼——讀者讀完自然註冊,你的邀請碼已內置進連結,好友註冊即自動歸屬於你。",
+    "copy_share_link": "複製分享連結",
+    "no_articles": "暫無可分享的文章",
+    "official_promoter": "官方推廣官",
+    "official_badge": "官方推廣",
+    "official_promoter_hint": "你是官方團隊推廣官,邀請連結自帶官方信任背書。",
+    "official_promoter_signed": "官方團隊 · {{name}}",
+    "official_invite_by": "由官方團隊「{{name}}」邀請你註冊",
+    "official_invite_hint": "你正透過官方團隊的推廣連結註冊"
   },
   "blog": {
     "title": "網誌",
@@ -2085,6 +2095,20 @@
     "reverse_confirm": "確認沖回",
     "reverse_hint": "將從 {{email}} 的餘額中扣回 {{amount}}，並標記該紀錄為已沖回。此操作不可撤銷。",
     "reverse_done": "已沖回",
-    "reverse_failed": "沖回失敗"
+    "reverse_failed": "沖回失敗",
+    "set_promoter": "設定官方推廣官",
+    "official_tag": "官方",
+    "official_short": "官方",
+    "promoter_saved": "已更新推廣身份",
+    "promoter_save_failed": "更新推廣身份失敗",
+    "promoter_official": "設為官方推廣官",
+    "promoter_hint": "官方推廣官會在註冊頁/落地頁對訪客顯示官方認證條,並在其邀請頁顯示官方徽章;僅樣式區分,返佣比例仍按上方預設或單獨設定。",
+    "promoter_code_label": "品牌邀請碼(選填)",
+    "promoter_code_placeholder": "如 teamalice",
+    "promoter_code_hint": "4~16 位字母數字;設定後覆蓋其目前邀請碼,留空則沿用原碼(設為官方且尚無碼時自動生成)。",
+    "promoter_code_invalid": "邀請碼須為 4~16 位字母數字",
+    "promoter_name_label": "官方署名(選填)",
+    "promoter_name_placeholder": "如 HopBase 官方團隊",
+    "promoter_name_hint": "顯示給訪客的團隊/署名;留空則顯示通用「官方推廣」。"
   }
 }

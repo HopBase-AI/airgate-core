@@ -1983,7 +1983,17 @@
     "col_status": "Status",
     "status_settled": "Settled",
     "status_reversed": "Reversed",
-    "empty": "No rebate records yet"
+    "empty": "No rebate records yet",
+    "share_articles": "Share an article",
+    "share_articles_hint": "Share an article instead of a bare invite code — readers sign up naturally, your invite code is built into the link, and new users are automatically attributed to you.",
+    "copy_share_link": "Copy share link",
+    "no_articles": "No articles available to share yet",
+    "official_promoter": "Official Promoter",
+    "official_badge": "Official Promotion",
+    "official_promoter_hint": "You are an official team promoter — your invite links carry an official trust badge.",
+    "official_promoter_signed": "Official team · {{name}}",
+    "official_invite_by": "Invited by official team \"{{name}}\"",
+    "official_invite_hint": "You're registering via an official team promotion link"
   },
   "blog": {
     "title": "Blog",
@@ -2085,6 +2095,20 @@
     "reverse_confirm": "Confirm Reversal",
     "reverse_hint": "{{amount}} will be deducted from {{email}}'s balance and this record marked as reversed. This cannot be undone.",
     "reverse_done": "Reversed",
-    "reverse_failed": "Reversal failed"
+    "reverse_failed": "Reversal failed",
+    "set_promoter": "Set official promoter",
+    "official_tag": "Official",
+    "official_short": "Official",
+    "promoter_saved": "Promoter identity updated",
+    "promoter_save_failed": "Failed to update promoter identity",
+    "promoter_official": "Mark as official promoter",
+    "promoter_hint": "Official promoters show an official verification badge to visitors on the register/landing page and an official badge on their invite page. Styling only — commission rates still follow the default or per-user override above.",
+    "promoter_code_label": "Branded invite code (optional)",
+    "promoter_code_placeholder": "e.g. teamalice",
+    "promoter_code_hint": "4–16 alphanumeric characters; overrides their current invite code. Leave blank to keep it (auto-generated if official and none yet).",
+    "promoter_code_invalid": "Invite code must be 4–16 alphanumeric characters",
+    "promoter_name_label": "Official display name (optional)",
+    "promoter_name_placeholder": "e.g. HopBase Official Team",
+    "promoter_name_hint": "Team/signature shown to visitors; leave blank to show the generic \"Official Promotion\"."
   }
 }

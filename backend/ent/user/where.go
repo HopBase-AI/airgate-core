@@ -120,6 +120,11 @@ func ReferralRate(v float64) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldReferralRate, v))
 }
 
+// ReferralDisplayName applies equality check predicate on the "referral_display_name" field. It's identical to ReferralDisplayNameEQ.
+func ReferralDisplayName(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldReferralDisplayName, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldCreatedAt, v))
@@ -893,6 +898,91 @@ func ReferralRateIsNil() predicate.User {
 // ReferralRateNotNil applies the NotNil predicate on the "referral_rate" field.
 func ReferralRateNotNil() predicate.User {
 	return predicate.User(sql.FieldNotNull(FieldReferralRate))
+}
+
+// ReferralTierEQ applies the EQ predicate on the "referral_tier" field.
+func ReferralTierEQ(v ReferralTier) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldReferralTier, v))
+}
+
+// ReferralTierNEQ applies the NEQ predicate on the "referral_tier" field.
+func ReferralTierNEQ(v ReferralTier) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldReferralTier, v))
+}
+
+// ReferralTierIn applies the In predicate on the "referral_tier" field.
+func ReferralTierIn(vs ...ReferralTier) predicate.User {
+	return predicate.User(sql.FieldIn(FieldReferralTier, vs...))
+}
+
+// ReferralTierNotIn applies the NotIn predicate on the "referral_tier" field.
+func ReferralTierNotIn(vs ...ReferralTier) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldReferralTier, vs...))
+}
+
+// ReferralDisplayNameEQ applies the EQ predicate on the "referral_display_name" field.
+func ReferralDisplayNameEQ(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldReferralDisplayName, v))
+}
+
+// ReferralDisplayNameNEQ applies the NEQ predicate on the "referral_display_name" field.
+func ReferralDisplayNameNEQ(v string) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldReferralDisplayName, v))
+}
+
+// ReferralDisplayNameIn applies the In predicate on the "referral_display_name" field.
+func ReferralDisplayNameIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldIn(FieldReferralDisplayName, vs...))
+}
+
+// ReferralDisplayNameNotIn applies the NotIn predicate on the "referral_display_name" field.
+func ReferralDisplayNameNotIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldReferralDisplayName, vs...))
+}
+
+// ReferralDisplayNameGT applies the GT predicate on the "referral_display_name" field.
+func ReferralDisplayNameGT(v string) predicate.User {
+	return predicate.User(sql.FieldGT(FieldReferralDisplayName, v))
+}
+
+// ReferralDisplayNameGTE applies the GTE predicate on the "referral_display_name" field.
+func ReferralDisplayNameGTE(v string) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldReferralDisplayName, v))
+}
+
+// ReferralDisplayNameLT applies the LT predicate on the "referral_display_name" field.
+func ReferralDisplayNameLT(v string) predicate.User {
+	return predicate.User(sql.FieldLT(FieldReferralDisplayName, v))
+}
+
+// ReferralDisplayNameLTE applies the LTE predicate on the "referral_display_name" field.
+func ReferralDisplayNameLTE(v string) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldReferralDisplayName, v))
+}
+
+// ReferralDisplayNameContains applies the Contains predicate on the "referral_display_name" field.
+func ReferralDisplayNameContains(v string) predicate.User {
+	return predicate.User(sql.FieldContains(FieldReferralDisplayName, v))
+}
+
+// ReferralDisplayNameHasPrefix applies the HasPrefix predicate on the "referral_display_name" field.
+func ReferralDisplayNameHasPrefix(v string) predicate.User {
+	return predicate.User(sql.FieldHasPrefix(FieldReferralDisplayName, v))
+}
+
+// ReferralDisplayNameHasSuffix applies the HasSuffix predicate on the "referral_display_name" field.
+func ReferralDisplayNameHasSuffix(v string) predicate.User {
+	return predicate.User(sql.FieldHasSuffix(FieldReferralDisplayName, v))
+}
+
+// ReferralDisplayNameEqualFold applies the EqualFold predicate on the "referral_display_name" field.
+func ReferralDisplayNameEqualFold(v string) predicate.User {
+	return predicate.User(sql.FieldEqualFold(FieldReferralDisplayName, v))
+}
+
+// ReferralDisplayNameContainsFold applies the ContainsFold predicate on the "referral_display_name" field.
+func ReferralDisplayNameContainsFold(v string) predicate.User {
+	return predicate.User(sql.FieldContainsFold(FieldReferralDisplayName, v))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

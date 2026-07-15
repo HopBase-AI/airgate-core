@@ -181,6 +181,93 @@ export default function ReferralPage() {
     setRateMutation.mutate({ userId: rateUserId, rate: Number(rate) });
   };
 
+  // ===== 官方推广官身份弹窗（仅样式差异：层级 + 品牌 vanity 码 + 署名，不动返佣）=====
+  const promoterModal = useOverlayState();
+  const [promoterTarget, setPromoterTarget] = useState<ReferralPromoterResp | null>(null);
+  const [promoterEmailQuery, setPromoterEmailQuery] = useState('');
+  const [promoterPickedUser, setPromoterPickedUser] = useState<UserResp | null>(null);
+  const [promoterOfficial, setPromoterOfficial] = useState(false);
+  const [promoterCode, setPromoterCode] = useState('');
+  const [promoterName, setPromoterName] = useState('');
+  const debouncedPromoterEmailQuery = useDebouncedValue(promoterEmailQuery.trim(), 250);
+
+  const openPromoterModal = (target: ReferralPromoterResp | null) => {
+    setPromoterTarget(target);
+    setPromoterEmailQuery('');
+    setPromoterPickedUser(null);
+    setPromoterOfficial(target?.tier === 'official');
+    setPromoterCode(target?.invite_code ?? '');
+    setPromoterName(target?.display_name ?? '');
+    promoterModal.open();
+  };
+
+  const { data: promoterUserSearch } = useQuery({
+    queryKey: queryKeys.users('referral-promoter-search', debouncedPromoterEmailQuery),
+    queryFn: () => usersApi.list({
+      page: 1,
+      page_size: 20,
+      keyword: debouncedPromoterEmailQuery || undefined,
+    }),
+    enabled: promoterModal.isOpen && !promoterTarget && !promoterPickedUser,
+  });
+
+  const promoterSearchResults = useMemo(() => promoterUserSearch?.list ?? [], [promoterUserSearch?.list]);
+  const promoterSearchOptions = useMemo(() => {
+    const options = promoterSearchResults.map((user) => ({
+      id: String(user.id),
+      label: user.email,
+      description: user.username,
+      textValue: `${user.email} ${user.username ?? ''}`,
+    }));
+    if (promoterPickedUser && !options.some((option) => option.id === String(promoterPickedUser.id))) {
+      return [
+        {
+          id: String(promoterPickedUser.id),
+          label: promoterPickedUser.email,
+          description: promoterPickedUser.username,
+          textValue: `${promoterPickedUser.email} ${promoterPickedUser.username ?? ''}`,
+        },
+        ...options,
+      ];
+    }
+    return options;
+  }, [promoterPickedUser, promoterSearchResults]);
+
+  const setPromoterMutation = useMutation({
+    mutationFn: ({ userId, official, code, name }: { userId: number; official: boolean; code: string; name: string }) =>
+      referralApi.setPromoter(userId, {
+        official,
+        invite_code: code || undefined,
+        display_name: name,
+      }),
+    onSuccess: () => {
+      toast('success', t('referral_admin.promoter_saved'));
+      queryClient.invalidateQueries({ queryKey: queryKeys.referralSummary() });
+      promoterModal.close();
+    },
+    onError: (err: Error) => toast('error', err.message || t('referral_admin.promoter_save_failed')),
+  });
+
+  const promoterUserId = promoterTarget ? promoterTarget.user_id : promoterPickedUser?.id ?? null;
+
+  const submitPromoter = () => {
+    if (promoterUserId == null) {
+      toast('error', t('referral_admin.user_id_invalid'));
+      return;
+    }
+    const code = promoterCode.trim();
+    if (code && !/^[a-z0-9]{4,16}$/i.test(code)) {
+      toast('error', t('referral_admin.promoter_code_invalid'));
+      return;
+    }
+    setPromoterMutation.mutate({
+      userId: promoterUserId,
+      official: promoterOfficial,
+      code,
+      name: promoterName.trim(),
+    });
+  };
+
   // ===== 返利流水 =====
   const { page, setPage, pageSize, setPageSize } = usePagination(DEFAULT_PAGE_SIZE, 'admin.referral');
   const [kindFilter, setKindFilter] = useState('');
@@ -289,9 +376,14 @@ export default function ReferralPage() {
           <div className="text-base font-semibold" style={{ color: 'var(--ag-text)' }}>
             {t('referral_admin.summary_title')}
           </div>
-          <Button size="sm" variant="secondary" onPress={() => openRateModal(null)}>
-            {t('referral_admin.set_rate')}
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" onPress={() => openPromoterModal(null)}>
+              {t('referral_admin.set_promoter')}
+            </Button>
+            <Button size="sm" variant="secondary" onPress={() => openRateModal(null)}>
+              {t('referral_admin.set_rate')}
+            </Button>
+          </div>
         </div>
         <CommonTable ariaLabel={t('referral_admin.summary_title')} minWidth={860}>
           <CommonTable.Header>
@@ -301,7 +393,7 @@ export default function ReferralPage() {
             <CommonTable.Column id="rebate" style={{ width: 130 }}>{t('referral.total_rebate')}</CommonTable.Column>
             <CommonTable.Column id="reversed" style={{ width: 110 }}>{t('referral.total_reversed')}</CommonTable.Column>
             <CommonTable.Column id="bonus" style={{ width: 130 }}>{t('referral_admin.col_first_bonus_total')}</CommonTable.Column>
-            <CommonTable.Column id="actions" style={{ width: 100 }}>{t('common.actions')}</CommonTable.Column>
+            <CommonTable.Column id="actions" style={{ width: 150 }}>{t('common.actions')}</CommonTable.Column>
           </CommonTable.Header>
           <CommonTable.Body>
             {summaryLoading ? (
@@ -319,9 +411,20 @@ export default function ReferralPage() {
                 <CommonTable.Row id={String(row.user_id)} key={row.user_id}>
                   <CommonTable.Cell>
                     <div className="flex min-w-0 flex-col">
-                      <span className="truncate font-medium" style={{ color: 'var(--ag-text)' }}>{row.email}</span>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate font-medium" style={{ color: 'var(--ag-text)' }}>{row.email}</span>
+                        {row.tier === 'official' ? (
+                          <span
+                            className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                            style={{ background: 'rgba(202,138,4,0.16)', color: '#b8860b' }}
+                          >
+                            {t('referral_admin.official_tag')}
+                          </span>
+                        ) : null}
+                      </div>
                       <span className="truncate text-[11px]" style={{ color: 'var(--ag-text-tertiary)' }}>
                         #{row.user_id}{row.username ? ` · ${row.username}` : ''}
+                        {row.invite_code ? ` · ${row.invite_code}` : ''}
                       </span>
                     </div>
                   </CommonTable.Cell>
@@ -343,9 +446,14 @@ export default function ReferralPage() {
                     <span className="font-mono tabular-nums">${row.first_bonus_total.toFixed(4)}</span>
                   </CommonTable.Cell>
                   <CommonTable.Cell>
-                    <Button size="sm" variant="ghost" onPress={() => openRateModal(row)}>
-                      {t('referral_admin.set_rate')}
-                    </Button>
+                    <div className="flex gap-0.5">
+                      <Button size="sm" variant="ghost" onPress={() => openRateModal(row)}>
+                        {t('referral_admin.set_rate')}
+                      </Button>
+                      <Button size="sm" variant="ghost" onPress={() => openPromoterModal(row)}>
+                        {t('referral_admin.official_short')}
+                      </Button>
+                    </div>
                   </CommonTable.Cell>
                 </CommonTable.Row>
               ))
@@ -596,6 +704,126 @@ export default function ReferralPage() {
             </div>
             <p className="mt-1 text-[11px]" style={{ color: 'var(--ag-text-tertiary)' }}>
               {t('referral_admin.rate_override_hint')}
+            </p>
+          </div>
+        </div>
+      </CommonModal>
+
+      {/* 官方推广官弹窗 */}
+      <CommonModal
+        state={promoterModal}
+        size="sm"
+        title={t('referral_admin.set_promoter')}
+        footer={(
+          <div className="flex w-full justify-end gap-2">
+            <Button size="sm" variant="secondary" onPress={promoterModal.close}>{t('common.cancel')}</Button>
+            <Button
+              size="sm"
+              variant="primary"
+              onPress={submitPromoter}
+              isPending={setPromoterMutation.isPending}
+              isDisabled={promoterUserId == null}
+            >
+              {t('common.save')}
+            </Button>
+          </div>
+        )}
+      >
+        <div className="space-y-4">
+          {promoterTarget ? (
+            <div className="text-sm" style={{ color: 'var(--ag-text-secondary)' }}>{promoterTarget.email}</div>
+          ) : (
+            <ComboBox
+              aria-label={t('users.search_placeholder')}
+              allowsEmptyCollection
+              fullWidth
+              inputValue={promoterEmailQuery}
+              items={promoterSearchOptions}
+              menuTrigger="focus"
+              selectedKey={promoterPickedUser ? String(promoterPickedUser.id) : null}
+              onInputChange={(value) => {
+                setPromoterEmailQuery(value);
+                if (promoterPickedUser && value !== promoterPickedUser.email) {
+                  setPromoterPickedUser(null);
+                }
+              }}
+              onSelectionChange={(key) => {
+                const value = key == null ? '' : String(key);
+                if (!value) {
+                  setPromoterPickedUser(null);
+                  setPromoterEmailQuery('');
+                  return;
+                }
+                const user = promoterSearchResults.find((item) => String(item.id) === value)
+                  ?? (promoterPickedUser && String(promoterPickedUser.id) === value ? promoterPickedUser : null);
+                setPromoterPickedUser(user ?? null);
+                setPromoterEmailQuery(user?.email ?? '');
+              }}
+            >
+              <ComboBox.InputGroup className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
+                <Input className="pl-9 pr-10" placeholder={t('users.search_placeholder') ?? ''} />
+                <ComboBox.Trigger
+                  className="ag-combobox-preview-trigger absolute right-1 top-1/2 z-10 h-7 w-7 min-w-0 -translate-y-1/2 p-0 text-text-tertiary hover:text-text"
+                />
+              </ComboBox.InputGroup>
+              <ComboBox.Popover>
+                <ListBox
+                  items={promoterSearchOptions}
+                  renderEmptyState={() => (
+                    <div className="px-3 py-6 text-center text-xs text-text-tertiary">
+                      {debouncedPromoterEmailQuery ? t('common.no_data') : t('users.search_placeholder')}
+                    </div>
+                  )}
+                >
+                  {(item) => (
+                    <ListBox.Item id={item.id} textValue={item.textValue}>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm text-text">{item.label}</div>
+                        {item.description ? (
+                          <div className="truncate text-xs text-text-tertiary">{item.description}</div>
+                        ) : null}
+                      </div>
+                    </ListBox.Item>
+                  )}
+                </ListBox>
+              </ComboBox.Popover>
+            </ComboBox>
+          )}
+          <div className="flex items-center">
+            <NativeSwitch
+              isSelected={promoterOfficial}
+              label={<span className="text-sm font-medium text-text">{t('referral_admin.promoter_official')}</span>}
+              onChange={(v) => setPromoterOfficial(Boolean(v))}
+            />
+          </div>
+          <p className="text-[11px]" style={{ color: 'var(--ag-text-tertiary)' }}>
+            {t('referral_admin.promoter_hint')}
+          </p>
+          <div>
+            <Label className="mb-1.5 block text-xs" style={{ color: 'var(--ag-text-tertiary)' }}>
+              {t('referral_admin.promoter_code_label')}
+            </Label>
+            <Input
+              value={promoterCode}
+              onChange={(e) => setPromoterCode(e.target.value)}
+              placeholder={t('referral_admin.promoter_code_placeholder')}
+            />
+            <p className="mt-1 text-[11px]" style={{ color: 'var(--ag-text-tertiary)' }}>
+              {t('referral_admin.promoter_code_hint')}
+            </p>
+          </div>
+          <div>
+            <Label className="mb-1.5 block text-xs" style={{ color: 'var(--ag-text-tertiary)' }}>
+              {t('referral_admin.promoter_name_label')}
+            </Label>
+            <Input
+              value={promoterName}
+              onChange={(e) => setPromoterName(e.target.value)}
+              placeholder={t('referral_admin.promoter_name_placeholder')}
+            />
+            <p className="mt-1 text-[11px]" style={{ color: 'var(--ag-text-tertiary)' }}>
+              {t('referral_admin.promoter_name_hint')}
             </p>
           </div>
         </div>

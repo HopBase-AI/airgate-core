@@ -13,6 +13,18 @@ type MyReferralResp struct {
 	InviteeCount  int     `json:"invitee_count"`
 	TotalRebate   float64 `json:"total_rebate"`
 	TotalReversed float64 `json:"total_reversed"`
+	// Tier 推广身份：user / official（驱动页面官方推广官徽章样式）。
+	Tier string `json:"tier"`
+	// DisplayName 官方推广官署名（仅 official 有意义）。
+	DisplayName string `json:"display_name"`
+}
+
+// ReferralResolveResp 邀请码解析（公开端点，供注册页/落地页渲染访客侧认证条）。
+type ReferralResolveResp struct {
+	Exists      bool   `json:"exists"`
+	Tier        string `json:"tier"`
+	DisplayName string `json:"display_name"`
+	BadgeText   string `json:"badge_text"`
 }
 
 // MyReferralCommissionResp 用户侧返利流水（被邀请人邮箱已脱敏，不含订单号）。
@@ -54,6 +66,9 @@ type ReferralPromoterResp struct {
 	TotalRebate     float64  `json:"total_rebate"`
 	TotalReversed   float64  `json:"total_reversed"`
 	FirstBonusTotal float64  `json:"first_bonus_total"`
+	Tier            string   `json:"tier"`         // user / official
+	DisplayName     string   `json:"display_name"` // 官方推广官署名
+	InviteCode      string   `json:"invite_code"`  // 本人邀请码（官方为品牌 vanity 码）
 }
 
 // ReferralCommissionListReq 管理端流水筛选。
@@ -68,4 +83,13 @@ type ReferralCommissionListReq struct {
 // SetReferralRateReq 设置用户级返利比例覆盖；rate 传 null 表示清除覆盖（回落全局默认）。
 type SetReferralRateReq struct {
 	Rate *float64 `json:"rate" binding:"omitempty,gte=0,lte=1"`
+}
+
+// SetPromoterReq 设置推广身份（官方/普通）。仅改展示样式，不动返佣比例。
+// official=true 授予官方；invite_code 非空则覆盖设为品牌 vanity 码（4~16 位字母数字）；
+// display_name 为官方推广官对访客展示的团队/署名。
+type SetPromoterReq struct {
+	Official    bool   `json:"official"`
+	InviteCode  string `json:"invite_code" binding:"omitempty,max=16"`
+	DisplayName string `json:"display_name" binding:"omitempty,max=64"`
 }

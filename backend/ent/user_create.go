@@ -232,6 +232,34 @@ func (uc *UserCreate) SetNillableReferralRate(f *float64) *UserCreate {
 	return uc
 }
 
+// SetReferralTier sets the "referral_tier" field.
+func (uc *UserCreate) SetReferralTier(ut user.ReferralTier) *UserCreate {
+	uc.mutation.SetReferralTier(ut)
+	return uc
+}
+
+// SetNillableReferralTier sets the "referral_tier" field if the given value is not nil.
+func (uc *UserCreate) SetNillableReferralTier(ut *user.ReferralTier) *UserCreate {
+	if ut != nil {
+		uc.SetReferralTier(*ut)
+	}
+	return uc
+}
+
+// SetReferralDisplayName sets the "referral_display_name" field.
+func (uc *UserCreate) SetReferralDisplayName(s string) *UserCreate {
+	uc.mutation.SetReferralDisplayName(s)
+	return uc
+}
+
+// SetNillableReferralDisplayName sets the "referral_display_name" field if the given value is not nil.
+func (uc *UserCreate) SetNillableReferralDisplayName(s *string) *UserCreate {
+	if s != nil {
+		uc.SetReferralDisplayName(*s)
+	}
+	return uc
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (uc *UserCreate) SetCreatedAt(t time.Time) *UserCreate {
 	uc.mutation.SetCreatedAt(t)
@@ -421,6 +449,14 @@ func (uc *UserCreate) defaults() {
 		v := user.DefaultSignupSource
 		uc.mutation.SetSignupSource(v)
 	}
+	if _, ok := uc.mutation.ReferralTier(); !ok {
+		v := user.DefaultReferralTier
+		uc.mutation.SetReferralTier(v)
+	}
+	if _, ok := uc.mutation.ReferralDisplayName(); !ok {
+		v := user.DefaultReferralDisplayName
+		uc.mutation.SetReferralDisplayName(v)
+	}
 	if _, ok := uc.mutation.CreatedAt(); !ok {
 		v := user.DefaultCreatedAt()
 		uc.mutation.SetCreatedAt(v)
@@ -504,6 +540,22 @@ func (uc *UserCreate) check() error {
 	if v, ok := uc.mutation.InviteCode(); ok {
 		if err := user.InviteCodeValidator(v); err != nil {
 			return &ValidationError{Name: "invite_code", err: fmt.Errorf(`ent: validator failed for field "User.invite_code": %w`, err)}
+		}
+	}
+	if _, ok := uc.mutation.ReferralTier(); !ok {
+		return &ValidationError{Name: "referral_tier", err: errors.New(`ent: missing required field "User.referral_tier"`)}
+	}
+	if v, ok := uc.mutation.ReferralTier(); ok {
+		if err := user.ReferralTierValidator(v); err != nil {
+			return &ValidationError{Name: "referral_tier", err: fmt.Errorf(`ent: validator failed for field "User.referral_tier": %w`, err)}
+		}
+	}
+	if _, ok := uc.mutation.ReferralDisplayName(); !ok {
+		return &ValidationError{Name: "referral_display_name", err: errors.New(`ent: missing required field "User.referral_display_name"`)}
+	}
+	if v, ok := uc.mutation.ReferralDisplayName(); ok {
+		if err := user.ReferralDisplayNameValidator(v); err != nil {
+			return &ValidationError{Name: "referral_display_name", err: fmt.Errorf(`ent: validator failed for field "User.referral_display_name": %w`, err)}
 		}
 	}
 	if _, ok := uc.mutation.CreatedAt(); !ok {
@@ -605,6 +657,14 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := uc.mutation.ReferralRate(); ok {
 		_spec.SetField(user.FieldReferralRate, field.TypeFloat64, value)
 		_node.ReferralRate = &value
+	}
+	if value, ok := uc.mutation.ReferralTier(); ok {
+		_spec.SetField(user.FieldReferralTier, field.TypeEnum, value)
+		_node.ReferralTier = value
+	}
+	if value, ok := uc.mutation.ReferralDisplayName(); ok {
+		_spec.SetField(user.FieldReferralDisplayName, field.TypeString, value)
+		_node.ReferralDisplayName = value
 	}
 	if value, ok := uc.mutation.CreatedAt(); ok {
 		_spec.SetField(user.FieldCreatedAt, field.TypeTime, value)

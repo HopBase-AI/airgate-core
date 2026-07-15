@@ -24,7 +24,9 @@ func (h *ReferralHandler) handleError(logMessage, publicMessage string, err erro
 		errors.Is(err, appreferral.ErrUserNotFound):
 		return 404, err.Error()
 	case errors.Is(err, appreferral.ErrCommissionAlreadyReversed),
-		errors.Is(err, appreferral.ErrInvalidRate):
+		errors.Is(err, appreferral.ErrInvalidRate),
+		errors.Is(err, appreferral.ErrInvalidInviteCode),
+		errors.Is(err, appreferral.ErrInviteCodeTaken):
 		return 400, err.Error()
 	case errors.Is(err, appuser.ErrInsufficientBalance):
 		return 400, "受益人余额不足，无法回冲"

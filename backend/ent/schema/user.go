@@ -40,6 +40,10 @@ func (User) Fields() []ent.Field {
 			Comment("邀请人 user id；注册时经邀请码绑定，终身不变。刻意不做外键，邀请人删除后保留归因。"),
 		field.Float("referral_rate").Optional().Nillable().
 			Comment("作为推广官的返利比例覆盖（0~1）；NULL 表示使用全局默认 referral_default_rate。"),
+		field.Enum("referral_tier").Values("user", "official").Default("user").
+			Comment("推广身份层级：user=普通用户邀请，official=官方/团队推广官（后台授予）。仅驱动展示样式，不改返佣逻辑。"),
+		field.String("referral_display_name").Default("").MaxLen(64).
+			Comment("官方推广官对访客展示的团队/署名（仅 official 生效）；空则前端回退到通用「官方推广」徽章。"),
 		field.Time("created_at").Default(timeNow).Immutable(),
 		field.Time("updated_at").Default(timeNow).UpdateDefault(timeNow),
 	}

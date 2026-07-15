@@ -109,6 +109,33 @@ func (h *ReferralHandler) ReverseCommission(c *gin.Context) {
 	response.Success(c, toReferralCommissionResp(item))
 }
 
+// Resolve 公开解析邀请码 → 访客侧认证条数据（无鉴权，供注册页/落地页渲染）。
+func (h *ReferralHandler) Resolve(c *gin.Context) {
+	code := c.Query("code")
+	result := h.service.Resolve(c.Request.Context(), code)
+	response.Success(c, toReferralResolveResp(result))
+}
+
+// SetPromoter 后台设置某用户的推广身份（官方/普通 + 可选品牌 vanity 码 + 署名）。
+func (h *ReferralHandler) SetPromoter(c *gin.Context) {
+	userID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || userID <= 0 {
+		response.BadRequest(c, "无效的用户 ID")
+		return
+	}
+	var req dto.SetPromoterReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BindError(c, err)
+		return
+	}
+	if err := h.service.SetPromoterIdentity(c.Request.Context(), userID, req.Official, req.InviteCode, req.DisplayName); err != nil {
+		httpCode, message := h.handleError("设置推广身份失败", "设置失败", err)
+		response.Error(c, httpCode, httpCode, message)
+		return
+	}
+	response.Success(c, nil)
+}
+
 // SetUserReferralRate 设置/清除用户级返利比例覆盖（rate 传 null 清除）。
 func (h *ReferralHandler) SetUserReferralRate(c *gin.Context) {
 	userID, err := strconv.Atoi(c.Param("id"))

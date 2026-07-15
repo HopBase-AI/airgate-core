@@ -17,6 +17,18 @@ func toMyReferralResp(item appreferral.MyReferral) dto.MyReferralResp {
 		InviteeCount:  item.InviteeCount,
 		TotalRebate:   item.TotalRebate,
 		TotalReversed: item.TotalReversed,
+		Tier:          item.Tier,
+		DisplayName:   item.DisplayName,
+	}
+}
+
+// toReferralResolveResp 邀请码解析映射（公开端点）。
+func toReferralResolveResp(item appreferral.ResolveResult) dto.ReferralResolveResp {
+	return dto.ReferralResolveResp{
+		Exists:      item.Exists,
+		Tier:        item.Tier,
+		DisplayName: item.DisplayName,
+		BadgeText:   item.BadgeText,
 	}
 }
 
@@ -64,6 +76,9 @@ func toReferralPromoterResp(item appreferral.PromoterSummary) dto.ReferralPromot
 		TotalRebate:     item.TotalRebate,
 		TotalReversed:   item.TotalReversed,
 		FirstBonusTotal: item.FirstBonusTotal,
+		Tier:            item.Tier,
+		DisplayName:     item.DisplayName,
+		InviteCode:      item.InviteCode,
 	}
 }
 

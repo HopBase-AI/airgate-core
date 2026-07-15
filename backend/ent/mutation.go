@@ -18140,6 +18140,8 @@ type UserMutation struct {
 	addinviter_id              *int
 	referral_rate              *float64
 	addreferral_rate           *float64
+	referral_tier              *user.ReferralTier
+	referral_display_name      *string
 	created_at                 *time.Time
 	updated_at                 *time.Time
 	clearedFields              map[string]struct{}
@@ -19056,6 +19058,78 @@ func (m *UserMutation) ResetReferralRate() {
 	delete(m.clearedFields, user.FieldReferralRate)
 }
 
+// SetReferralTier sets the "referral_tier" field.
+func (m *UserMutation) SetReferralTier(ut user.ReferralTier) {
+	m.referral_tier = &ut
+}
+
+// ReferralTier returns the value of the "referral_tier" field in the mutation.
+func (m *UserMutation) ReferralTier() (r user.ReferralTier, exists bool) {
+	v := m.referral_tier
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReferralTier returns the old "referral_tier" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldReferralTier(ctx context.Context) (v user.ReferralTier, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReferralTier is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReferralTier requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReferralTier: %w", err)
+	}
+	return oldValue.ReferralTier, nil
+}
+
+// ResetReferralTier resets all changes to the "referral_tier" field.
+func (m *UserMutation) ResetReferralTier() {
+	m.referral_tier = nil
+}
+
+// SetReferralDisplayName sets the "referral_display_name" field.
+func (m *UserMutation) SetReferralDisplayName(s string) {
+	m.referral_display_name = &s
+}
+
+// ReferralDisplayName returns the value of the "referral_display_name" field in the mutation.
+func (m *UserMutation) ReferralDisplayName() (r string, exists bool) {
+	v := m.referral_display_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReferralDisplayName returns the old "referral_display_name" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldReferralDisplayName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReferralDisplayName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReferralDisplayName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReferralDisplayName: %w", err)
+	}
+	return oldValue.ReferralDisplayName, nil
+}
+
+// ResetReferralDisplayName resets all changes to the "referral_display_name" field.
+func (m *UserMutation) ResetReferralDisplayName() {
+	m.referral_display_name = nil
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (m *UserMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -19486,7 +19560,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 19)
+	fields := make([]string, 0, 21)
 	if m.email != nil {
 		fields = append(fields, user.FieldEmail)
 	}
@@ -19538,6 +19612,12 @@ func (m *UserMutation) Fields() []string {
 	if m.referral_rate != nil {
 		fields = append(fields, user.FieldReferralRate)
 	}
+	if m.referral_tier != nil {
+		fields = append(fields, user.FieldReferralTier)
+	}
+	if m.referral_display_name != nil {
+		fields = append(fields, user.FieldReferralDisplayName)
+	}
 	if m.created_at != nil {
 		fields = append(fields, user.FieldCreatedAt)
 	}
@@ -19586,6 +19666,10 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.InviterID()
 	case user.FieldReferralRate:
 		return m.ReferralRate()
+	case user.FieldReferralTier:
+		return m.ReferralTier()
+	case user.FieldReferralDisplayName:
+		return m.ReferralDisplayName()
 	case user.FieldCreatedAt:
 		return m.CreatedAt()
 	case user.FieldUpdatedAt:
@@ -19633,6 +19717,10 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldInviterID(ctx)
 	case user.FieldReferralRate:
 		return m.OldReferralRate(ctx)
+	case user.FieldReferralTier:
+		return m.OldReferralTier(ctx)
+	case user.FieldReferralDisplayName:
+		return m.OldReferralDisplayName(ctx)
 	case user.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	case user.FieldUpdatedAt:
@@ -19764,6 +19852,20 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetReferralRate(v)
+		return nil
+	case user.FieldReferralTier:
+		v, ok := value.(user.ReferralTier)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReferralTier(v)
+		return nil
+	case user.FieldReferralDisplayName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReferralDisplayName(v)
 		return nil
 	case user.FieldCreatedAt:
 		v, ok := value.(time.Time)
@@ -19980,6 +20082,12 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldReferralRate:
 		m.ResetReferralRate()
+		return nil
+	case user.FieldReferralTier:
+		m.ResetReferralTier()
+		return nil
+	case user.FieldReferralDisplayName:
+		m.ResetReferralDisplayName()
 		return nil
 	case user.FieldCreatedAt:
 		m.ResetCreatedAt()

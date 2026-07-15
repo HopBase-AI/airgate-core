@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -48,6 +49,8 @@ func (s *Service) LoadConfig(ctx context.Context) Config {
 			cfg.FirstBonusRate = parseRate(item.Value)
 		case "referral_link_base_url":
 			cfg.LinkBaseURL = strings.TrimSpace(item.Value)
+		case "referral_official_badge_text":
+			cfg.OfficialBadgeText = strings.TrimSpace(item.Value)
 		}
 	}
 	return cfg
@@ -207,6 +210,10 @@ func (s *Service) MyReferral(ctx context.Context, userID int) (MyReferral, error
 	if brief.ReferralRate != nil {
 		rate = clampRate(*brief.ReferralRate)
 	}
+	tier := brief.Tier
+	if tier == "" {
+		tier = TierUser
+	}
 	return MyReferral{
 		InviteCode:    code,
 		LinkBaseURL:   cfg.LinkBaseURL,
@@ -215,7 +222,80 @@ func (s *Service) MyReferral(ctx context.Context, userID int) (MyReferral, error
 		InviteeCount:  count,
 		TotalRebate:   sums.TotalRebate,
 		TotalReversed: sums.TotalReversed,
+		Tier:          tier,
+		DisplayName:   brief.DisplayName,
 	}, nil
+}
+
+// Resolve 解析邀请码 → 访客侧认证条数据（公开端点，无鉴权）。
+// 非法/未解析到有效推广人一律返回 {Exists:false}，绝不报错阻断注册页渲染。
+// 仅 official 推广人回带署名与徽章文案；普通用户码仅回 tier=user（前端据此不显特殊样式）。
+func (s *Service) Resolve(ctx context.Context, rawCode string) ResolveResult {
+	code := normalizeInviteCode(rawCode)
+	if code == "" {
+		return ResolveResult{Exists: false, Tier: TierUser}
+	}
+	brief, err := s.repo.GetPromoterByCode(ctx, code)
+	if err != nil {
+		return ResolveResult{Exists: false, Tier: TierUser}
+	}
+	tier := brief.Tier
+	if tier == "" {
+		tier = TierUser
+	}
+	res := ResolveResult{Exists: true, Tier: tier}
+	if tier == TierOfficial {
+		res.DisplayName = brief.DisplayName
+		res.BadgeText = s.LoadConfig(ctx).OfficialBadgeText
+	}
+	return res
+}
+
+// SetPromoterIdentity 后台设置某用户的推广身份（官方/普通）。仅改展示样式相关：
+// 层级、官方署名、可选品牌 vanity 邀请码；不动返佣比例与已产生的返利流水。
+//
+// 授予官方（official=true）时：若传入 inviteCode 则覆盖设置为品牌 vanity 码（唯一校验）；
+// 未传但该用户尚无邀请码则惰性生成一个，保证官方推广官立即有可分享的链接。
+func (s *Service) SetPromoterIdentity(ctx context.Context, userID int, official bool, inviteCode, displayName string) error {
+	tier := TierUser
+	if official {
+		tier = TierOfficial
+	}
+	displayName = strings.TrimSpace(displayName)
+	if len(displayName) > 64 {
+		displayName = displayName[:64]
+	}
+
+	// 品牌 vanity 码：显式传入即覆盖设置（须合法且未被占用）。
+	if vanity := strings.TrimSpace(inviteCode); vanity != "" {
+		code := normalizeInviteCode(vanity)
+		if code == "" {
+			return ErrInvalidInviteCode
+		}
+		if err := s.repo.AdminSetInviteCode(ctx, userID, code); err != nil {
+			return err
+		}
+	} else if official {
+		// 授予官方但未指定 vanity 码：确保其已有邀请码（惰性生成兜底）。
+		brief, err := s.repo.GetUserBrief(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if brief.InviteCode == "" {
+			if _, err := s.ensureInviteCode(ctx, userID); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := s.repo.SetPromoterIdentity(ctx, userID, tier, displayName); err != nil {
+		return err
+	}
+	sdk.LoggerFromContext(ctx).Info("referral_promoter_identity_updated",
+		sdk.LogFieldUserID, userID,
+		"tier", tier,
+	)
+	return nil
 }
 
 // MyCommissions 用户侧返利流水（仅本人作为推广官的记录）。
@@ -335,6 +415,20 @@ func (s *Service) ensureInviteCode(ctx context.Context, userID int) (string, err
 // inviteCodeAlphabet 去除易混字符（0/o/1/l/i）的字母表。
 const inviteCodeAlphabet = "abcdefghjkmnpqrstuvwxyz23456789"
 const inviteCodeLength = 8
+
+// inviteCodePattern 合法邀请码形态：4~16 位字母数字（与 auth.sanitizeInviteCode、
+// 前端 inviteCode.ts、落地页 cta-site-tag.js 三处保持一致——含连字符会被注册归因
+// 捕获正则拒收，故官方 vanity 码同样限字母数字）。
+var inviteCodePattern = regexp.MustCompile(`^[A-Za-z0-9]{4,16}$`)
+
+// normalizeInviteCode 归一化邀请码：统一小写；不合法返回空串。
+func normalizeInviteCode(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if !inviteCodePattern.MatchString(trimmed) {
+		return ""
+	}
+	return strings.ToLower(trimmed)
+}
 
 func generateInviteCode() (string, error) {
 	buf := make([]byte, inviteCodeLength)

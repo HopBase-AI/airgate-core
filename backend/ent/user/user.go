@@ -49,6 +49,10 @@ const (
 	FieldInviterID = "inviter_id"
 	// FieldReferralRate holds the string denoting the referral_rate field in the database.
 	FieldReferralRate = "referral_rate"
+	// FieldReferralTier holds the string denoting the referral_tier field in the database.
+	FieldReferralTier = "referral_tier"
+	// FieldReferralDisplayName holds the string denoting the referral_display_name field in the database.
+	FieldReferralDisplayName = "referral_display_name"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
@@ -129,6 +133,8 @@ var Columns = []string{
 	FieldInviteCode,
 	FieldInviterID,
 	FieldReferralRate,
+	FieldReferralTier,
+	FieldReferralDisplayName,
 	FieldCreatedAt,
 	FieldUpdatedAt,
 }
@@ -176,6 +182,10 @@ var (
 	SignupSourceValidator func(string) error
 	// InviteCodeValidator is a validator for the "invite_code" field. It is called by the builders before save.
 	InviteCodeValidator func(string) error
+	// DefaultReferralDisplayName holds the default value on creation for the "referral_display_name" field.
+	DefaultReferralDisplayName string
+	// ReferralDisplayNameValidator is a validator for the "referral_display_name" field. It is called by the builders before save.
+	ReferralDisplayNameValidator func(string) error
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -233,6 +243,32 @@ func StatusValidator(s Status) error {
 		return nil
 	default:
 		return fmt.Errorf("user: invalid enum value for status field: %q", s)
+	}
+}
+
+// ReferralTier defines the type for the "referral_tier" enum field.
+type ReferralTier string
+
+// ReferralTierUser is the default value of the ReferralTier enum.
+const DefaultReferralTier = ReferralTierUser
+
+// ReferralTier values.
+const (
+	ReferralTierUser     ReferralTier = "user"
+	ReferralTierOfficial ReferralTier = "official"
+)
+
+func (rt ReferralTier) String() string {
+	return string(rt)
+}
+
+// ReferralTierValidator is a validator for the "referral_tier" field enum values. It is called by the builders before save.
+func ReferralTierValidator(rt ReferralTier) error {
+	switch rt {
+	case ReferralTierUser, ReferralTierOfficial:
+		return nil
+	default:
+		return fmt.Errorf("user: invalid enum value for referral_tier field: %q", rt)
 	}
 }
 
@@ -317,6 +353,16 @@ func ByInviterID(opts ...sql.OrderTermOption) OrderOption {
 // ByReferralRate orders the results by the referral_rate field.
 func ByReferralRate(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldReferralRate, opts...).ToFunc()
+}
+
+// ByReferralTier orders the results by the referral_tier field.
+func ByReferralTier(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldReferralTier, opts...).ToFunc()
+}
+
+// ByReferralDisplayName orders the results by the referral_display_name field.
+func ByReferralDisplayName(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldReferralDisplayName, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

@@ -2,8 +2,9 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Button, Chip, EmptyState } from '@heroui/react';
-import { Copy, Gift, Percent, Users, Wallet } from 'lucide-react';
+import { BadgeCheck, Copy, FileText, Gift, Percent, Users, Wallet } from 'lucide-react';
 import { referralApi } from '../../shared/api/referral';
+import { blogApi } from '../../shared/api/blog';
 import { queryKeys } from '../../shared/queryKeys';
 import { usePagination } from '../../shared/hooks/usePagination';
 import { DEFAULT_PAGE_SIZE } from '../../shared/constants';
@@ -54,6 +55,14 @@ export default function InvitePage() {
     placeholderData: keepPreviousData,
   });
 
+  // 博客分享基址:优先后台配的邀请链接前缀(通常指落地页域),否则用控制台域名去掉 api. 前缀
+  // (博客经反代挂在落地页域 /blog,与文章编辑页 copyShare 口径一致)。
+  const blogBase = useMemo(() => {
+    const configured = me?.link_base_url?.trim();
+    if (configured) return configured.replace(/\/+$/, '');
+    return window.location.origin.replace(/:\/\/api\./, '://').replace(/\/+$/, '');
+  }, [me?.link_base_url]);
+
   // 邀请链接：后台可配前缀（如指向落地页），未配置则用当前控制台域名。
   const inviteLink = useMemo(() => {
     if (!me?.invite_code) return '';
@@ -61,23 +70,76 @@ export default function InvitePage() {
     return `${base.replace(/\/+$/, '')}/?inv=${me.invite_code}`;
   }, [me?.invite_code, me?.link_base_url]);
 
-  const copyLink = async () => {
+  // 「分享文章」软入口:列出已发布文章,拼 <blogBase>/blog/<slug>?inv=<我的码> 供分发。
+  const { data: articles, isLoading: articlesLoading } = useQuery({
+    queryKey: queryKeys.blogPublishedArticles(),
+    queryFn: () => blogApi.publishedArticles(),
+    meta: { globalLoading: false },
+    enabled: !!me?.invite_code,
+  });
+
+  const shareArticleUrl = (slug: string) =>
+    `${blogBase}/blog/${slug}${me?.invite_code ? `?inv=${me.invite_code}` : ''}`;
+
+  const copyText = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(inviteLink);
+      await navigator.clipboard.writeText(text);
       toast('success', t('referral.link_copied'));
     } catch {
       toast('error', t('referral.copy_failed'));
     }
   };
 
+  const copyLink = () => copyText(inviteLink);
+
   const rows = commissions?.list ?? [];
   const total = commissions?.total ?? 0;
   const totalPages = getTotalPages(total, pageSize);
 
+  // 官方推广官身份:驱动本页专属的品牌金徽章样式(仅样式差异,返佣逻辑与普通用户一致)。
+  const isOfficial = me?.tier === 'official';
+
   return (
     <div className="space-y-5">
-      {/* 邀请链接卡片 */}
-      <div className="rounded-[var(--radius)] border border-border bg-surface p-5">
+      {/* 官方推广官身份条:普通用户不显示,把「官方团队推广」与「随手拿码的普通用户」在视觉上分开 */}
+      {isOfficial ? (
+        <div
+          className="flex items-center gap-3.5 rounded-[var(--radius)] border px-4 py-3.5"
+          style={{
+            borderColor: 'rgba(202,138,4,0.38)',
+            background: 'linear-gradient(100deg, rgba(202,138,4,0.14), rgba(202,138,4,0.04) 60%, transparent)',
+          }}
+        >
+          <span
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+            style={{ background: 'rgba(202,138,4,0.16)', color: '#b8860b' }}
+          >
+            <BadgeCheck className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--ag-text)' }}>
+              {t('referral.official_promoter')}
+              <span
+                className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                style={{ background: 'rgba(202,138,4,0.16)', color: '#b8860b' }}
+              >
+                {t('referral.official_badge')}
+              </span>
+            </div>
+            <div className="truncate text-xs" style={{ color: 'var(--ag-text-secondary)' }}>
+              {me?.display_name
+                ? t('referral.official_promoter_signed', { name: me.display_name })
+                : t('referral.official_promoter_hint')}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* 邀请链接卡片:官方推广官加一圈品牌金描边强化身份 */}
+      <div
+        className={`rounded-[var(--radius)] border bg-surface p-5 ${isOfficial ? '' : 'border-border'}`}
+        style={isOfficial ? { borderColor: 'rgba(202,138,4,0.32)' } : undefined}
+      >
         <div className="mb-1 text-base font-semibold" style={{ color: 'var(--ag-text)' }}>
           {t('referral.title')}
         </div>
@@ -108,6 +170,52 @@ export default function InvitePage() {
           </div>
         ) : null}
       </div>
+
+      {/* 分享文章(软化推荐):分享一篇文章代替裸邀请链接,邀请码内置进链接 */}
+      {me?.invite_code ? (
+        <div className="rounded-[var(--radius)] border border-border bg-surface p-5">
+          <div className="mb-1 text-base font-semibold" style={{ color: 'var(--ag-text)' }}>
+            {t('referral.share_articles')}
+          </div>
+          <p className="mb-4 text-sm" style={{ color: 'var(--ag-text-secondary)' }}>
+            {t('referral.share_articles_hint')}
+          </p>
+          {articlesLoading ? (
+            <div className="text-sm" style={{ color: 'var(--ag-text-tertiary)' }}>…</div>
+          ) : articles && articles.length > 0 ? (
+            <ul className="flex flex-col divide-y divide-border">
+              {articles.map((a) => (
+                <li key={a.slug} className="flex items-center gap-3 py-2.5">
+                  <FileText className="h-4 w-4 shrink-0 text-accent" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium" style={{ color: 'var(--ag-text)' }}>
+                      {a.title}
+                    </div>
+                    {a.summary ? (
+                      <div className="truncate text-xs" style={{ color: 'var(--ag-text-tertiary)' }}>
+                        {a.summary}
+                      </div>
+                    ) : null}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="shrink-0 gap-1.5"
+                    onPress={() => copyText(shareArticleUrl(a.slug))}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    {t('referral.copy_share_link')}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="text-sm" style={{ color: 'var(--ag-text-tertiary)' }}>
+              {t('referral.no_articles')}
+            </div>
+          )}
+        </div>
+      ) : null}
 
       {/* 统计 */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">

@@ -750,12 +750,18 @@ func init() {
 	userDescInviteCode := userFields[14].Descriptor()
 	// user.InviteCodeValidator is a validator for the "invite_code" field. It is called by the builders before save.
 	user.InviteCodeValidator = userDescInviteCode.Validators[0].(func(string) error)
+	// userDescReferralDisplayName is the schema descriptor for referral_display_name field.
+	userDescReferralDisplayName := userFields[18].Descriptor()
+	// user.DefaultReferralDisplayName holds the default value on creation for the referral_display_name field.
+	user.DefaultReferralDisplayName = userDescReferralDisplayName.Default.(string)
+	// user.ReferralDisplayNameValidator is a validator for the "referral_display_name" field. It is called by the builders before save.
+	user.ReferralDisplayNameValidator = userDescReferralDisplayName.Validators[0].(func(string) error)
 	// userDescCreatedAt is the schema descriptor for created_at field.
-	userDescCreatedAt := userFields[17].Descriptor()
+	userDescCreatedAt := userFields[19].Descriptor()
 	// user.DefaultCreatedAt holds the default value on creation for the created_at field.
 	user.DefaultCreatedAt = userDescCreatedAt.Default.(func() time.Time)
 	// userDescUpdatedAt is the schema descriptor for updated_at field.
-	userDescUpdatedAt := userFields[18].Descriptor()
+	userDescUpdatedAt := userFields[20].Descriptor()
 	// user.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	user.DefaultUpdatedAt = userDescUpdatedAt.Default.(func() time.Time)
 	// user.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

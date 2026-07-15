@@ -48,9 +48,11 @@ export const queryKeys = {
   userTrend: (...args: unknown[]) => ['user-trend', ...args] as const,
   statusPageEnabled: () => ['status-page-enabled'] as const,
   referralMe: () => ['referral-me'] as const,
+  referralResolve: (code: string) => ['referral-resolve', code] as const,
   referralMyCommissions: (...args: unknown[]) => ['referral-my-commissions', ...args] as const,
   referralSummary: () => ['referral-summary'] as const,
   referralCommissions: (...args: unknown[]) => ['referral-commissions', ...args] as const,
   blog: (...args: unknown[]) => ['blog', ...args] as const,
   blogPost: (...args: unknown[]) => ['blog-post', ...args] as const,
+  blogPublishedArticles: () => ['blog-published-articles'] as const,
 } as const;

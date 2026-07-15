@@ -12,6 +12,18 @@ export interface MyReferralResp {
   invitee_count: number;
   total_rebate: number;
   total_reversed: number;
+  // 推广身份：user=普通用户邀请，official=官方/团队推广官（驱动页面官方徽章样式）
+  tier: 'user' | 'official';
+  // 官方推广官署名（仅 official 有意义）
+  display_name: string;
+}
+
+// 邀请码解析（公开端点）：注册页/落地页据此渲染访客侧「官方推广」认证条
+export interface ReferralResolveResp {
+  exists: boolean;
+  tier: 'user' | 'official';
+  display_name: string;
+  badge_text: string;
 }
 
 // 用户侧返利流水（被邀请人邮箱已脱敏）
@@ -53,9 +65,23 @@ export interface ReferralPromoterResp {
   total_rebate: number;
   total_reversed: number;
   first_bonus_total: number;
+  tier: 'user' | 'official';
+  display_name: string;
+  invite_code: string;
+}
+
+// 设置推广身份请求（官方/普通 + 可选品牌 vanity 码 + 署名）
+export interface SetPromoterReq {
+  official: boolean;
+  invite_code?: string;
+  display_name?: string;
 }
 
 export const referralApi = {
+  // 公开接口：邀请码解析（访客侧认证条）
+  resolve: (code: string) =>
+    get<ReferralResolveResp>('/api/v1/referral/resolve', { code }),
+
   // 用户接口
   me: () => get<MyReferralResp>('/api/v1/referral/me'),
   myCommissions: (params: PageReq) =>
@@ -70,4 +96,7 @@ export const referralApi = {
   // rate 传 null 清除用户级覆盖（回落全局默认）
   setUserRate: (userId: number, rate: number | null) =>
     put<void>(`/api/v1/admin/referral/users/${userId}/rate`, { rate }),
+  // 设置推广身份（官方/普通 + 可选 vanity 码 + 署名）；仅改样式，不动返佣
+  setPromoter: (userId: number, body: SetPromoterReq) =>
+    put<void>(`/api/v1/admin/referral/users/${userId}/promoter`, body),
 };

@@ -1981,7 +1981,17 @@
     "col_status": "ステータス",
     "status_settled": "入金済み",
     "status_reversed": "取消済み",
-    "empty": "還元履歴はまだありません"
+    "empty": "還元履歴はまだありません",
+    "share_articles": "記事をシェア",
+    "share_articles_hint": "招待コードをそのまま送る代わりに記事をシェア——読者は自然に登録し、招待コードはリンクに埋め込まれ、新規ユーザーは自動的にあなたに紐づきます。",
+    "copy_share_link": "共有リンクをコピー",
+    "no_articles": "シェアできる記事はまだありません",
+    "official_promoter": "公式プロモーター",
+    "official_badge": "公式プロモーション",
+    "official_promoter_hint": "あなたは公式チームのプロモーターです。招待リンクには公式の信頼バッジが付きます。",
+    "official_promoter_signed": "公式チーム · {{name}}",
+    "official_invite_by": "公式チーム「{{name}}」からの招待で登録",
+    "official_invite_hint": "公式チームのプロモーションリンク経由で登録しています"
   },
   "blog": {
     "title": "ブログ",
@@ -2083,6 +2093,20 @@
     "reverse_confirm": "取消を確定",
     "reverse_hint": "{{email}} の残高から {{amount}} を差し引き、この記録を取消済みにします。この操作は元に戻せません。",
     "reverse_done": "取消しました",
-    "reverse_failed": "取消に失敗しました"
+    "reverse_failed": "取消に失敗しました",
+    "set_promoter": "公式プロモーターを設定",
+    "official_tag": "公式",
+    "official_short": "公式",
+    "promoter_saved": "プロモーター情報を更新しました",
+    "promoter_save_failed": "プロモーター情報の更新に失敗しました",
+    "promoter_official": "公式プロモーターに設定",
+    "promoter_hint": "公式プロモーターは登録ページ/ランディングページで訪問者に公式認証バーを表示し、招待ページに公式バッジを表示します。スタイルのみの違いで、還元率は上記のデフォルトまたは個別設定に従います。",
+    "promoter_code_label": "ブランド招待コード(任意)",
+    "promoter_code_placeholder": "例: teamalice",
+    "promoter_code_hint": "4〜16桁の英数字。設定すると現在の招待コードを上書きします。空欄の場合は既存コードを使用(公式でコード未発行の場合は自動生成)。",
+    "promoter_code_invalid": "招待コードは4〜16桁の英数字である必要があります",
+    "promoter_name_label": "公式表示名(任意)",
+    "promoter_name_placeholder": "例: HopBase 公式チーム",
+    "promoter_name_hint": "訪問者に表示するチーム/署名。空欄の場合は汎用の「公式プロモーション」を表示します。"
   }
 }

@@ -52,6 +52,10 @@ type User struct {
 	InviterID *int `json:"inviter_id,omitempty"`
 	// 作为推广官的返利比例覆盖（0~1）；NULL 表示使用全局默认 referral_default_rate。
 	ReferralRate *float64 `json:"referral_rate,omitempty"`
+	// 推广身份层级：user=普通用户邀请，official=官方/团队推广官（后台授予）。仅驱动展示样式，不改返佣逻辑。
+	ReferralTier user.ReferralTier `json:"referral_tier,omitempty"`
+	// 官方推广官对访客展示的团队/署名（仅 official 生效）；空则前端回退到通用「官方推广」徽章。
+	ReferralDisplayName string `json:"referral_display_name,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -148,7 +152,7 @@ func (*User) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case user.FieldID, user.FieldMaxConcurrency, user.FieldInviterID:
 			values[i] = new(sql.NullInt64)
-		case user.FieldEmail, user.FieldPasswordHash, user.FieldUsername, user.FieldDisplayBadge, user.FieldRole, user.FieldTotpSecret, user.FieldStatus, user.FieldSignupSource, user.FieldInviteCode:
+		case user.FieldEmail, user.FieldPasswordHash, user.FieldUsername, user.FieldDisplayBadge, user.FieldRole, user.FieldTotpSecret, user.FieldStatus, user.FieldSignupSource, user.FieldInviteCode, user.FieldReferralTier, user.FieldReferralDisplayName:
 			values[i] = new(sql.NullString)
 		case user.FieldCreatedAt, user.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -283,6 +287,18 @@ func (u *User) assignValues(columns []string, values []any) error {
 				u.ReferralRate = new(float64)
 				*u.ReferralRate = value.Float64
 			}
+		case user.FieldReferralTier:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field referral_tier", values[i])
+			} else if value.Valid {
+				u.ReferralTier = user.ReferralTier(value.String)
+			}
+		case user.FieldReferralDisplayName:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field referral_display_name", values[i])
+			} else if value.Valid {
+				u.ReferralDisplayName = value.String
+			}
 		case user.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field created_at", values[i])
@@ -415,6 +431,12 @@ func (u *User) String() string {
 		builder.WriteString("referral_rate=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
+	builder.WriteString(", ")
+	builder.WriteString("referral_tier=")
+	builder.WriteString(fmt.Sprintf("%v", u.ReferralTier))
+	builder.WriteString(", ")
+	builder.WriteString("referral_display_name=")
+	builder.WriteString(u.ReferralDisplayName)
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(u.CreatedAt.Format(time.ANSIC))

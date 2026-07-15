@@ -13,4 +13,6 @@ var (
 	ErrInviteCodeTaken = errors.New("邀请码已被占用")
 	// ErrInvalidRate 返利比例越界。
 	ErrInvalidRate = errors.New("返利比例须在 0~1 之间")
+	// ErrInvalidInviteCode 官方 vanity 码格式非法（须 4~16 位字母数字）。
+	ErrInvalidInviteCode = errors.New("邀请码须为 4~16 位字母数字")
 )

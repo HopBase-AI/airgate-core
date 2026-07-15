@@ -17,6 +17,12 @@ const (
 	StatusReversed = "reversed"
 )
 
+// 推广身份层级（与 ent schema user.referral_tier 枚举一致）。仅驱动展示样式，不改返佣逻辑。
+const (
+	TierUser     = "user"     // 普通用户邀请
+	TierOfficial = "official" // 官方/团队推广官（后台授予）
+)
+
 // Config 分销运行时配置。存于 settings 表 referral 分组，全部后台可调、不进代码；
 // 缺省全零 = 功能关闭，ToB/ToC 各实例独立启停。
 type Config struct {
@@ -24,6 +30,9 @@ type Config struct {
 	DefaultRate    float64 // 推广官默认返利比例（0~1），用户级 referral_rate 可覆盖
 	FirstBonusRate float64 // 被邀请人首充加赠比例（0~1）
 	LinkBaseURL    string  // 邀请链接前缀；空 = 前端用当前控制台域名
+	// OfficialBadgeText 访客侧官方推广认证条的默认文案（如「HopBase 官方推广」）；
+	// 空则前端回退到 i18n 内置文案。仅样式展示，各实例可自定义品牌名。
+	OfficialBadgeText string
 }
 
 // TopupEvent 一笔充值入账事件（支付插件经 Host method users.notify_topup 送达）。
@@ -44,6 +53,17 @@ type MyReferral struct {
 	InviteeCount  int
 	TotalRebate   float64 // 累计已入账返利（settled rebate）
 	TotalReversed float64 // 累计已回冲返利
+	Tier          string  // 推广身份：user / official（驱动页面官方徽章样式）
+	DisplayName   string  // 官方推广官署名（仅 official 有意义）
+}
+
+// ResolveResult 邀请码解析结果（公开端点，供注册页/落地页渲染访客侧认证条）。
+// 不暴露邮箱等隐私，仅返回身份层级与后台设定的展示名。
+type ResolveResult struct {
+	Exists      bool   // 邀请码是否解析到一个有效（active）推广人
+	Tier        string // user / official
+	DisplayName string // 官方推广官署名（仅 official）
+	BadgeText   string // 官方认证条默认文案（来自 settings，空则前端回退 i18n）
 }
 
 // Commission 返利流水领域对象。
@@ -104,6 +124,9 @@ type PromoterSummary struct {
 	TotalRebate     float64 // settled rebate 合计
 	TotalReversed   float64 // reversed rebate 合计
 	FirstBonusTotal float64 // 名下被邀请人首充加赠合计（settled）
+	Tier            string  // 推广身份：user / official
+	DisplayName     string  // 官方推广官署名
+	InviteCode      string  // 本人邀请码（官方为品牌 vanity 码）；空 = 尚未生成
 }
 
 // InviterSums 单个推广官的返利合计。
@@ -121,6 +144,8 @@ type UserBrief struct {
 	InviteCode   string // 空 = 尚未生成
 	InviterID    *int
 	ReferralRate *float64
+	Tier         string // 推广身份：user / official
+	DisplayName  string // 官方推广官署名
 }
 
 // Repository 分销域持久化接口。
@@ -141,6 +166,14 @@ type Repository interface {
 	PromoterSummaries(ctx context.Context) ([]PromoterSummary, error)
 	// SetUserReferralRate 设置/清除用户级返利比例覆盖（nil = 清除，回落全局默认）。
 	SetUserReferralRate(ctx context.Context, userID int, rate *float64) error
+	// GetPromoterByCode 按邀请码查一个有效（active）推广人概要；无匹配返回 ErrUserNotFound。
+	// 供公开 resolve 端点渲染访客侧认证条，仅取展示所需字段。
+	GetPromoterByCode(ctx context.Context, code string) (UserBrief, error)
+	// AdminSetInviteCode 管理端覆盖设置用户邀请码（官方 vanity 码）；与 ClaimInviteCode
+	// 不同，即便已有码也会改写。码被他人占用返回 ErrInviteCodeTaken。
+	AdminSetInviteCode(ctx context.Context, userID int, code string) error
+	// SetPromoterIdentity 设置推广身份层级与官方署名（不动邀请码/比例/返佣逻辑）。
+	SetPromoterIdentity(ctx context.Context, userID int, tier, displayName string) error
 	// BalanceChangeApplied 指定幂等键的余额变更是否已入账（balance_logs 唯一索引）。
 	// 用于回冲重试：扣款已发生但标记失败的窗口内，重试须跳过余额校验直接补标记，
 	// 否则受益人余额已花光时会被「余额不足」永久卡死在钱已扣、记录未标记的悬挂态。

@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
 import { Alert, Button, Card, Checkbox, FieldError, Form, Input, Label, Link as HeroLink, Tabs, TextField as HeroTextField } from '@heroui/react';
 import { useAuth } from '../app/providers/AuthProvider';
 import { useSiteSettings, defaultLogoUrl } from '../app/providers/SiteSettingsProvider';
 import { authApi } from '../shared/api/auth';
 import { usersApi } from '../shared/api/users';
+import { referralApi } from '../shared/api/referral';
+import { queryKeys } from '../shared/queryKeys';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { useStatusPageEnabled } from '../shared/hooks/useStatusPageEnabled';
 import { getOriginSite } from '../shared/originSite';
 import { getInviteCode } from '../shared/inviteCode';
 import { ApiError, setToken } from '../shared/api/client';
-import { Mail, Lock, User, ArrowRight, Sun, Moon, ShieldCheck, Activity, Layers, Gauge, BarChart3 } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, Sun, Moon, ShieldCheck, Activity, Layers, Gauge, BarChart3, BadgeCheck } from 'lucide-react';
 
 /* ==================== 第三方登录 ==================== */
 
@@ -568,6 +571,17 @@ export default function LoginPage() {
   const [oauthError, setOauthError] = useState('');
   const [oauthLoading, setOauthLoading] = useState(false);
 
+  // 访客侧「官方推广」认证条:带官方邀请码进来时解析,把官方团队推广与普通用户推广在视觉上区分。
+  // 邀请码由 main.tsx 的 captureInviteCode() 在 app 挂载时从 ?inv= 落 localStorage。
+  const inviteCode = getInviteCode();
+  const { data: resolvedInvite } = useQuery({
+    queryKey: queryKeys.referralResolve(inviteCode),
+    queryFn: () => referralApi.resolve(inviteCode),
+    enabled: !!inviteCode,
+    staleTime: 5 * 60 * 1000,
+  });
+  const officialInvite = resolvedInvite?.exists && resolvedInvite.tier === 'official' ? resolvedInvite : null;
+
   // 第三方登录回调：JWT 经 URL fragment 带回（不进服务端日志），换取用户信息后入会话；
   // 失败信息经 oauth_error 查询参数带回。两者读取后都立即从地址栏清除。
   useEffect(() => {
@@ -697,6 +711,34 @@ export default function LoginPage() {
               {site.site_name || t('app_name')}
             </h1>
           </div>
+
+          {/* 官方推广认证条:仅当邀请码解析为官方推广官时显示,给访客一个信任背书 */}
+          {officialInvite ? (
+            <div
+              className="mb-5 flex items-center gap-3 rounded-[var(--radius)] border px-4 py-3"
+              style={{
+                borderColor: 'rgba(202,138,4,0.4)',
+                background: 'linear-gradient(100deg, rgba(202,138,4,0.16), rgba(202,138,4,0.05) 60%, transparent)',
+              }}
+            >
+              <span
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+                style={{ background: 'rgba(202,138,4,0.18)', color: '#b8860b' }}
+              >
+                <BadgeCheck className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <div className="text-[13px] font-semibold text-text">
+                  {officialInvite.badge_text || t('referral.official_badge')}
+                </div>
+                <div className="truncate text-xs text-text-tertiary">
+                  {officialInvite.display_name
+                    ? t('referral.official_invite_by', { name: officialInvite.display_name })
+                    : t('referral.official_invite_hint')}
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {/* Tab 切换 */}
           <Tabs

@@ -300,6 +300,34 @@ func (uu *UserUpdate) ClearReferralRate() *UserUpdate {
 	return uu
 }
 
+// SetReferralTier sets the "referral_tier" field.
+func (uu *UserUpdate) SetReferralTier(ut user.ReferralTier) *UserUpdate {
+	uu.mutation.SetReferralTier(ut)
+	return uu
+}
+
+// SetNillableReferralTier sets the "referral_tier" field if the given value is not nil.
+func (uu *UserUpdate) SetNillableReferralTier(ut *user.ReferralTier) *UserUpdate {
+	if ut != nil {
+		uu.SetReferralTier(*ut)
+	}
+	return uu
+}
+
+// SetReferralDisplayName sets the "referral_display_name" field.
+func (uu *UserUpdate) SetReferralDisplayName(s string) *UserUpdate {
+	uu.mutation.SetReferralDisplayName(s)
+	return uu
+}
+
+// SetNillableReferralDisplayName sets the "referral_display_name" field if the given value is not nil.
+func (uu *UserUpdate) SetNillableReferralDisplayName(s *string) *UserUpdate {
+	if s != nil {
+		uu.SetReferralDisplayName(*s)
+	}
+	return uu
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (uu *UserUpdate) SetUpdatedAt(t time.Time) *UserUpdate {
 	uu.mutation.SetUpdatedAt(t)
@@ -605,6 +633,16 @@ func (uu *UserUpdate) check() error {
 			return &ValidationError{Name: "invite_code", err: fmt.Errorf(`ent: validator failed for field "User.invite_code": %w`, err)}
 		}
 	}
+	if v, ok := uu.mutation.ReferralTier(); ok {
+		if err := user.ReferralTierValidator(v); err != nil {
+			return &ValidationError{Name: "referral_tier", err: fmt.Errorf(`ent: validator failed for field "User.referral_tier": %w`, err)}
+		}
+	}
+	if v, ok := uu.mutation.ReferralDisplayName(); ok {
+		if err := user.ReferralDisplayNameValidator(v); err != nil {
+			return &ValidationError{Name: "referral_display_name", err: fmt.Errorf(`ent: validator failed for field "User.referral_display_name": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -697,6 +735,12 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if uu.mutation.ReferralRateCleared() {
 		_spec.ClearField(user.FieldReferralRate, field.TypeFloat64)
+	}
+	if value, ok := uu.mutation.ReferralTier(); ok {
+		_spec.SetField(user.FieldReferralTier, field.TypeEnum, value)
+	}
+	if value, ok := uu.mutation.ReferralDisplayName(); ok {
+		_spec.SetField(user.FieldReferralDisplayName, field.TypeString, value)
 	}
 	if value, ok := uu.mutation.UpdatedAt(); ok {
 		_spec.SetField(user.FieldUpdatedAt, field.TypeTime, value)
@@ -1257,6 +1301,34 @@ func (uuo *UserUpdateOne) ClearReferralRate() *UserUpdateOne {
 	return uuo
 }
 
+// SetReferralTier sets the "referral_tier" field.
+func (uuo *UserUpdateOne) SetReferralTier(ut user.ReferralTier) *UserUpdateOne {
+	uuo.mutation.SetReferralTier(ut)
+	return uuo
+}
+
+// SetNillableReferralTier sets the "referral_tier" field if the given value is not nil.
+func (uuo *UserUpdateOne) SetNillableReferralTier(ut *user.ReferralTier) *UserUpdateOne {
+	if ut != nil {
+		uuo.SetReferralTier(*ut)
+	}
+	return uuo
+}
+
+// SetReferralDisplayName sets the "referral_display_name" field.
+func (uuo *UserUpdateOne) SetReferralDisplayName(s string) *UserUpdateOne {
+	uuo.mutation.SetReferralDisplayName(s)
+	return uuo
+}
+
+// SetNillableReferralDisplayName sets the "referral_display_name" field if the given value is not nil.
+func (uuo *UserUpdateOne) SetNillableReferralDisplayName(s *string) *UserUpdateOne {
+	if s != nil {
+		uuo.SetReferralDisplayName(*s)
+	}
+	return uuo
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (uuo *UserUpdateOne) SetUpdatedAt(t time.Time) *UserUpdateOne {
 	uuo.mutation.SetUpdatedAt(t)
@@ -1575,6 +1647,16 @@ func (uuo *UserUpdateOne) check() error {
 			return &ValidationError{Name: "invite_code", err: fmt.Errorf(`ent: validator failed for field "User.invite_code": %w`, err)}
 		}
 	}
+	if v, ok := uuo.mutation.ReferralTier(); ok {
+		if err := user.ReferralTierValidator(v); err != nil {
+			return &ValidationError{Name: "referral_tier", err: fmt.Errorf(`ent: validator failed for field "User.referral_tier": %w`, err)}
+		}
+	}
+	if v, ok := uuo.mutation.ReferralDisplayName(); ok {
+		if err := user.ReferralDisplayNameValidator(v); err != nil {
+			return &ValidationError{Name: "referral_display_name", err: fmt.Errorf(`ent: validator failed for field "User.referral_display_name": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -1684,6 +1766,12 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 	}
 	if uuo.mutation.ReferralRateCleared() {
 		_spec.ClearField(user.FieldReferralRate, field.TypeFloat64)
+	}
+	if value, ok := uuo.mutation.ReferralTier(); ok {
+		_spec.SetField(user.FieldReferralTier, field.TypeEnum, value)
+	}
+	if value, ok := uuo.mutation.ReferralDisplayName(); ok {
+		_spec.SetField(user.FieldReferralDisplayName, field.TypeString, value)
 	}
 	if value, ok := uuo.mutation.UpdatedAt(); ok {
 		_spec.SetField(user.FieldUpdatedAt, field.TypeTime, value)

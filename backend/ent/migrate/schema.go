@@ -568,6 +568,8 @@ var (
 		{Name: "invite_code", Type: field.TypeString, Unique: true, Nullable: true, Size: 16},
 		{Name: "inviter_id", Type: field.TypeInt, Nullable: true},
 		{Name: "referral_rate", Type: field.TypeFloat64, Nullable: true},
+		{Name: "referral_tier", Type: field.TypeEnum, Enums: []string{"user", "official"}, Default: "user"},
+		{Name: "referral_display_name", Type: field.TypeString, Size: 64, Default: ""},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 	}

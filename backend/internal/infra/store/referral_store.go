@@ -247,6 +247,11 @@ func (s *ReferralStore) PromoterSummaries(ctx context.Context) ([]appreferral.Pr
 			summary.Email = u.Email
 			summary.Username = u.Username
 			summary.ReferralRate = u.ReferralRate
+			summary.Tier = string(u.ReferralTier)
+			summary.DisplayName = u.ReferralDisplayName
+			if u.InviteCode != nil {
+				summary.InviteCode = *u.InviteCode
+			}
 		}
 		result = append(result, summary)
 		byID[id] = &result[len(result)-1]
@@ -292,6 +297,53 @@ func (s *ReferralStore) SetUserReferralRate(ctx context.Context, userID int, rat
 	return nil
 }
 
+// GetPromoterByCode 按邀请码查一个有效（active）推广人概要；无匹配返回 ErrUserNotFound。
+func (s *ReferralStore) GetPromoterByCode(ctx context.Context, code string) (appreferral.UserBrief, error) {
+	item, err := s.db.User.Query().
+		Where(
+			entuser.InviteCodeEQ(code),
+			entuser.StatusEQ(entuser.StatusActive),
+		).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return appreferral.UserBrief{}, appreferral.ErrUserNotFound
+		}
+		return appreferral.UserBrief{}, err
+	}
+	return mapUserBrief(item), nil
+}
+
+// AdminSetInviteCode 管理端覆盖设置邀请码（官方 vanity 码），即便已有码也改写。
+func (s *ReferralStore) AdminSetInviteCode(ctx context.Context, userID int, code string) error {
+	err := s.db.User.UpdateOneID(userID).SetInviteCode(code).Exec(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return appreferral.ErrUserNotFound
+		}
+		if ent.IsConstraintError(err) {
+			return appreferral.ErrInviteCodeTaken
+		}
+		return err
+	}
+	return nil
+}
+
+// SetPromoterIdentity 设置推广身份层级与官方署名（不动邀请码/比例/返佣）。
+func (s *ReferralStore) SetPromoterIdentity(ctx context.Context, userID int, tier, displayName string) error {
+	err := s.db.User.UpdateOneID(userID).
+		SetReferralTier(entuser.ReferralTier(tier)).
+		SetReferralDisplayName(displayName).
+		Exec(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return appreferral.ErrUserNotFound
+		}
+		return err
+	}
+	return nil
+}
+
 func mapUserBrief(item *ent.User) appreferral.UserBrief {
 	brief := appreferral.UserBrief{
 		ID:           item.ID,
@@ -300,6 +352,8 @@ func mapUserBrief(item *ent.User) appreferral.UserBrief {
 		Status:       string(item.Status),
 		InviterID:    item.InviterID,
 		ReferralRate: item.ReferralRate,
+		Tier:         string(item.ReferralTier),
+		DisplayName:  item.ReferralDisplayName,
 	}
 	if item.InviteCode != nil {
 		brief.InviteCode = *item.InviteCode

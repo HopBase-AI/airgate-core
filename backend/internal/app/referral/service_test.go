@@ -30,6 +30,12 @@ type stubRepo struct {
 	markReversedErr error
 	marked          []int
 	appliedKeys     map[string]bool // BalanceChangeApplied 返回值
+	// 推广身份相关
+	promotersByCode map[string]UserBrief // GetPromoterByCode 查表
+	adminSetCode    string               // AdminSetInviteCode 记录
+	adminSetCodeErr error
+	setTier         string // SetPromoterIdentity 记录
+	setDisplayName  string
 }
 
 func (s *stubRepo) GetUserBrief(_ context.Context, id int) (UserBrief, error) {
@@ -94,6 +100,28 @@ func (s *stubRepo) MarkReversed(_ context.Context, id int) error {
 func (s *stubRepo) PromoterSummaries(context.Context) ([]PromoterSummary, error) { return nil, nil }
 
 func (s *stubRepo) SetUserReferralRate(context.Context, int, *float64) error { return nil }
+
+func (s *stubRepo) GetPromoterByCode(_ context.Context, code string) (UserBrief, error) {
+	u, ok := s.promotersByCode[code]
+	if !ok {
+		return UserBrief{}, ErrUserNotFound
+	}
+	return u, nil
+}
+
+func (s *stubRepo) AdminSetInviteCode(_ context.Context, _ int, code string) error {
+	if s.adminSetCodeErr != nil {
+		return s.adminSetCodeErr
+	}
+	s.adminSetCode = code
+	return nil
+}
+
+func (s *stubRepo) SetPromoterIdentity(_ context.Context, _ int, tier, displayName string) error {
+	s.setTier = tier
+	s.setDisplayName = displayName
+	return nil
+}
 
 func (s *stubRepo) BalanceChangeApplied(_ context.Context, key string) (bool, error) {
 	return s.appliedKeys[key], nil
@@ -601,6 +629,65 @@ func TestSetUserReferralRateValidation(t *testing.T) {
 	}
 	if err := svc.SetUserReferralRate(t.Context(), 1, nil); err != nil {
 		t.Fatalf("清除覆盖应通过, err = %v", err)
+	}
+}
+
+// ===== 推广身份（Resolve / SetPromoterIdentity） =====
+
+func TestResolveOfficialAndUser(t *testing.T) {
+	repo := &stubRepo{promotersByCode: map[string]UserBrief{
+		"teamalice": {ID: 1, Status: "active", Tier: TierOfficial, DisplayName: "官方团队 Alice"},
+		"k7m3p9qr":  {ID: 2, Status: "active", Tier: TierUser},
+	}}
+	settings := &stubSettings{items: []appsettings.Setting{
+		{Key: "referral_enabled", Value: "true"},
+		{Key: "referral_official_badge_text", Value: "HopBase 官方推广"},
+	}}
+	svc := NewService(repo, &stubBalance{}, settings)
+
+	// 官方码：回带署名 + 徽章文案
+	off := svc.Resolve(t.Context(), "TEAMALICE") // 大写应归一
+	if !off.Exists || off.Tier != TierOfficial || off.DisplayName != "官方团队 Alice" || off.BadgeText != "HopBase 官方推广" {
+		t.Fatalf("官方码解析不符: %+v", off)
+	}
+	// 普通码:不带署名/徽章
+	usr := svc.Resolve(t.Context(), "k7m3p9qr")
+	if !usr.Exists || usr.Tier != TierUser || usr.DisplayName != "" || usr.BadgeText != "" {
+		t.Fatalf("普通码不应带官方样式: %+v", usr)
+	}
+	// 非法码 / 未知码:Exists=false,绝不报错
+	if r := svc.Resolve(t.Context(), "!!"); r.Exists {
+		t.Fatalf("非法码应 Exists=false: %+v", r)
+	}
+	if r := svc.Resolve(t.Context(), "unknown9"); r.Exists {
+		t.Fatalf("未知码应 Exists=false: %+v", r)
+	}
+}
+
+func TestSetPromoterIdentity(t *testing.T) {
+	// 授予官方 + 指定 vanity 码
+	repo := &stubRepo{users: map[int]UserBrief{1: {ID: 1, Status: "active"}}}
+	svc := NewService(repo, &stubBalance{}, enabledSettings())
+	if err := svc.SetPromoterIdentity(t.Context(), 1, true, "TeamAlice", "官方团队"); err != nil {
+		t.Fatalf("授予官方应通过: %v", err)
+	}
+	if repo.adminSetCode != "teamalice" || repo.setTier != TierOfficial || repo.setDisplayName != "官方团队" {
+		t.Fatalf("官方身份落库不符: code=%q tier=%q name=%q", repo.adminSetCode, repo.setTier, repo.setDisplayName)
+	}
+
+	// 非法 vanity 码应拒绝
+	if err := svc.SetPromoterIdentity(t.Context(), 1, true, "ab", ""); !errors.Is(err, ErrInvalidInviteCode) {
+		t.Fatalf("非法 vanity 码应拒绝, err = %v", err)
+	}
+
+	// 授予官方未指定码、且该用户尚无码 → 惰性生成兜底
+	repo2 := &stubRepo{users: map[int]UserBrief{1: {ID: 1, Status: "active"}}}
+	svc2 := NewService(repo2, &stubBalance{}, enabledSettings())
+	if err := svc2.SetPromoterIdentity(t.Context(), 1, true, "", ""); err != nil {
+		t.Fatalf("官方无码应惰性生成: %v", err)
+	}
+	if repo2.claimN == 0 {
+		t.Fatalf("官方无 vanity 码应触发惰性生成邀请码")
 	}
 }
 
