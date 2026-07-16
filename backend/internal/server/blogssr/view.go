@@ -23,15 +23,70 @@ var inviteCodeRe = regexp.MustCompile(`^[A-Za-z0-9]{4,16}$`)
 // htmlTagRe 粗略剥离 HTML 标签用于估算阅读时长(不追求精确,仅取正文字数量级)。
 var htmlTagRe = regexp.MustCompile(`<[^>]+>`)
 
-// readingTimeLabel 按约 400 字/分钟估算中文阅读时长,至少 1 分钟。
-func readingTimeLabel(contentHTML string) string {
+// uiText 公开博客页的固定文案,按文章/列表语言本地化(zh/zh-Hant/en,空按 zh)。
+type uiText struct {
+	ReadingSuffix string // 阅读时长后缀
+	Back          string // 返回博客
+	CTAButton     string
+	CTADesc       string // 常驻 CTA 默认描述(chrome i18n 可覆盖)
+	GateTitle     string
+	GateDesc      string
+	GateButton    string
+	GateDismiss   string
+	EmptyTitle    string
+	EmptySub      string
+}
+
+var uiTexts = map[string]uiText{
+	"zh": {
+		ReadingSuffix: " 分钟阅读", Back: "← 返回博客", CTAButton: "免费开始 →",
+		CTADesc:   "一个 API Key 直连 Claude、Codex、GPT 等主流模型,注册即领体验额度,几分钟接入,余额长期有效。",
+		GateTitle: "注册后继续阅读全文", GateDesc: "免费注册即可读完本文,并获得 API 额度体验。",
+		GateButton: "免费注册 / 登录", GateDismiss: "以后再说",
+		EmptyTitle: "文章正在路上", EmptySub: "我们正在准备第一批内容,敬请期待。",
+	},
+	"zh-Hant": {
+		ReadingSuffix: " 分鐘閱讀", Back: "← 返回 Blog", CTAButton: "免費開始 →",
+		CTADesc:   "一個 API Key 直連 Claude、GPT、Gemini 等主流模型,註冊即領體驗額度,幾分鐘接入,餘額長期有效。",
+		GateTitle: "註冊後繼續閱讀全文", GateDesc: "免費註冊即可讀完本文,並獲得 API 額度體驗。",
+		GateButton: "免費註冊 / 登入", GateDismiss: "以後再說",
+		EmptyTitle: "文章正在路上", EmptySub: "我們正在準備第一批內容,敬請期待。",
+	},
+	"en": {
+		ReadingSuffix: " min read", Back: "← Back to blog", CTAButton: "Start for free →",
+		CTADesc:   "One API key for Claude, GPT, Gemini and more — sign up for trial credits, integrate in minutes, balance never expires.",
+		GateTitle: "Sign up to keep reading", GateDesc: "Create a free account to finish this article and get trial API credits.",
+		GateButton: "Sign up / Log in", GateDismiss: "Maybe later",
+		EmptyTitle: "Articles on the way", EmptySub: "We are preparing the first batch of posts. Stay tuned.",
+	},
+}
+
+// textFor 取语言文案,未知语言回退简体。
+func textFor(lang string) uiText {
+	if t, ok := uiTexts[lang]; ok {
+		return t
+	}
+	return uiTexts["zh"]
+}
+
+// readingTimeLabel 按约 400 字/分钟估算阅读时长(至少 1 分钟),后缀按语言本地化。
+func readingTimeLabel(contentHTML, lang string) string {
 	text := htmlTagRe.ReplaceAllString(contentHTML, "")
 	n := utf8.RuneCountInString(strings.TrimSpace(text))
 	minutes := (n + 399) / 400
 	if minutes < 1 {
 		minutes = 1
 	}
-	return strconv.Itoa(minutes) + " 分钟阅读"
+	return strconv.Itoa(minutes) + textFor(lang).ReadingSuffix
+}
+
+// publishedHumanLabel 发布时间的人类可读格式,按语言本地化。
+func publishedHumanLabel(t time.Time, lang string) string {
+	local := t.In(beijingLoc)
+	if lang == "en" {
+		return local.Format("Jan 2, 2006")
+	}
+	return local.Format("2006年01月02日")
 }
 
 // eyebrowFromTags 取前 1~2 个非空标签拼成头部小标签(如「教程 · 接入」)。
@@ -78,6 +133,49 @@ type Chrome struct {
 	CTADesc     string       `json:"cta_desc"`     // 文末常驻 CTA 描述,空=默认文案
 	ShowLangs   bool         `json:"show_langs"`   // 开启三语(简/繁/EN):列表按 lang 过滤+顶栏切换器+访客语言自动跳转
 	DefaultLang string       `json:"default_lang"` // 无 ?lang= 时的默认语言(zh/zh-Hant/en),空=zh
+	// I18n 按语言覆盖 chrome 文案/导航(键:zh/zh-Hant/en)。未覆盖的字段回退顶层值;
+	// CTADesc 例外:未覆盖且非默认语言时用内置本地化文案,避免英文文章配中文 CTA。
+	I18n map[string]ChromeOverride `json:"i18n"`
+}
+
+// ChromeOverride 某语言下的 chrome 文案/导航覆盖(全部可空=不覆盖)。
+type ChromeOverride struct {
+	Eyebrow     string       `json:"eyebrow"`
+	Title       string       `json:"title"`
+	Subtitle    string       `json:"subtitle"`
+	Nav         []ChromeLink `json:"nav"`
+	Footer      []ChromeLink `json:"footer"`
+	FooterNote  string       `json:"footer_note"`
+	LoginLabel  string       `json:"login_label"`
+	SignupLabel string       `json:"signup_label"`
+	CTADesc     string       `json:"cta_desc"`
+}
+
+// resolveChrome 把 lang 对应的 i18n 覆盖并入 chrome 顶层字段,返回该语言的有效配置。
+func resolveChrome(c Chrome, lang string) Chrome {
+	ov, ok := c.I18n[lang]
+	if !ok {
+		return c
+	}
+	set := func(dst *string, v string) {
+		if strings.TrimSpace(v) != "" {
+			*dst = v
+		}
+	}
+	set(&c.Eyebrow, ov.Eyebrow)
+	set(&c.Title, ov.Title)
+	set(&c.Subtitle, ov.Subtitle)
+	set(&c.FooterNote, ov.FooterNote)
+	set(&c.LoginLabel, ov.LoginLabel)
+	set(&c.SignupLabel, ov.SignupLabel)
+	set(&c.CTADesc, ov.CTADesc)
+	if len(ov.Nav) > 0 {
+		c.Nav = ov.Nav
+	}
+	if len(ov.Footer) > 0 {
+		c.Footer = ov.Footer
+	}
+	return c
 }
 
 // blogLangs 公开博客支持的语言;Code 即文章 lang 字段取值,Label 用于顶栏切换器。
@@ -177,6 +275,10 @@ type Branding struct {
 	ShowLangs bool
 	Lang      string
 	LangNav   []NavLink
+	// UI 固定文案(返回/阅读时长后缀/CTA按钮/软墙/空态),按 Lang 本地化,空语言=简体。
+	UI uiText
+	// HTMLLang <html lang> 值(zh-CN/zh-Hant/en)。
+	HTMLLang string
 }
 
 // withInv 给站内相对链接追加读者邀请码查询串(navQuery 结果,可能为空)。
@@ -195,20 +297,31 @@ func applyChrome(b *Branding, reqInvite, registerURL, lang string) {
 	nav := navQuery(reqInvite)
 	c := b.Chrome
 
-	b.BrandLabel = firstNonEmpty(c.BrandLabel, b.SiteName)
-	home := firstNonEmpty(c.HomeHref, "/")
-	b.SiteURL = withInv(home, nav)
-
 	blogHref := "/blog" + nav
 	if c.ShowLangs {
 		b.ShowLangs = true
 		b.Lang = pickLang(lang, c.DefaultLang)
+		c = resolveChrome(c, b.Lang)
+		b.Chrome = c // 回写有效配置,调用方(CTADesc 等)读取到本语言文案
 		blogHref = blogListURL(b.Lang, reqInvite)
 		b.LangNav = make([]NavLink, 0, len(blogLangs))
 		for _, l := range blogLangs {
 			b.LangNav = append(b.LangNav, NavLink{Label: l.Label, Href: blogListURL(l.Code, reqInvite), Active: l.Code == b.Lang})
 		}
 	}
+	b.UI = textFor(b.Lang)
+	switch b.Lang {
+	case "zh-Hant":
+		b.HTMLLang = "zh-Hant"
+	case "en":
+		b.HTMLLang = "en"
+	default:
+		b.HTMLLang = "zh-CN"
+	}
+
+	b.BrandLabel = firstNonEmpty(c.BrandLabel, b.SiteName)
+	home := firstNonEmpty(c.HomeHref, "/")
+	b.SiteURL = withInv(home, nav)
 
 	links := c.Nav
 	if len(links) == 0 {
@@ -366,12 +479,38 @@ func navQuery(reqInvite string) string {
 	return ""
 }
 
-// ctaTitle 生成正文末尾软性 CTA 的标题(带站点名);站点名缺失时退化为通用文案。
-func ctaTitle(siteName string) string {
-	if strings.TrimSpace(siteName) != "" {
-		return "用 " + siteName + " 亲手试试文中的用法"
+// ctaTitle 生成正文末尾软性 CTA 的标题(带站点名),按语言本地化;站点名缺失时退化为通用文案。
+func ctaTitle(siteName, lang string) string {
+	name := strings.TrimSpace(siteName)
+	switch lang {
+	case "en":
+		if name != "" {
+			return "Try what you just read with " + name
+		}
+		return "Try what you just read"
+	case "zh-Hant":
+		if name != "" {
+			return "用 " + name + " 親手試試文中的用法"
+		}
+		return "親手試試文中的用法"
+	default:
+		if name != "" {
+			return "用 " + name + " 亲手试试文中的用法"
+		}
+		return "亲手试试文中的用法"
 	}
-	return "亲手试试文中的用法"
+}
+
+// effectiveCTADesc 决定常驻 CTA 描述:顶层 cta_desc 视为默认语言文案;
+// 非默认语言仅认 i18n 覆盖,否则用内置本地化文案(避免英文文章配中文 CTA)。
+func effectiveCTADesc(c Chrome, lang string) string {
+	if !c.ShowLangs || lang == "" || lang == pickLang("", c.DefaultLang) {
+		return firstNonEmpty(c.CTADesc, textFor(lang).CTADesc)
+	}
+	if ov, ok := c.I18n[lang]; ok && strings.TrimSpace(ov.CTADesc) != "" {
+		return ov.CTADesc
+	}
+	return textFor(lang).CTADesc
 }
 
 // absURL 将相对资源(如 /assets-runtime/...)按站点基址绝对化;已是绝对 URL 原样返回。
@@ -425,7 +564,7 @@ func buildListView(b Branding, posts []appblog.Post, reqInvite, lang string) Lis
 			PublishedAt: published,
 			URL:         "/blog/" + p.Slug + nav,
 			Tag:         tag,
-			ReadingTime: readingTimeLabel(p.ContentHTML),
+			ReadingTime: readingTimeLabel(p.ContentHTML, canonicalLang(p.Lang)),
 			CoverClass:  coverFallbackClasses[i%len(coverFallbackClasses)],
 		})
 	}
@@ -469,7 +608,6 @@ func buildDetailView(b Branding, p appblog.Post, reqInvite string) DetailView {
 	var publishedISO, publishedHuman string
 	if p.PublishedAt != nil {
 		publishedISO = p.PublishedAt.UTC().Format(time.RFC3339)
-		publishedHuman = p.PublishedAt.In(beijingLoc).Format("2006年01月02日")
 	}
 	modifiedISO := p.UpdatedAt.UTC().Format(time.RFC3339)
 	if modifiedISO == "" && publishedISO != "" {
@@ -498,6 +636,15 @@ func buildDetailView(b Branding, p appblog.Post, reqInvite string) DetailView {
 		// 「返回博客」回到本文语言的列表。
 		branding.HomeURL = blogListURL(branding.Lang, reqInvite)
 	}
+	// 固定文案跟随文章语言:开三语时随 applyChrome 的判定,未开时也按文章 lang 本地化。
+	strLang := branding.Lang
+	if strLang == "" {
+		strLang = canonicalLang(p.Lang)
+	}
+	branding.UI = textFor(strLang)
+	if p.PublishedAt != nil {
+		publishedHuman = publishedHumanLabel(*p.PublishedAt, strLang)
+	}
 
 	return DetailView{
 		Branding:        branding,
@@ -508,14 +655,14 @@ func buildDetailView(b Branding, p appblog.Post, reqInvite string) DetailView {
 		OGImage:         ogImage,
 		Canonical:       canonical,
 		Eyebrow:         eyebrowFromTags(p.Tags),
-		AuthorName:      firstNonEmpty(b.Chrome.BrandLabel, b.SiteName, "Blog"),
-		ReadingTime:     readingTimeLabel(p.ContentHTML),
+		AuthorName:      firstNonEmpty(branding.BrandLabel, "Blog"),
+		ReadingTime:     readingTimeLabel(p.ContentHTML, strLang),
 		PublishedISO:    publishedISO,
 		PublishedHuman:  publishedHuman,
 		ModifiedISO:     modifiedISO,
 		Tags:            p.Tags,
-		CTATitle:        ctaTitle(b.SiteName),
-		CTADesc:         firstNonEmpty(b.Chrome.CTADesc, "一个 API Key 直连 Claude、Codex、GPT 等主流模型,注册即领体验额度,几分钟接入,余额长期有效。"),
+		CTATitle:        ctaTitle(branding.BrandLabel, strLang),
+		CTADesc:         effectiveCTADesc(branding.Chrome, strLang),
 		GateEnabled:     p.GateEnabled && gatePos > 0 && gatePos < 100,
 		GatePosition:    gatePos,
 		JSONLD:          template.JS(jsonLD),

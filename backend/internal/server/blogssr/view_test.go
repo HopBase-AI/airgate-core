@@ -139,11 +139,18 @@ func TestReadingTimeAndEyebrow(t *testing.T) {
 	}
 	// 800 个中文字符 → 约 2 分钟
 	long := "<p>" + strings.Repeat("字", 800) + "</p>"
-	if got := readingTimeLabel(long); got != "2 分钟阅读" {
+	if got := readingTimeLabel(long, "zh"); got != "2 分钟阅读" {
 		t.Errorf("reading time = %q, want 2 分钟阅读", got)
 	}
-	if got := readingTimeLabel("<p>短</p>"); got != "1 分钟阅读" {
+	if got := readingTimeLabel("<p>短</p>", ""); got != "1 分钟阅读" {
 		t.Errorf("reading time min = %q, want 1 分钟阅读", got)
+	}
+	// 语言本地化后缀
+	if got := readingTimeLabel(long, "en"); got != "2 min read" {
+		t.Errorf("reading time en = %q, want 2 min read", got)
+	}
+	if got := readingTimeLabel(long, "zh-Hant"); got != "2 分鐘閱讀" {
+		t.Errorf("reading time hant = %q, want 2 分鐘閱讀", got)
 	}
 }
 

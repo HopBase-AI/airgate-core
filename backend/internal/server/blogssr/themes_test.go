@@ -366,3 +366,38 @@ func TestSSR_LangDisabledByDefault(t *testing.T) {
 		t.Error("未开三语不应渲染切换器")
 	}
 }
+
+func TestLocalizedStringsAndChromeI18n(t *testing.T) {
+	chrome := `{"show_langs":true,"default_lang":"zh","title":"博客 · 实践与洞察","cta_desc":"中文CTA","i18n":{"en":{"title":"Blog · Field Notes","cta_desc":"English CTA","nav":[{"label":"Home","href":"/"},{"label":"Blog","href":"/blog"}]}}}`
+	r := newThemedRouter("ember", chrome, trilingualPosts())
+
+	// 英文列表:标题/导航/空态相关文案走 i18n 覆盖与内置英文
+	body := doGet(t, r, "/blog?lang=en").Body.String()
+	for _, want := range []string{"Blog · Field Notes", ">Home</a>", "English Post", "min read"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("en list 缺少 %q", want)
+		}
+	}
+	// 英文详情:返回/CTA 按钮/CTA 描述本地化
+	dbody := doGet(t, r, "/blog/post-en").Body.String()
+	for _, want := range []string{"← Back to blog", "Start for free →", "English CTA", `lang="en"`} {
+		if !strings.Contains(dbody, want) {
+			t.Errorf("en detail 缺少 %q", want)
+		}
+	}
+	// 繁体详情:无 i18n 覆盖时 CTA 描述用内置繁体(而非顶层简体)
+	hbody := doGet(t, r, "/blog/post-hant").Body.String()
+	for _, want := range []string{"← 返回 Blog", "免費開始 →", "註冊即領體驗額度", `lang="zh-Hant"`} {
+		if !strings.Contains(hbody, want) {
+			t.Errorf("hant detail 缺少 %q", want)
+		}
+	}
+	if strings.Contains(hbody, "中文CTA") {
+		t.Error("繁体文章不应使用顶层简体 CTA 描述")
+	}
+	// 简体(默认语言)详情:顶层 cta_desc 生效
+	zbody := doGet(t, r, "/blog/post-zh").Body.String()
+	if !strings.Contains(zbody, "中文CTA") {
+		t.Error("默认语言应使用顶层 cta_desc")
+	}
+}

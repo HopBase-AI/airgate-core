@@ -96,7 +96,7 @@ img{max-width:100%}
 // ―――――― 共享 head(所有皮肤一致,SEO 元信息) ――――――
 
 const listHeadStr = `<!doctype html>
-<html lang="zh-CN">
+<html lang="{{if .HTMLLang}}{{.HTMLLang}}{{else}}zh-CN{{end}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -110,7 +110,7 @@ const listHeadStr = `<!doctype html>
 `
 
 const detailHeadStr = `<!doctype html>
-<html lang="zh-CN">
+<html lang="{{if .HTMLLang}}{{.HTMLLang}}{{else}}zh-CN{{end}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -135,7 +135,7 @@ const detailHeadStr = `<!doctype html>
 `
 
 const notFoundHeadStr = `<!doctype html>
-<html lang="zh-CN">
+<html lang="{{if .HTMLLang}}{{.HTMLLang}}{{else}}zh-CN{{end}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -158,8 +158,8 @@ const defaultFooterStr = `<footer class="blog-footer">© {{.SiteName}}</footer>
 
 const emptyStateStr = `<div class="blog-empty">
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h8l6 6v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg>
-<p class="blog-empty-title">文章正在路上</p>
-<p class="blog-empty-sub">我们正在准备第一批内容,敬请期待。</p>
+<p class="blog-empty-title">{{.UI.EmptyTitle}}</p>
+<p class="blog-empty-sub">{{.UI.EmptySub}}</p>
 </div>
 `
 
@@ -188,7 +188,7 @@ const defaultListBodyStr = `<main class="blog-wrap">
 
 // detailBodyStr 详情主体:全部皮肤共享同一结构,视觉差异全部由皮肤 CSS 承担。
 const detailBodyStr = `<main class="blog-wrap">
-<a href="{{.HomeURL}}" class="blog-back">← 返回博客</a>
+<a href="{{.HomeURL}}" class="blog-back">{{.UI.Back}}</a>
 <article>
 {{if .Eyebrow}}<div class="article-eyebrow">{{.Eyebrow}}</div>{{end}}
 <h1 class="article-title">{{.Title}}</h1>
@@ -205,7 +205,7 @@ const detailBodyStr = `<main class="blog-wrap">
 <aside class="blog-cta">
 <p class="blog-cta-title">{{.CTATitle}}</p>
 <p class="blog-cta-desc">{{.CTADesc}}</p>
-<a class="blog-cta-btn" href="{{.RegisterURL}}">免费开始 →</a>
+<a class="blog-cta-btn" href="{{.RegisterURL}}">{{.UI.CTAButton}}</a>
 </aside>
 </main>
 `
@@ -214,10 +214,10 @@ const detailBodyStr = `<main class="blog-wrap">
 const gateStr = `{{if .GateEnabled}}
 <div id="blog-gate" class="blog-gate" hidden>
 <div class="blog-gate-card">
-<p class="blog-gate-title">注册后继续阅读全文</p>
-<p class="blog-gate-desc">免费注册即可读完本文,并获得 API 额度体验。</p>
-<a class="blog-gate-btn" href="{{.RegisterURL}}">免费注册 / 登录</a>
-<button type="button" class="blog-gate-dismiss" id="blog-gate-dismiss">以后再说</button>
+<p class="blog-gate-title">{{.UI.GateTitle}}</p>
+<p class="blog-gate-desc">{{.UI.GateDesc}}</p>
+<a class="blog-gate-btn" href="{{.RegisterURL}}">{{.UI.GateButton}}</a>
+<button type="button" class="blog-gate-dismiss" id="blog-gate-dismiss">{{.UI.GateDismiss}}</button>
 </div>
 </div>
 <script>
