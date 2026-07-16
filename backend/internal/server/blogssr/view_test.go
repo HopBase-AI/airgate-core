@@ -224,7 +224,7 @@ func TestBuildListView(t *testing.T) {
 	posts := []appblog.Post{
 		{Title: "A", Slug: "a", Summary: "sa", CoverImage: "/c.png", PublishedAt: &pub},
 	}
-	v := buildListView(b, posts, "")
+	v := buildListView(b, posts, "", "")
 	if v.PageTitle != "HopBase · Blog" {
 		t.Errorf("page title = %q", v.PageTitle)
 	}
@@ -246,7 +246,7 @@ func TestBuildListView(t *testing.T) {
 	}
 
 	// 空品牌名 + 空列表
-	v2 := buildListView(Branding{OriginBase: "https://x.com"}, nil, "")
+	v2 := buildListView(Branding{OriginBase: "https://x.com"}, nil, "", "")
 	if v2.PageTitle != "Blog" {
 		t.Errorf("empty brand page title = %q, want Blog", v2.PageTitle)
 	}
@@ -260,7 +260,7 @@ func TestBuildListView_InviteThreading(t *testing.T) {
 	b := Branding{SiteName: "HopBase", OriginBase: "https://hop-base.com"}
 	posts := []appblog.Post{{Title: "A", Slug: "a"}}
 
-	v := buildListView(b, posts, "Share7")
+	v := buildListView(b, posts, "Share7", "")
 	if v.Posts[0].URL != "/blog/a?inv=share7" {
 		t.Errorf("threaded card url = %q, want /blog/a?inv=share7", v.Posts[0].URL)
 	}
@@ -269,7 +269,7 @@ func TestBuildListView_InviteThreading(t *testing.T) {
 	}
 
 	// 非法码不透传
-	vBad := buildListView(b, posts, "!!")
+	vBad := buildListView(b, posts, "!!", "")
 	if vBad.Posts[0].URL != "/blog/a" || vBad.HomeURL != "/blog" {
 		t.Errorf("invalid invite should not thread: url=%q home=%q", vBad.Posts[0].URL, vBad.HomeURL)
 	}

@@ -49,6 +49,97 @@ func eyebrowFromTags(tags []string) string {
 	return strings.Join(picked, " · ")
 }
 
+// NavLink 皮肤顶栏/页脚的一条链接(Active=当前博客项,顶栏高亮)。
+type NavLink struct {
+	Label  string
+	Href   string
+	Active bool
+}
+
+// ChromeLink blog_chrome 配置里的一条链接。
+type ChromeLink struct {
+	Label string `json:"label"`
+	Href  string `json:"href"`
+}
+
+// Chrome 站点皮肤的导航与文案配置(site 设置 blog_chrome,JSON)。
+// 所有字段可空,空值走默认——未配置的实例渲染效果与旧版一致。
+type Chrome struct {
+	BrandLabel  string       `json:"brand_label"`  // 顶栏品牌字标,空=site_name
+	HomeHref    string       `json:"home_url"`     // logo/品牌指向的主站地址,空="/"(博客与落地页同域)
+	Eyebrow     string       `json:"eyebrow"`      // 列表页小标,空="{site_name} · Blog"
+	Title       string       `json:"title"`        // 列表页大标题,空="{site_name} 博客"
+	Subtitle    string       `json:"subtitle"`     // 列表页副标题,空=默认文案
+	Nav         []ChromeLink `json:"nav"`          // 顶栏导航,空=首页+博客
+	Footer      []ChromeLink `json:"footer"`       // 页脚链接,空=不显示
+	FooterNote  string       `json:"footer_note"`  // 页脚品牌下的一句话,空=不显示
+	LoginLabel  string       `json:"login_label"`  // 顶栏登录文案,空="登录"
+	SignupLabel string       `json:"signup_label"` // 顶栏注册 CTA 文案,空=不显示注册钮
+	CTADesc     string       `json:"cta_desc"`     // 文末常驻 CTA 描述,空=默认文案
+	ShowLangs   bool         `json:"show_langs"`   // 开启三语(简/繁/EN):列表按 lang 过滤+顶栏切换器+访客语言自动跳转
+	DefaultLang string       `json:"default_lang"` // 无 ?lang= 时的默认语言(zh/zh-Hant/en),空=zh
+}
+
+// blogLangs 公开博客支持的语言;Code 即文章 lang 字段取值,Label 用于顶栏切换器。
+var blogLangs = []struct{ Code, Label string }{
+	{"zh", "简"}, {"zh-Hant", "繁"}, {"en", "EN"},
+}
+
+// canonicalLang 归一语言代码到 blogLangs 取值;不认识返回空。
+func canonicalLang(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "zh", "zh-cn", "zh-hans", "zh-sg":
+		return "zh"
+	case "zh-hant", "zh-hk", "zh-tw", "zh-mo":
+		return "zh-Hant"
+	case "en", "en-us", "en-gb":
+		return "en"
+	}
+	return ""
+}
+
+// pickLang 决定列表语言:?lang= 合法值优先,否则实例默认(chrome.default_lang),兜底简体。
+func pickLang(query, def string) string {
+	if l := canonicalLang(query); l != "" {
+		return l
+	}
+	if l := canonicalLang(def); l != "" {
+		return l
+	}
+	return "zh"
+}
+
+// blogListURL 组博客列表链接,带语言与读者邀请码(均可空)。
+func blogListURL(lang, reqInvite string) string {
+	q := url.Values{}
+	if lang != "" {
+		q.Set("lang", lang)
+	}
+	if reqInviteCodeValid(strings.TrimSpace(reqInvite)) {
+		q.Set("inv", strings.ToLower(strings.TrimSpace(reqInvite)))
+	}
+	if len(q) == 0 {
+		return "/blog"
+	}
+	return "/blog?" + q.Encode()
+}
+
+// parseChrome 解析 blog_chrome JSON;空串或非法 JSON 一律返回零值(渲染走默认,不因配置错误 5xx)。
+func parseChrome(raw string) Chrome {
+	var c Chrome
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return c
+	}
+	if err := json.Unmarshal([]byte(raw), &c); err != nil {
+		return Chrome{}
+	}
+	return c
+}
+
+// validThemes 允许的皮肤名;ember=HopBase 暗色,ink=Essevin 水墨纸感,空=中性默认模板。
+var validThemes = map[string]bool{"": true, "ember": true, "ink": true}
+
 // Branding 站点品牌信息(从 site 设置读取)。
 type Branding struct {
 	SiteName   string
@@ -59,12 +150,101 @@ type Branding struct {
 	// URL 过滤——否则 site_logo 常见的 data:image/svg+xml URI 会被替换成 #ZgotmplZ(logo 裂图)。
 	// 值来自可信的后台设置,且以 <img> 呈现(非脚本上下文),安全。
 	LogoSrc template.URL
-	// HomeURL 顶栏 logo / 品牌 / 「返回博客」链接的目标;读者带合法 ?inv= 时保留该参数,
+	// HomeURL 「返回博客」及默认皮肤顶栏的目标;读者带合法 ?inv= 时保留该参数,
 	// 使一次浏览会话内(列表↔详情↔返回)归因不丢。无 inv 时即 "/blog"。
 	HomeURL string
 	// SiteKey 当前实例的站点 key(设置 blog_site_key);为空=不按站点过滤,文章全部可见。
 	// 仅用于 SSR 过滤,不渲染进页面。
 	SiteKey string
+
+	// Theme 皮肤名(设置 blog_theme):""/"ember"/"ink",未知值按 "" 处理。
+	Theme string
+	// Chrome 皮肤导航/文案配置(设置 blog_chrome)。
+	Chrome Chrome
+
+	// ―― 以下为渲染期按 Chrome+邀请码 推导的字段(applyChrome 填充) ――
+	BrandLabel  string    // 顶栏品牌字标
+	SiteURL     string    // 皮肤顶栏 logo/品牌指向的主站地址(带读者 inv 透传)
+	Nav         []NavLink // 顶栏导航
+	FooterNav   []NavLink // 页脚链接
+	FooterNote  string
+	LoginLabel  string
+	SignupLabel string
+	// RegisterURL 顶栏登录/注册与文末 CTA 的目标:<console>/login[?inv=...]。
+	// 列表页取读者自带码;详情页读者码优先、否则文章内置码。
+	RegisterURL string
+	// 三语支持(chrome.show_langs 开启时):Lang=当前语言,LangNav=切换器链接。
+	ShowLangs bool
+	Lang      string
+	LangNav   []NavLink
+}
+
+// withInv 给站内相对链接追加读者邀请码查询串(navQuery 结果,可能为空)。
+// 仅用于 "/"、"/blog" 这类同域落地页/博客链接;锚点链接(含 #)不动,避免拼出非法 URL。
+func withInv(href, nav string) string {
+	if nav == "" || strings.Contains(href, "#") || strings.Contains(href, "?") {
+		return href
+	}
+	return href + nav
+}
+
+// applyChrome 按 Chrome 配置与读者邀请码推导皮肤渲染字段。
+// registerURL 由调用方按页面语义构造(列表页仅读者码,详情页含文章内置码兜底);
+// lang 为当前页面语言(show_langs 关闭时忽略)。
+func applyChrome(b *Branding, reqInvite, registerURL, lang string) {
+	nav := navQuery(reqInvite)
+	c := b.Chrome
+
+	b.BrandLabel = firstNonEmpty(c.BrandLabel, b.SiteName)
+	home := firstNonEmpty(c.HomeHref, "/")
+	b.SiteURL = withInv(home, nav)
+
+	blogHref := "/blog" + nav
+	if c.ShowLangs {
+		b.ShowLangs = true
+		b.Lang = pickLang(lang, c.DefaultLang)
+		blogHref = blogListURL(b.Lang, reqInvite)
+		b.LangNav = make([]NavLink, 0, len(blogLangs))
+		for _, l := range blogLangs {
+			b.LangNav = append(b.LangNav, NavLink{Label: l.Label, Href: blogListURL(l.Code, reqInvite), Active: l.Code == b.Lang})
+		}
+	}
+
+	links := c.Nav
+	if len(links) == 0 {
+		links = []ChromeLink{{Label: "首页", Href: "/"}, {Label: "博客", Href: "/blog"}}
+	}
+	b.Nav = decorateLinks(links, nav, blogHref)
+	b.FooterNav = decorateLinks(c.Footer, nav, blogHref)
+	b.FooterNote = c.FooterNote
+	b.LoginLabel = firstNonEmpty(c.LoginLabel, "登录")
+	b.SignupLabel = c.SignupLabel
+	b.RegisterURL = registerURL
+}
+
+// decorateLinks 把配置链接转成渲染链接:"/blog" 项替换为带语言/邀请码的列表链接并标记 Active,
+// 其余 /blog/ 前缀与首页链接透传读者 inv。
+func decorateLinks(links []ChromeLink, nav, blogHref string) []NavLink {
+	out := make([]NavLink, 0, len(links))
+	for _, l := range links {
+		if strings.TrimSpace(l.Label) == "" || strings.TrimSpace(l.Href) == "" {
+			continue
+		}
+		href := l.Href
+		active := false
+		switch {
+		case href == "/blog":
+			href = blogHref
+			active = true
+		case strings.HasPrefix(href, "/blog/"):
+			href = withInv(href, nav)
+			active = true
+		case href == "/":
+			href = withInv(href, nav)
+		}
+		out = append(out, NavLink{Label: l.Label, Href: href, Active: active})
+	}
+	return out
 }
 
 // postVisibleOnSite 判断文章是否在当前站点可见:未配置站点 key,或文章未限定站点(sites 空)→ 可见;
@@ -103,13 +283,21 @@ type listItem struct {
 	CoverImage  template.URL // 用 template.URL 让 data: 封面也能渲染(同 LogoSrc);<img src> 上下文安全
 	PublishedAt string
 	URL         string
+	Tag         string // 首个非空标签(皮肤列表的分类胶囊)
+	ReadingTime string // 预估阅读时长
+	CoverClass  string // 无封面时的渐变兜底样式类(cv1..cv6 轮转)
 }
 
 // ListView 列表页视图。
 type ListView struct {
 	Branding
 	PageTitle string
+	Subtitle  string // 列表页副标题(Chrome 可配)
+	Eyebrow   string // 列表页小标(皮肤模板用)
+	Heading   string // 列表页 H1(Chrome 可配,默认「{site_name} 博客」)
 	Posts     []listItem
+	Featured  *listItem  // 皮肤模板的头条(首篇)
+	Rest      []listItem // 皮肤模板头条之后的文章流
 }
 
 // DetailView 详情页视图。
@@ -128,8 +316,8 @@ type DetailView struct {
 	PublishedHuman  string
 	ModifiedISO     string
 	Tags            []string
-	RegisterURL     string
 	CTATitle        string // 正文末尾常驻软性 CTA 的标题(带站点名)
+	CTADesc         string // 常驻 CTA 描述(Chrome 可配)
 	GateEnabled     bool
 	GatePosition    int
 	JSONLD          template.JS
@@ -211,15 +399,23 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// coverFallbackClasses 无封面卡片的渐变兜底样式类,按序轮转保证相邻卡片配色不同。
+var coverFallbackClasses = []string{"cv1", "cv2", "cv3", "cv4", "cv5", "cv6"}
+
 // buildListView 由已发布文章构建列表页视图(纯函数,便于单测)。
-// reqInvite 为读者自带的邀请码,合法时透传到卡片/顶栏链接,浏览会话内归因不丢。
-func buildListView(b Branding, posts []appblog.Post, reqInvite string) ListView {
+// reqInvite 为读者自带的邀请码,合法时透传到卡片/顶栏链接,浏览会话内归因不丢;
+// lang 为当前列表语言(show_langs 关闭时传空)。
+func buildListView(b Branding, posts []appblog.Post, reqInvite, lang string) ListView {
 	nav := navQuery(reqInvite)
 	items := make([]listItem, 0, len(posts))
-	for _, p := range posts {
+	for i, p := range posts {
 		published := ""
 		if p.PublishedAt != nil {
 			published = p.PublishedAt.In(beijingLoc).Format("2006-01-02")
+		}
+		tag := ""
+		if len(p.Tags) > 0 {
+			tag = strings.TrimSpace(p.Tags[0])
 		}
 		items = append(items, listItem{
 			Title:      p.Title,
@@ -227,7 +423,10 @@ func buildListView(b Branding, posts []appblog.Post, reqInvite string) ListView 
 			Summary:    p.Summary,
 			CoverImage: template.URL(absURL(b.OriginBase, p.CoverImage)), //nolint:gosec // 可信后台设置,<img> 呈现
 			PublishedAt: published,
-			URL:        "/blog/" + p.Slug + nav,
+			URL:         "/blog/" + p.Slug + nav,
+			Tag:         tag,
+			ReadingTime: readingTimeLabel(p.ContentHTML),
+			CoverClass:  coverFallbackClasses[i%len(coverFallbackClasses)],
 		})
 	}
 	title := b.SiteName
@@ -239,7 +438,25 @@ func buildListView(b Branding, posts []appblog.Post, reqInvite string) ListView 
 	b.LogoURL = absURL(b.OriginBase, b.LogoURL)
 	b.LogoSrc = template.URL(b.LogoURL) //nolint:gosec // 可信后台设置,<img> 呈现
 	b.HomeURL = "/blog" + nav
-	return ListView{Branding: b, PageTitle: title, Posts: items}
+	applyChrome(&b, reqInvite, buildRegisterURL(b.ConsoleURL, resolveInviteCode(reqInvite, "")), lang)
+	if b.ShowLangs {
+		// 三语开启时「返回博客/自链」保持当前语言。
+		b.HomeURL = blogListURL(b.Lang, reqInvite)
+	}
+
+	view := ListView{
+		Branding:  b,
+		PageTitle: title,
+		Heading:   firstNonEmpty(b.Chrome.Title, strings.TrimSpace(b.SiteName+" 博客")),
+		Subtitle:  firstNonEmpty(b.Chrome.Subtitle, "AI 使用方法、模型技巧与实践分享"),
+		Eyebrow:   firstNonEmpty(b.Chrome.Eyebrow, title),
+		Posts:     items,
+	}
+	if len(items) > 0 {
+		view.Featured = &items[0]
+		view.Rest = items[1:]
+	}
+	return view
 }
 
 // buildDetailView 由文章 + 品牌 + 读者邀请码构建详情页视图(纯函数,便于单测)。
@@ -275,7 +492,12 @@ func buildDetailView(b Branding, p appblog.Post, reqInvite string) DetailView {
 	breadcrumbLD := buildBreadcrumbLD(b.OriginBase, b.SiteName, seoTitle, canonical)
 
 	nav := navQuery(reqInvite)
-	branding := Branding{SiteName: b.SiteName, LogoURL: logoURL, LogoSrc: template.URL(logoURL), ConsoleURL: b.ConsoleURL, OriginBase: b.OriginBase, HomeURL: "/blog" + nav} //nolint:gosec // 可信后台设置,<img> 呈现
+	branding := Branding{SiteName: b.SiteName, LogoURL: logoURL, LogoSrc: template.URL(logoURL), ConsoleURL: b.ConsoleURL, OriginBase: b.OriginBase, HomeURL: "/blog" + nav, Theme: b.Theme, Chrome: b.Chrome} //nolint:gosec // 可信后台设置,<img> 呈现
+	applyChrome(&branding, reqInvite, registerURL, p.Lang)
+	if branding.ShowLangs {
+		// 「返回博客」回到本文语言的列表。
+		branding.HomeURL = blogListURL(branding.Lang, reqInvite)
+	}
 
 	return DetailView{
 		Branding:        branding,
@@ -286,14 +508,14 @@ func buildDetailView(b Branding, p appblog.Post, reqInvite string) DetailView {
 		OGImage:         ogImage,
 		Canonical:       canonical,
 		Eyebrow:         eyebrowFromTags(p.Tags),
-		AuthorName:      firstNonEmpty(b.SiteName, "Blog"),
+		AuthorName:      firstNonEmpty(b.Chrome.BrandLabel, b.SiteName, "Blog"),
 		ReadingTime:     readingTimeLabel(p.ContentHTML),
 		PublishedISO:    publishedISO,
 		PublishedHuman:  publishedHuman,
 		ModifiedISO:     modifiedISO,
 		Tags:            p.Tags,
-		RegisterURL:     registerURL,
 		CTATitle:        ctaTitle(b.SiteName),
+		CTADesc:         firstNonEmpty(b.Chrome.CTADesc, "一个 API Key 直连 Claude、Codex、GPT 等主流模型,注册即领体验额度,几分钟接入,余额长期有效。"),
 		GateEnabled:     p.GateEnabled && gatePos > 0 && gatePos < 100,
 		GatePosition:    gatePos,
 		JSONLD:          template.JS(jsonLD),

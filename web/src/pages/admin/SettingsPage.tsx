@@ -29,6 +29,8 @@ const SITE_KEYS = [
   'sites_branding',
   // 博客多站点投放：blog_sites=[{key,label}] 供编辑器多选;blog_site_key=本实例站点 key,SSR 据此过滤
   'blog_sites', 'blog_site_key',
+  // 博客站点皮肤：blog_theme=皮肤名(空/ember/ink);blog_chrome=导航/页脚/文案 JSON(见 SSR blogssr)
+  'blog_theme', 'blog_chrome',
   // 整站通知横幅（放 site 组：随站点 tab 保存，且 site 组全量走公开设置接口）
   'announcement_enabled', 'announcement_level', 'announcement_content',
 ] as const;
@@ -496,6 +498,20 @@ export default function SettingsPage() {
     }
   }
 
+  // 博客皮肤 chrome JSON 的客户端校验（对象）：只提示不阻塞保存。
+  const blogChromeRaw = values['blog_chrome'] ?? '';
+  let blogChromeError = '';
+  if (blogChromeRaw.trim() !== '') {
+    try {
+      const parsed = JSON.parse(blogChromeRaw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        blogChromeError = t('settings.blog_chrome_invalid');
+      }
+    } catch (e) {
+      blogChromeError = (e as Error).message;
+    }
+  }
+
   return (
     <div className="max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 md:py-8 flex flex-col gap-6 min-h-screen">
       <div className="mx-auto w-full max-w-full overflow-x-auto hide-scrollbar pb-1">
@@ -607,6 +623,37 @@ export default function SettingsPage() {
                   />
                   {blogSitesError && (
                     <p className="text-[11px] text-danger mt-1.5">{blogSitesError}</p>
+                  )}
+                </SettingsSection>
+
+                <SettingsSection
+                  description={t('settings.blog_theme_desc')}
+                  title={t('settings.blog_theme_title')}
+                >
+                  <Field label={t('settings.blog_theme')}>
+                    <div className="flex max-w-md gap-1">
+                      {([['', t('settings.blog_theme_default')], ['ember', 'Ember(暗色)'], ['ink', 'Ink(纸感)']] as const).map(([tv, label]) => (
+                        <Button
+                          key={tv || 'default'}
+                          fullWidth
+                          size="sm"
+                          variant={(values['blog_theme'] ?? '') === tv ? 'primary' : 'secondary'}
+                          onPress={() => set('blog_theme', tv)}
+                        >
+                          {label}
+                        </Button>
+                      ))}
+                    </div>
+                  </Field>
+                  <TextArea
+                    aria-label={t('settings.blog_chrome')}
+                    value={blogChromeRaw}
+                    onChange={(e) => set('blog_chrome', e.target.value)}
+                    className="h-56 w-full font-mono text-xs leading-5 mt-3"
+                    placeholder={'{\n  "brand_label": "HopBase",\n  "eyebrow": "HopBase · Blog",\n  "title": "博客 · 实践与洞察",\n  "subtitle": "AI 网关接入实践、模型评测与省钱技巧",\n  "nav": [ { "label": "首页", "href": "/" }, { "label": "博客", "href": "/blog" } ],\n  "footer": [ { "label": "接入文档", "href": "/docs" } ],\n  "footer_note": "企业级 AI 网关",\n  "login_label": "登录",\n  "signup_label": "",\n  "cta_desc": "",\n  "default_lang": "zh"\n}'}
+                  />
+                  {blogChromeError && (
+                    <p className="text-[11px] text-danger mt-1.5">{blogChromeError}</p>
                   )}
                 </SettingsSection>
 

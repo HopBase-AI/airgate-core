@@ -1148,7 +1148,13 @@
     "blog_sites_desc": "This instance's site key (blog_site_key) decides which posts /blog shows; the site options (blog_sites) drive the editor's multi-select. Leave empty to disable site filtering.",
     "blog_sites_invalid": "Must be an array of [{ \"key\": \"...\", \"label\": \"...\" }]",
     "blog_site_key": "This site's key",
-    "blog_site_key_hint": "e.g. essevin / hopbase; a post shows on this /blog only if its target sites include this key or it's unrestricted. Empty = show all."
+    "blog_site_key_hint": "e.g. essevin / hopbase; a post shows on this /blog only if its target sites include this key or it's unrestricted. Empty = show all.",
+    "blog_theme_title": "Blog page theme",
+    "blog_theme_desc": "Visual theme and main-site navigation for the public /blog. Ember = dark (HopBase landing), Ink = paper (Essevin); Default = neutral template. Configure nav/footer/copy in the JSON below; empty = defaults.",
+    "blog_theme": "Theme",
+    "blog_theme_default": "Default",
+    "blog_chrome": "Nav / copy config (JSON)",
+    "blog_chrome_invalid": "Must be a JSON object (see placeholder for keys)"
   },
   "docs": {
     "cta_hint": "Ready to start? Jump in now.",

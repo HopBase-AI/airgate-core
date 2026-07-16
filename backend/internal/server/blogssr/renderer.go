@@ -18,38 +18,60 @@ type SettingsLister interface {
 	List(ctx context.Context, group string) ([]appsettings.Setting, error)
 }
 
-// Renderer 公开博客页 SSR 渲染器。
-type Renderer struct {
-	posts        *appblog.Service
-	settings     SettingsLister
-	listTmpl     *template.Template
-	detailTmpl   *template.Template
-	notFoundTmpl *template.Template
+// tmplSet 一个皮肤的整套模板。
+type tmplSet struct {
+	list     *template.Template
+	detail   *template.Template
+	notFound *template.Template
 }
 
-// NewRenderer 创建渲染器(模板解析失败即 panic,属启动期编程错误)。
+// Renderer 公开博客页 SSR 渲染器。
+type Renderer struct {
+	posts    *appblog.Service
+	settings SettingsLister
+	sets     map[string]tmplSet // key=皮肤名(""/"ember"/"ink")
+}
+
+// NewRenderer 创建渲染器,启动期解析全部皮肤模板(解析失败即 panic,属启动期编程错误)。
 func NewRenderer(posts *appblog.Service, settings SettingsLister) *Renderer {
-	return &Renderer{
-		posts:        posts,
-		settings:     settings,
-		listTmpl:     template.Must(template.New("blog_list").Parse(listTmplStr)),
-		detailTmpl:   template.Must(template.New("blog_detail").Parse(detailTmplStr)),
-		notFoundTmpl: template.Must(template.New("blog_404").Parse(notFoundTmplStr)),
+	sets := make(map[string]tmplSet, len(validThemes))
+	for theme := range validThemes {
+		sets[theme] = tmplSet{
+			list:     template.Must(template.New("blog_list_" + theme).Parse(listTemplateStr(theme))),
+			detail:   template.Must(template.New("blog_detail_" + theme).Parse(detailTemplateStr(theme))),
+			notFound: template.Must(template.New("blog_404_" + theme).Parse(notFoundTemplateStr(theme))),
+		}
 	}
+	return &Renderer{posts: posts, settings: settings, sets: sets}
+}
+
+// set 返回皮肤对应的模板集(未知皮肤回退默认)。
+func (r *Renderer) set(theme string) tmplSet {
+	if s, ok := r.sets[theme]; ok {
+		return s
+	}
+	return r.sets[""]
 }
 
 // RenderList 渲染博客列表页(仅已发布)。
 func (r *Renderer) RenderList(c *gin.Context) {
 	b := r.branding(c)
 	reqInvite := c.Query("inv")
-	result, err := r.posts.List(c.Request.Context(), appblog.ListFilter{
+	filter := appblog.ListFilter{
 		Status:   appblog.StatusPublished,
 		Page:     1,
 		PageSize: 50,
-	})
+	}
+	lang := ""
+	if b.Chrome.ShowLangs {
+		// 三语开启:列表按语言过滤(?lang= 驱动,URL 即缓存键,CDN 安全)。
+		lang = pickLang(c.Query("lang"), b.Chrome.DefaultLang)
+		filter.Lang = lang
+	}
+	result, err := r.posts.List(c.Request.Context(), filter)
 	if err != nil {
 		c.Header("Cache-Control", "no-store")
-		r.write(c, http.StatusInternalServerError, r.listTmpl, buildListView(b, nil, reqInvite))
+		r.write(c, http.StatusInternalServerError, r.set(b.Theme).list, buildListView(b, nil, reqInvite, lang))
 		return
 	}
 	if strings.TrimSpace(reqInvite) != "" {
@@ -58,7 +80,7 @@ func (r *Renderer) RenderList(c *gin.Context) {
 	} else {
 		c.Header("Cache-Control", "public, max-age=300")
 	}
-	r.write(c, http.StatusOK, r.listTmpl, buildListView(b, filterPostsBySite(result.List, b.SiteKey), reqInvite))
+	r.write(c, http.StatusOK, r.set(b.Theme).list, buildListView(b, filterPostsBySite(result.List, b.SiteKey), reqInvite, lang))
 }
 
 // RenderDetail 渲染文章详情页(未发布/不存在→404 页)。
@@ -67,8 +89,11 @@ func (r *Renderer) RenderDetail(c *gin.Context) {
 	post, err := r.posts.GetPublishedBySlug(c.Request.Context(), c.Param("slug"))
 	if err != nil || !postVisibleOnSite(post.Sites, b.SiteKey) {
 		// 文章不存在,或已发布但未投放到当前站点 → 一律 404(不泄露"存在但别站可见")。
+		// 皮肤 404 页也渲染顶栏/页脚,需先推导 chrome 字段。
+		applyChrome(&b, "", buildRegisterURL(b.ConsoleURL, ""), "")
+		b.HomeURL = "/blog"
 		c.Header("Cache-Control", "no-store")
-		r.write(c, http.StatusNotFound, r.notFoundTmpl, b)
+		r.write(c, http.StatusNotFound, r.set(b.Theme).notFound, b)
 		return
 	}
 
@@ -87,7 +112,7 @@ func (r *Renderer) RenderDetail(c *gin.Context) {
 	} else {
 		c.Header("Cache-Control", "public, max-age=300")
 	}
-	r.write(c, http.StatusOK, r.detailTmpl, view)
+	r.write(c, http.StatusOK, r.set(b.Theme).detail, view)
 }
 
 // RenderSitemap 输出博客动态 sitemap:列表页 + 每篇已发布文章的规范 URL 与 lastmod。
@@ -159,6 +184,12 @@ func (r *Renderer) branding(c *gin.Context) Branding {
 				b.ConsoleURL = it.Value
 			case "blog_site_key":
 				b.SiteKey = strings.TrimSpace(it.Value)
+			case "blog_theme":
+				if theme := strings.TrimSpace(it.Value); validThemes[theme] {
+					b.Theme = theme
+				}
+			case "blog_chrome":
+				b.Chrome = parseChrome(it.Value)
 			}
 		}
 	}

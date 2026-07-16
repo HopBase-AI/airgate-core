@@ -25,6 +25,9 @@ func (r *ssrRepo) List(_ context.Context, f appblog.ListFilter) ([]appblog.Post,
 		if f.Status != "" && p.Status != f.Status {
 			continue
 		}
+		if f.Lang != "" && p.Lang != f.Lang {
+			continue
+		}
 		out = append(out, p)
 	}
 	return out, int64(len(out)), nil

@@ -1148,7 +1148,13 @@
     "blog_sites_desc": "本實例的站點 key(blog_site_key)決定 /blog 展示哪些文章;可投放站點(blog_sites)是編輯器多選的選項。留空=不按站點過濾。",
     "blog_sites_invalid": "格式應為 [{ \"key\": \"...\", \"label\": \"...\" }] 陣列",
     "blog_site_key": "本站點 key",
-    "blog_site_key_hint": "如 essevin / hopbase;文章「發布站點」含此 key 或未限定時,本站 /blog 才展示。留空=展示全部。"
+    "blog_site_key_hint": "如 essevin / hopbase;文章「發布站點」含此 key 或未限定時,本站 /blog 才展示。留空=展示全部。",
+    "blog_theme_title": "博客頁皮膚",
+    "blog_theme_desc": "公開 /blog 的視覺皮膚與主站同款導航。Ember=暗色(對齊 HopBase 主站),Ink=紙感(對齊 Essevin);默認=中性模板。下方 JSON 配導航/頁腳/文案,留空走默認。",
+    "blog_theme": "皮膚",
+    "blog_theme_default": "默認",
+    "blog_chrome": "導航/文案配置(JSON)",
+    "blog_chrome_invalid": "格式應為 JSON 對象(鍵見佔位示例)"
   },
   "docs": {
     "cta_hint": "準備好了嗎？立即開始使用。",

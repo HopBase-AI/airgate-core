@@ -1148,7 +1148,13 @@
     "blog_sites_desc": "本实例的站点 key(blog_site_key)决定 /blog 展示哪些文章;可投放站点(blog_sites)是编辑器多选的选项。留空=不按站点过滤。",
     "blog_sites_invalid": "格式应为 [{ \"key\": \"...\", \"label\": \"...\" }] 数组",
     "blog_site_key": "本站点 key",
-    "blog_site_key_hint": "如 essevin / hopbase;文章「发布站点」含此 key 或未限定时,本站 /blog 才展示。留空=展示全部。"
+    "blog_site_key_hint": "如 essevin / hopbase;文章「发布站点」含此 key 或未限定时,本站 /blog 才展示。留空=展示全部。",
+    "blog_theme_title": "博客页皮肤",
+    "blog_theme_desc": "公开 /blog 的视觉皮肤与主站同款导航。Ember=暗色(对齐 HopBase 主站),Ink=纸感(对齐 Essevin);默认=中性模板。下方 JSON 配导航/页脚/文案,留空走默认。",
+    "blog_theme": "皮肤",
+    "blog_theme_default": "默认",
+    "blog_chrome": "导航/文案配置(JSON)",
+    "blog_chrome_invalid": "格式应为 JSON 对象(键见占位示例)"
   },
   "docs": {
     "cta_hint": "准备好了吗？立即开始使用。",

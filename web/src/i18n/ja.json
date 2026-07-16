@@ -1146,7 +1146,13 @@
     "blog_sites_desc": "本インスタンスのサイトキー(blog_site_key)が /blog に表示する記事を決定します。配信サイト(blog_sites)はエディタの複数選択の選択肢です。空欄=サイトフィルタなし。",
     "blog_sites_invalid": "[{ \"key\": \"...\", \"label\": \"...\" }] の配列である必要があります",
     "blog_site_key": "本サイトのキー",
-    "blog_site_key_hint": "例:essevin / hopbase。記事の配信サイトにこのキーが含まれるか未指定の場合のみ本サイトの /blog に表示。空欄=すべて表示。"
+    "blog_site_key_hint": "例:essevin / hopbase。記事の配信サイトにこのキーが含まれるか未指定の場合のみ本サイトの /blog に表示。空欄=すべて表示。",
+    "blog_theme_title": "ブログページテーマ",
+    "blog_theme_desc": "公開 /blog のビジュアルテーマとメインサイト同様のナビ。Ember=ダーク(HopBase LP準拠)、Ink=ペーパー(Essevin準拠)、デフォルト=中立テンプレート。下の JSON でナビ/フッター/文言を設定。空欄=デフォルト。",
+    "blog_theme": "テーマ",
+    "blog_theme_default": "デフォルト",
+    "blog_chrome": "ナビ/文言設定(JSON)",
+    "blog_chrome_invalid": "JSON オブジェクトである必要があります(キーはプレースホルダー参照)"
   },
   "docs": {
     "cta_hint": "準備はできましたか？今すぐ利用を始めましょう。",

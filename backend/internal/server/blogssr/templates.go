@@ -1,7 +1,11 @@
 package blogssr
 
-// 内联模板:保持自包含,无外链资源(避免大陆访问外链 render-blocking)。
+// 内联模板:保持自包含,无外链资源(避免大陆访问外链 render-blocking,皮肤字体用系统字栈近似主站)。
 // html/template 自动按上下文转义;正文 Content 已在 service 层净化,以 template.HTML 注入。
+//
+// 模板按「head 元信息 + 皮肤样式 + 皮肤顶栏 + 页面主体 + 皮肤页脚」拼装,
+// 每个皮肤一套完整模板,启动期解析(见 themes.go 与 renderer.go)。
+// 默认皮肤("")即本文件的 default* 部件,渲染效果与历史版本一致。
 
 const baseStyle = `
 :root{color-scheme:light dark;--bg:#ffffff;--fg:#0f172a;--muted:#64748b;--border:#e5e7eb;--card:#f8fafc;--accent:#4f46e5;--accent-fg:#ffffff;--accent-soft:#eef2ff;--code-bg:#0b1020;--code-fg:#e5e9f2;--maxw:704px;--mono:"SFMono-Regular",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;--shadow:0 1px 2px rgba(16,24,40,.05),0 16px 40px rgba(16,24,40,.08)}
@@ -89,7 +93,9 @@ img{max-width:100%}
 @media (max-width:560px){.article-title{font-size:30px}.article-content{font-size:17px}.article-content>p:first-child{font-size:18px}.blog-intro-title{font-size:27px}}
 `
 
-const listTmplStr = `<!doctype html>
+// ―――――― 共享 head(所有皮肤一致,SEO 元信息) ――――――
+
+const listHeadStr = `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -101,44 +107,9 @@ const listTmplStr = `<!doctype html>
 <meta property="og:type" content="website">
 <meta property="og:title" content="{{.PageTitle}}">
 <meta property="og:url" content="{{.OriginBase}}/blog">
-<style>` + baseStyle + `</style>
-</head>
-<body>
-<header class="blog-header"><div class="blog-header-inner">
-<a href="{{.HomeURL}}" class="blog-logo-link">{{if .LogoURL}}<img src="{{.LogoSrc}}" alt="{{.SiteName}}">{{end}}</a>
-<a href="{{.HomeURL}}" class="blog-brand">{{if .SiteName}}{{.SiteName}}{{end}} Blog</a>
-</div></header>
-<main class="blog-wrap">
-<div class="blog-intro">
-<h1 class="blog-intro-title">{{if .SiteName}}{{.SiteName}} {{end}}博客</h1>
-<p class="blog-intro-sub">AI 使用方法、模型技巧与实践分享</p>
-</div>
-{{if .Posts}}
-<div class="blog-list">
-{{range .Posts}}
-<a class="blog-card" href="{{.URL}}">
-{{if .CoverImage}}<img src="{{.CoverImage}}" alt="{{.Title}}" loading="lazy">{{end}}
-<div class="blog-card-body">
-<h2 class="blog-card-title">{{.Title}}</h2>
-{{if .Summary}}<p class="blog-card-summary">{{.Summary}}</p>{{end}}
-{{if .PublishedAt}}<div class="blog-card-date">{{.PublishedAt}}</div>{{end}}
-</div>
-</a>
-{{end}}
-</div>
-{{else}}
-<div class="blog-empty">
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h8l6 6v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg>
-<p class="blog-empty-title">文章正在路上</p>
-<p class="blog-empty-sub">我们正在准备第一批内容,敬请期待。</p>
-</div>
-{{end}}
-</main>
-<footer class="blog-footer">© {{.SiteName}}</footer>
-</body>
-</html>`
+`
 
-const detailTmplStr = `<!doctype html>
+const detailHeadStr = `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -161,14 +132,62 @@ const detailTmplStr = `<!doctype html>
 {{if .OGImage}}<meta name="twitter:image" content="{{.OGImage}}">{{end}}
 <script type="application/ld+json">{{.JSONLD}}</script>
 <script type="application/ld+json">{{.BreadcrumbLD}}</script>
-<style>` + baseStyle + `</style>
-</head>
-<body>
-<header class="blog-header"><div class="blog-header-inner">
+`
+
+const notFoundHeadStr = `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>文章不存在 · {{.SiteName}}</title>
+<meta name="robots" content="noindex">
+`
+
+// ―――――― 默认皮肤("")的顶栏/页脚 ――――――
+
+const defaultHeaderStr = `<header class="blog-header"><div class="blog-header-inner">
 <a href="{{.HomeURL}}" class="blog-logo-link">{{if .LogoURL}}<img src="{{.LogoSrc}}" alt="{{.SiteName}}">{{end}}</a>
 <a href="{{.HomeURL}}" class="blog-brand">{{if .SiteName}}{{.SiteName}}{{end}} Blog</a>
 </div></header>
-<main class="blog-wrap">
+`
+
+const defaultFooterStr = `<footer class="blog-footer">© {{.SiteName}}</footer>
+`
+
+// ―――――― 页面主体(列表:默认皮肤;详情/空态:全皮肤共享) ――――――
+
+const emptyStateStr = `<div class="blog-empty">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h8l6 6v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+<p class="blog-empty-title">文章正在路上</p>
+<p class="blog-empty-sub">我们正在准备第一批内容,敬请期待。</p>
+</div>
+`
+
+const defaultListBodyStr = `<main class="blog-wrap">
+<div class="blog-intro">
+<h1 class="blog-intro-title">{{.Heading}}</h1>
+<p class="blog-intro-sub">{{.Subtitle}}</p>
+</div>
+{{if .Posts}}
+<div class="blog-list">
+{{range .Posts}}
+<a class="blog-card" href="{{.URL}}">
+{{if .CoverImage}}<img src="{{.CoverImage}}" alt="{{.Title}}" loading="lazy">{{end}}
+<div class="blog-card-body">
+<h2 class="blog-card-title">{{.Title}}</h2>
+{{if .Summary}}<p class="blog-card-summary">{{.Summary}}</p>{{end}}
+{{if .PublishedAt}}<div class="blog-card-date">{{.PublishedAt}}</div>{{end}}
+</div>
+</a>
+{{end}}
+</div>
+{{else}}
+` + emptyStateStr + `{{end}}
+</main>
+`
+
+// detailBodyStr 详情主体:全部皮肤共享同一结构,视觉差异全部由皮肤 CSS 承担。
+const detailBodyStr = `<main class="blog-wrap">
 <a href="{{.HomeURL}}" class="blog-back">← 返回博客</a>
 <article>
 {{if .Eyebrow}}<div class="article-eyebrow">{{.Eyebrow}}</div>{{end}}
@@ -185,12 +204,14 @@ const detailTmplStr = `<!doctype html>
 </article>
 <aside class="blog-cta">
 <p class="blog-cta-title">{{.CTATitle}}</p>
-<p class="blog-cta-desc">一个 API Key 直连 Claude、Codex、GPT 等主流模型,注册即领体验额度,几分钟接入,余额长期有效。</p>
+<p class="blog-cta-desc">{{.CTADesc}}</p>
 <a class="blog-cta-btn" href="{{.RegisterURL}}">免费开始 →</a>
 </aside>
 </main>
-<footer class="blog-footer">© {{.SiteName}}</footer>
-{{if .GateEnabled}}
+`
+
+// gateStr 软墙遮罩 + 滚动触发脚本(全皮肤共享)。
+const gateStr = `{{if .GateEnabled}}
 <div id="blog-gate" class="blog-gate" hidden>
 <div class="blog-gate-card">
 <p class="blog-gate-title">注册后继续阅读全文</p>
@@ -222,23 +243,54 @@ onScroll();
 })();
 </script>
 {{end}}
-</body>
-</html>`
+`
 
-const notFoundTmplStr = `<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>文章不存在 · {{.SiteName}}</title>
-<meta name="robots" content="noindex">
-<style>` + baseStyle + `</style>
-</head>
-<body>
-<main class="blog-wrap">
+const notFoundBodyStr = `<main class="blog-wrap">
 <h1 class="article-title">文章不存在</h1>
 <p class="blog-empty">该文章可能已下线或链接有误。</p>
 <a href="/blog" class="blog-back">← 返回博客</a>
 </main>
-</body>
-</html>`
+`
+
+// ―――――― 模板装配 ――――――
+
+// assemble 拼一个完整页面:head + <style> + 顶栏 + 主体(+页脚+尾部片段)。
+func assemble(head, css, header, body, footer, tail string) string {
+	return head + "<style>" + css + "</style>\n</head>\n<body>\n" + header + body + footer + tail + "</body>\n</html>"
+}
+
+// listTemplateStr 按皮肤返回列表页模板串。
+func listTemplateStr(theme string) string {
+	switch theme {
+	case themeEmber:
+		return assemble(listHeadStr, baseStyle+emberVars+emberChromeCSS, skinHeaderStr, emberListBodyStr, skinFooterStr, skinLangScriptStr)
+	case themeInk:
+		return assemble(listHeadStr, baseStyle+inkVars+inkChromeCSS, skinHeaderStr, inkListBodyStr, skinFooterStr, skinLangScriptStr)
+	default:
+		return assemble(listHeadStr, baseStyle, defaultHeaderStr, defaultListBodyStr, defaultFooterStr, "")
+	}
+}
+
+// detailTemplateStr 按皮肤返回详情页模板串。
+func detailTemplateStr(theme string) string {
+	switch theme {
+	case themeEmber:
+		return assemble(detailHeadStr, baseStyle+emberVars+emberChromeCSS, skinHeaderStr, detailBodyStr, skinFooterStr, gateStr)
+	case themeInk:
+		return assemble(detailHeadStr, baseStyle+inkVars+inkChromeCSS, skinHeaderStr, detailBodyStr, skinFooterStr, gateStr)
+	default:
+		return assemble(detailHeadStr, baseStyle, defaultHeaderStr, detailBodyStr, defaultFooterStr, gateStr)
+	}
+}
+
+// notFoundTemplateStr 按皮肤返回 404 页模板串。
+func notFoundTemplateStr(theme string) string {
+	switch theme {
+	case themeEmber:
+		return assemble(notFoundHeadStr, baseStyle+emberVars+emberChromeCSS, skinHeaderStr, notFoundBodyStr, skinFooterStr, "")
+	case themeInk:
+		return assemble(notFoundHeadStr, baseStyle+inkVars+inkChromeCSS, skinHeaderStr, notFoundBodyStr, skinFooterStr, "")
+	default:
+		return assemble(notFoundHeadStr, baseStyle, "", notFoundBodyStr, "", "")
+	}
+}
