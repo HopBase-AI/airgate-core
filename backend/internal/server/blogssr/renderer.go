@@ -172,6 +172,7 @@ func xmlEscape(s string) string {
 // branding 从 site 设置构建品牌信息;失败时退化为空品牌(页面仍可渲染)。
 func (r *Renderer) branding(c *gin.Context) Branding {
 	b := Branding{OriginBase: originBase(c)}
+	sitesBrandingRaw := ""
 	items, err := r.settings.List(c.Request.Context(), "site")
 	if err == nil {
 		for _, it := range items {
@@ -190,7 +191,27 @@ func (r *Renderer) branding(c *gin.Context) Branding {
 				}
 			case "blog_chrome":
 				b.Chrome = parseChrome(it.Value)
+			case "sites_branding":
+				sitesBrandingRaw = it.Value
 			}
+		}
+	}
+	// 多落地页站点(ToC 舰队):sites_branding 条目配置 host 后,博客按请求 Host
+	// (或 ?site= 预览参数)匹配站点,覆盖品牌/皮肤/chrome,并以站点键过滤文章——
+	// 一份 core 服务 N 个落地页域名,各出各的博客。未命中时沿用实例级默认,行为同旧版。
+	if entries := parseSitesBranding(sitesBrandingRaw); len(entries) > 0 {
+		if key, e, ok := resolveBrandingSite(entries, c.Request.Host, c.Query("site")); ok {
+			b.SiteKey = key
+			if strings.TrimSpace(e.Name) != "" {
+				b.SiteName = e.Name
+			}
+			if strings.TrimSpace(e.Logo) != "" {
+				b.LogoURL = e.Logo
+			}
+			if theme := strings.TrimSpace(e.BlogTheme); theme != "" && validThemes[theme] {
+				b.Theme = theme
+			}
+			b.Chrome = mergeChromeOverride(b.Chrome, e.BlogChrome)
 		}
 	}
 	if strings.TrimSpace(b.ConsoleURL) == "" {

@@ -86,6 +86,7 @@ func toPublicPricingModelResp(m apppluginadmin.PublicPricingModel) dto.PublicPri
 		Name:          m.Name,
 		ContextWindow: m.ContextWindow,
 		Capabilities:  m.Capabilities,
+		Vendor:        m.Vendor,
 		Input:         m.Input,
 		CachedInput:   m.CachedInput,
 		Output:        m.Output,

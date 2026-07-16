@@ -600,7 +600,7 @@ export default function SettingsPage() {
                     value={sitesBrandingRaw}
                     onChange={(e) => set('sites_branding', e.target.value)}
                     className="h-40 w-full font-mono text-xs leading-5"
-                    placeholder={'{\n  "ink": { "name": "Essevin", "logo": "https://essevin.com/logo.svg", "doc_url": "https://essevin.com/docs" },\n  "open-late": { "name": "Essevin", "logo": "https://late.essevin.com/logo.svg", "doc_url": "https://late.essevin.com/docs" },\n  "kite": { "name": "KITE", "logo": "data:image/svg+xml;base64,...", "doc_url": "https://kite.essevin.com/docs" }\n}'}
+                    placeholder={'{\n  "ink": { "name": "Essevin", "logo": "https://essevin.com/logo.svg", "doc_url": "https://essevin.com/docs",\n    "host": "essevin.com", "blog_theme": "ink", "blog_chrome": { "brand_label": "Essevin" } },\n  "open-late": { "name": "Essevin", "logo": "https://late.essevin.com/logo.svg", "doc_url": "https://late.essevin.com/docs",\n    "host": "late.essevin.com" },\n  "kite": { "name": "KITE", "logo": "data:image/svg+xml;base64,...", "doc_url": "https://kite.essevin.com/docs" }\n}\n// host/blog_theme/blog_chrome 为博客扩展字段:配置 host 后,/blog 按请求域名切换该站品牌/皮肤/chrome 并按站点键过滤文章'}
                   />
                   {sitesBrandingError && (
                     <p className="text-[11px] text-danger mt-1.5">{sitesBrandingError}</p>

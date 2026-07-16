@@ -24,6 +24,10 @@ type PublicPricingModel struct {
 	Name          string
 	ContextWindow int
 	Capabilities  []string
+	// Vendor 模型厂商标识(插件 metadata 约定键 "vendor",如 google/openai/anthropic)。
+	// 网关平台是接入协议(如 gemini 系经 openai 协议转发),厂商是模型出品方;
+	// 空值表示插件未声明,展示端回退平台名。
+	Vendor string
 	// 计费基准价：余额单位（¥1=$1 平价）/ 百万 token。绝大多数模型基准价即官方美元价；
 	// Currency=CNY 的模型（如 GLM）基准价是官方人民币牌价数字按 1:1 记账，展示端须按
 	// Currency 换算，不能直接当美元标注。
@@ -73,6 +77,7 @@ type overlayModel struct {
 	Name          string          `json:"name"`
 	ContextWindow int             `json:"context_window"`
 	Enabled       *bool           `json:"enabled"`
+	Vendor        string          `json:"vendor"`
 	Pricing       json.RawMessage `json:"pricing"`
 	// Currency 基准价货币口径（"CNY" 表示官方人民币牌价按 1:1 记账），
 	// OfficialPricing 官方直付参考价（美元，键 input/cached_input/output）。
@@ -179,6 +184,9 @@ func (s *Service) applyOverlay(ctx context.Context, platform string, models []Pu
 		if entry.ContextWindow > 0 {
 			target.ContextWindow = entry.ContextWindow
 		}
+		if entry.Vendor != "" {
+			target.Vendor = entry.Vendor
+		}
 		// 视频模型：基座已有桶价，或本条 pricing 是桶价形态（非 token 键）。
 		// 桶价 map 逐桶覆盖（价>0 覆盖、=0 收回该桶），忽略 token/长上下文字段。
 		if target.VideoTokens != nil || (len(pricing) > 0 && !isTokenPricing(pricing)) {
@@ -241,6 +249,7 @@ func parseBuiltinPricing(id, name string, contextWindow int, capabilities []stri
 			Name:          name,
 			ContextWindow: contextWindow,
 			Capabilities:  append([]string(nil), capabilities...),
+			Vendor:        metadata["vendor"],
 			VideoTokens:   buckets,
 		}, true
 	}
@@ -255,6 +264,7 @@ func parseBuiltinPricing(id, name string, contextWindow int, capabilities []stri
 		Name:          name,
 		ContextWindow: contextWindow,
 		Capabilities:  append([]string(nil), capabilities...),
+		Vendor:        metadata["vendor"],
 		Input:         input,
 		CachedInput:   cached,
 		Output:        output,

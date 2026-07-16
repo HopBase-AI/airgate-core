@@ -292,8 +292,15 @@ export function AppShell({ children }: AppShellProps) {
     <>
       <div className="flex h-20 items-center px-4">
         <div className={`flex min-w-0 ${sidebarCollapsed ? 'w-full flex-col items-center justify-center' : 'w-full items-center gap-3'}`}>
-          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius)] bg-primary-subtle">
-            <img src={site.site_logo || defaultLogoUrl} alt="" className="h-full w-full object-cover" />
+          <div
+            className={`relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius)] ${site.site_logo ? '' : 'bg-primary-subtle'}`}
+          >
+            {/* 自定义 logo(常为透明底 SVG)按原比例裸呈现,与落地页观感一致;仅内置默认 logo 保留底色容器 */}
+            <img
+              src={site.site_logo || defaultLogoUrl}
+              alt=""
+              className={`h-full w-full ${site.site_logo ? 'object-contain' : 'object-cover'}`}
+            />
           </div>
           {!sidebarCollapsed && (
             <div className="min-w-0 flex-1">

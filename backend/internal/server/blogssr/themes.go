@@ -73,14 +73,14 @@ const emberListBodyStr = `<main class="sk-main">
 {{if .Summary}}<p class="sk-featured-sum">{{.Summary}}</p>{{end}}
 <p class="sk-meta">{{if .PublishedAt}}<span>{{.PublishedAt}}</span>{{end}}{{if .ReadingTime}}<span class="d"></span><span>{{.ReadingTime}}</span>{{end}}</p>
 </div>
-{{if .CoverImage}}<img class="sk-cover" src="{{.CoverImage}}" alt="" loading="lazy">{{else}}<div class="sk-cover {{.CoverClass}}"></div>{{end}}
+{{if .CoverImage}}<img class="sk-cover" src="{{.CoverImage}}" alt="" loading="lazy">{{else}}<div class="sk-cover {{.CoverClass}}">{{if .Tag}}<span class="sk-cover-tag">{{.Tag}}</span>{{end}}</div>{{end}}
 </a>
 {{end}}{{end}}
 {{if .Rest}}
 <div class="sk-grid">
 {{range .Rest}}
 <a class="sk-card" href="{{.URL}}">
-{{if .CoverImage}}<img class="sk-cover" src="{{.CoverImage}}" alt="" loading="lazy">{{else}}<div class="sk-cover {{.CoverClass}}"></div>{{end}}
+{{if .CoverImage}}<img class="sk-cover" src="{{.CoverImage}}" alt="" loading="lazy">{{else}}<div class="sk-cover {{.CoverClass}}">{{if .Tag}}<span class="sk-cover-tag">{{.Tag}}</span>{{end}}</div>{{end}}
 <div class="sk-card-body">
 <h3 class="sk-card-title">{{.Title}}</h3>
 {{if .Summary}}<p class="sk-card-sum">{{.Summary}}</p>{{end}}
@@ -112,7 +112,7 @@ const inkListBodyStr = `<main class="sk-main">
 {{if .Summary}}<p class="sk-featured-sum">{{.Summary}}</p>{{end}}
 <p class="sk-meta">{{if .PublishedAt}}<span>{{.PublishedAt}}</span>{{end}}{{if .ReadingTime}}<span class="d"></span><span>{{.ReadingTime}}</span>{{end}}</p>
 </div>
-{{if .CoverImage}}<img class="sk-cover" src="{{.CoverImage}}" alt="" loading="lazy">{{else}}<div class="sk-cover {{.CoverClass}}"></div>{{end}}
+{{if .CoverImage}}<img class="sk-cover" src="{{.CoverImage}}" alt="" loading="lazy">{{else}}<div class="sk-cover {{.CoverClass}}">{{if .Tag}}<span class="sk-cover-tag">{{.Tag}}</span>{{end}}</div>{{end}}
 </a>
 {{end}}{{end}}
 {{if .Rest}}
@@ -178,6 +178,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 .sk-meta .d{width:3px;height:3px;border-radius:50%;background:currentColor;opacity:.5}
 .sk-cover{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;position:relative}
 div.sk-cover::after{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px);background-size:44px 44px}
+div.sk-cover{display:flex;align-items:center;justify-content:center}
+.sk-cover-tag{position:relative;z-index:1;font-family:var(--mono);font-size:.72rem;font-weight:600;letter-spacing:.34em;text-transform:uppercase;color:rgba(247,244,239,.5);border:1px solid rgba(255,255,255,.14);border-radius:9999px;padding:6px 16px 6px 19px;backdrop-filter:blur(2px)}
 .cv1{background:radial-gradient(120% 130% at 18% 20%,rgba(196,81,0,.62),transparent 55%),radial-gradient(110% 120% at 85% 80%,rgba(94,234,212,.22),transparent 55%),#121110}
 .cv2{background:radial-gradient(120% 130% at 80% 15%,rgba(94,234,212,.3),transparent 55%),radial-gradient(120% 130% at 15% 85%,rgba(196,81,0,.5),transparent 60%),#121110}
 .cv3{background:radial-gradient(140% 120% at 50% -10%,rgba(255,181,148,.4),transparent 55%),radial-gradient(100% 100% at 90% 90%,rgba(196,81,0,.35),transparent 55%),#14120f}
@@ -266,6 +268,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Ping
 .sk-meta .d{width:3px;height:3px;border-radius:50%;background:currentColor;opacity:.55}
 .sk-cover{width:100%;aspect-ratio:16/10;object-fit:cover;display:block;border-radius:18px;border:1px solid var(--border);position:relative;overflow:hidden}
 div.sk-cover::after{content:"";position:absolute;inset:0;background:radial-gradient(90% 70% at 50% 115%,rgba(251,250,246,.75),transparent 60%)}
+div.sk-cover{display:flex;align-items:center;justify-content:center}
+.sk-cover-tag{position:relative;z-index:1;font-family:var(--serif);font-size:.82rem;letter-spacing:.3em;color:var(--rose-dk);border:1px solid rgba(158,110,92,.35);border-radius:9999px;padding:7px 18px 7px 22px;background:rgba(251,250,246,.55)}
 .cv1{background:radial-gradient(95% 110% at 22% 18%,#E0C9C1 0%,transparent 58%),radial-gradient(90% 100% at 82% 78%,rgba(94,122,107,.3),transparent 60%),#EFE2DC}
 .cv2{background:radial-gradient(100% 110% at 78% 14%,rgba(74,107,138,.26),transparent 55%),radial-gradient(110% 110% at 18% 88%,#E0C9C1,transparent 62%),#F0EAE0}
 .cv3{background:radial-gradient(110% 100% at 30% 90%,rgba(94,122,107,.24),transparent 58%),radial-gradient(100% 110% at 80% 10%,#E0C9C1,transparent 60%),#EFE2DC}

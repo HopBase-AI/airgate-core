@@ -649,7 +649,11 @@ export default function LoginPage() {
         {/* 内容 */}
         <div className="relative z-10 px-12 max-w-md">
           <div className="flex items-center gap-3 mb-10">
-            <img src={site.site_logo || defaultLogoUrl} alt="" className="w-10 h-10 rounded-sm object-cover" />
+            <img
+              src={site.site_logo || defaultLogoUrl}
+              alt=""
+              className={`w-10 h-10 rounded-sm ${site.site_logo ? 'object-contain' : 'object-cover'}`}
+            />
             <span className="text-xl font-bold tracking-tight">{site.site_name || 'HopBase'}</span>
           </div>
           <h2 className="text-[34px] font-bold leading-snug tracking-tight mb-4">
@@ -706,7 +710,11 @@ export default function LoginPage() {
         <div className="relative w-full max-w-[420px]">
           {/* 移动端 Logo */}
           <div className="text-center mb-8 lg:hidden">
-            <img src={site.site_logo || defaultLogoUrl} alt="" className="w-11 h-11 rounded-sm mb-3 mx-auto object-cover" />
+            <img
+              src={site.site_logo || defaultLogoUrl}
+              alt=""
+              className={`w-11 h-11 rounded-sm mb-3 mx-auto ${site.site_logo ? 'object-contain' : 'object-cover'}`}
+            />
             <h1 className="text-lg font-bold text-text">
               {site.site_name || t('app_name')}
             </h1>

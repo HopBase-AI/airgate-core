@@ -16,6 +16,8 @@ type PublicPricingModelResp struct {
 	Name          string                     `json:"name,omitempty"`
 	ContextWindow int                        `json:"context_window,omitempty"`
 	Capabilities  []string                   `json:"capabilities,omitempty"`
+	// Vendor 模型厂商标识(如 google/openai/anthropic);空=插件未声明,展示端回退平台名。
+	Vendor string `json:"vendor,omitempty"`
 	Input         float64                    `json:"input"`
 	CachedInput   float64                    `json:"cached_input,omitempty"`
 	Output        float64                    `json:"output"`

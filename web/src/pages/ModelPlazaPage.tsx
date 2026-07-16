@@ -21,6 +21,9 @@ interface TocPricingConfig {
 interface ModelLedgerItem extends MyPricingModel {
   platform: string;
   platforms: string[];
+  // brands 展示/筛选用的厂商标识(vendor 优先,插件未声明回退平台名):
+  // 如 gemini 系经 openai 协议接入,platforms=["openai"] 而 brands=["google"]。
+  brands: string[];
   capabilities: string[];
 }
 
@@ -59,17 +62,20 @@ function mergeCatalog(platforms: Array<MyPlatformPricing | PublicPlatformPricing
     if (!platform || !Array.isArray(platform.models)) continue;
     for (const model of platform.models as MyPricingModel[]) {
       if (!model?.id) continue;
+      const brand = model.vendor || platform.platform;
       const current = merged.get(model.id);
       if (!current) {
         merged.set(model.id, {
           ...model,
           platform: platform.platform,
           platforms: [platform.platform],
+          brands: [brand],
           capabilities: [...(model.capabilities ?? [])],
         });
         continue;
       }
       if (!current.platforms.includes(platform.platform)) current.platforms.push(platform.platform);
+      if (!current.brands.includes(brand)) current.brands.push(brand);
       for (const capability of model.capabilities ?? []) {
         if (!current.capabilities.includes(capability)) current.capabilities.push(capability);
       }
@@ -382,8 +388,8 @@ export default function ModelPlazaPage() {
   // 实付价展示货币：ToB 主站配 CNY（¥，余额平价）；缺省 USD 等值（ToC 美元余额站群安全缺省）
   const plazaCurrency: 'CNY' | 'USD' = pricingConfig?.plaza_currency === 'CNY' ? 'CNY' : 'USD';
   const pricingFallback = !userMode && (settingsQuery.isLoading || settingsQuery.isError || !pricingConfig);
-  const platforms = useMemo(
-    () => [...new Set(models.flatMap((model) => model.platforms))],
+  const brands = useMemo(
+    () => [...new Set(models.flatMap((model) => model.brands))],
     [models],
   );
   const capabilities = useMemo(
@@ -397,7 +403,7 @@ export default function ModelPlazaPage() {
         || model.id.toLocaleLowerCase().includes(needle)
         || model.name?.toLocaleLowerCase().includes(needle);
       return matchesSearch
-        && (platformFilter === 'all' || model.platforms.includes(platformFilter))
+        && (platformFilter === 'all' || model.brands.includes(platformFilter))
         && (capabilityFilter === 'all' || model.capabilities.includes(capabilityFilter));
     });
   }, [capabilityFilter, models, platformFilter, search]);
@@ -447,15 +453,15 @@ export default function ModelPlazaPage() {
             />
           </div>
           <div className="ag-model-filter-group" aria-label={t('model_plaza.platform_filter')} role="group">
-            {['all', ...platforms].map((platform) => (
+            {['all', ...brands].map((brand) => (
               <Button
-                key={platform}
-                aria-pressed={platformFilter === platform}
+                key={brand}
+                aria-pressed={platformFilter === brand}
                 size="sm"
-                variant={platformFilter === platform ? 'primary' : 'secondary'}
-                onPress={() => setPlatformFilter(platform)}
+                variant={platformFilter === brand ? 'primary' : 'secondary'}
+                onPress={() => setPlatformFilter(brand)}
               >
-                {platform === 'all' ? t('common.all') : platform}
+                {brand === 'all' ? t('common.all') : brand}
               </Button>
             ))}
           </div>
@@ -477,7 +483,7 @@ export default function ModelPlazaPage() {
         <div className="ag-model-stat-strip" aria-live="polite">
           <span>{t('model_plaza.stat_all')} <strong>{models.length}</strong></span>
           <span>{t('model_plaza.stat_results')} <strong>{filteredModels.length}</strong></span>
-          <span>{t('model_plaza.stat_platforms')} <strong>{platforms.length}</strong></span>
+          <span>{t('model_plaza.stat_platforms')} <strong>{brands.length}</strong></span>
           {pricingFallback ? <span className="ag-model-price-fallback">{t('model_plaza.official_price_notice')}</span> : null}
         </div>
       ) : null}
@@ -544,7 +550,7 @@ export default function ModelPlazaPage() {
                     </td>
                     <td data-label={t('model_plaza.platform_capability')}>
                       <div className="ag-model-tags">
-                        <div>{model.platforms.map((platform) => <Chip key={platform} size="sm" variant="soft">{platform}</Chip>)}</div>
+                        <div>{model.brands.map((brand) => <Chip key={brand} size="sm" variant="soft">{brand}</Chip>)}</div>
                         <p>{model.capabilities.length
                           ? model.capabilities.map((capability) => t(`model_plaza.capability_${capability}`, capability)).join(' · ')
                           : t('model_plaza.capabilities_none')}</p>

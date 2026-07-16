@@ -28,6 +28,8 @@ export interface PublicPricingModel {
   name?: string;
   context_window?: number;
   capabilities?: string[];
+  // 厂商标识(如 google/openai):平台是接入协议,vendor 是模型出品方;缺省=展示端回退平台名。
+  vendor?: string;
   // input/cached_input/output 是计费基准价（余额单位 / 1M tokens，¥1=$1 平价；常规模型即官方美元价）。
   input: number;
   cached_input?: number;
