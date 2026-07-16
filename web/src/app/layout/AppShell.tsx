@@ -37,7 +37,6 @@ import {
   ShieldCheck,
   BookOpen,
   MessageCircle,
-  Github,
   Activity,
   Gift,
   HelpCircle,
@@ -480,16 +479,6 @@ export function AppShell({ children }: AppShellProps) {
                 <Activity className="h-5 w-5" />
               </HeroLink>
             )}
-            {/* GitHub */}
-            <HeroLink
-              href="https://github.com/DouDOU-start/airgate-core"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="GitHub"
-              className="hidden h-10 w-10 items-center justify-center rounded-[var(--radius)] text-text-secondary transition-colors hover:text-text sm:flex"
-            >
-              <Github className="h-5 w-5" />
-            </HeroLink>
             {/* Docs：未配置外部链接时回退到内置 /docs */}
             {(() => {
               const docs = effectiveDocUrl(site.doc_url);
