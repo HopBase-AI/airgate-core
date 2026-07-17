@@ -31,8 +31,12 @@ func (s *Server) registerRoutes() {
 
 	// 全局中间件：CORS → Recovery → RequestLogger → I18n → 业务
 	r.Use(middleware.CORS(middleware.CORSConfig{
-		// 默认不设置 AllowOrigins，仅同源可访问。
+		// 控制台/管理面（/api/**）默认不设置 AllowOrigins，仅同源可访问。
 		// 如需跨域请配置具体来源，例如：AllowOrigins: []string{"https://example.com"}
+		//
+		// 其余路径为公开数据面（/v1/messages 等网关端点，经 NoRoute 分发无法
+		// 单独注册 OPTIONS）：任意来源可跨域，供浏览器端 SDK / 网页工具直连。
+		AdminPathPrefix: "/api",
 	}))
 	r.Use(middleware.Recovery())
 	r.Use(middleware.RequestLogger())
