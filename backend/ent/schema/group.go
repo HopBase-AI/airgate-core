@@ -14,6 +14,11 @@ type Group struct {
 func (Group) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("name").NotEmpty(),
+		// name_i18n / note_i18n 分组展示文案的多语言覆盖（键=语言码 en / zh-HK / ja；
+		// zh 基准即 name / note 本身）。缺键或空值时展示端回退基准文案，旧数据行为不变。
+		// 语言码有意对齐控制台 SPA i18next 的口径（zh-HK），与博客 SSR sites_branding
+		// 侧的 zh-Hant 不同源；新增第三处 i18n 覆盖时先对齐这两套之一，勿再发明新码。
+		field.JSON("name_i18n", map[string]string{}).Optional(),
 		field.String("platform").NotEmpty(),
 		field.Float("rate_multiplier").Default(1.0),
 		field.Bool("is_exclusive").Default(false),
@@ -33,6 +38,8 @@ func (Group) Fields() []ent.Field {
 		field.String("service_tier").Default(""),
 		field.String("force_instructions").Default(""),
 		field.String("note").Default(""),
+		// note 的多语言覆盖，语义同 name_i18n。
+		field.JSON("note_i18n", map[string]string{}).Optional(),
 		field.Int("sort_weight").Default(0),
 		field.Time("created_at").Default(timeNow).Immutable(),
 		field.Time("updated_at").Default(timeNow).UpdateDefault(timeNow),

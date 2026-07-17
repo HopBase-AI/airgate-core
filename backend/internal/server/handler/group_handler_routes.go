@@ -125,6 +125,7 @@ func (h *GroupHandler) CreateGroup(c *gin.Context) {
 
 	item, err := h.service.Create(c.Request.Context(), appgroup.CreateInput{
 		Name:                     req.Name,
+		NameI18n:                 req.NameI18n,
 		Platform:                 req.Platform,
 		RateMultiplier:           req.RateMultiplier,
 		IsExclusive:              req.IsExclusive,
@@ -137,6 +138,7 @@ func (h *GroupHandler) CreateGroup(c *gin.Context) {
 		ServiceTier:              req.ServiceTier,
 		ForceInstructions:        req.ForceInstructions,
 		Note:                     req.Note,
+		NoteI18n:                 req.NoteI18n,
 		SortWeight:               req.SortWeight,
 		CopyAccountsFromGroupIDs: req.CopyAccountsFromGroupIDs,
 	})
@@ -170,6 +172,7 @@ func (h *GroupHandler) UpdateGroup(c *gin.Context) {
 
 	item, err := h.service.Update(c.Request.Context(), id, appgroup.UpdateInput{
 		Name:              req.Name,
+		NameI18n:          req.NameI18n,
 		RateMultiplier:    req.RateMultiplier,
 		IsExclusive:       req.IsExclusive,
 		StatusVisible:     req.StatusVisible,
@@ -182,6 +185,7 @@ func (h *GroupHandler) UpdateGroup(c *gin.Context) {
 		ServiceTier:       req.ServiceTier,
 		ForceInstructions: req.ForceInstructions,
 		Note:              req.Note,
+		NoteI18n:          req.NoteI18n,
 		SortWeight:        req.SortWeight,
 	})
 	if err != nil {

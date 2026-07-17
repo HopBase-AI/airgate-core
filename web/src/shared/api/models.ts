@@ -54,6 +54,8 @@ export interface MyPricingModel extends PublicPricingModel {
   user_rate?: number;
   group_id?: number;
   group_name?: string;
+  // 分组名多语言覆盖(键=语言码 en / zh-HK / ja;zh 基准即 group_name)
+  group_name_i18n?: Record<string, string>;
 }
 
 export interface MyPlatformPricing {

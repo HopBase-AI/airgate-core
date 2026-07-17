@@ -47,6 +47,18 @@ func (gu *GroupUpdate) SetNillableName(s *string) *GroupUpdate {
 	return gu
 }
 
+// SetNameI18n sets the "name_i18n" field.
+func (gu *GroupUpdate) SetNameI18n(m map[string]string) *GroupUpdate {
+	gu.mutation.SetNameI18n(m)
+	return gu
+}
+
+// ClearNameI18n clears the value of the "name_i18n" field.
+func (gu *GroupUpdate) ClearNameI18n() *GroupUpdate {
+	gu.mutation.ClearNameI18n()
+	return gu
+}
+
 // SetPlatform sets the "platform" field.
 func (gu *GroupUpdate) SetPlatform(s string) *GroupUpdate {
 	gu.mutation.SetPlatform(s)
@@ -199,6 +211,18 @@ func (gu *GroupUpdate) SetNillableNote(s *string) *GroupUpdate {
 	if s != nil {
 		gu.SetNote(*s)
 	}
+	return gu
+}
+
+// SetNoteI18n sets the "note_i18n" field.
+func (gu *GroupUpdate) SetNoteI18n(m map[string]string) *GroupUpdate {
+	gu.mutation.SetNoteI18n(m)
+	return gu
+}
+
+// ClearNoteI18n clears the value of the "note_i18n" field.
+func (gu *GroupUpdate) ClearNoteI18n() *GroupUpdate {
+	gu.mutation.ClearNoteI18n()
 	return gu
 }
 
@@ -485,6 +509,12 @@ func (gu *GroupUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := gu.mutation.Name(); ok {
 		_spec.SetField(group.FieldName, field.TypeString, value)
 	}
+	if value, ok := gu.mutation.NameI18n(); ok {
+		_spec.SetField(group.FieldNameI18n, field.TypeJSON, value)
+	}
+	if gu.mutation.NameI18nCleared() {
+		_spec.ClearField(group.FieldNameI18n, field.TypeJSON)
+	}
 	if value, ok := gu.mutation.Platform(); ok {
 		_spec.SetField(group.FieldPlatform, field.TypeString, value)
 	}
@@ -529,6 +559,12 @@ func (gu *GroupUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := gu.mutation.Note(); ok {
 		_spec.SetField(group.FieldNote, field.TypeString, value)
+	}
+	if value, ok := gu.mutation.NoteI18n(); ok {
+		_spec.SetField(group.FieldNoteI18n, field.TypeJSON, value)
+	}
+	if gu.mutation.NoteI18nCleared() {
+		_spec.ClearField(group.FieldNoteI18n, field.TypeJSON)
 	}
 	if value, ok := gu.mutation.SortWeight(); ok {
 		_spec.SetField(group.FieldSortWeight, field.TypeInt, value)
@@ -798,6 +834,18 @@ func (guo *GroupUpdateOne) SetNillableName(s *string) *GroupUpdateOne {
 	return guo
 }
 
+// SetNameI18n sets the "name_i18n" field.
+func (guo *GroupUpdateOne) SetNameI18n(m map[string]string) *GroupUpdateOne {
+	guo.mutation.SetNameI18n(m)
+	return guo
+}
+
+// ClearNameI18n clears the value of the "name_i18n" field.
+func (guo *GroupUpdateOne) ClearNameI18n() *GroupUpdateOne {
+	guo.mutation.ClearNameI18n()
+	return guo
+}
+
 // SetPlatform sets the "platform" field.
 func (guo *GroupUpdateOne) SetPlatform(s string) *GroupUpdateOne {
 	guo.mutation.SetPlatform(s)
@@ -950,6 +998,18 @@ func (guo *GroupUpdateOne) SetNillableNote(s *string) *GroupUpdateOne {
 	if s != nil {
 		guo.SetNote(*s)
 	}
+	return guo
+}
+
+// SetNoteI18n sets the "note_i18n" field.
+func (guo *GroupUpdateOne) SetNoteI18n(m map[string]string) *GroupUpdateOne {
+	guo.mutation.SetNoteI18n(m)
+	return guo
+}
+
+// ClearNoteI18n clears the value of the "note_i18n" field.
+func (guo *GroupUpdateOne) ClearNoteI18n() *GroupUpdateOne {
+	guo.mutation.ClearNoteI18n()
 	return guo
 }
 
@@ -1266,6 +1326,12 @@ func (guo *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error
 	if value, ok := guo.mutation.Name(); ok {
 		_spec.SetField(group.FieldName, field.TypeString, value)
 	}
+	if value, ok := guo.mutation.NameI18n(); ok {
+		_spec.SetField(group.FieldNameI18n, field.TypeJSON, value)
+	}
+	if guo.mutation.NameI18nCleared() {
+		_spec.ClearField(group.FieldNameI18n, field.TypeJSON)
+	}
 	if value, ok := guo.mutation.Platform(); ok {
 		_spec.SetField(group.FieldPlatform, field.TypeString, value)
 	}
@@ -1310,6 +1376,12 @@ func (guo *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error
 	}
 	if value, ok := guo.mutation.Note(); ok {
 		_spec.SetField(group.FieldNote, field.TypeString, value)
+	}
+	if value, ok := guo.mutation.NoteI18n(); ok {
+		_spec.SetField(group.FieldNoteI18n, field.TypeJSON, value)
+	}
+	if guo.mutation.NoteI18nCleared() {
+		_spec.ClearField(group.FieldNoteI18n, field.TypeJSON)
 	}
 	if value, ok := guo.mutation.SortWeight(); ok {
 		_spec.SetField(group.FieldSortWeight, field.TypeInt, value)

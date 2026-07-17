@@ -2,6 +2,7 @@ package group
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -48,8 +49,10 @@ type GroupAllowedUser struct {
 
 // Group 描述分组领域对象。
 type Group struct {
-	ID             int
-	Name           string
+	ID   int
+	Name string
+	// NameI18n / NoteI18n 展示文案多语言覆盖（键=语言码 en / zh-HK / ja；zh 基准即 Name / Note）。
+	NameI18n       map[string]string
 	Platform       string
 	RateMultiplier float64
 	IsExclusive    bool
@@ -64,6 +67,7 @@ type Group struct {
 	ServiceTier       string
 	ForceInstructions string
 	Note              string
+	NoteI18n          map[string]string
 	SortWeight        int
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
@@ -97,7 +101,9 @@ type ListResult struct {
 
 // CreateInput 描述创建分组输入。
 type CreateInput struct {
-	Name           string
+	Name string
+	// NameI18n / NoteI18n 展示文案多语言覆盖；service 保存前会剔除 value 为空白的条目。
+	NameI18n       map[string]string
 	Platform       string
 	RateMultiplier float64
 	IsExclusive    bool
@@ -111,6 +117,7 @@ type CreateInput struct {
 	ServiceTier       string
 	ForceInstructions string
 	Note              string
+	NoteI18n          map[string]string
 	SortWeight        int
 	// CopyAccountsFromGroupIDs 指定在新分组创建后从这些分组复制账号绑定（同平台，自动去重）。
 	CopyAccountsFromGroupIDs []int
@@ -118,7 +125,9 @@ type CreateInput struct {
 
 // UpdateInput 描述更新分组输入。
 type UpdateInput struct {
-	Name           *string
+	Name *string
+	// NameI18n / NoteI18n：nil=不修改；非 nil 时整体覆盖（清理空白 value 后为空 = 清空）。
+	NameI18n       map[string]string
 	RateMultiplier *float64
 	IsExclusive    *bool
 	StatusVisible  *bool
@@ -133,7 +142,25 @@ type UpdateInput struct {
 	ServiceTier       *string
 	ForceInstructions *string
 	Note              *string
+	NoteI18n          map[string]string
 	SortWeight        *int
+}
+
+// sanitizeI18nMap 克隆并清理多语言文案 map：value 去首尾空白，空白条目剔除。
+// 保持 nil / 非 nil 语义（nil=不修改，非 nil 空 map=清空），供 Update 部分更新使用。
+func sanitizeI18nMap(input map[string]string) map[string]string {
+	if input == nil {
+		return nil
+	}
+	cleaned := make(map[string]string, len(input))
+	for lang, text := range input {
+		trimmed := strings.TrimSpace(text)
+		if trimmed == "" {
+			continue
+		}
+		cleaned[lang] = trimmed
+	}
+	return cleaned
 }
 
 func cloneQuotas(input map[string]any) map[string]any {

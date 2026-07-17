@@ -17,6 +17,8 @@ const (
 	FieldID = "id"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
+	// FieldNameI18n holds the string denoting the name_i18n field in the database.
+	FieldNameI18n = "name_i18n"
 	// FieldPlatform holds the string denoting the platform field in the database.
 	FieldPlatform = "platform"
 	// FieldRateMultiplier holds the string denoting the rate_multiplier field in the database.
@@ -39,6 +41,8 @@ const (
 	FieldForceInstructions = "force_instructions"
 	// FieldNote holds the string denoting the note field in the database.
 	FieldNote = "note"
+	// FieldNoteI18n holds the string denoting the note_i18n field in the database.
+	FieldNoteI18n = "note_i18n"
 	// FieldSortWeight holds the string denoting the sort_weight field in the database.
 	FieldSortWeight = "sort_weight"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
@@ -94,6 +98,7 @@ const (
 var Columns = []string{
 	FieldID,
 	FieldName,
+	FieldNameI18n,
 	FieldPlatform,
 	FieldRateMultiplier,
 	FieldIsExclusive,
@@ -105,6 +110,7 @@ var Columns = []string{
 	FieldServiceTier,
 	FieldForceInstructions,
 	FieldNote,
+	FieldNoteI18n,
 	FieldSortWeight,
 	FieldCreatedAt,
 	FieldUpdatedAt,

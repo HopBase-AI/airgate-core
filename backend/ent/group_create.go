@@ -31,6 +31,12 @@ func (gc *GroupCreate) SetName(s string) *GroupCreate {
 	return gc
 }
 
+// SetNameI18n sets the "name_i18n" field.
+func (gc *GroupCreate) SetNameI18n(m map[string]string) *GroupCreate {
+	gc.mutation.SetNameI18n(m)
+	return gc
+}
+
 // SetPlatform sets the "platform" field.
 func (gc *GroupCreate) SetPlatform(s string) *GroupCreate {
 	gc.mutation.SetPlatform(s)
@@ -150,6 +156,12 @@ func (gc *GroupCreate) SetNillableNote(s *string) *GroupCreate {
 	if s != nil {
 		gc.SetNote(*s)
 	}
+	return gc
+}
+
+// SetNoteI18n sets the "note_i18n" field.
+func (gc *GroupCreate) SetNoteI18n(m map[string]string) *GroupCreate {
+	gc.mutation.SetNoteI18n(m)
 	return gc
 }
 
@@ -430,6 +442,10 @@ func (gc *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 		_spec.SetField(group.FieldName, field.TypeString, value)
 		_node.Name = value
 	}
+	if value, ok := gc.mutation.NameI18n(); ok {
+		_spec.SetField(group.FieldNameI18n, field.TypeJSON, value)
+		_node.NameI18n = value
+	}
 	if value, ok := gc.mutation.Platform(); ok {
 		_spec.SetField(group.FieldPlatform, field.TypeString, value)
 		_node.Platform = value
@@ -473,6 +489,10 @@ func (gc *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := gc.mutation.Note(); ok {
 		_spec.SetField(group.FieldNote, field.TypeString, value)
 		_node.Note = value
+	}
+	if value, ok := gc.mutation.NoteI18n(); ok {
+		_spec.SetField(group.FieldNoteI18n, field.TypeJSON, value)
+		_node.NoteI18n = value
 	}
 	if value, ok := gc.mutation.SortWeight(); ok {
 		_spec.SetField(group.FieldSortWeight, field.TypeInt, value)

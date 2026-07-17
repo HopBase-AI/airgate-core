@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"maps"
 	"sort"
 	"time"
 
@@ -108,6 +109,12 @@ func (s *GroupStore) Create(ctx context.Context, input appgroup.CreateInput) (ap
 			SetNote(input.Note).
 			SetSortWeight(input.SortWeight)
 
+		if len(input.NameI18n) > 0 {
+			builder = builder.SetNameI18n(maps.Clone(input.NameI18n))
+		}
+		if len(input.NoteI18n) > 0 {
+			builder = builder.SetNoteI18n(maps.Clone(input.NoteI18n))
+		}
 		if input.Quotas != nil {
 			builder = builder.SetQuotas(appgroupCloneQuotas(input.Quotas))
 		}
@@ -184,6 +191,12 @@ func (s *GroupStore) Create(ctx context.Context, input appgroup.CreateInput) (ap
 		SetNote(input.Note).
 		SetSortWeight(input.SortWeight)
 
+	if len(input.NameI18n) > 0 {
+		builder = builder.SetNameI18n(maps.Clone(input.NameI18n))
+	}
+	if len(input.NoteI18n) > 0 {
+		builder = builder.SetNoteI18n(maps.Clone(input.NoteI18n))
+	}
 	if input.Quotas != nil {
 		builder = builder.SetQuotas(appgroupCloneQuotas(input.Quotas))
 	}
@@ -218,6 +231,21 @@ func (s *GroupStore) Update(ctx context.Context, id int, input appgroup.UpdateIn
 
 	if input.Name != nil {
 		builder = builder.SetName(*input.Name)
+	}
+	// NameI18n / NoteI18n：nil=不修改；非 nil 空 map=清空（落 NULL 保持旧数据形态一致）。
+	if input.NameI18n != nil {
+		if len(input.NameI18n) == 0 {
+			builder = builder.ClearNameI18n()
+		} else {
+			builder = builder.SetNameI18n(maps.Clone(input.NameI18n))
+		}
+	}
+	if input.NoteI18n != nil {
+		if len(input.NoteI18n) == 0 {
+			builder = builder.ClearNoteI18n()
+		} else {
+			builder = builder.SetNoteI18n(maps.Clone(input.NoteI18n))
+		}
 	}
 	if input.RateMultiplier != nil {
 		builder = builder.SetRateMultiplier(*input.RateMultiplier)
@@ -564,6 +592,7 @@ func mapGroup(item *ent.Group) appgroup.Group {
 	return appgroup.Group{
 		ID:                item.ID,
 		Name:              item.Name,
+		NameI18n:          maps.Clone(item.NameI18n),
 		Platform:          item.Platform,
 		RateMultiplier:    item.RateMultiplier,
 		IsExclusive:       item.IsExclusive,
@@ -576,6 +605,7 @@ func mapGroup(item *ent.Group) appgroup.Group {
 		ServiceTier:       item.ServiceTier,
 		ForceInstructions: item.ForceInstructions,
 		Note:              item.Note,
+		NoteI18n:          maps.Clone(item.NoteI18n),
 		SortWeight:        item.SortWeight,
 		CreatedAt:         item.CreatedAt,
 		UpdatedAt:         item.UpdatedAt,

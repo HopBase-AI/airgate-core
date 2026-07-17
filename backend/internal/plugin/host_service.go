@@ -772,10 +772,12 @@ func (h *HostService) listGroups(ctx context.Context, req hostListGroupsRequest)
 		items = append(items, map[string]interface{}{
 			"id":              int64(g.ID),
 			"name":            g.Name,
+			"name_i18n":       g.NameI18n,
 			"platform":        g.Platform,
 			"is_exclusive":    g.IsExclusive,
 			"rate_multiplier": g.RateMultiplier,
 			"note":            g.Note,
+			"note_i18n":       g.NoteI18n,
 			"status_visible":  g.StatusVisible,
 		})
 	}
@@ -840,11 +842,13 @@ func (h *HostService) listEligibleGroups(ctx context.Context, req hostListGroups
 		items = append(items, map[string]interface{}{
 			"id":              int64(g.ID),
 			"name":            g.Name,
+			"name_i18n":       g.NameI18n,
 			"platform":        g.Platform,
 			"is_exclusive":    g.IsExclusive,
 			"rate_multiplier": g.RateMultiplier,
 			"effective_rate":  c.EffectiveRate,
 			"note":            g.Note,
+			"note_i18n":       g.NoteI18n,
 			"status_visible":  g.StatusVisible,
 		})
 	}

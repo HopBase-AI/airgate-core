@@ -109,6 +109,8 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Group, error) 
 	input.Quotas = cloneQuotas(input.Quotas)
 	input.ModelRouting = cloneModelRouting(input.ModelRouting)
 	input.PluginSettings = clonePluginSettings(input.PluginSettings)
+	input.NameI18n = sanitizeI18nMap(input.NameI18n)
+	input.NoteI18n = sanitizeI18nMap(input.NoteI18n)
 	g, err := s.repo.Create(ctx, input)
 	if err != nil {
 		logger.Error("group_persist_failed",
@@ -131,6 +133,8 @@ func (s *Service) Update(ctx context.Context, id int, input UpdateInput) (Group,
 	input.Quotas = cloneQuotas(input.Quotas)
 	input.ModelRouting = cloneModelRouting(input.ModelRouting)
 	input.PluginSettings = clonePluginSettings(input.PluginSettings)
+	input.NameI18n = sanitizeI18nMap(input.NameI18n)
+	input.NoteI18n = sanitizeI18nMap(input.NoteI18n)
 	g, err := s.repo.Update(ctx, id, input)
 	if err != nil {
 		logger.Error("group_persist_failed",

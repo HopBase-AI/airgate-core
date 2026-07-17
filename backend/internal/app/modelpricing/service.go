@@ -63,6 +63,7 @@ func (s *Service) UserPricing(ctx context.Context, userID int) (Result, error) {
 					quote.UserRate = rate
 					quote.GroupID = g.ID
 					quote.GroupName = g.Name
+					quote.GroupNameI18n = g.NameI18n
 				}
 			}
 			quotes.Models = append(quotes.Models, quote)
@@ -89,7 +90,7 @@ func (s *Service) UserPricing(ctx context.Context, userID int) (Result, error) {
 // ok=false 表示这是固定图价/特殊分组：rate_multiplier<=0 且无正的用户专属倍率。
 // 倍率 0 是「按固定图价计费、token 倍率不适用」的哨兵，不能当 token 折扣参与广场选价，
 // 否则 billing 的 1.0 兜底会把 GLM/Gemini/图像等模型污染成「1.5 折」的假象
-//（空 model_routing 的 4k 超分图组即此坑）。
+// （空 model_routing 的 4k 超分图组即此坑）。
 func effectiveGroupRate(userGroupRates map[int64]float64, g appgroup.Group) (float64, bool) {
 	if userGroupRates != nil {
 		if r, ok := userGroupRates[int64(g.ID)]; ok && r > 0 {

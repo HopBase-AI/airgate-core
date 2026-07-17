@@ -63,6 +63,65 @@ func TestCreateClonesMutableFields(t *testing.T) {
 	}
 }
 
+func TestCreateSanitizesI18nMaps(t *testing.T) {
+	var captured CreateInput
+
+	service := NewService(groupStubRepository{
+		create: func(_ context.Context, input CreateInput) (Group, error) {
+			captured = input
+			return Group{ID: 1}, nil
+		},
+	}, stubConcurrencyReader{})
+
+	source := map[string]string{"en": " Default Group ", "zh-HK": "   ", "ja": ""}
+	_, err := service.Create(t.Context(), CreateInput{
+		Name:             "默认分组",
+		Platform:         "openai",
+		SubscriptionType: "standard",
+		NameI18n:         source,
+	})
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	// 空白 value 剔除、保留值去首尾空白，且与入参 map 解耦。
+	if len(captured.NameI18n) != 1 || captured.NameI18n["en"] != "Default Group" {
+		t.Fatalf("captured name_i18n = %+v, want 仅 en=Default Group", captured.NameI18n)
+	}
+	source["en"] = "mutated"
+	if captured.NameI18n["en"] != "Default Group" {
+		t.Fatalf("captured name_i18n 被入参突变污染: %+v", captured.NameI18n)
+	}
+	if captured.NoteI18n != nil {
+		t.Fatalf("未提交的 note_i18n 应保持 nil, got %+v", captured.NoteI18n)
+	}
+}
+
+func TestUpdateSanitizesI18nMapsKeepsNilSemantics(t *testing.T) {
+	var captured UpdateInput
+
+	service := NewService(groupStubRepository{
+		update: func(_ context.Context, _ int, input UpdateInput) (Group, error) {
+			captured = input
+			return Group{ID: 1}, nil
+		},
+	}, stubConcurrencyReader{})
+
+	// name_i18n 未提交（nil=不修改）；note_i18n 提交但全空白（清理后应为非 nil 空 map=清空）。
+	_, err := service.Update(t.Context(), 1, UpdateInput{
+		NoteI18n: map[string]string{"en": "  ", "ja": ""},
+	})
+	if err != nil {
+		t.Fatalf("Update() returned error: %v", err)
+	}
+	if captured.NameI18n != nil {
+		t.Fatalf("未提交的 name_i18n 应保持 nil, got %+v", captured.NameI18n)
+	}
+	if captured.NoteI18n == nil || len(captured.NoteI18n) != 0 {
+		t.Fatalf("全空白 note_i18n 应清理为非 nil 空 map, got %+v", captured.NoteI18n)
+	}
+}
+
 type stubConcurrencyReader struct{}
 
 func (stubConcurrencyReader) GetCurrentCounts(_ context.Context, _ []int) map[int]int {

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '../../../shared/queryKeys';
 import { Button, Checkbox, Chip, ComboBox, Description, Input, Label, ListBox, Modal, Select, Spinner, TextArea, TextField as HeroTextField, useOverlayState } from '@heroui/react';
 import { DialogTriggerShim } from '../../../shared/components/DialogTriggerShim';
-import { ArrowUpDown, Layers, Search, X } from 'lucide-react';
+import { ArrowUpDown, ChevronDown, Languages, Layers, Search, X } from 'lucide-react';
 import { groupsApi } from '../../../shared/api/groups';
 import { accountsApi } from '../../../shared/api/accounts';
 import { usersApi } from '../../../shared/api/users';
@@ -38,6 +38,25 @@ function buildQuotas(q: { daily: string; weekly: string; monthly: string }): Rec
   if (q.weekly && Number(q.weekly) > 0) result.weekly = Number(q.weekly);
   if (q.monthly && Number(q.monthly) > 0) result.monthly = Number(q.monthly);
   return Object.keys(result).length > 0 ? result : undefined;
+}
+
+// 多语言文案覆盖支持的语言（zh 基准即 name / note 本身，不在此列）。
+const I18N_LANGS: Array<{ code: string; labelKey: string }> = [
+  { code: 'en', labelKey: 'groups.i18n_lang_en' },
+  { code: 'zh-HK', labelKey: 'groups.i18n_lang_zh_hk' },
+  { code: 'ja', labelKey: 'groups.i18n_lang_ja' },
+];
+
+// buildI18nMap 组装提交用多语言 map：收录所有非空白条目（留空=回退基准文案）。
+// 遍历完整 input 而非仅 I18N_LANGS：表单状态种子自既有 map，UI 之外写入的
+// 其他语言键（如 API 导入的 ko/fr）原样保留，避免整体覆盖时被静默清空。
+function buildI18nMap(input: Record<string, string>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [code, raw] of Object.entries(input)) {
+    const value = (raw ?? '').trim();
+    if (value) result[code] = value;
+  }
+  return result;
 }
 
 type ImagePrices = {
@@ -122,6 +141,12 @@ export function GroupFormModal({
     status_visible: group?.status_visible ?? true,
     subscription_type: group?.subscription_type ?? 'standard' as const,
   });
+  // 多语言文案覆盖（name_i18n / note_i18n）；已有覆盖时默认展开折叠区便于回显。
+  const [nameI18n, setNameI18n] = useState<Record<string, string>>(() => ({ ...(group?.name_i18n ?? {}) }));
+  const [noteI18n, setNoteI18n] = useState<Record<string, string>>(() => ({ ...(group?.note_i18n ?? {}) }));
+  const [i18nOpen, setI18nOpen] = useState(
+    () => Object.keys(group?.name_i18n ?? {}).length > 0 || Object.keys(group?.note_i18n ?? {}).length > 0,
+  );
   // 可见性三态 + 指定用户清单（提交时映射为 is_exclusive / allowed_user_ids）。
   const [visibility, setVisibility] = useState<Visibility>(() => initialVisibility(group));
   const [allowedUsers, setAllowedUsers] = useState<GroupAllowedUser[]>(() => group?.allowed_users ?? []);
@@ -244,6 +269,9 @@ export function GroupFormModal({
       ...form,
       force_instructions: form.force_instructions ?? '',
       note: form.note,
+      // 多语言覆盖始终整体提交：编辑清空某语言即回退基准文案
+      name_i18n: buildI18nMap(nameI18n),
+      note_i18n: buildI18nMap(noteI18n),
       is_exclusive: visibility !== 'public',
       allowed_user_ids: visibility === 'specific' ? allowedUsers.map((u) => u.user_id) : [],
       plugin_settings: Object.keys(pluginSettings).length > 0 ? pluginSettings : undefined,
@@ -580,6 +608,50 @@ export function GroupFormModal({
           />
           <Description>{t('groups.note_hint')}</Description>
         </HeroTextField>
+
+        <div className="rounded-lg border border-glass-border">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between px-3 py-2 text-left"
+            onClick={() => setI18nOpen((open) => !open)}
+          >
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium uppercaser text-text-secondary">
+              <Languages className="h-3.5 w-3.5" />
+              {t('groups.i18n_section')}
+            </span>
+            <ChevronDown
+              className={`h-4 w-4 text-text-tertiary transition-transform ${i18nOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+          {i18nOpen ? (
+            <div className="space-y-3 border-t border-glass-border p-3">
+              <p className="text-[11px] text-text-tertiary">{t('groups.i18n_section_hint')}</p>
+              {I18N_LANGS.map(({ code, labelKey }) => (
+                <div key={code}>
+                  <p className="mb-1.5 text-xs font-medium text-text-secondary">{t(labelKey)}</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <HeroTextField fullWidth>
+                      <Label>{t('common.name')}</Label>
+                      <Input
+                        value={nameI18n[code] ?? ''}
+                        onChange={(e) => setNameI18n((cur) => ({ ...cur, [code]: e.target.value }))}
+                        placeholder={form.name}
+                      />
+                    </HeroTextField>
+                    <HeroTextField fullWidth>
+                      <Label>{t('groups.note')}</Label>
+                      <Input
+                        value={noteI18n[code] ?? ''}
+                        onChange={(e) => setNoteI18n((cur) => ({ ...cur, [code]: e.target.value }))}
+                        placeholder={form.note}
+                      />
+                    </HeroTextField>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
 
         {presets.length > 0 ? (
           <div>

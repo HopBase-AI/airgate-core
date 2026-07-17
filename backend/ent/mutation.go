@@ -6738,6 +6738,7 @@ type GroupMutation struct {
 	typ                  string
 	id                   *int
 	name                 *string
+	name_i18n            *map[string]string
 	platform             *string
 	rate_multiplier      *float64
 	addrate_multiplier   *float64
@@ -6750,6 +6751,7 @@ type GroupMutation struct {
 	service_tier         *string
 	force_instructions   *string
 	note                 *string
+	note_i18n            *map[string]string
 	sort_weight          *int
 	addsort_weight       *int
 	created_at           *time.Time
@@ -6907,6 +6909,55 @@ func (m *GroupMutation) OldName(ctx context.Context) (v string, err error) {
 // ResetName resets all changes to the "name" field.
 func (m *GroupMutation) ResetName() {
 	m.name = nil
+}
+
+// SetNameI18n sets the "name_i18n" field.
+func (m *GroupMutation) SetNameI18n(value map[string]string) {
+	m.name_i18n = &value
+}
+
+// NameI18n returns the value of the "name_i18n" field in the mutation.
+func (m *GroupMutation) NameI18n() (r map[string]string, exists bool) {
+	v := m.name_i18n
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNameI18n returns the old "name_i18n" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldNameI18n(ctx context.Context) (v map[string]string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNameI18n is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNameI18n requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNameI18n: %w", err)
+	}
+	return oldValue.NameI18n, nil
+}
+
+// ClearNameI18n clears the value of the "name_i18n" field.
+func (m *GroupMutation) ClearNameI18n() {
+	m.name_i18n = nil
+	m.clearedFields[group.FieldNameI18n] = struct{}{}
+}
+
+// NameI18nCleared returns if the "name_i18n" field was cleared in this mutation.
+func (m *GroupMutation) NameI18nCleared() bool {
+	_, ok := m.clearedFields[group.FieldNameI18n]
+	return ok
+}
+
+// ResetNameI18n resets all changes to the "name_i18n" field.
+func (m *GroupMutation) ResetNameI18n() {
+	m.name_i18n = nil
+	delete(m.clearedFields, group.FieldNameI18n)
 }
 
 // SetPlatform sets the "platform" field.
@@ -7364,6 +7415,55 @@ func (m *GroupMutation) ResetNote() {
 	m.note = nil
 }
 
+// SetNoteI18n sets the "note_i18n" field.
+func (m *GroupMutation) SetNoteI18n(value map[string]string) {
+	m.note_i18n = &value
+}
+
+// NoteI18n returns the value of the "note_i18n" field in the mutation.
+func (m *GroupMutation) NoteI18n() (r map[string]string, exists bool) {
+	v := m.note_i18n
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNoteI18n returns the old "note_i18n" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldNoteI18n(ctx context.Context) (v map[string]string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNoteI18n is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNoteI18n requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNoteI18n: %w", err)
+	}
+	return oldValue.NoteI18n, nil
+}
+
+// ClearNoteI18n clears the value of the "note_i18n" field.
+func (m *GroupMutation) ClearNoteI18n() {
+	m.note_i18n = nil
+	m.clearedFields[group.FieldNoteI18n] = struct{}{}
+}
+
+// NoteI18nCleared returns if the "note_i18n" field was cleared in this mutation.
+func (m *GroupMutation) NoteI18nCleared() bool {
+	_, ok := m.clearedFields[group.FieldNoteI18n]
+	return ok
+}
+
+// ResetNoteI18n resets all changes to the "note_i18n" field.
+func (m *GroupMutation) ResetNoteI18n() {
+	m.note_i18n = nil
+	delete(m.clearedFields, group.FieldNoteI18n)
+}
+
 // SetSortWeight sets the "sort_weight" field.
 func (m *GroupMutation) SetSortWeight(i int) {
 	m.sort_weight = &i
@@ -7796,9 +7896,12 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 15)
+	fields := make([]string, 0, 17)
 	if m.name != nil {
 		fields = append(fields, group.FieldName)
+	}
+	if m.name_i18n != nil {
+		fields = append(fields, group.FieldNameI18n)
 	}
 	if m.platform != nil {
 		fields = append(fields, group.FieldPlatform)
@@ -7833,6 +7936,9 @@ func (m *GroupMutation) Fields() []string {
 	if m.note != nil {
 		fields = append(fields, group.FieldNote)
 	}
+	if m.note_i18n != nil {
+		fields = append(fields, group.FieldNoteI18n)
+	}
 	if m.sort_weight != nil {
 		fields = append(fields, group.FieldSortWeight)
 	}
@@ -7852,6 +7958,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 	switch name {
 	case group.FieldName:
 		return m.Name()
+	case group.FieldNameI18n:
+		return m.NameI18n()
 	case group.FieldPlatform:
 		return m.Platform()
 	case group.FieldRateMultiplier:
@@ -7874,6 +7982,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.ForceInstructions()
 	case group.FieldNote:
 		return m.Note()
+	case group.FieldNoteI18n:
+		return m.NoteI18n()
 	case group.FieldSortWeight:
 		return m.SortWeight()
 	case group.FieldCreatedAt:
@@ -7891,6 +8001,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 	switch name {
 	case group.FieldName:
 		return m.OldName(ctx)
+	case group.FieldNameI18n:
+		return m.OldNameI18n(ctx)
 	case group.FieldPlatform:
 		return m.OldPlatform(ctx)
 	case group.FieldRateMultiplier:
@@ -7913,6 +8025,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldForceInstructions(ctx)
 	case group.FieldNote:
 		return m.OldNote(ctx)
+	case group.FieldNoteI18n:
+		return m.OldNoteI18n(ctx)
 	case group.FieldSortWeight:
 		return m.OldSortWeight(ctx)
 	case group.FieldCreatedAt:
@@ -7934,6 +8048,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetName(v)
+		return nil
+	case group.FieldNameI18n:
+		v, ok := value.(map[string]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNameI18n(v)
 		return nil
 	case group.FieldPlatform:
 		v, ok := value.(string)
@@ -8011,6 +8132,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetNote(v)
+		return nil
+	case group.FieldNoteI18n:
+		v, ok := value.(map[string]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNoteI18n(v)
 		return nil
 	case group.FieldSortWeight:
 		v, ok := value.(int)
@@ -8090,6 +8218,9 @@ func (m *GroupMutation) AddField(name string, value ent.Value) error {
 // mutation.
 func (m *GroupMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(group.FieldNameI18n) {
+		fields = append(fields, group.FieldNameI18n)
+	}
 	if m.FieldCleared(group.FieldQuotas) {
 		fields = append(fields, group.FieldQuotas)
 	}
@@ -8098,6 +8229,9 @@ func (m *GroupMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(group.FieldPluginSettings) {
 		fields = append(fields, group.FieldPluginSettings)
+	}
+	if m.FieldCleared(group.FieldNoteI18n) {
+		fields = append(fields, group.FieldNoteI18n)
 	}
 	return fields
 }
@@ -8113,6 +8247,9 @@ func (m *GroupMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *GroupMutation) ClearField(name string) error {
 	switch name {
+	case group.FieldNameI18n:
+		m.ClearNameI18n()
+		return nil
 	case group.FieldQuotas:
 		m.ClearQuotas()
 		return nil
@@ -8121,6 +8258,9 @@ func (m *GroupMutation) ClearField(name string) error {
 		return nil
 	case group.FieldPluginSettings:
 		m.ClearPluginSettings()
+		return nil
+	case group.FieldNoteI18n:
+		m.ClearNoteI18n()
 		return nil
 	}
 	return fmt.Errorf("unknown Group nullable field %s", name)
@@ -8132,6 +8272,9 @@ func (m *GroupMutation) ResetField(name string) error {
 	switch name {
 	case group.FieldName:
 		m.ResetName()
+		return nil
+	case group.FieldNameI18n:
+		m.ResetNameI18n()
 		return nil
 	case group.FieldPlatform:
 		m.ResetPlatform()
@@ -8165,6 +8308,9 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldNote:
 		m.ResetNote()
+		return nil
+	case group.FieldNoteI18n:
+		m.ResetNoteI18n()
 		return nil
 	case group.FieldSortWeight:
 		m.ResetSortWeight()

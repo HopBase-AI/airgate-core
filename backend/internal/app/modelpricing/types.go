@@ -31,6 +31,8 @@ type ModelQuote struct {
 	UserRate  float64
 	GroupID   int
 	GroupName string
+	// GroupNameI18n 分组名多语言覆盖（键=语言码 en / zh-HK / ja；zh 基准即 GroupName）。
+	GroupNameI18n map[string]string
 }
 
 // PlatformQuotes 单平台的模型报价清单。

@@ -9,6 +9,7 @@ func toGroupRespFromDomain(item appgroup.Group) dto.GroupResp {
 	return dto.GroupResp{
 		ID:                int64(item.ID),
 		Name:              item.Name,
+		NameI18n:          item.NameI18n,
 		Platform:          item.Platform,
 		RateMultiplier:    item.RateMultiplier,
 		IsExclusive:       item.IsExclusive,
@@ -20,6 +21,7 @@ func toGroupRespFromDomain(item appgroup.Group) dto.GroupResp {
 		ServiceTier:       item.ServiceTier,
 		ForceInstructions: item.ForceInstructions,
 		Note:              item.Note,
+		NoteI18n:          item.NoteI18n,
 		SortWeight:        item.SortWeight,
 		AllowedUsers:      toGroupAllowedUsers(item.AllowedUsers),
 		TimeMixin: dto.TimeMixin{

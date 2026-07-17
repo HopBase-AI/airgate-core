@@ -20,6 +20,8 @@ type Group struct {
 	ID int `json:"id,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
+	// NameI18n holds the value of the "name_i18n" field.
+	NameI18n map[string]string `json:"name_i18n,omitempty"`
 	// Platform holds the value of the "platform" field.
 	Platform string `json:"platform,omitempty"`
 	// RateMultiplier holds the value of the "rate_multiplier" field.
@@ -42,6 +44,8 @@ type Group struct {
 	ForceInstructions string `json:"force_instructions,omitempty"`
 	// Note holds the value of the "note" field.
 	Note string `json:"note,omitempty"`
+	// NoteI18n holds the value of the "note_i18n" field.
+	NoteI18n map[string]string `json:"note_i18n,omitempty"`
 	// SortWeight holds the value of the "sort_weight" field.
 	SortWeight int `json:"sort_weight,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
@@ -121,7 +125,7 @@ func (*Group) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case group.FieldQuotas, group.FieldModelRouting, group.FieldPluginSettings:
+		case group.FieldNameI18n, group.FieldQuotas, group.FieldModelRouting, group.FieldPluginSettings, group.FieldNoteI18n:
 			values[i] = new([]byte)
 		case group.FieldIsExclusive, group.FieldStatusVisible:
 			values[i] = new(sql.NullBool)
@@ -159,6 +163,14 @@ func (gr *Group) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field name", values[i])
 			} else if value.Valid {
 				gr.Name = value.String
+			}
+		case group.FieldNameI18n:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field name_i18n", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &gr.NameI18n); err != nil {
+					return fmt.Errorf("unmarshal field name_i18n: %w", err)
+				}
 			}
 		case group.FieldPlatform:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -231,6 +243,14 @@ func (gr *Group) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field note", values[i])
 			} else if value.Valid {
 				gr.Note = value.String
+			}
+		case group.FieldNoteI18n:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field note_i18n", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &gr.NoteI18n); err != nil {
+					return fmt.Errorf("unmarshal field note_i18n: %w", err)
+				}
 			}
 		case group.FieldSortWeight:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -314,6 +334,9 @@ func (gr *Group) String() string {
 	builder.WriteString("name=")
 	builder.WriteString(gr.Name)
 	builder.WriteString(", ")
+	builder.WriteString("name_i18n=")
+	builder.WriteString(fmt.Sprintf("%v", gr.NameI18n))
+	builder.WriteString(", ")
 	builder.WriteString("platform=")
 	builder.WriteString(gr.Platform)
 	builder.WriteString(", ")
@@ -346,6 +369,9 @@ func (gr *Group) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("note=")
 	builder.WriteString(gr.Note)
+	builder.WriteString(", ")
+	builder.WriteString("note_i18n=")
+	builder.WriteString(fmt.Sprintf("%v", gr.NoteI18n))
 	builder.WriteString(", ")
 	builder.WriteString("sort_weight=")
 	builder.WriteString(fmt.Sprintf("%v", gr.SortWeight))

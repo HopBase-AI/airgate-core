@@ -21,6 +21,7 @@ import { TableLoadingRow } from '../../shared/components/TableLoadingRow';
 import { CommonTable } from '../../shared/components/CommonTable';
 import { MetricChips } from '../../shared/components/MetricChips';
 import { GROUP_CHIP_STYLE } from '../../shared/components/groupChipStyle';
+import { localizedGroupText } from '../../shared/groupText';
 import { useClipboard } from '../../shared/hooks/useClipboard';
 import { useCopyFeedback } from '../../shared/hooks/useCopyFeedback';
 import {
@@ -50,7 +51,9 @@ import { OneClickModal, useOneClickModal } from './userkeys/OneClickModal';
 import { type KeyForm, emptyForm } from './userkeys/types';
 
 export default function UserKeysPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  // 当前界面语言：分组名多语言覆盖按此精确匹配(en / zh-HK / ja),miss 回退基准文案
+  const uiLang = i18n.language;
   const { toast } = useToast();
   const copy = useClipboard();
   const queryClient = useQueryClient();
@@ -291,10 +294,10 @@ export default function UserKeysPage() {
     }
     return {
       value: String(g.id),
-      label: g.name,
+      label: localizedGroupText(g.name, g.name_i18n, uiLang),
       suffix,
     };
-  }), [groupList, groupQuotes, pricingFx, t, userGroupRates]);
+  }), [groupList, groupQuotes, pricingFx, t, uiLang, userGroupRates]);
 
   // 使用配置弹窗
   const {
@@ -419,7 +422,9 @@ export default function UserKeysPage() {
               const isGroupUnbound = row.group_id == null;
               const groupName = isGroupUnbound
                 ? t('user_keys.group_unbound')
-                : group?.name || `#${row.group_id}`;
+                : group
+                  ? localizedGroupText(group.name, group.name_i18n, uiLang)
+                  : `#${row.group_id}`;
               const hasSellRate = row.sell_rate != null && row.sell_rate > 0;
               const userOverride = row.group_id == null ? undefined : user?.group_rates?.[row.group_id];
               const hasOverride =

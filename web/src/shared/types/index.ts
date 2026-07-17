@@ -334,6 +334,8 @@ export interface GroupAllowedUser {
 export interface GroupResp {
   id: number;
   name: string;
+  // 展示文案多语言覆盖(键=语言码 en / zh-HK / ja;zh 基准即 name / note),缺省回退基准文案
+  name_i18n?: Record<string, string>;
   platform: string;
   rate_multiplier: number;
   is_exclusive: boolean;
@@ -345,6 +347,7 @@ export interface GroupResp {
   service_tier?: 'fast' | 'flex';
   force_instructions?: string;
   note?: string;
+  note_i18n?: Record<string, string>;
   sort_weight: number;
   // 专属分组的授权用户摘要（仅管理员列表/详情返回）
   allowed_users?: GroupAllowedUser[];
@@ -362,6 +365,8 @@ export interface GroupResp {
 
 export interface CreateGroupReq {
   name: string;
+  // 多语言覆盖(en / zh-HK / ja);空白 value 后端保存前会剔除
+  name_i18n?: Record<string, string>;
   platform: string;
   rate_multiplier?: number;
   is_exclusive?: boolean;
@@ -375,6 +380,7 @@ export interface CreateGroupReq {
   service_tier?: 'fast' | 'flex';
   force_instructions?: string;
   note?: string;
+  note_i18n?: Record<string, string>;
   sort_weight?: number;
   copy_accounts_from_group_ids?: number[];
 }
@@ -389,6 +395,8 @@ export interface GroupRateOverrideResp {
 
 export interface UpdateGroupReq {
   name?: string;
+  // 省略=不修改;提交则整体覆盖(剔除空白 value 后为空 = 清空)
+  name_i18n?: Record<string, string>;
   rate_multiplier?: number;
   is_exclusive?: boolean;
   status_visible?: boolean;
@@ -401,6 +409,7 @@ export interface UpdateGroupReq {
   service_tier?: 'fast' | 'flex';
   force_instructions?: string;
   note?: string;
+  note_i18n?: Record<string, string>;
   sort_weight?: number;
 }
 

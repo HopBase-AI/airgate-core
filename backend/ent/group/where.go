@@ -175,6 +175,16 @@ func NameContainsFold(v string) predicate.Group {
 	return predicate.Group(sql.FieldContainsFold(FieldName, v))
 }
 
+// NameI18nIsNil applies the IsNil predicate on the "name_i18n" field.
+func NameI18nIsNil() predicate.Group {
+	return predicate.Group(sql.FieldIsNull(FieldNameI18n))
+}
+
+// NameI18nNotNil applies the NotNil predicate on the "name_i18n" field.
+func NameI18nNotNil() predicate.Group {
+	return predicate.Group(sql.FieldNotNull(FieldNameI18n))
+}
+
 // PlatformEQ applies the EQ predicate on the "platform" field.
 func PlatformEQ(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldPlatform, v))
@@ -543,6 +553,16 @@ func NoteEqualFold(v string) predicate.Group {
 // NoteContainsFold applies the ContainsFold predicate on the "note" field.
 func NoteContainsFold(v string) predicate.Group {
 	return predicate.Group(sql.FieldContainsFold(FieldNote, v))
+}
+
+// NoteI18nIsNil applies the IsNil predicate on the "note_i18n" field.
+func NoteI18nIsNil() predicate.Group {
+	return predicate.Group(sql.FieldIsNull(FieldNoteI18n))
+}
+
+// NoteI18nNotNil applies the NotNil predicate on the "note_i18n" field.
+func NoteI18nNotNil() predicate.Group {
+	return predicate.Group(sql.FieldNotNull(FieldNoteI18n))
 }
 
 // SortWeightEQ applies the EQ predicate on the "sort_weight" field.

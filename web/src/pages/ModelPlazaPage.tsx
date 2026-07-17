@@ -7,6 +7,7 @@ import { modelsApi, type MyPricingModel, type MyPlatformPricing, type PublicPlat
 import { settingsApi } from '../shared/api/settings';
 import { ApiError } from '../shared/api/client';
 import { queryKeys } from '../shared/queryKeys';
+import { localizedGroupText } from '../shared/groupText';
 import { useToast } from '../shared/ui';
 
 interface TocPricingConfig {
@@ -42,6 +43,8 @@ interface DisplayPrice {
   // 折扣（实付 ÷ 官方直付，输入价口径，0~1），null = 不展示徽章
   zhe: number | null;
   groupName?: string;
+  // 分组名多语言覆盖(en / zh-HK / ja),展示时经 localizedGroupText 按界面语言回退
+  groupNameI18n?: Record<string, string>;
 }
 
 function parsePricingConfig(raw: string | undefined): TocPricingConfig | null {
@@ -84,6 +87,7 @@ function mergeCatalog(platforms: Array<MyPlatformPricing | PublicPlatformPricing
         current.user_rate = model.user_rate;
         current.group_id = model.group_id;
         current.group_name = model.group_name;
+        current.group_name_i18n = model.group_name_i18n;
       }
     }
   }
@@ -140,6 +144,7 @@ function resolveUserPrice(model: ModelLedgerItem, fx: number, saleCurrency: 'CNY
     officialSymbol,
     zhe: officialCnyInput > 0 ? (model.input * rate) / officialCnyInput : null,
     groupName: model.group_name,
+    groupNameI18n: model.group_name_i18n,
   };
 }
 
@@ -270,7 +275,7 @@ function PriceGrid({ model, price, video, videoSaleSymbol }: {
   video: VideoBucketPrice[] | null;
   videoSaleSymbol: '$' | '¥';
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const officialTitle = t('model_plaza.official_price');
   // 视频生成模型：按桶（分辨率 × 是否带参考图）铺价，替代 input/cached/output。
   if (video) {
@@ -307,7 +312,11 @@ function PriceGrid({ model, price, video, videoSaleSymbol }: {
           <Chip color="success" size="sm" variant="soft">
             {t('model_plaza.discount_badge', { zhe: formatZhe(price.zhe), off: Math.round((1 - price.zhe) * 100) })}
           </Chip>
-          {price.groupName ? <span className="ag-model-price-group">{t('model_plaza.via_group', { group: price.groupName })}</span> : null}
+          {price.groupName ? (
+            <span className="ag-model-price-group">
+              {t('model_plaza.via_group', { group: localizedGroupText(price.groupName, price.groupNameI18n, i18n.language) })}
+            </span>
+          ) : null}
         </p>
       ) : null}
       {price.officialOnly ? <p className="ag-model-official-label">{t('model_plaza.official_price')}</p> : null}
