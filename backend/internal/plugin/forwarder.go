@@ -124,6 +124,18 @@ func (f *Forwarder) Forward(c *gin.Context) {
 		return
 	}
 
+	// 模型-分组预校验：请求模型明确不在该分组可服务范围时快速返回清晰 404，
+	// 不打上游、不占并发闸门（fail-open 边界见 precheckModelServed）。
+	if reason, ok := f.precheckModelServed(state); !ok {
+		logger.Warn("forward_model_not_served_by_group",
+			sdk.LogFieldUserID, state.keyInfo.UserID,
+			sdk.LogFieldGroupID, state.keyInfo.GroupID,
+			"scheduling_models", state.schedulingModelCandidates(),
+		)
+		protocolError(c, http.StatusNotFound, "invalid_request_error", "model_not_found", reason)
+		return
+	}
+
 	releaseClientQuota := f.acquireClientQuota(c, state)
 	if releaseClientQuota == nil {
 		return // 429 已写

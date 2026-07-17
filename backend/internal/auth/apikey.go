@@ -95,6 +95,10 @@ type APIKeyInfo struct {
 	GroupServiceTier        string                                 // 分组 service tier
 	GroupForceInstructions  string                                 // 分组强制 instructions
 	GroupPluginSettings     map[string]map[string]string           // 分组插件级开关（claude_code_only 等）
+
+	// GroupModelRouting 分组的模型路由规则（model/glob → 账号 ID 列表），
+	// 随鉴权预载供转发入口做「模型-分组预校验」，零额外查询；只读消费，勿修改。
+	GroupModelRouting map[string][]int64
 }
 
 // UserGroupRate 返回当前 key 所属分组在 user.group_rates 中的倍率（若存在）。
@@ -287,6 +291,7 @@ func ValidateAPIKey(ctx context.Context, db *ent.Client, key string) (*APIKeyInf
 		GroupServiceTier:        g.ServiceTier,
 		GroupForceInstructions:  g.ForceInstructions,
 		GroupPluginSettings:     g.PluginSettings,
+		GroupModelRouting:       g.ModelRouting,
 	}
 	cacheAPIKeyResult(hash, info, nil)
 	return info, nil

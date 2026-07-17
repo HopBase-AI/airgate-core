@@ -69,6 +69,42 @@ func (m *Manager) GetModels(platform string) []sdk.ModelInfo {
 	return cloneModels(m.modelCache[platform])
 }
 
+// HasModelsForPlatform 判断指定平台的模型目录是否已就绪（modelCache 非空）。
+// 纯内存查询，供转发热路径的「模型-分组预校验」判定 fail-open 边界。
+func (m *Manager) HasModelsForPlatform(platform string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.modelCache[platform]) > 0
+}
+
+// PlatformHasModel 判断指定平台目录中是否存在该模型（ID 大小写不敏感精确比较）。
+func (m *Manager) PlatformHasModel(platform, modelID string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	models := m.modelCache[platform]
+	for i := range models {
+		if strings.EqualFold(models[i].ID, modelID) {
+			return true
+		}
+	}
+	return false
+}
+
+// FindPlatformByModelFold 大小写不敏感地根据模型 ID 反查所属平台；未找到返回空串。
+// 与 FindPlatformByModel 同构，供预校验识别「跨平台错配」。
+func (m *Manager) FindPlatformByModelFold(modelID string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for platform, models := range m.modelCache {
+		for i := range models {
+			if strings.EqualFold(models[i].ID, modelID) {
+				return platform
+			}
+		}
+	}
+	return ""
+}
+
 // UpdateModelCache 用插件推送的最新清单替换某平台的模型缓存快照。
 //
 // 模型缓存在插件启动时由一次 Models() 调用冻结,而模型目录覆盖层在插件进程内

@@ -234,6 +234,20 @@ func applyModelRouting(accounts []*ent.Account, routing map[string][]int64, mode
 	return filtered
 }
 
+// ModelRoutingServes 判断分组的 model_routing 规则下该模型是否有可服务的账号。
+// 语义与 applyModelRouting 完全一致（同一匹配源 matchModelRouting）：
+//   - routing 为空 → 不限制，视为可服务；
+//   - 命中规则（精确键或 glob）且账号列表非空 → 可服务；
+//   - 命中但账号列表为空（显式禁用）或未命中任何规则 → 不可服务。
+//
+// 供转发入口的「模型-分组预校验」复用，勿在别处复制匹配逻辑。
+func ModelRoutingServes(routing map[string][]int64, model string) bool {
+	if len(routing) == 0 {
+		return true
+	}
+	return len(matchModelRouting(routing, model)) > 0
+}
+
 // matchModelRouting 匹配模型路由规则，返回允许的账号 ID 列表。nil 或空表示不限制。
 func matchModelRouting(routing map[string][]int64, model string) []int64 {
 	if ids, ok := routing[model]; ok {

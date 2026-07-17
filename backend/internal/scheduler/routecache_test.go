@@ -136,6 +136,28 @@ func TestApplyModelRouting_EmptyRoute(t *testing.T) {
 	}
 }
 
+// TestModelRoutingServes_Glob glob 命中且账号列表非空 → 可服务；未命中 → 不可服务；空 routing 不限制。
+func TestModelRoutingServes_Glob(t *testing.T) {
+	routing := map[string][]int64{"gpt-*": {1, 2}}
+	if !ModelRoutingServes(routing, "gpt-5.5") {
+		t.Error("glob 命中且账号列表非空时应可服务")
+	}
+	if ModelRoutingServes(routing, "glm-4.7") {
+		t.Error("未命中任何规则时不应可服务")
+	}
+	if !ModelRoutingServes(nil, "gpt-5.5") {
+		t.Error("routing 为空表示不限制，应可服务")
+	}
+}
+
+// TestModelRoutingServes_EmptyAccountList 命中但账号列表为空 = 显式禁用 → 不可服务。
+func TestModelRoutingServes_EmptyAccountList(t *testing.T) {
+	routing := map[string][]int64{"gpt-4o": {}}
+	if ModelRoutingServes(routing, "gpt-4o") {
+		t.Error("命中但账号列表为空（显式禁用）时不应可服务")
+	}
+}
+
 // TestApplyModelRouting_NoMutation 过滤时不能修改原 slice（缓存共享底层数组）。
 func TestApplyModelRouting_NoMutation(t *testing.T) {
 	accounts := []*ent.Account{{ID: 1}, {ID: 2}, {ID: 3}}
