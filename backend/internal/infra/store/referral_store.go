@@ -330,10 +330,14 @@ func (s *ReferralStore) AdminSetInviteCode(ctx context.Context, userID int, code
 }
 
 // SetPromoterIdentity 设置推广身份层级与官方署名（不动邀请码/比例/返佣）。
+// 博客能力（后台撰写 + 「我的推广」复制博客分享链接）跟随官方身份:授予 official
+// 自动置 can_author_blog=true,撤销(改回 user)自动收回。管理员经 role 天然拥有博客
+// 权限,不依赖该字段,故此处收回不影响管理员。
 func (s *ReferralStore) SetPromoterIdentity(ctx context.Context, userID int, tier, displayName string) error {
 	err := s.db.User.UpdateOneID(userID).
 		SetReferralTier(entuser.ReferralTier(tier)).
 		SetReferralDisplayName(displayName).
+		SetCanAuthorBlog(entuser.ReferralTier(tier) == entuser.ReferralTierOfficial).
 		Exec(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {

@@ -251,8 +251,12 @@ func (s *Service) Resolve(ctx context.Context, rawCode string) ResolveResult {
 	return res
 }
 
-// SetPromoterIdentity 后台设置某用户的推广身份（官方/普通）。仅改展示样式相关：
-// 层级、官方署名、可选品牌 vanity 邀请码；不动返佣比例与已产生的返利流水。
+// SetPromoterIdentity 后台设置某用户的推广身份（官方/普通）：层级、官方署名、
+// 可选品牌 vanity 邀请码；不动返佣比例与已产生的返利流水。
+//
+// 博客能力跟随官方身份：授予官方自动获得「后台撰写博客」+「我的推广页复制博客分享
+// 链接」两项能力，撤销官方自动收回（在 repo.SetPromoterIdentity 内绑定 can_author_blog）。
+// 管理员经 role 天然有博客权限，不受此收回影响。
 //
 // 授予官方（official=true）时：若传入 inviteCode 则覆盖设置为品牌 vanity 码（唯一校验）；
 // 未传但该用户尚无邀请码则惰性生成一个，保证官方推广官立即有可分享的链接。

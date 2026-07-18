@@ -226,6 +226,33 @@ func RequireBlogAuthor(db *ent.Client) gin.HandlerFunc {
 	}
 }
 
+// RequireOfficialPromoter 允许「管理员 或 官方推广官(referral_tier=official)」访问(需在 JWTAuth 之后)。
+// 用于官方推广官专属能力(如「分享文章」列表)。tier 是 DB 字段,故非管理员需按 user_id 查库判定;
+// 与前端 InvitePage 的 isOfficial gate 一致,防绕过前端直接调接口。
+func RequireOfficialPromoter(db *ent.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if role, _ := c.Get(CtxKeyRole); role == "admin" {
+			c.Next()
+			return
+		}
+		uid, ok := c.Get(CtxKeyUserID)
+		userID, ok2 := uid.(int)
+		if !ok || !ok2 || userID <= 0 {
+			response.Forbidden(c, "仅官方推广官可访问")
+			c.Abort()
+			return
+		}
+		u, err := db.User.Get(c.Request.Context(), userID)
+		if err != nil || u.ReferralTier != entuser.ReferralTierOfficial {
+			slog.Warn("official_promoter_access_denied", sdk.LogFieldUserID, userID, sdk.LogFieldRequestID, RequestIDFromGinContext(c))
+			response.Forbidden(c, "仅官方推广官可访问")
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
 // extractBearerToken 从 Authorization 头或 x-api-key 头提取 API Key
 // 优先使用 Authorization: Bearer <token>，回退到 x-api-key（Anthropic 标准格式）
 func extractBearerToken(c *gin.Context) string {

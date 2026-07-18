@@ -298,3 +298,36 @@ func TestReferralStoreSetUserReferralRate(t *testing.T) {
 		t.Fatalf("不存在用户 err = %v, want ErrUserNotFound", err)
 	}
 }
+
+func TestReferralStoreSetPromoterIdentityBindsBlog(t *testing.T) {
+	client, referralStore := setupReferralStore(t)
+	ctx := context.Background()
+	user := client.User.Create().
+		SetEmail("promoter@example.com").
+		SetUsername("promoter").
+		SetPasswordHash("x").
+		SaveX(ctx)
+	if user.CanAuthorBlog {
+		t.Fatalf("新用户 can_author_blog 应默认 false")
+	}
+	if err := referralStore.SetPromoterIdentity(ctx, user.ID, appreferral.TierOfficial, "Team"); err != nil {
+		t.Fatalf("SetPromoterIdentity official: %v", err)
+	}
+	got := client.User.GetX(ctx, user.ID)
+	if string(got.ReferralTier) != "official" {
+		t.Fatalf("tier = %v, want official", got.ReferralTier)
+	}
+	if !got.CanAuthorBlog {
+		t.Fatalf("授予 official 后 can_author_blog 应为 true")
+	}
+	if err := referralStore.SetPromoterIdentity(ctx, user.ID, appreferral.TierUser, ""); err != nil {
+		t.Fatalf("SetPromoterIdentity user: %v", err)
+	}
+	got = client.User.GetX(ctx, user.ID)
+	if string(got.ReferralTier) != "user" {
+		t.Fatalf("tier = %v, want user", got.ReferralTier)
+	}
+	if got.CanAuthorBlog {
+		t.Fatalf("撤销 official 后 can_author_blog 应收回为 false")
+	}
+}

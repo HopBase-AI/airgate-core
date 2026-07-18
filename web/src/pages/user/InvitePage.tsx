@@ -70,12 +70,17 @@ export default function InvitePage() {
     return `${base.replace(/\/+$/, '')}/?inv=${me.invite_code}`;
   }, [me?.invite_code, me?.link_base_url]);
 
+  // 官方推广官身份:博客能力(编辑 + 「分享文章」复制博客链接)为官方推广官专属,
+  // 普通用户不显示分享文章入口(裸邀请链接仍可用)。
+  const isOfficial = me?.tier === 'official';
+
   // 「分享文章」软入口:列出已发布文章,拼 <blogBase>/blog/<slug>?inv=<我的码> 供分发。
+  // 仅官方推广官请求与展示(后端 /blog/articles 亦按 official 校验,前后端一致)。
   const { data: articles, isLoading: articlesLoading } = useQuery({
     queryKey: queryKeys.blogPublishedArticles(),
     queryFn: () => blogApi.publishedArticles(),
     meta: { globalLoading: false },
-    enabled: !!me?.invite_code,
+    enabled: isOfficial && !!me?.invite_code,
   });
 
   const shareArticleUrl = (slug: string) =>
@@ -95,9 +100,6 @@ export default function InvitePage() {
   const rows = commissions?.list ?? [];
   const total = commissions?.total ?? 0;
   const totalPages = getTotalPages(total, pageSize);
-
-  // 官方推广官身份:驱动本页专属的品牌金徽章样式(仅样式差异,返佣逻辑与普通用户一致)。
-  const isOfficial = me?.tier === 'official';
 
   return (
     <div className="space-y-5">
@@ -171,8 +173,8 @@ export default function InvitePage() {
         ) : null}
       </div>
 
-      {/* 分享文章(软化推荐):分享一篇文章代替裸邀请链接,邀请码内置进链接 */}
-      {me?.invite_code ? (
+      {/* 分享文章(软化推荐):官方推广官专属,分享一篇文章代替裸邀请链接,邀请码内置进链接 */}
+      {isOfficial && me?.invite_code ? (
         <div className="rounded-[var(--radius)] border border-border bg-surface p-5">
           <div className="mb-1 text-base font-semibold" style={{ color: 'var(--ag-text)' }}>
             {t('referral.share_articles')}

@@ -122,8 +122,9 @@ func (s *Server) registerRoutes() {
 		// 分销邀请：我的邀请码/概览 + 返利流水
 		accountGroup.GET("/referral/me", handlers.Referral.MyReferral)
 		accountGroup.GET("/referral/commissions", handlers.Referral.MyCommissions)
-		// 已发布文章清单（「分享文章」软入口:拼 <blog>/blog/<slug>?inv=<我的码> 分发)
-		accountGroup.GET("/blog/articles", handlers.Blog.ListPublishedArticles)
+		// 已发布文章清单（「分享文章」软入口:拼 <blog>/blog/<slug>?inv=<我的码> 分发)。
+		// 官方推广官专属能力,路由级加 official 校验,与前端 InvitePage isOfficial gate 一致。
+		accountGroup.GET("/blog/articles", middleware.RequireOfficialPromoter(s.db), handlers.Blog.ListPublishedArticles)
 
 		// 分组
 		accountGroup.GET("/groups", handlers.Group.ListAvailableGroups)

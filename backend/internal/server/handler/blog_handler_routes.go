@@ -36,8 +36,8 @@ func (h *BlogHandler) ListBlogPosts(c *gin.Context) {
 	response.Success(c, response.PagedData(list, result.Total, result.Page, result.PageSize))
 }
 
-// ListPublishedArticles 返回已发布文章的轻量列表,供用户「分享文章」选择器使用。
-// 数据本就公开(落地页 /blog 可见),故仅需登录、无需管理员;返回不含正文与邀请码。
+// ListPublishedArticles 返回已发布文章的轻量列表,供官方推广官「分享文章」选择器使用。
+// 路由层已按 official 校验(RequireOfficialPromoter);返回不含正文与邀请码。
 func (h *BlogHandler) ListPublishedArticles(c *gin.Context) {
 	result, err := h.service.List(c.Request.Context(), appblog.ListFilter{
 		Status:   appblog.StatusPublished,
