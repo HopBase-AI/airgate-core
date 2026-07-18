@@ -1,5 +1,5 @@
 import { get } from './client';
-import type { UsageLogResp, CustomerUsageLogResp, UsageQuery, UsageStatsResp, UsageTrendBucket, PagedData } from '../types';
+import type { UsageLogResp, UserUsageLogResp, CustomerUsageLogResp, UsageQuery, UsageStatsResp, UsageTrendBucket, PagedData } from '../types';
 
 type UsageRequestOptions = {
   signal?: AbortSignal;
@@ -8,7 +8,7 @@ type UsageRequestOptions = {
 export const usageApi = {
   // 用户接口
   list: (params: UsageQuery, options?: UsageRequestOptions) =>
-    get<PagedData<UsageLogResp | CustomerUsageLogResp>>('/api/v1/usage', params, options),
+    get<PagedData<UserUsageLogResp | CustomerUsageLogResp>>('/api/v1/usage', params, options),
   userStats: (params: Omit<UsageQuery, 'page' | 'page_size'>, options?: UsageRequestOptions) =>
     get<UsageStatsResp>('/api/v1/usage/stats', params, options),
   userTrend: (params: { granularity: string; start_date?: string; end_date?: string }, options?: UsageRequestOptions) =>

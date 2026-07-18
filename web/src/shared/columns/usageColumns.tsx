@@ -14,16 +14,15 @@ import {
   subscribeUsageMetricDetailChange,
   subscribeUsageModelMetaChange,
 } from '../../app/plugin-frontend-registry';
-import type { UsageLogResp, CustomerUsageLogResp, UsageAttribute, UsageMetric } from '../types';
+import type { UsageLogResp, UserUsageLogResp, CustomerUsageLogResp, UsageAttribute, UsageMetric } from '../types';
 import { USAGE_TOKEN_COLORS } from '../constants';
 import { CostValue } from '../components/CostValue';
 
 /**
- * 列定义统一使用一个宽松的行类型：管理端拿到的是 UsageLogResp，
- * 而 end customer（API Key 登录）拿到的是 CustomerUsageLogResp（无 input_cost / actual_cost 等字段）。
- * customerScope 列不会读取那些缺失字段。
+ * 列定义统一使用一个宽松的行类型：管理端、普通用户与 API Key 登录用户
+ * 各自拿到对应权限范围内的响应结构。
  */
-export type UsageRow = UsageLogResp | CustomerUsageLogResp;
+export type UsageRow = UsageLogResp | UserUsageLogResp | CustomerUsageLogResp;
 
 export interface UsageColumnConfig<T extends UsageRow = UsageRow> {
   key: string;
@@ -383,7 +382,7 @@ function buildUsageRecordContext(row: UsageRow, customerScope: boolean) {
   return ctx;
 }
 
-function buildCostDetailContext(row: UsageLogResp, adminView: boolean) {
+function buildCostDetailContext(row: UsageLogResp | UserUsageLogResp, adminView: boolean) {
   const ctx = buildUsageRecordContext(row, false);
   ctx.adminView = adminView;
   return ctx;
@@ -421,7 +420,7 @@ function GenericMetricDetail({ row, t }: { row: UsageRow; t: TFunction }) {
   );
 }
 
-/** Reseller / admin 视角的成本列：包含完整的成本拆分与倍率信息 */
+/** 管理员视角的成本列：包含完整的成本拆分与倍率信息 */
 function buildResellerCostColumn(t: TFunction, adminView: boolean): UsageColumnConfig<UsageRow> {
   return {
     key: 'cost',
@@ -464,7 +463,9 @@ function buildResellerCostColumn(t: TFunction, adminView: boolean): UsageColumnC
                   <TooltipRow label={t('usage.sell_rate', '销售倍率')} value={`${row.sell_rate.toFixed(2)}x`} />
                 )}
                 <TooltipDivider />
-                <TooltipRow label={t('usage.original_cost')} value={<CostValue value={row.total_cost} decimals={6} tone="standard" />} />
+                {adminView && (
+                  <TooltipRow label={t('usage.original_cost')} value={<CostValue value={row.total_cost} decimals={6} tone="standard" />} />
+                )}
                 {adminView && (
                   <TooltipRow label={t('usage.account_cost', '账号计费')} value={<CostValue value={row.account_cost} decimals={6} />} />
                 )}
@@ -528,7 +529,7 @@ function buildCustomerCostColumn(t: TFunction): UsageColumnConfig<UsageRow> {
  * 使用记录表格的共享列定义。
  * 管理端和用户端共用，管理端额外在前面插入 user / api_key / account 列。
  *
- * customerScope=true 时切换为 end customer 视角的成本列，避免读取后端剥离过的字段。
+ * 普通用户保留费用拆分，但隐藏原始成本与账号计费；end customer 只展示最终扣费。
  */
 export function useUsageColumns(opts?: { customerScope?: boolean; adminView?: boolean }): UsageColumnConfig<UsageRow>[] {
   const { t } = useTranslation();

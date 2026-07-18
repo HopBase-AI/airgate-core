@@ -63,6 +63,64 @@ func toUsageLogResp(record appusage.LogRecord) dto.UsageLogResp {
 	}
 }
 
+// toUserUsageLogResp 转换为普通登录用户视角的响应。
+//
+// 这里采用允许列表构造响应，保留普通用户原有费用明细，但不返回
+// total_cost、account_cost 和 account_rate_multiplier。
+func toUserUsageLogResp(record appusage.LogRecord) dto.UserUsageLogResp {
+	return dto.UserUsageLogResp{
+		ID:                    record.ID,
+		UserID:                record.UserID,
+		UserEmail:             record.UserEmail,
+		UserDeleted:           record.UserDeleted,
+		APIKeyID:              record.APIKeyID,
+		APIKeyName:            record.APIKeyName,
+		APIKeyHint:            record.APIKeyHint,
+		APIKeyDeleted:         record.APIKeyDeleted,
+		AccountID:             record.AccountID,
+		AccountName:           record.AccountName,
+		AccountEmail:          record.AccountEmail,
+		GroupID:               record.GroupID,
+		Platform:              record.Platform,
+		Model:                 record.Model,
+		InputTokens:           record.InputTokens,
+		OutputTokens:          record.OutputTokens,
+		CachedInputTokens:     record.CachedInputTokens,
+		CacheCreationTokens:   record.CacheCreationTokens,
+		CacheCreation5mTokens: record.CacheCreation5mTokens,
+		CacheCreation1hTokens: record.CacheCreation1hTokens,
+		ReasoningOutputTokens: record.ReasoningOutputTokens,
+		InputPrice:            record.InputPrice,
+		OutputPrice:           record.OutputPrice,
+		CachedInputPrice:      record.CachedInputPrice,
+		CacheCreationPrice:    record.CacheCreationPrice,
+		CacheCreation1hPrice:  record.CacheCreation1hPrice,
+		InputCost:             record.InputCost,
+		OutputCost:            record.OutputCost,
+		CachedInputCost:       record.CachedInputCost,
+		CacheCreationCost:     record.CacheCreationCost,
+		ImageCost:             record.ImageCost,
+		ActualCost:            record.ActualCost,
+		BilledCost:            record.BilledCost,
+		RateMultiplier:        record.RateMultiplier,
+		SellRate:              record.SellRate,
+		ServiceTier:           record.ServiceTier,
+		ImageSize:             record.ImageSize,
+		Stream:                record.Stream,
+		DurationMs:            record.DurationMs,
+		FirstTokenMs:          record.FirstTokenMs,
+		UserAgent:             record.UserAgent,
+		IPAddress:             record.IPAddress,
+		Endpoint:              record.Endpoint,
+		ReasoningEffort:       record.ReasoningEffort,
+		UsageAttributes:       record.UsageAttributes,
+		UsageMetrics:          record.UsageMetrics,
+		UsageCostDetails:      record.UsageCostDetails,
+		UsageMetadata:         record.UsageMetadata,
+		CreatedAt:             record.CreatedAt,
+	}
+}
+
 // toCustomerUsageLogResp 转换为 end customer 视角的精简响应（仅 billed_cost，剥离所有平台真实成本字段）。
 //
 // 当请求来自 API Key 登录拿到的 scoped JWT 时使用，避免泄漏 reseller 与平台之间的差价。

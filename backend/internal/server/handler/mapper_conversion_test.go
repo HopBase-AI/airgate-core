@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -116,6 +117,18 @@ func TestDashboardAndUsageMappers(t *testing.T) {
 	}
 
 	logResp := toUsageLogResp(appusage.LogRecord{ID: 9, Model: "gpt", ActualCost: 1.2, BilledCost: 2.4})
+	userResp := toUserUsageLogResp(appusage.LogRecord{
+		ID:                    9,
+		Model:                 "gpt",
+		InputPrice:            1,
+		TotalCost:             3,
+		ActualCost:            1.2,
+		BilledCost:            2.4,
+		AccountCost:           0.8,
+		RateMultiplier:        0.4,
+		AccountRateMultiplier: 0.2,
+		UsageCostDetails:      []sdk.UsageCostDetail{{Label: "内部成本"}},
+	})
 	customerResp := toCustomerUsageLogResp(appusage.LogRecord{
 		ID:                    9,
 		Model:                 "gpt",
@@ -128,6 +141,23 @@ func TestDashboardAndUsageMappers(t *testing.T) {
 	if logResp.ActualCost != 1.2 || customerResp.BilledCost != 2.4 || customerResp.Model != "gpt" ||
 		customerResp.CacheCreationTokens != 11 || customerResp.ReasoningOutputTokens != 22 || customerResp.ReasoningEffort != "high" {
 		t.Fatalf("用量日志响应异常: full=%+v customer=%+v", logResp, customerResp)
+	}
+	if userResp.ActualCost != 1.2 || userResp.InputPrice != 1 || userResp.BilledCost != 2.4 ||
+		userResp.RateMultiplier != 0.4 || len(userResp.UsageCostDetails) != 1 {
+		t.Fatalf("普通用户费用明细被意外裁剪: %+v", userResp)
+	}
+	userJSON, err := json.Marshal(userResp)
+	if err != nil {
+		t.Fatalf("序列化普通用户用量响应失败: %v", err)
+	}
+	var userFields map[string]any
+	if err := json.Unmarshal(userJSON, &userFields); err != nil {
+		t.Fatalf("解析普通用户用量响应失败: %v", err)
+	}
+	for _, forbidden := range []string{"total_cost", "account_cost", "account_rate_multiplier"} {
+		if _, exists := userFields[forbidden]; exists {
+			t.Fatalf("普通用户用量响应仍包含内部字段 %q: %s", forbidden, userJSON)
+		}
 	}
 
 	buckets := toUsageTrendBuckets([]appusage.TrendBucket{{Time: "10:00", InputTokens: 1, CacheRead: 2}})

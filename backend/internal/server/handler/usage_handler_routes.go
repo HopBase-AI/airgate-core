@@ -60,14 +60,11 @@ func (h *UsageHandler) UserUsage(c *gin.Context) {
 		return
 	}
 
-	// 用户视角：剥离账号级别字段（account_cost / account_rate_multiplier），
-	// 仅管理端 AdminUsage 才返回。
-	list := make([]dto.UsageLogResp, 0, len(result.List))
+	// 普通用户保留费用拆分，只移除原始总成本和账号计费字段；
+	// 完整计价链路仅管理端 AdminUsage 可见。
+	list := make([]dto.UserUsageLogResp, 0, len(result.List))
 	for _, item := range result.List {
-		resp := toUsageLogResp(item)
-		resp.AccountCost = 0
-		resp.AccountRateMultiplier = 0
-		list = append(list, resp)
+		list = append(list, toUserUsageLogResp(item))
 	}
 	response.Success(c, response.PagedData(list, result.Total, result.Page, result.PageSize))
 }
@@ -128,7 +125,7 @@ func (h *UsageHandler) UserUsageStats(c *gin.Context) {
 		return
 	}
 
-	// Reseller scope：完整字段（actual + billed），前端按需展示
+	// 普通用户聚合字段保持原有响应口径。
 	resp := dto.UsageStatsResp{
 		TotalRequests:   result.Summary.TotalRequests,
 		TotalTokens:     result.Summary.TotalTokens,

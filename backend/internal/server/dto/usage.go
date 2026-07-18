@@ -58,6 +58,62 @@ type UsageLogResp struct {
 	CreatedAt             string                `json:"created_at"`
 }
 
+// UserUsageLogResp 普通登录用户的使用记录响应。
+//
+// 保留原有费用拆分、单价和倍率，只移除原始总成本与账号计费字段；
+// 这两类内部字段仅通过管理员接口的 UsageLogResp 返回。
+type UserUsageLogResp struct {
+	ID                    int64                 `json:"id"`
+	UserID                int64                 `json:"user_id"`
+	UserEmail             string                `json:"user_email,omitempty"`
+	UserDeleted           bool                  `json:"user_deleted,omitempty"`
+	APIKeyID              int64                 `json:"api_key_id"`
+	APIKeyName            string                `json:"api_key_name,omitempty"`
+	APIKeyHint            string                `json:"api_key_hint,omitempty"`
+	APIKeyDeleted         bool                  `json:"api_key_deleted"`
+	AccountID             int64                 `json:"account_id"`
+	AccountName           string                `json:"account_name,omitempty"`
+	AccountEmail          string                `json:"account_email,omitempty"`
+	GroupID               int64                 `json:"group_id"`
+	Platform              string                `json:"platform"`
+	Model                 string                `json:"model"`
+	InputTokens           int                   `json:"input_tokens"`
+	OutputTokens          int                   `json:"output_tokens"`
+	CachedInputTokens     int                   `json:"cached_input_tokens"`
+	CacheCreationTokens   int                   `json:"cache_creation_tokens"`
+	CacheCreation5mTokens int                   `json:"cache_creation_5m_tokens"`
+	CacheCreation1hTokens int                   `json:"cache_creation_1h_tokens"`
+	ReasoningOutputTokens int                   `json:"reasoning_output_tokens"`
+	InputPrice            float64               `json:"input_price"`
+	OutputPrice           float64               `json:"output_price"`
+	CachedInputPrice      float64               `json:"cached_input_price"`
+	CacheCreationPrice    float64               `json:"cache_creation_price"`
+	CacheCreation1hPrice  float64               `json:"cache_creation_1h_price"`
+	InputCost             float64               `json:"input_cost"`
+	OutputCost            float64               `json:"output_cost"`
+	CachedInputCost       float64               `json:"cached_input_cost"`
+	CacheCreationCost     float64               `json:"cache_creation_cost"`
+	ImageCost             float64               `json:"image_cost"`
+	ActualCost            float64               `json:"actual_cost"`
+	BilledCost            float64               `json:"billed_cost"`
+	RateMultiplier        float64               `json:"rate_multiplier"`
+	SellRate              float64               `json:"sell_rate"`
+	ServiceTier           string                `json:"service_tier,omitempty"`
+	ImageSize             string                `json:"image_size,omitempty"`
+	Stream                bool                  `json:"stream"`
+	DurationMs            int64                 `json:"duration_ms"`
+	FirstTokenMs          int64                 `json:"first_token_ms"`
+	UserAgent             string                `json:"user_agent,omitempty"`
+	IPAddress             string                `json:"ip_address,omitempty"`
+	Endpoint              string                `json:"endpoint,omitempty"`
+	ReasoningEffort       string                `json:"reasoning_effort,omitempty"`
+	UsageAttributes       []sdk.UsageAttribute  `json:"usage_attributes,omitempty"`
+	UsageMetrics          []sdk.UsageMetric     `json:"usage_metrics,omitempty"`
+	UsageCostDetails      []sdk.UsageCostDetail `json:"usage_cost_details,omitempty"`
+	UsageMetadata         map[string]string     `json:"usage_metadata,omitempty"`
+	CreatedAt             string                `json:"created_at"`
+}
+
 // CustomerUsageLogResp 使用记录响应（end customer scope，剥离所有平台真实成本字段）
 //
 // 当请求来自 end customer（通过 API key 登录拿到的 scoped JWT）时返回此结构，

@@ -597,6 +597,60 @@ export interface UsageLogResp {
   created_at: string;
 }
 
+/** 普通登录用户视角：保留费用明细，但不返回原始总成本与账号计费字段。 */
+export interface UserUsageLogResp {
+  id: number;
+  user_id: number;
+  user_email?: string;
+  user_deleted?: boolean;
+  api_key_id: number;
+  api_key_name?: string;
+  api_key_hint?: string;
+  api_key_deleted: boolean;
+  account_id: number;
+  account_name?: string;
+  account_email?: string;
+  group_id: number;
+  platform: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cached_input_tokens: number;
+  cache_creation_tokens: number;
+  cache_creation_5m_tokens: number;
+  cache_creation_1h_tokens: number;
+  reasoning_output_tokens: number;
+  input_price: number;
+  output_price: number;
+  cached_input_price: number;
+  cache_creation_price: number;
+  cache_creation_1h_price: number;
+  input_cost: number;
+  output_cost: number;
+  cached_input_cost: number;
+  cache_creation_cost: number;
+  image_cost: number;
+  /** 本次实际扣费 */
+  actual_cost: number;
+  billed_cost: number;
+  rate_multiplier: number;
+  sell_rate: number;
+  service_tier?: string;
+  image_size?: string;
+  stream: boolean;
+  duration_ms: number;
+  first_token_ms: number;
+  user_agent?: string;
+  ip_address?: string;
+  endpoint?: string;
+  reasoning_effort?: string;
+  usage_attributes?: UsageAttribute[];
+  usage_metrics?: UsageMetric[];
+  usage_cost_details?: UsageCostDetail[];
+  usage_metadata?: Record<string, string>;
+  created_at: string;
+}
+
 /**
  * CustomerUsageLogResp end customer 视角的精简响应。
  *
