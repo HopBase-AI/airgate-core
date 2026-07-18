@@ -7,7 +7,7 @@ import { useToast } from '../../shared/ui';
 import { useCrudMutation } from '../../shared/hooks/useCrudMutation';
 import { queryKeys } from '../../shared/queryKeys';
 import { FETCH_ALL_PARAMS } from '../../shared/constants';
-import { AlertDialog, Button, Card, Checkbox, Chip, Description, EmptyState, Input, Label, Modal, Skeleton, Spinner, Tabs, TextField as HeroTextField, useOverlayState } from '@heroui/react';
+import { AlertDialog, Button, Card, Checkbox, Chip, Description, EmptyState, Input, Label, Modal, Skeleton, Spinner, Tabs, TextArea, TextField as HeroTextField, useOverlayState } from '@heroui/react';
 import { DialogTriggerShim } from '../../shared/components/DialogTriggerShim';
 import {
   Trash2, Download, Loader2, RefreshCw,
@@ -454,7 +454,7 @@ function PluginConfigModal({
                   <Loader2 className="w-5 h-5 animate-spin text-primary" />
                 </div>
               ) : (
-                <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                <div className="space-y-4">
           {(plugin?.config_schema || []).map((field) => {
             const inputType =
               field.type === 'password' ? 'password' :
@@ -492,13 +492,24 @@ function PluginConfigModal({
                     {field.label || field.key}
                     {field.required ? <span className="text-danger ml-1">*</span> : null}
                   </Label>
-                  <Input
-                    type={inputType}
-                    value={values[field.key] || ''}
-                    placeholder={field.placeholder}
-                    onChange={(e) => setValues({ ...values, [field.key]: e.target.value })}
-                    required={field.required}
-                  />
+                  {field.type === 'textarea' ? (
+                    <TextArea
+                      className="font-mono text-sm"
+                      rows={7}
+                      value={values[field.key] || ''}
+                      placeholder={field.placeholder}
+                      onChange={(e) => setValues((current) => ({ ...current, [field.key]: e.target.value }))}
+                      required={field.required}
+                    />
+                  ) : (
+                    <Input
+                      type={inputType}
+                      value={values[field.key] || ''}
+                      placeholder={field.placeholder}
+                      onChange={(e) => setValues((current) => ({ ...current, [field.key]: e.target.value }))}
+                      required={field.required}
+                    />
+                  )}
                   {field.description ? <Description>{field.description}</Description> : null}
                 </HeroTextField>
               </div>
