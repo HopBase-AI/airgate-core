@@ -6,7 +6,7 @@ import { blogApi } from '../../shared/api/blog';
 import { useCrudMutation } from '../../shared/hooks/useCrudMutation';
 import { queryKeys } from '../../shared/queryKeys';
 import { usePagination } from '../../shared/hooks/usePagination';
-import { AlertDialog, Button, Chip, EmptyState, Spinner } from '@heroui/react';
+import { AlertDialog, Button, Chip, EmptyState, Label, ListBox, Select, Spinner } from '@heroui/react';
 import { DialogTriggerShim } from '../../shared/components/DialogTriggerShim';
 import { Plus, Pencil, Trash2, ExternalLink } from 'lucide-react';
 import type { BlogPostResp } from '../../shared/types';
@@ -27,10 +27,21 @@ export default function BlogListPage() {
   const navigate = useNavigate();
   const { page, setPage, pageSize, setPageSize } = usePagination(20, 'admin.blog');
   const [deleteTarget, setDeleteTarget] = useState<BlogPostResp | null>(null);
+  const [langFilter, setLangFilter] = useState('');
+
+  const languageOptions = [
+    { id: '', label: t('blog.all_languages', '全部语言') },
+    { id: 'zh', label: t('blog.lang_zh', '简体中文') },
+    { id: 'zh-Hant', label: t('blog.lang_zh_hant', '繁體中文') },
+    { id: 'en', label: t('blog.lang_en', 'English') },
+  ];
+  const selectedLanguageLabel = languageOptions.find((item) => item.id === langFilter)?.label
+    ?? languageOptions[0]?.label
+    ?? t('blog.all_languages', '全部语言');
 
   const { data, isLoading } = useQuery({
-    queryKey: queryKeys.blog(page, pageSize),
-    queryFn: () => blogApi.list({ page, page_size: pageSize }),
+    queryKey: queryKeys.blog(page, pageSize, langFilter),
+    queryFn: () => blogApi.list({ page, page_size: pageSize, lang: langFilter || undefined }),
     placeholderData: keepPreviousData,
   });
 
@@ -50,7 +61,32 @@ export default function BlogListPage() {
 
   return (
     <div>
-      <div className="flex justify-end mb-5">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="w-full sm:w-52">
+          <Select
+            fullWidth
+            selectedKey={langFilter}
+            onSelectionChange={(key) => {
+              setLangFilter(key == null ? '' : String(key));
+              setPage(1);
+            }}
+          >
+            <Label className="sr-only">{t('common.language', '语言')}</Label>
+            <Select.Trigger>
+              <Select.Value>{selectedLanguageLabel}</Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox items={languageOptions}>
+                {(item) => (
+                  <ListBox.Item id={item.id} textValue={item.label}>
+                    {item.label}
+                  </ListBox.Item>
+                )}
+              </ListBox>
+            </Select.Popover>
+          </Select>
+        </div>
         <Button variant="primary" onPress={openCreate}>
           <Plus className="w-4 h-4" />
           {t('blog.create', '写文章')}

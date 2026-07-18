@@ -304,6 +304,10 @@ export default function BlogEditorPage() {
               placeholder="abc123"
               className="font-mono"
             />
+            {/* 归因优先级容易误解:文章码只是裸链接访问的兜底,红字明示避免疑问 */}
+            <p className="mt-1.5 text-[11px] text-danger">
+              {t('blog.invite_warn', '注意:此码只在读者「不带参数」打开本文时兜底归因;读者从带 ?inv= 的链接进来(如推广人在「邀请好友」页复制的分享链接)时,以链接上的码为准,此码会被覆盖。')}
+            </p>
           </HeroTextField>
 
           <div className="space-y-3">
