@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '../../../shared/queryKeys';
 import { Button, Checkbox, Chip, ComboBox, Description, Input, Label, ListBox, Modal, Select, Spinner, TextArea, TextField as HeroTextField, useOverlayState } from '@heroui/react';
 import { DialogTriggerShim } from '../../../shared/components/DialogTriggerShim';
-import { ArrowUpDown, ChevronDown, Languages, Layers, Search, X } from 'lucide-react';
+import { ArrowUpDown, ChevronDown, Languages, Layers, Search, TriangleAlert, X } from 'lucide-react';
 import { groupsApi } from '../../../shared/api/groups';
 import { accountsApi } from '../../../shared/api/accounts';
 import { usersApi } from '../../../shared/api/users';
@@ -455,6 +455,11 @@ export function GroupFormModal({
             value={String(form.rate_multiplier)}
             onChange={(e) => setForm({ ...form, rate_multiplier: Number(e.target.value) })}
           />
+          {/* 分组倍率只管登录用户实付；官网/落地页未登录展示倍率（toc_landing_pricing）不跟随，红字明示防两边不一致 */}
+          <div className="mt-1.5 flex items-start gap-2 rounded-lg border border-danger/30 bg-danger-subtle px-3 py-2 text-xs leading-5 text-danger">
+            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{t('groups.rate_multiplier_warn')}</span>
+          </div>
         </HeroTextField>
 
         <div className="space-y-3 rounded-lg border border-glass-border p-3">

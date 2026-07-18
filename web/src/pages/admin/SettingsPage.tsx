@@ -14,6 +14,7 @@ import { useToast } from '../../shared/ui';
 import {
   Save, Loader2, Globe, Mail, MailSearch, Send, Upload, X, RotateCcw,
   ShieldCheck, Copy, Trash2, KeyRound, Zap, Download, Database, Boxes, Plus, ChevronDown, Info,
+  TriangleAlert,
 } from 'lucide-react';
 import type { SettingItem, TestSMTPReq } from '../../shared/types';
 import { SystemUpdatePanel } from './SystemUpdatePanel';
@@ -25,6 +26,8 @@ import { CommonModal } from '../../shared/components/CommonModal';
 const SITE_KEYS = [
   'site_name', 'site_subtitle', 'site_logo', 'api_base_url',
   'contact_info', 'doc_url', 'landing_pricing_json',
+  // ToC 落地页/模型广场「未登录」展示牌价（fx 汇率 + multipliers 展示倍率；不自动跟随分组倍率）
+  'toc_landing_pricing',
   // 多落地页品牌覆盖（siteId → { name, logo }）：登录页/控制台按 ?site= 来源站切换品牌
   'sites_branding',
   // 博客多站点投放：blog_sites=[{key,label}] 供编辑器多选;blog_site_key=本实例站点 key,SSR 据此过滤
@@ -469,6 +472,20 @@ export default function SettingsPage() {
     }
   }
 
+  // ToC 展示牌价 JSON 的客户端校验：只提示不阻塞保存（留空 = 模型广场仅展示官方价）。
+  const tocPricingRaw = values['toc_landing_pricing'] ?? '';
+  let tocPricingError = '';
+  if (tocPricingRaw.trim() !== '') {
+    try {
+      const parsed = JSON.parse(tocPricingRaw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        tocPricingError = t('settings.toc_landing_pricing_invalid');
+      }
+    } catch (e) {
+      tocPricingError = (e as Error).message;
+    }
+  }
+
   // 多落地页品牌 JSON 的客户端校验：只提示不阻塞保存。
   // 留空 = 所有来源统一用全局 site_name/site_logo/doc_url。
   const sitesBrandingRaw = values['sites_branding'] ?? '';
@@ -579,6 +596,11 @@ export default function SettingsPage() {
                   description={t('settings.landing_pricing_desc')}
                   title={t('settings.landing_pricing')}
                 >
+                  {/* 价格同步边界红字提示：此表是手写整表接管，与「模型目录」动态表的关系容易踩坑 */}
+                  <div className="mb-3 flex items-start gap-2 rounded-lg border border-danger/30 bg-danger-subtle px-3 py-2 text-xs leading-5 text-danger">
+                    <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{t('settings.landing_pricing_warn')}</span>
+                  </div>
                   <TextArea
                     aria-label={t('settings.landing_pricing')}
                     value={landingPricingRaw}
@@ -588,6 +610,28 @@ export default function SettingsPage() {
                   />
                   {landingPricingError && (
                     <p className="text-[11px] text-danger mt-1.5">{landingPricingError}</p>
+                  )}
+                </SettingsSection>
+
+                <SettingsSection
+                  badge="toc_landing_pricing"
+                  description={t('settings.toc_landing_pricing_desc')}
+                  title={t('settings.toc_landing_pricing')}
+                >
+                  {/* 展示倍率不自动跟分组倍率——历史上多次造成官网展示价与实付价不一致，红字明示 */}
+                  <div className="mb-3 flex items-start gap-2 rounded-lg border border-danger/30 bg-danger-subtle px-3 py-2 text-xs leading-5 text-danger">
+                    <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{t('settings.toc_landing_pricing_warn')}</span>
+                  </div>
+                  <TextArea
+                    aria-label={t('settings.toc_landing_pricing')}
+                    value={tocPricingRaw}
+                    onChange={(e) => set('toc_landing_pricing', e.target.value)}
+                    className="h-40 w-full font-mono text-xs leading-5"
+                    placeholder={'{\n  "fx": 6.8,\n  "multipliers": { "default": 2.4, "claude": 2.4, "openai": 2.2 },\n  "board": [ { "id": "claude-sonnet-4-6", "multiplier": 2.0 } ],\n  "plaza_currency": "USD"\n}'}
+                  />
+                  {tocPricingError && (
+                    <p className="text-[11px] text-danger mt-1.5">{tocPricingError}</p>
                   )}
                 </SettingsSection>
 
@@ -2042,6 +2086,11 @@ function ModelCatalogPanel({ values, set, footer, onValidationChange }: {
         <Card.Title>{t('settings.tab_models')}</Card.Title>
       </Card.Header>
       <Card.Content>
+        {/* 权威价来源红字提示：日常改价只改这里，下游（计费/广场/官网/ToC 牌价）自动同步 */}
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-danger/30 bg-danger-subtle px-3 py-2 text-xs leading-5 text-danger">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{t('settings.models_catalog_price_warn')}</span>
+        </div>
         <div className="ag-settings-section-stack">
           {MODEL_CATALOG_PLATFORMS.map((platform) => (
             <ModelCatalogEditor
