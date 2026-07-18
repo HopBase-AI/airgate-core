@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { Button } from '@heroui/react'
 import i18n from '../../i18n'
+import { isChunkLoadError, tryReloadForStaleChunk } from '../../shared/chunkReload'
 
 interface Props {
   children: ReactNode
@@ -10,6 +11,7 @@ interface Props {
 interface State {
   hasError: boolean
   error: Error | null
+  reloading: boolean
 }
 
 /**
@@ -18,18 +20,27 @@ interface State {
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props)
-    this.state = { hasError: false, error: null }
+    this.state = { hasError: false, error: null, reloading: false }
   }
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return { hasError: true, error }
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('[ErrorBoundary]', error, errorInfo)
+    // 发版后旧 chunk 失效导致的动态加载失败：自动整页刷新一次换新版本，
+    // 护栏期内二次失败才落到下方错误 UI。
+    if (isChunkLoadError(error) && tryReloadForStaleChunk()) {
+      this.setState({ reloading: true })
+    }
   }
 
   render() {
+    if (this.state.reloading) {
+      // 整页刷新已触发，保持空白避免错误 UI 闪现
+      return null
+    }
     if (this.state.hasError) {
       if (this.props.fallback) {
         return this.props.fallback
