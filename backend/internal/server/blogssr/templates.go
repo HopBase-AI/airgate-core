@@ -232,7 +232,7 @@ function thresholdScrollY(){
 var rect=content.getBoundingClientRect();
 var total=content.offsetHeight||1;
 var contentTop=rect.top+window.scrollY;
-var target=contentTop+window.innerHeight*0.5-total*(pos/100);
+var target=contentTop-window.innerHeight*0.5+total*(pos/100);
 var max=Math.max(0,(document.documentElement.scrollHeight||0)-window.innerHeight);
 return Math.max(0,Math.min(target,max));
 }

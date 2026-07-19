@@ -152,6 +152,7 @@ func TestSSR_Detail(t *testing.T) {
 		"window.addEventListener('wheel',preventDownwardWheel,{passive:false})",
 		"if(gateOpen&&event.deltaY>0)event.preventDefault()",
 		"if(gateOpen&&delta>0)event.preventDefault()",
+		"var target=contentTop-window.innerHeight*0.5+total*(pos/100)",
 		"if(window.scrollY>limitY+1)",
 		"gate.setAttribute('hidden','')",
 		"navEntries[0].type==='reload'",
