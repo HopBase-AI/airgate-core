@@ -1,6 +1,6 @@
 // Package blogssr 服务端渲染公开博客页(列表 + 详情)。
 // 设计要点:core 一份代码,两实例(ToB/ToC)各渲染自己 DB 的文章;
-// 品牌从 site 设置读取,随实例天然分品牌;注册墙为软墙(整篇照发 + 滚动到位弹遮罩);
+// 品牌从 site 设置读取,随实例天然分品牌;注册墙在滚动到位后阻止继续向下;
 // 邀请码 CTA 由本模板自拼 ?inv=,读者注册即归属。
 package blogssr
 
@@ -32,7 +32,6 @@ type uiText struct {
 	GateTitle     string
 	GateDesc      string
 	GateButton    string
-	GateDismiss   string
 	EmptyTitle    string
 	EmptySub      string
 }
@@ -42,21 +41,21 @@ var uiTexts = map[string]uiText{
 		ReadingSuffix: " 分钟阅读", Back: "← 返回博客", CTAButton: "免费开始 →",
 		CTADesc:   "一个 API Key 直连 Claude、Codex、GPT 等主流模型,注册即领体验额度,几分钟接入,余额长期有效。",
 		GateTitle: "注册后继续阅读全文", GateDesc: "免费注册即可读完本文,并获得 API 额度体验。",
-		GateButton: "免费注册 / 登录", GateDismiss: "以后再说",
+		GateButton: "免费注册 / 登录",
 		EmptyTitle: "文章正在路上", EmptySub: "我们正在准备第一批内容,敬请期待。",
 	},
 	"zh-Hant": {
 		ReadingSuffix: " 分鐘閱讀", Back: "← 返回 Blog", CTAButton: "免費開始 →",
 		CTADesc:   "一個 API Key 直連 Claude、GPT、Gemini 等主流模型,註冊即領體驗額度,幾分鐘接入,餘額長期有效。",
 		GateTitle: "註冊後繼續閱讀全文", GateDesc: "免費註冊即可讀完本文,並獲得 API 額度體驗。",
-		GateButton: "免費註冊 / 登入", GateDismiss: "以後再說",
+		GateButton: "免費註冊 / 登入",
 		EmptyTitle: "文章正在路上", EmptySub: "我們正在準備第一批內容,敬請期待。",
 	},
 	"en": {
 		ReadingSuffix: " min read", Back: "← Back to blog", CTAButton: "Start for free →",
 		CTADesc:   "One API key for Claude, GPT, Gemini and more — sign up for trial credits, integrate in minutes, balance never expires.",
 		GateTitle: "Sign up to keep reading", GateDesc: "Create a free account to finish this article and get trial API credits.",
-		GateButton: "Sign up / Log in", GateDismiss: "Maybe later",
+		GateButton: "Sign up / Log in",
 		EmptyTitle: "Articles on the way", EmptySub: "We are preparing the first batch of posts. Stay tuned.",
 	},
 }
@@ -131,7 +130,7 @@ type Chrome struct {
 	LoginLabel  string       `json:"login_label"`  // 顶栏登录文案,空="登录"
 	SignupLabel string       `json:"signup_label"` // 顶栏注册 CTA 文案,空=不显示注册钮
 	CTADesc     string       `json:"cta_desc"`     // 文末常驻 CTA 描述,空=默认文案
-	ShowLangs   bool         `json:"show_langs"`   // 开启三语(简/繁/EN):列表按 lang 过滤+顶栏切换器+访客语言自动跳转
+	ShowLangs   bool         `json:"show_langs"`   // 开启三语(繁/EN/简):列表按 lang 过滤+顶栏切换器+访客语言自动跳转
 	DefaultLang string       `json:"default_lang"` // 无 ?lang= 时的默认语言(zh/zh-Hant/en),空=zh
 	// I18n 按语言覆盖 chrome 文案/导航(键:zh/zh-Hant/en)。未覆盖的字段回退顶层值;
 	// CTADesc 例外:未覆盖且非默认语言时用内置本地化文案,避免英文文章配中文 CTA。
@@ -180,7 +179,7 @@ func resolveChrome(c Chrome, lang string) Chrome {
 
 // blogLangs 公开博客支持的语言;Code 即文章 lang 字段取值,Label 用于顶栏切换器。
 var blogLangs = []struct{ Code, Label string }{
-	{"zh", "简"}, {"zh-Hant", "繁"}, {"en", "EN"},
+	{"zh-Hant", "繁"}, {"en", "EN"}, {"zh", "简"},
 }
 
 // canonicalLang 归一语言代码到 blogLangs 取值;不认识返回空。
@@ -220,6 +219,74 @@ func blogListURL(lang, reqInvite string) string {
 		return "/blog"
 	}
 	return "/blog?" + q.Encode()
+}
+
+// blogDetailURL 组文章详情链接,切换译文时保留读者邀请码归因。
+func blogDetailURL(slug, reqInvite string) string {
+	href := "/blog/" + strings.TrimSpace(slug)
+	if nav := navQuery(reqInvite); nav != "" {
+		return href + nav
+	}
+	return href
+}
+
+// chineseTranslationKey 兼容既有简/繁文章 slug 约定:繁体通常在简体 slug 后追加 -hant。
+// 英文 slug 会按英文标题重写,无法靠 slug 可靠关联,需回退 published_at 分组。
+func chineseTranslationKey(p appblog.Post) string {
+	switch canonicalLang(p.Lang) {
+	case "zh-Hant":
+		return strings.TrimSuffix(p.Slug, "-hant")
+	case "zh":
+		return p.Slug
+	default:
+		return ""
+	}
+}
+
+// findTranslatedPost 在当前站点的已发布文章里定位目标语言译文。
+// 先用简/繁既有 slug 约定精确匹配;其余语言按共享 published_at 关联。
+// published_at 若出现多个候选则拒绝猜测,由调用方回退目标语言列表。
+func findTranslatedPost(current appblog.Post, posts []appblog.Post, targetLang, siteKey string) (appblog.Post, bool) {
+	targetLang = canonicalLang(targetLang)
+	if targetLang == "" {
+		return appblog.Post{}, false
+	}
+	if targetLang == canonicalLang(current.Lang) {
+		return current, true
+	}
+
+	candidates := make([]appblog.Post, 0, 1)
+	currentKey := chineseTranslationKey(current)
+	for _, p := range posts {
+		if p.Status != appblog.StatusPublished || canonicalLang(p.Lang) != targetLang || !postVisibleOnSite(p.Sites, siteKey) {
+			continue
+		}
+		if currentKey != "" && chineseTranslationKey(p) == currentKey {
+			return p, true
+		}
+		if current.PublishedAt != nil && p.PublishedAt != nil && p.PublishedAt.Equal(*current.PublishedAt) {
+			candidates = append(candidates, p)
+		}
+	}
+	if len(candidates) == 1 {
+		return candidates[0], true
+	}
+	return appblog.Post{}, false
+}
+
+// buildDetailLangNav 为文章详情生成语言切换器。存在对应译文时留在同一篇文章;
+// 缺译文或关联不唯一时才回退目标语言列表,避免误跳到另一篇文章。
+func buildDetailLangNav(current appblog.Post, posts []appblog.Post, currentLang, reqInvite, siteKey string) []NavLink {
+	currentLang = pickLang(currentLang, "")
+	links := make([]NavLink, 0, len(blogLangs))
+	for _, lang := range blogLangs {
+		href := blogListURL(lang.Code, reqInvite)
+		if translated, ok := findTranslatedPost(current, posts, lang.Code, siteKey); ok {
+			href = blogDetailURL(translated.Slug, reqInvite)
+		}
+		links = append(links, NavLink{Label: lang.Label, Href: href, Active: lang.Code == currentLang})
+	}
+	return links
 }
 
 // parseChrome 解析 blog_chrome JSON;空串或非法 JSON 一律返回零值(渲染走默认,不因配置错误 5xx)。
@@ -275,7 +342,7 @@ type Branding struct {
 	ShowLangs bool
 	Lang      string
 	LangNav   []NavLink
-	// UI 固定文案(返回/阅读时长后缀/CTA按钮/软墙/空态),按 Lang 本地化,空语言=简体。
+	// UI 固定文案(返回/阅读时长后缀/CTA按钮/注册墙/空态),按 Lang 本地化,空语言=简体。
 	UI uiText
 	// HTMLLang <html lang> 值(zh-CN/zh-Hant/en)。
 	HTMLLang string
@@ -557,10 +624,10 @@ func buildListView(b Branding, posts []appblog.Post, reqInvite, lang string) Lis
 			tag = strings.TrimSpace(p.Tags[0])
 		}
 		items = append(items, listItem{
-			Title:      p.Title,
-			Slug:       p.Slug,
-			Summary:    p.Summary,
-			CoverImage: template.URL(absURL(b.OriginBase, p.CoverImage)), //nolint:gosec // 可信后台设置,<img> 呈现
+			Title:       p.Title,
+			Slug:        p.Slug,
+			Summary:     p.Summary,
+			CoverImage:  template.URL(absURL(b.OriginBase, p.CoverImage)), //nolint:gosec // 可信后台设置,<img> 呈现
 			PublishedAt: published,
 			URL:         "/blog/" + p.Slug + nav,
 			Tag:         tag,
@@ -650,7 +717,7 @@ func buildDetailView(b Branding, p appblog.Post, reqInvite string) DetailView {
 		Branding:        branding,
 		Title:           seoTitle,
 		MetaDescription: metaDesc,
-		Content:         template.HTML(p.ContentHTML), //nolint:gosec // 已在 service 层经 bluemonday 净化
+		Content:         template.HTML(p.ContentHTML),                     //nolint:gosec // 已在 service 层经 bluemonday 净化
 		CoverImage:      template.URL(absURL(b.OriginBase, p.CoverImage)), //nolint:gosec // 可信后台设置,<img> 呈现
 		OGImage:         ogImage,
 		Canonical:       canonical,

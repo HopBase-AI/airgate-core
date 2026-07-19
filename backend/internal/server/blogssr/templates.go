@@ -78,13 +78,12 @@ img{max-width:100%}
 .blog-back{display:inline-block;margin-bottom:22px;font-size:14px;color:var(--muted)}
 .blog-back:hover{color:var(--accent);text-decoration:none}
 .blog-footer{border-top:1px solid var(--border);color:var(--muted);font-size:13px;text-align:center;padding:26px 20px;margin-top:48px}
-.blog-gate{position:fixed;left:0;right:0;bottom:0;height:56vh;pointer-events:none;display:flex;align-items:flex-end;justify-content:center;background:linear-gradient(to bottom,rgba(0,0,0,0) 0%,var(--bg) 58%);z-index:50}
+.blog-gate{position:fixed;inset:0;pointer-events:none;display:flex;align-items:flex-end;justify-content:center;background:linear-gradient(to bottom,rgba(0,0,0,0) 0%,var(--bg) 58%);z-index:50}
 .blog-gate-card{pointer-events:auto;text-align:center;max-width:428px;width:calc(100% - 40px);margin-bottom:8vh;padding:26px;border:1px solid var(--border);border-radius:18px;background:var(--card);box-shadow:0 14px 44px rgba(0,0,0,.2)}
 .blog-gate-title{font-size:18px;font-weight:650;margin:0 0 8px}
 .blog-gate-desc{font-size:14px;color:var(--muted);margin:0 0 16px;line-height:1.6}
 .blog-gate-btn{display:inline-block;background:var(--accent);color:var(--accent-fg);font-weight:600;padding:11px 28px;border-radius:10px}
 .blog-gate-btn:hover{text-decoration:none;opacity:.92}
-.blog-gate-dismiss{display:block;margin:12px auto 0;background:none;border:0;color:var(--muted);font-size:13px;cursor:pointer}
 .blog-cta{margin:52px 0 8px;border:1px solid color-mix(in srgb,var(--accent) 24%,var(--border));border-radius:18px;background:linear-gradient(135deg,var(--accent-soft),var(--card) 75%);padding:30px 28px}
 .blog-cta-title{font-size:19px;font-weight:700;margin:0 0 8px;color:var(--fg);letter-spacing:-.01em}
 .blog-cta-desc{font-size:14.5px;color:var(--muted);margin:0 0 18px;line-height:1.6}
@@ -210,14 +209,13 @@ const detailBodyStr = `<main class="blog-wrap">
 </main>
 `
 
-// gateStr 软墙遮罩 + 滚动触发脚本(全皮肤共享)。
+// gateStr 注册墙遮罩 + 单向滚动边界(全皮肤共享)。达到阈值后禁止继续向下,但允许返回上文。
 const gateStr = `{{if .GateEnabled}}
-<div id="blog-gate" class="blog-gate" hidden>
+<div id="blog-gate" class="blog-gate" role="dialog" aria-labelledby="blog-gate-title" hidden>
 <div class="blog-gate-card">
-<p class="blog-gate-title">{{.UI.GateTitle}}</p>
+<p class="blog-gate-title" id="blog-gate-title">{{.UI.GateTitle}}</p>
 <p class="blog-gate-desc">{{.UI.GateDesc}}</p>
 <a class="blog-gate-btn" href="{{.RegisterURL}}">{{.UI.GateButton}}</a>
-<button type="button" class="blog-gate-dismiss" id="blog-gate-dismiss">{{.UI.GateDismiss}}</button>
 </div>
 </div>
 <script>
@@ -226,19 +224,71 @@ var pos={{.GatePosition}};
 var content=document.getElementById('blog-content');
 var gate=document.getElementById('blog-gate');
 if(!content||!gate)return;
-var dismissed=false;
-var btn=document.getElementById('blog-gate-dismiss');
-if(btn)btn.addEventListener('click',function(){dismissed=true;gate.setAttribute('hidden','');});
-function onScroll(){
-if(dismissed)return;
+var gateOpen=false;
+var limitY=0;
+var touchY=null;
+var downKeys={ArrowDown:1,PageDown:1,End:1};
+function thresholdScrollY(){
 var rect=content.getBoundingClientRect();
 var total=content.offsetHeight||1;
-var scrolled=Math.min(Math.max(-rect.top+window.innerHeight*0.5,0),total);
-var pct=(scrolled/total)*100;
-if(pct>=pos){gate.removeAttribute('hidden');}else{gate.setAttribute('hidden','');}
+var contentTop=rect.top+window.scrollY;
+var target=contentTop+window.innerHeight*0.5-total*(pos/100);
+var max=Math.max(0,(document.documentElement.scrollHeight||0)-window.innerHeight);
+return Math.max(0,Math.min(target,max));
+}
+function showGate(){
+if(gateOpen)return;
+gateOpen=true;
+gate.removeAttribute('hidden');
+}
+function hideGate(){
+if(!gateOpen)return;
+gateOpen=false;
+gate.setAttribute('hidden','');
+}
+function onScroll(){
+limitY=thresholdScrollY();
+if(window.scrollY>limitY+1){showGate();window.scrollTo(0,limitY);return;}
+if(window.scrollY>=limitY-1){showGate();}else{hideGate();}
+}
+function preventDownwardWheel(event){
+if(gateOpen&&event.deltaY>0)event.preventDefault();
+}
+function rememberTouch(event){
+if(event.touches.length)touchY=event.touches[0].clientY;
+}
+function preventDownwardTouch(event){
+if(!event.touches.length)return;
+var currentY=event.touches[0].clientY;
+var delta=touchY===null?0:touchY-currentY;
+touchY=currentY;
+if(gateOpen&&delta>0)event.preventDefault();
+}
+function clearTouch(){touchY=null;}
+function preventDownwardKey(event){
+var downward=downKeys[event.key]||(event.key===' '&&!event.shiftKey);
+if(gateOpen&&downward)event.preventDefault();
+}
+function onResize(){
+onScroll();
 }
 window.addEventListener('scroll',onScroll,{passive:true});
-window.addEventListener('resize',onScroll,{passive:true});
+window.addEventListener('resize',onResize,{passive:true});
+window.addEventListener('wheel',preventDownwardWheel,{passive:false});
+window.addEventListener('touchstart',rememberTouch,{passive:true});
+window.addEventListener('touchmove',preventDownwardTouch,{passive:false});
+window.addEventListener('touchend',clearTouch,{passive:true});
+window.addEventListener('touchcancel',clearTouch,{passive:true});
+window.addEventListener('keydown',preventDownwardKey);
+var navEntries=window.performance&&performance.getEntriesByType?performance.getEntriesByType('navigation'):[];
+var reloaded=navEntries.length&&navEntries[0].type==='reload';
+if(reloaded){
+if('scrollRestoration' in history)history.scrollRestoration='manual';
+var resetAfterReload=function(){hideGate();window.scrollTo(0,0);};
+resetAfterReload();
+window.addEventListener('load',resetAfterReload,{once:true});
+window.addEventListener('pageshow',function(){setTimeout(resetAfterReload,0);},{once:true});
+}
 onScroll();
 })();
 </script>

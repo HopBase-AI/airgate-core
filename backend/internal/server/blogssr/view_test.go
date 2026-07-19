@@ -299,7 +299,7 @@ func TestBuildDetailView_InviteThreadingAndCTA(t *testing.T) {
 		t.Errorf("cta title = %q", v.CTATitle)
 	}
 
-	// 读者无码:顶栏不透传,但 CTA 仍用文章内置码(软化转化路径始终在)
+	// 读者无码:顶栏不透传,但 CTA 仍用文章内置码(转化路径始终在)
 	vNo := buildDetailView(b, post, "")
 	if vNo.HomeURL != "/blog" {
 		t.Errorf("no-invite home url = %q, want /blog", vNo.HomeURL)
@@ -314,5 +314,49 @@ func TestBuildDetailView_InviteThreadingAndCTA(t *testing.T) {
 		if !strings.Contains(bc, want) {
 			t.Errorf("breadcrumb missing %q\n got: %s", want, bc)
 		}
+	}
+}
+
+func TestBuildDetailLangNav_StaysOnTranslatedArticle(t *testing.T) {
+	pub := time.Date(2026, 7, 12, 8, 0, 0, 0, time.UTC)
+	current := appblog.Post{ID: 1, Slug: "topic-english", Lang: "en", Status: appblog.StatusPublished, PublishedAt: &pub}
+	posts := []appblog.Post{
+		current,
+		{ID: 2, Slug: "topic-hant", Lang: "zh-Hant", Status: appblog.StatusPublished, PublishedAt: &pub},
+		{ID: 3, Slug: "topic", Lang: "zh", Status: appblog.StatusPublished, PublishedAt: &pub},
+	}
+
+	links := buildDetailLangNav(current, posts, "en", "Vip8", "")
+	if len(links) != 3 {
+		t.Fatalf("lang links len = %d, want 3", len(links))
+	}
+	wants := []NavLink{
+		{Label: "繁", Href: "/blog/topic-hant?inv=vip8", Active: false},
+		{Label: "EN", Href: "/blog/topic-english?inv=vip8", Active: true},
+		{Label: "简", Href: "/blog/topic?inv=vip8", Active: false},
+	}
+	for i, want := range wants {
+		if links[i] != want {
+			t.Errorf("links[%d] = %+v, want %+v", i, links[i], want)
+		}
+	}
+}
+
+func TestFindTranslatedPost_AmbiguousPublishedTimeFallsBack(t *testing.T) {
+	pub := time.Date(2026, 7, 12, 8, 0, 0, 0, time.UTC)
+	current := appblog.Post{ID: 1, Slug: "topic-en", Lang: "en", Status: appblog.StatusPublished, PublishedAt: &pub}
+	posts := []appblog.Post{
+		{ID: 2, Slug: "topic-a", Lang: "zh", Status: appblog.StatusPublished, PublishedAt: &pub},
+		{ID: 3, Slug: "topic-b", Lang: "zh", Status: appblog.StatusPublished, PublishedAt: &pub},
+	}
+	if got, ok := findTranslatedPost(current, posts, "zh", ""); ok {
+		t.Fatalf("ambiguous translation should not be guessed, got %+v", got)
+	}
+
+	// 站点过滤后只剩一个候选时可以安全关联。
+	posts[0].Sites = []string{"ink"}
+	posts[1].Sites = []string{"late"}
+	if got, ok := findTranslatedPost(current, posts, "zh", "ink"); !ok || got.Slug != "topic-a" {
+		t.Fatalf("site-scoped translation = %+v, %v, want topic-a", got, ok)
 	}
 }

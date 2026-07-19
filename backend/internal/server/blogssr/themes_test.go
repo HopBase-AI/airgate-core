@@ -196,16 +196,16 @@ func TestSSR_EmberThemeListAndDetail(t *testing.T) {
 	}
 	body := w.Body.String()
 	for _, want := range []string{
-		`class="sk-nav"`,            // 皮肤顶栏
-		`class="sk-featured"`,       // 头条
-		`class="sk-grid"`,           // 卡片网格(ember 专属)
-		">模型价格</a>",                  // 配置导航项
-		`href="/#pricing"`,          // 锚点原样
-		` class="act"`,              // 博客项高亮
-		`class="sk-footer-links"`,   // 页脚链接
-		">接入文档</a>",                  // 页脚项
-		"color-scheme:dark",         // 暗色钉死
-		"Second Post",               // 次条进文章流
+		`class="sk-nav"`,          // 皮肤顶栏
+		`class="sk-featured"`,     // 头条
+		`class="sk-grid"`,         // 卡片网格(ember 专属)
+		">模型价格</a>",               // 配置导航项
+		`href="/#pricing"`,        // 锚点原样
+		` class="act"`,            // 博客项高亮
+		`class="sk-footer-links"`, // 页脚链接
+		">接入文档</a>",               // 页脚项
+		"color-scheme:dark",       // 暗色钉死
+		"Second Post",             // 次条进文章流
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("ember list 缺少 %q", want)
@@ -236,8 +236,8 @@ func TestSSR_InkThemeRowsAndSignup(t *testing.T) {
 	for _, want := range []string{
 		`class="sk-rows"`,    // ink 发丝线文章流
 		`class="sk-signup"`,  // 注册 CTA 钮
-		">免費註冊</a>",           // 配置文案
-		">登入</a>",             // 登录文案
+		">免費註冊</a>",          // 配置文案
+		">登入</a>",            // 登录文案
 		">Essevin</b>",       // 品牌字标覆盖
 		"color-scheme:light", // 亮色钉死
 	} {
@@ -296,9 +296,9 @@ func TestPickLang(t *testing.T) {
 		{"en", "zh-Hant", "en"},
 		{"zh-TW", "", "zh-Hant"},
 		{"zh-CN", "en", "zh"},
-		{"fr", "en", "en"},     // 不认识的 query 落回默认
-		{"fr", "xx", "zh"},     // 全不认识兜底简体
-		{"EN-us", "", "en"},    // 大小写不敏感
+		{"fr", "en", "en"},  // 不认识的 query 落回默认
+		{"fr", "xx", "zh"},  // 全不认识兜底简体
+		{"EN-us", "", "en"}, // 大小写不敏感
 	}
 	for _, tc := range cases {
 		if got := pickLang(tc.query, tc.def); got != tc.want {
@@ -333,6 +333,10 @@ func TestSSR_LangFilterAndSwitcher(t *testing.T) {
 			t.Errorf("切换器缺少 %q", want)
 		}
 	}
+	hantAt, enAt, zhAt := strings.Index(body, ">繁</a>"), strings.Index(body, ">EN</a>"), strings.Index(body, ">简</a>")
+	if hantAt < 0 || enAt < 0 || zhAt < 0 || !(hantAt < enAt && enAt < zhAt) {
+		t.Errorf("ToC 语言顺序应为繁/EN/简,位置=%d/%d/%d", hantAt, enAt, zhAt)
+	}
 
 	// ?lang=en 只出英文
 	bodyEn := doGet(t, r, "/blog?lang=en").Body.String()
@@ -340,16 +344,32 @@ func TestSSR_LangFilterAndSwitcher(t *testing.T) {
 		t.Error("?lang=en 过滤错误")
 	}
 
-	// 详情「返回博客」回本文语言列表
+	// 详情「返回博客」回本文语言列表;语言切换留在同一篇文章的对应译文。
 	bodyDetail := doGet(t, r, "/blog/post-en").Body.String()
 	if !strings.Contains(bodyDetail, `href="/blog?lang=en" class="blog-back"`) {
 		t.Error("详情返回链接未带文章语言")
+	}
+	for _, want := range []string{
+		`href="/blog/post-hant">繁</a>`,
+		`href="/blog/post-en" class="act">EN</a>`,
+		`href="/blog/post-zh">简</a>`,
+	} {
+		if !strings.Contains(bodyDetail, want) {
+			t.Errorf("详情语言切换未指向对应译文,缺少 %q", want)
+		}
+	}
+	if strings.Index(bodyDetail, ">繁</a>") > strings.Index(bodyDetail, ">EN</a>") || strings.Index(bodyDetail, ">EN</a>") > strings.Index(bodyDetail, ">简</a>") {
+		t.Error("详情语言顺序不是繁/EN/简")
 	}
 
 	// 语言与邀请码并存
 	bodyInv := doGet(t, r, "/blog?lang=en&inv=Vip8").Body.String()
 	if !strings.Contains(bodyInv, `href="/blog?inv=vip8&amp;lang=zh-Hant"`) && !strings.Contains(bodyInv, `href="/blog?lang=zh-Hant&amp;inv=vip8"`) {
 		t.Error("切换器未同时携带 inv")
+	}
+	detailInv := doGet(t, r, "/blog/post-en?inv=Vip8").Body.String()
+	if !strings.Contains(detailInv, `href="/blog/post-hant?inv=vip8">繁</a>`) {
+		t.Error("详情译文切换未保留 inv")
 	}
 }
 

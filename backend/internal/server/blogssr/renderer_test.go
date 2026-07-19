@@ -145,14 +145,27 @@ func TestSSR_Detail(t *testing.T) {
 		"<p>Hello body content</p>",
 		// 邀请码 CTA(文章内置码)
 		"https://api.hop-base.com/login?inv=abc123",
-		// 软墙注入(html/template 在 JS 上下文会给数值补空格,故匹配 "var pos= 50")
+		// 注册墙注入(html/template 在 JS 上下文会给数值补空格,故匹配 "var pos= 50")
 		`id="blog-gate"`,
 		"var pos= 50",
+		`role="dialog"`,
+		"window.addEventListener('wheel',preventDownwardWheel,{passive:false})",
+		"if(gateOpen&&event.deltaY>0)event.preventDefault()",
+		"if(gateOpen&&delta>0)event.preventDefault()",
+		"if(window.scrollY>limitY+1)",
+		"gate.setAttribute('hidden','')",
+		"navEntries[0].type==='reload'",
 	}
 	for _, want := range wants {
 		if !strings.Contains(body, want) {
 			t.Errorf("detail body missing %q", want)
 		}
+	}
+	if strings.Contains(body, "blog-gate-dismiss") {
+		t.Error("registration gate must not expose a dismiss bypass")
+	}
+	if strings.Contains(body, "html.blog-gate-open") {
+		t.Error("registration gate must allow readers to scroll back up")
 	}
 }
 
@@ -270,8 +283,7 @@ func TestSSR_HostileInviteNotReflected(t *testing.T) {
 	}
 }
 
-// TestSSR_NoGateWhenDisabled 验证未开注册墙的文章不注入 gate 脚本,但常驻内联 CTA 仍在
-// (软化推荐的核心:gate 关掉也要有转化入口 + 内置邀请码露出)。
+// TestSSR_NoGateWhenDisabled 验证未开注册墙的文章不注入 gate 脚本,但常驻内联 CTA 仍在。
 func TestSSR_NoGateWhenDisabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	pub := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)

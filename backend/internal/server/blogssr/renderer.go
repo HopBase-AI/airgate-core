@@ -105,6 +105,20 @@ func (r *Renderer) RenderDetail(c *gin.Context) {
 
 	reqInvite := c.Query("inv")
 	view := buildDetailView(b, post, reqInvite)
+	if view.ShowLangs {
+		// 详情语言切换应留在同一篇文章。译文是独立 post/slug,现有内容以共享
+		// published_at 作为翻译组标识;取全量已发布文章后只接受唯一匹配。
+		translations, listErr := r.posts.List(c.Request.Context(), appblog.ListFilter{
+			Status:   appblog.StatusPublished,
+			Page:     1,
+			PageSize: 1000,
+		})
+		var candidates []appblog.Post
+		if listErr == nil {
+			candidates = translations.List
+		}
+		view.LangNav = buildDetailLangNav(post, candidates, view.Lang, reqInvite, b.SiteKey)
+	}
 
 	if strings.TrimSpace(reqInvite) != "" {
 		// 带 ?inv= 的请求个性化了 CTA,禁缓存以免代理把某人的邀请码串给别人。

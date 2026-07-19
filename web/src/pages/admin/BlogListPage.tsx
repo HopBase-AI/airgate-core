@@ -31,9 +31,9 @@ export default function BlogListPage() {
 
   const languageOptions = [
     { id: '', label: t('blog.all_languages', '全部语言') },
-    { id: 'zh', label: t('blog.lang_zh', '简体中文') },
     { id: 'zh-Hant', label: t('blog.lang_zh_hant', '繁體中文') },
     { id: 'en', label: t('blog.lang_en', 'English') },
+    { id: 'zh', label: t('blog.lang_zh', '简体中文') },
   ];
   const selectedLanguageLabel = languageOptions.find((item) => item.id === langFilter)?.label
     ?? languageOptions[0]?.label
