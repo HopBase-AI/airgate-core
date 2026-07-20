@@ -38,6 +38,8 @@ func TestBuildRegisterURL(t *testing.T) {
 		console, code, site, returnTo string
 	}{
 		{"https://api.hop-base.com", "abc123", "ink", "https://hop-base.com/blog/post?lang=zh-Hant&inv=abc123"},
+		{"https://console.essevin.com", "english8", "ink", "https://essevin.com/blog/post-en?inv=english8&lang=en"},
+		{"https://console.essevin.com", "simple88", "ink", "https://essevin.com/blog/post-cn?lang=zh&inv=simple88"},
 		{"https://api.hop-base.com/", "abc123", "", ""},
 		{"https://api.hop-base.com", "", "", ""},
 	}

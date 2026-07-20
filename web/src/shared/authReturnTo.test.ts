@@ -11,6 +11,10 @@ describe('safeAuthReturnTo', () => {
       'https://late.essevin.com/blog/article?lang=zh-Hant',
       'https://api.essevin.com',
     )).toBe('https://late.essevin.com/blog/article?lang=zh-Hant');
+    expect(safeAuthReturnTo(
+      'https://essevin.com/blog/article-cn?inv=vip8&lang=zh',
+      'https://console.essevin.com',
+    )).toBe('https://essevin.com/blog/article-cn?inv=vip8&lang=zh');
   });
 
   it('rejects open redirects, lookalike hosts and non-blog destinations', () => {

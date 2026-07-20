@@ -351,7 +351,7 @@ func TestSSR_LangFilterAndSwitcher(t *testing.T) {
 	}
 
 	// 详情「返回博客」回本文语言列表;语言切换留在同一篇文章的对应译文。
-	bodyDetail := doGet(t, r, "/blog/post-en").Body.String()
+	bodyDetail := doGet(t, r, "/blog/post-en?lang=en").Body.String()
 	if !strings.Contains(bodyDetail, `href="/blog?lang=en" class="blog-back"`) {
 		t.Error("详情返回链接未带文章语言")
 	}
@@ -373,7 +373,7 @@ func TestSSR_LangFilterAndSwitcher(t *testing.T) {
 	if !strings.Contains(bodyInv, `href="/blog?inv=vip8&amp;lang=zh-Hant"`) && !strings.Contains(bodyInv, `href="/blog?lang=zh-Hant&amp;inv=vip8"`) {
 		t.Error("切换器未同时携带 inv")
 	}
-	detailInv := doGet(t, r, "/blog/post-en?inv=Vip8").Body.String()
+	detailInv := doGet(t, r, "/blog/post-en?lang=en&inv=Vip8").Body.String()
 	if !strings.Contains(detailInv, `href="/blog/post-hant?inv=vip8&amp;lang=zh-Hant">繁</a>`) {
 		t.Error("详情译文切换未保留 inv")
 	}
@@ -382,7 +382,16 @@ func TestSSR_LangFilterAndSwitcher(t *testing.T) {
 func TestSSR_DetailLanguageQueryControlsTranslation(t *testing.T) {
 	r := newThemedRouter("ink", `{"show_langs":true,"default_lang":"zh-Hant"}`, trilingualPosts())
 
-	w := doGet(t, r, "/blog/post-en?lang=zh-Hant&inv=Vip8")
+	// 无语言 key 时严格使用站点默认繁体；邀请码必须原样保留。
+	w := doGet(t, r, "/blog/post-en?inv=Vip8")
+	if w.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("missing lang status = %d, want %d", w.Code, http.StatusTemporaryRedirect)
+	}
+	if got := w.Header().Get("Location"); got != "/blog/post-hant?inv=vip8" {
+		t.Errorf("default language redirect = %q", got)
+	}
+
+	w = doGet(t, r, "/blog/post-en?lang=zh-Hant&inv=Vip8")
 	if w.Code != http.StatusTemporaryRedirect {
 		t.Fatalf("mismatched lang status = %d, want %d", w.Code, http.StatusTemporaryRedirect)
 	}
@@ -398,9 +407,16 @@ func TestSSR_DetailLanguageQueryControlsTranslation(t *testing.T) {
 		t.Error("login CTA must keep invite, language and return target")
 	}
 
+	// 非法 key 视为无 key，回到默认繁体的干净 URL。
 	w = doGet(t, r, "/blog/post-en?lang=unknown")
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "English Post") {
-		t.Errorf("invalid lang must not redirect to unrelated content, status=%d", w.Code)
+	if w.Code != http.StatusTemporaryRedirect || w.Header().Get("Location") != "/blog/post-hant" {
+		t.Errorf("invalid lang should fall back to default translation, status=%d location=%q", w.Code, w.Header().Get("Location"))
+	}
+
+	// 默认语言自身的干净 URL 不重定向。
+	w = doGet(t, r, "/blog/post-hant")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "繁體文章") {
+		t.Errorf("default language canonical detail should render, status=%d", w.Code)
 	}
 }
 
@@ -430,14 +446,14 @@ func TestLocalizedStringsAndChromeI18n(t *testing.T) {
 		}
 	}
 	// 英文详情:返回/CTA 按钮/CTA 描述本地化
-	dbody := doGet(t, r, "/blog/post-en").Body.String()
+	dbody := doGet(t, r, "/blog/post-en?lang=en").Body.String()
 	for _, want := range []string{"← Back to blog", "Start for free →", "English CTA", `lang="en"`} {
 		if !strings.Contains(dbody, want) {
 			t.Errorf("en detail 缺少 %q", want)
 		}
 	}
 	// 繁体详情:无 i18n 覆盖时 CTA 描述用内置繁体(而非顶层简体)
-	hbody := doGet(t, r, "/blog/post-hant").Body.String()
+	hbody := doGet(t, r, "/blog/post-hant?lang=zh-Hant").Body.String()
 	for _, want := range []string{"← 返回 Blog", "免費開始 →", "註冊即領體驗額度", `lang="zh-Hant"`} {
 		if !strings.Contains(hbody, want) {
 			t.Errorf("hant detail 缺少 %q", want)
@@ -447,7 +463,7 @@ func TestLocalizedStringsAndChromeI18n(t *testing.T) {
 		t.Error("繁体文章不应使用顶层简体 CTA 描述")
 	}
 	// 简体(默认语言)详情:顶层 cta_desc 生效
-	zbody := doGet(t, r, "/blog/post-zh").Body.String()
+	zbody := doGet(t, r, "/blog/post-zh?lang=zh").Body.String()
 	if !strings.Contains(zbody, "中文CTA") {
 		t.Error("默认语言应使用顶层 cta_desc")
 	}

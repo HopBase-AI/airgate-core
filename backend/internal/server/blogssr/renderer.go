@@ -98,12 +98,6 @@ func (r *Renderer) RenderDetail(c *gin.Context) {
 		return
 	}
 
-	// 仅对无查询串的规范 URL 计数:一方面这类响应可被 CDN 缓存(约每次回源才写一次),
-	// 另一方面挡住 `?_=rand` 之类绕过缓存的刷量/写放大——带查询串的请求一律不写库。
-	if c.Request.URL.RawQuery == "" {
-		r.posts.IncrementView(c.Request.Context(), post.ID)
-	}
-
 	reqInvite := c.Query("inv")
 	var candidates []appblog.Post
 	if b.Chrome.ShowLangs {
@@ -118,18 +112,32 @@ func (r *Renderer) RenderDetail(c *gin.Context) {
 			candidates = translations.List
 		}
 
-		// 合法 ?lang= 明确表达读者语言意图，优先于当前 slug。存在译文时跳到
-		// 对应文章；缺少或关联不唯一时回到目标语言列表，绝不展示错误语言正文。
-		requestedLang := canonicalLang(c.Query("lang"))
-		if requestedLang != "" && requestedLang != canonicalLang(post.Lang) {
-			target := blogListURL(requestedLang, reqInvite)
+		// URL 有合法 ?lang= 时严格跟随 key；无 key 或 key 非法时严格采用站点默认
+		// （ToC 主站为繁体）。这样直接打开英文/简体 slug 但没有语言 key 时，
+		// 也不会绕过“无 key = 默认繁体”的产品约定。
+		rawLang := c.Query("lang")
+		canonicalQueryLang := canonicalLang(rawLang)
+		requestedLang := pickLang(rawLang, b.Chrome.DefaultLang)
+		if requestedLang != canonicalLang(post.Lang) {
+			// 无/非法 key 的默认语言跳转使用干净 URL；显式合法 key 则继续显式携带。
+			targetLang := requestedLang
+			if canonicalQueryLang == "" {
+				targetLang = ""
+			}
+			target := blogListURL(targetLang, reqInvite)
 			if translated, ok := findTranslatedPost(post, candidates, requestedLang, b.SiteKey); ok {
-				target = blogDetailURL(translated.Slug, requestedLang, reqInvite)
+				target = blogDetailURL(translated.Slug, targetLang, reqInvite)
 			}
 			c.Header("Cache-Control", "private, no-store")
 			c.Redirect(http.StatusTemporaryRedirect, target)
 			return
 		}
+	}
+
+	// 仅对无查询串、且确认无需语言跳转的规范 URL 计数。一方面这类响应可被 CDN
+	// 缓存（约每次回源才写一次），另一方面挡住 `?_=rand` 绕缓存的刷量/写放大。
+	if c.Request.URL.RawQuery == "" {
+		r.posts.IncrementView(c.Request.Context(), post.ID)
 	}
 
 	view := buildDetailView(b, post, reqInvite)

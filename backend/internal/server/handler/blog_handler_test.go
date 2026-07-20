@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -97,9 +98,13 @@ func newBlogHandlerRouter(repo *blogFakeRepo) *gin.Engine {
 
 func TestBlogHandler_ListPublishedArticlesIncludesLanguage(t *testing.T) {
 	repo := newBlogFakeRepo()
-	repo.posts[1] = appblog.Post{
-		ID: 1, Title: "English Post", Slug: "english-post-en",
-		Status: appblog.StatusPublished, Lang: appblog.LangEnglish,
+	for _, p := range []appblog.Post{
+		{ID: 1, Title: "繁體文章", Slug: "post-hant", Status: appblog.StatusPublished, Lang: appblog.LangTraditional},
+		{ID: 2, Title: "English Post", Slug: "post-en", Status: appblog.StatusPublished, Lang: appblog.LangEnglish},
+		{ID: 3, Title: "简体文章", Slug: "post-zh", Status: appblog.StatusPublished, Lang: appblog.LangSimplified},
+		{ID: 4, Title: "Draft", Slug: "draft", Status: appblog.StatusDraft, Lang: appblog.LangEnglish},
+	} {
+		repo.posts[p.ID] = p
 	}
 	r := newBlogHandlerRouter(repo)
 	w := doJSON(t, r, http.MethodGet, "/blog/articles", "")
@@ -116,8 +121,16 @@ func TestBlogHandler_ListPublishedArticlesIncludesLanguage(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp.Code != 0 || len(resp.Data) != 1 || resp.Data[0].Slug != "english-post-en" || resp.Data[0].Lang != appblog.LangEnglish {
+	if resp.Code != 0 || len(resp.Data) != 3 {
 		t.Fatalf("unexpected resp: %+v", resp)
+	}
+	got := make(map[string]string, len(resp.Data))
+	for _, item := range resp.Data {
+		got[item.Slug] = item.Lang
+	}
+	want := map[string]string{"post-hant": appblog.LangTraditional, "post-en": appblog.LangEnglish, "post-zh": appblog.LangSimplified}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("published article language map = %#v, want %#v", got, want)
 	}
 }
 
