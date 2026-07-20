@@ -2192,7 +2192,6 @@ function ModelCatalogEditor({ label, settingKey, set, value, builtinModels, onVa
   useEffect(() => {
     onValidationChange(settingKey, errors);
     return () => onValidationChange(settingKey, []);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingKey, errorKey, onValidationChange]);
 
   // 有校验错误时强制展开，保证"保存被禁用"的原因（错误列表）不被折叠藏掉。

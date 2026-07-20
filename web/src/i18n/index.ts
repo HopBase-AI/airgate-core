@@ -8,8 +8,22 @@ import ja from './ja.json';
 const SUPPORTED_LANGUAGES = new Set(['zh', 'zh-HK', 'en', 'ja']);
 const DEFAULT_LANGUAGE = 'en';
 
-function normalizeLanguage(lang: string | null | undefined) {
-  return lang && SUPPORTED_LANGUAGES.has(lang) ? lang : null;
+export function normalizeLanguage(lang: string | null | undefined) {
+  if (!lang) return null;
+  const lower = lang.toLowerCase();
+  if (lower === 'zh-hant' || lower === 'zh-hk' || lower === 'zh-tw' || lower === 'zh-mo') return 'zh-HK';
+  if (lower === 'zh' || lower === 'zh-cn' || lower === 'zh-hans' || lower === 'zh-sg') return 'zh';
+  if (lower === 'en' || lower === 'en-us' || lower === 'en-gb') return 'en';
+  return SUPPORTED_LANGUAGES.has(lang) ? lang : null;
+}
+
+function getQueryLanguage() {
+  if (typeof window === 'undefined') return null;
+  try {
+    return normalizeLanguage(new URLSearchParams(window.location.search).get('lang'));
+  } catch {
+    return null;
+  }
 }
 
 // 按浏览器语言推断首选界面语言（无 cookie/localStorage 存储时）：
@@ -43,12 +57,24 @@ function setCookieLanguage(lang: string) {
   const secure = window.location.protocol === 'https:' ? '; secure' : '';
   const rootDomain = window.location.hostname.endsWith('.hop-base.com') || window.location.hostname === 'hop-base.com'
     ? '; domain=.hop-base.com'
-    : '';
+    : window.location.hostname.endsWith('.essevin.com') || window.location.hostname === 'essevin.com'
+      ? '; domain=.essevin.com'
+      : '';
   document.cookie = `lang=${encodeURIComponent(lang)}; path=/; max-age=31536000; samesite=lax${secure}${rootDomain}`;
 }
 
 export function getStoredLanguage() {
   if (typeof window === 'undefined') return DEFAULT_LANGUAGE;
+  const queryLang = getQueryLanguage();
+  if (queryLang) {
+    try {
+      window.localStorage.setItem('lang', queryLang);
+    } catch {
+      // Storage may be unavailable; the current page still uses the query language.
+    }
+    setCookieLanguage(queryLang);
+    return queryLang;
+  }
   const cookieLang = getCookieLanguage();
   if (cookieLang) {
     try {

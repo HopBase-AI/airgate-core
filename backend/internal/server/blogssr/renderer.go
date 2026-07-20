@@ -90,7 +90,7 @@ func (r *Renderer) RenderDetail(c *gin.Context) {
 	if err != nil || !postVisibleOnSite(post.Sites, b.SiteKey) {
 		// 文章不存在,或已发布但未投放到当前站点 → 一律 404(不泄露"存在但别站可见")。
 		// 皮肤 404 页也渲染顶栏/页脚,需先推导 chrome 字段。
-		applyChrome(&b, "", buildRegisterURL(b.ConsoleURL, ""), "")
+		applyChrome(&b, "", buildRegisterURL(b.ConsoleURL, "", "", ""), "")
 		b.HomeURL = "/blog"
 		c.Header("Cache-Control", "no-store")
 		r.write(c, http.StatusNotFound, r.set(b.Theme).notFound, b)
@@ -104,8 +104,8 @@ func (r *Renderer) RenderDetail(c *gin.Context) {
 	}
 
 	reqInvite := c.Query("inv")
-	view := buildDetailView(b, post, reqInvite)
-	if view.ShowLangs {
+	var candidates []appblog.Post
+	if b.Chrome.ShowLangs {
 		// 详情语言切换应留在同一篇文章。译文是独立 post/slug，先按三语
 		// slug 后缀关联，再用共享 published_at 兼容旧内容；只接受唯一匹配。
 		translations, listErr := r.posts.List(c.Request.Context(), appblog.ListFilter{
@@ -113,10 +113,26 @@ func (r *Renderer) RenderDetail(c *gin.Context) {
 			Page:     1,
 			PageSize: 1000,
 		})
-		var candidates []appblog.Post
 		if listErr == nil {
 			candidates = translations.List
 		}
+
+		// 合法 ?lang= 明确表达读者语言意图，优先于当前 slug。存在译文时跳到
+		// 对应文章；缺少或关联不唯一时回到目标语言列表，绝不展示错误语言正文。
+		requestedLang := canonicalLang(c.Query("lang"))
+		if requestedLang != "" && requestedLang != canonicalLang(post.Lang) {
+			target := blogListURL(requestedLang, reqInvite)
+			if translated, ok := findTranslatedPost(post, candidates, requestedLang, b.SiteKey); ok {
+				target = blogDetailURL(translated.Slug, requestedLang, reqInvite)
+			}
+			c.Header("Cache-Control", "private, no-store")
+			c.Redirect(http.StatusTemporaryRedirect, target)
+			return
+		}
+	}
+
+	view := buildDetailView(b, post, reqInvite)
+	if view.ShowLangs {
 		view.LangNav = buildDetailLangNav(post, candidates, view.Lang, reqInvite, b.SiteKey)
 	}
 

@@ -25,26 +25,9 @@ const skinHeaderStr = `<header class="sk-nav"><div class="sk-nav-inner">
 </div></header>
 `
 
-// skinLangScriptStr 访客语言自动跳转(仅列表页):无显式 ?lang= 且无既往选择时,
-// 按浏览器语言一次性 302(客户端 replace)到对应语言列表;显式选择会记入 localStorage。
-const skinLangScriptStr = `{{if .ShowLangs}}
-<script>
-(function(){
-try{
-var cur={{.Lang}};
-var qs=new URLSearchParams(location.search);
-if(qs.has('lang')){localStorage.setItem('blog_lang',cur);return;}
-var want=localStorage.getItem('blog_lang');
-if(!want){
-var nl=(navigator.language||'').toLowerCase();
-want=nl.indexOf('en')===0?'en':(nl==='zh-tw'||nl==='zh-hk'||nl==='zh-mo'||nl.indexOf('hant')>=0)?'zh-Hant':(nl.indexOf('zh')===0?'zh':'');
-}
-if(want&&want!==cur){qs.set('lang',want);location.replace(location.pathname+'?'+qs.toString());}
-}catch(e){}
-})();
-</script>
-{{end}}
-`
+// 语言只由 URL ?lang= 与服务端 default_lang 决定。禁止按浏览器语言二次跳转，
+// 否则 ToC 的“无 key 固定繁体”会在页面加载后被客户端悄悄改写。
+const skinLangScriptStr = ``
 
 // skinFooterStr 主站风页脚:品牌 + 一句话 + 版权,右侧链接组。
 const skinFooterStr = `<footer class="sk-footer"><div class="sk-footer-inner">

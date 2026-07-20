@@ -291,14 +291,14 @@ func TestSSR_EmberInviteThreadingInNav(t *testing.T) {
 
 func TestPickLang(t *testing.T) {
 	cases := []struct{ query, def, want string }{
-		{"", "", "zh"},
+		{"", "", "zh-Hant"},
 		{"", "zh-Hant", "zh-Hant"},
 		{"en", "zh-Hant", "en"},
 		{"zh-TW", "", "zh-Hant"},
 		{"zh-CN", "en", "zh"},
-		{"fr", "en", "en"},  // 不认识的 query 落回默认
-		{"fr", "xx", "zh"},  // 全不认识兜底简体
-		{"EN-us", "", "en"}, // 大小写不敏感
+		{"fr", "en", "en"},      // 不认识的 query 落回默认
+		{"fr", "xx", "zh-Hant"}, // 全不认识的 ToC 最终兜底繁体
+		{"EN-us", "", "en"},     // 大小写不敏感
 	}
 	for _, tc := range cases {
 		if got := pickLang(tc.query, tc.def); got != tc.want {
@@ -333,6 +333,12 @@ func TestSSR_LangFilterAndSwitcher(t *testing.T) {
 			t.Errorf("切换器缺少 %q", want)
 		}
 	}
+	if !strings.Contains(body, `href="/blog/post-hant?lang=zh-Hant"`) {
+		t.Error("默认繁体列表卡片必须显式携带 lang=zh-Hant")
+	}
+	if strings.Contains(body, "navigator.language") || strings.Contains(body, "blog_lang") {
+		t.Error("默认语言不得被浏览器语言或本地缓存二次改写")
+	}
 	hantAt, enAt, zhAt := strings.Index(body, ">繁</a>"), strings.Index(body, ">EN</a>"), strings.Index(body, ">简</a>")
 	if hantAt < 0 || enAt < 0 || zhAt < 0 || !(hantAt < enAt && enAt < zhAt) {
 		t.Errorf("ToC 语言顺序应为繁/EN/简,位置=%d/%d/%d", hantAt, enAt, zhAt)
@@ -350,9 +356,9 @@ func TestSSR_LangFilterAndSwitcher(t *testing.T) {
 		t.Error("详情返回链接未带文章语言")
 	}
 	for _, want := range []string{
-		`href="/blog/post-hant">繁</a>`,
-		`href="/blog/post-en" class="act">EN</a>`,
-		`href="/blog/post-zh">简</a>`,
+		`href="/blog/post-hant?lang=zh-Hant">繁</a>`,
+		`href="/blog/post-en?lang=en" class="act">EN</a>`,
+		`href="/blog/post-zh?lang=zh">简</a>`,
 	} {
 		if !strings.Contains(bodyDetail, want) {
 			t.Errorf("详情语言切换未指向对应译文,缺少 %q", want)
@@ -368,8 +374,33 @@ func TestSSR_LangFilterAndSwitcher(t *testing.T) {
 		t.Error("切换器未同时携带 inv")
 	}
 	detailInv := doGet(t, r, "/blog/post-en?inv=Vip8").Body.String()
-	if !strings.Contains(detailInv, `href="/blog/post-hant?inv=vip8">繁</a>`) {
+	if !strings.Contains(detailInv, `href="/blog/post-hant?inv=vip8&amp;lang=zh-Hant">繁</a>`) {
 		t.Error("详情译文切换未保留 inv")
+	}
+}
+
+func TestSSR_DetailLanguageQueryControlsTranslation(t *testing.T) {
+	r := newThemedRouter("ink", `{"show_langs":true,"default_lang":"zh-Hant"}`, trilingualPosts())
+
+	w := doGet(t, r, "/blog/post-en?lang=zh-Hant&inv=Vip8")
+	if w.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("mismatched lang status = %d, want %d", w.Code, http.StatusTemporaryRedirect)
+	}
+	if got := w.Header().Get("Location"); got != "/blog/post-hant?inv=vip8&lang=zh-Hant" {
+		t.Errorf("translation redirect = %q", got)
+	}
+
+	w = doGet(t, r, "/blog/post-en?lang=en&inv=Vip8")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "English Post") {
+		t.Errorf("matching lang should render English article, status=%d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), `login?inv=vip8&amp;lang=en&amp;return_to=`) {
+		t.Error("login CTA must keep invite, language and return target")
+	}
+
+	w = doGet(t, r, "/blog/post-en?lang=unknown")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "English Post") {
+		t.Errorf("invalid lang must not redirect to unrelated content, status=%d", w.Code)
 	}
 }
 

@@ -130,8 +130,8 @@ type Chrome struct {
 	LoginLabel  string       `json:"login_label"`  // 顶栏登录文案,空="登录"
 	SignupLabel string       `json:"signup_label"` // 顶栏注册 CTA 文案,空=不显示注册钮
 	CTADesc     string       `json:"cta_desc"`     // 文末常驻 CTA 描述,空=默认文案
-	ShowLangs   bool         `json:"show_langs"`   // 开启三语(繁/EN/简):列表按 lang 过滤+顶栏切换器+访客语言自动跳转
-	DefaultLang string       `json:"default_lang"` // 无 ?lang= 时的默认语言(zh/zh-Hant/en),空=zh
+	ShowLangs   bool         `json:"show_langs"`   // 开启三语(繁/EN/简):列表按 lang 过滤+顶栏切换器
+	DefaultLang string       `json:"default_lang"` // 无 ?lang= 时的默认语言(zh/zh-Hant/en),空=zh-Hant
 	// I18n 按语言覆盖 chrome 文案/导航(键:zh/zh-Hant/en)。未覆盖的字段回退顶层值;
 	// CTADesc 例外:未覆盖且非默认语言时用内置本地化文案,避免英文文章配中文 CTA。
 	I18n map[string]ChromeOverride `json:"i18n"`
@@ -195,7 +195,7 @@ func canonicalLang(v string) string {
 	return ""
 }
 
-// pickLang 决定列表语言:?lang= 合法值优先,否则实例默认(chrome.default_lang),兜底简体。
+// pickLang 决定列表语言:?lang= 合法值优先,否则实例默认(chrome.default_lang),ToC 最终兜底繁体。
 func pickLang(query, def string) string {
 	if l := canonicalLang(query); l != "" {
 		return l
@@ -203,7 +203,7 @@ func pickLang(query, def string) string {
 	if l := canonicalLang(def); l != "" {
 		return l
 	}
-	return "zh"
+	return "zh-Hant"
 }
 
 // blogListURL 组博客列表链接,带语言与读者邀请码(均可空)。
@@ -221,11 +221,18 @@ func blogListURL(lang, reqInvite string) string {
 	return "/blog?" + q.Encode()
 }
 
-// blogDetailURL 组文章详情链接,切换译文时保留读者邀请码归因。
-func blogDetailURL(slug, reqInvite string) string {
+// blogDetailURL 组文章详情链接,显式携带语言 key,并保留读者邀请码归因。
+func blogDetailURL(slug, lang, reqInvite string) string {
 	href := "/blog/" + strings.TrimSpace(slug)
-	if nav := navQuery(reqInvite); nav != "" {
-		return href + nav
+	q := url.Values{}
+	if lang = canonicalLang(lang); lang != "" {
+		q.Set("lang", lang)
+	}
+	if reqInviteCodeValid(strings.TrimSpace(reqInvite)) {
+		q.Set("inv", strings.ToLower(strings.TrimSpace(reqInvite)))
+	}
+	if len(q) > 0 {
+		return href + "?" + q.Encode()
 	}
 	return href
 }
@@ -293,7 +300,7 @@ func buildDetailLangNav(current appblog.Post, posts []appblog.Post, currentLang,
 	for _, lang := range blogLangs {
 		href := blogListURL(lang.Code, reqInvite)
 		if translated, ok := findTranslatedPost(current, posts, lang.Code, siteKey); ok {
-			href = blogDetailURL(translated.Slug, reqInvite)
+			href = blogDetailURL(translated.Slug, lang.Code, reqInvite)
 		}
 		links = append(links, NavLink{Label: lang.Label, Href: href, Active: lang.Code == currentLang})
 	}
@@ -538,13 +545,28 @@ func reqInviteCodeValid(code string) bool {
 	return code != "" && inviteCodeRe.MatchString(code)
 }
 
-// buildRegisterURL 拼注册/登录 CTA:<console>/login[?inv=code]。
-func buildRegisterURL(consoleURL, inviteCode string) string {
+// buildRegisterURL 拼注册/登录 CTA,同时携带邀请码、来源站与受信任博客回跳目标。
+func buildRegisterURL(consoleURL, inviteCode, siteKey, returnTo string) string {
 	base := strings.TrimRight(consoleURL, "/") + "/login"
-	if inviteCode != "" {
-		return base + "?inv=" + url.QueryEscape(inviteCode)
+	q := url.Values{}
+	if inviteCode = strings.TrimSpace(inviteCode); inviteCode != "" {
+		q.Set("inv", strings.ToLower(inviteCode))
 	}
-	return base
+	if siteKey = strings.TrimSpace(siteKey); siteKey != "" {
+		q.Set("site", strings.ToLower(siteKey))
+	}
+	if returnTo = strings.TrimSpace(returnTo); returnTo != "" {
+		q.Set("return_to", returnTo)
+		if target, err := url.Parse(returnTo); err == nil {
+			if lang := canonicalLang(target.Query().Get("lang")); lang != "" {
+				q.Set("lang", lang)
+			}
+		}
+	}
+	if len(q) == 0 {
+		return base
+	}
+	return base + "?" + q.Encode()
 }
 
 // navQuery 返回博客站内导航要保留的查询串:读者带合法 ?inv= 时为 "?inv=code",否则空。
@@ -640,7 +662,7 @@ func buildListView(b Branding, posts []appblog.Post, reqInvite, lang string) Lis
 			Summary:     p.Summary,
 			CoverImage:  template.URL(absURL(b.OriginBase, p.CoverImage)), //nolint:gosec // 可信后台设置,<img> 呈现
 			PublishedAt: published,
-			URL:         "/blog/" + p.Slug + nav,
+			URL:         blogDetailURL(p.Slug, lang, reqInvite),
 			Tag:         tag,
 			ReadingTime: readingTimeLabel(p.ContentHTML, canonicalLang(p.Lang)),
 			CoverClass:  coverFallbackClasses[i%len(coverFallbackClasses)],
@@ -655,7 +677,8 @@ func buildListView(b Branding, posts []appblog.Post, reqInvite, lang string) Lis
 	b.LogoURL = absURL(b.OriginBase, b.LogoURL)
 	b.LogoSrc = template.URL(b.LogoURL) //nolint:gosec // 可信后台设置,<img> 呈现
 	b.HomeURL = "/blog" + nav
-	applyChrome(&b, reqInvite, buildRegisterURL(b.ConsoleURL, resolveInviteCode(reqInvite, "")), lang)
+	listURL := strings.TrimRight(b.OriginBase, "/") + blogListURL(lang, reqInvite)
+	applyChrome(&b, reqInvite, buildRegisterURL(b.ConsoleURL, resolveInviteCode(reqInvite, ""), b.SiteKey, listURL), lang)
 	if b.ShowLangs {
 		// 三语开启时「返回博客/自链」保持当前语言。
 		b.HomeURL = blogListURL(b.Lang, reqInvite)
@@ -693,8 +716,6 @@ func buildDetailView(b Branding, p appblog.Post, reqInvite string) DetailView {
 	}
 
 	inviteCode := resolveInviteCode(reqInvite, p.InviteCode)
-	registerURL := buildRegisterURL(b.ConsoleURL, inviteCode)
-
 	gatePos := p.GatePosition
 	if gatePos < 0 {
 		gatePos = 0
@@ -709,6 +730,8 @@ func buildDetailView(b Branding, p appblog.Post, reqInvite string) DetailView {
 
 	nav := navQuery(reqInvite)
 	branding := Branding{SiteName: b.SiteName, LogoURL: logoURL, LogoSrc: template.URL(logoURL), ConsoleURL: b.ConsoleURL, OriginBase: b.OriginBase, HomeURL: "/blog" + nav, Theme: b.Theme, Chrome: b.Chrome} //nolint:gosec // 可信后台设置,<img> 呈现
+	returnURL := strings.TrimRight(b.OriginBase, "/") + blogDetailURL(p.Slug, p.Lang, inviteCode)
+	registerURL := buildRegisterURL(b.ConsoleURL, inviteCode, b.SiteKey, returnURL)
 	applyChrome(&branding, reqInvite, registerURL, p.Lang)
 	if branding.ShowLangs {
 		// 「返回博客」回到本文语言的列表。

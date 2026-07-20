@@ -5,6 +5,10 @@ import Link from '@tiptap/extension-link';
 import Youtube from '@tiptap/extension-youtube';
 import TextAlign from '@tiptap/extension-text-align';
 import Placeholder from '@tiptap/extension-placeholder';
+import Table from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableHeader from '@tiptap/extension-table-header';
+import TableCell from '@tiptap/extension-table-cell';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -12,6 +16,7 @@ import {
   Quote, Code, Link2, Image as ImageIcon, Youtube as YoutubeIcon,
   AlignLeft, AlignCenter, AlignRight, Undo, Redo,
 } from 'lucide-react';
+import { looksLikeMarkdown, markdownToHTML, richTextInputToHTML } from '../markdown';
 
 interface RichTextEditorProps {
   value: string;
@@ -87,17 +92,30 @@ export function RichTextEditor({ value, onChange, onImageUpload, placeholder }: 
       Youtube.configure({ width: 640, height: 360, nocookie: true }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Placeholder.configure({ placeholder: placeholder ?? '' }),
+      Table.configure({ resizable: true }),
+      TableRow,
+      TableHeader,
+      TableCell,
     ],
-    content: value,
+    content: richTextInputToHTML(value),
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
     editorProps: {
       // 粘贴截图/图片:直接上传并插入,跳过默认粘贴(避免落成 base64 巨串)。
       handlePaste: (_view, event) => {
         const files = imageFilesFrom(event.clipboardData);
-        if (files.length === 0) return false;
-        event.preventDefault();
-        void uploadAndInsert(files);
-        return true;
+        if (files.length > 0) {
+          event.preventDefault();
+          void uploadAndInsert(files);
+          return true;
+        }
+        const plain = event.clipboardData?.getData('text/plain') ?? '';
+        const rich = event.clipboardData?.getData('text/html') ?? '';
+        if (!rich && looksLikeMarkdown(plain)) {
+          event.preventDefault();
+          editorRef.current?.commands.insertContent(markdownToHTML(plain));
+          return true;
+        }
+        return false;
       },
       // 拖拽图片文件到编辑区:上传并插入到落点。
       handleDrop: (view, event) => {
@@ -118,10 +136,12 @@ export function RichTextEditor({ value, onChange, onImageUpload, placeholder }: 
   // 外部 value 变化(如编辑态加载文章)时同步内容,避免每次 onChange 回写造成光标跳动。
   useEffect(() => {
     if (!editor) return;
-    if (value !== editor.getHTML()) {
-      editor.commands.setContent(value || '', false);
+    const normalized = richTextInputToHTML(value);
+    if (normalized !== editor.getHTML()) {
+      editor.commands.setContent(normalized || '', false);
     }
-  }, [value, editor]);
+    if (normalized !== value) onChange(normalized);
+  }, [value, editor, onChange]);
 
   if (!editor) return null;
 
@@ -162,7 +182,7 @@ export function RichTextEditor({ value, onChange, onImageUpload, placeholder }: 
       <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFile} />
       <EditorContent editor={editor} />
       <div className="border-t border-border px-3 py-1.5 text-[11px]" style={{ color: 'var(--ag-text-tertiary)' }}>
-        {t('blog.editor.paste_hint', '可直接粘贴截图,或把图片拖进来自动上传')}
+        {t('blog.editor.paste_hint', '可粘贴 Markdown / 截图，或把图片拖进来自动上传')}
       </div>
       <style>{`
         .blog-editor .ProseMirror{min-height:420px;padding:22px 24px;outline:none;line-height:1.78;font-size:17px}

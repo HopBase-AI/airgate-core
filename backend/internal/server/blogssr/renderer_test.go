@@ -149,6 +149,7 @@ func TestSSR_Detail(t *testing.T) {
 		`id="blog-gate"`,
 		"var pos= 50",
 		`role="dialog"`,
+		`#blog-gate[hidden]{display:none!important}`,
 		"window.addEventListener('wheel',preventDownwardWheel,{passive:false})",
 		"if(gateOpen&&event.deltaY>0)event.preventDefault()",
 		"if(gateOpen&&delta>0)event.preventDefault()",

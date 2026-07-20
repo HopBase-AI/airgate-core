@@ -300,7 +300,9 @@ func TestReferralStoreSetUserReferralRate(t *testing.T) {
 }
 
 func TestReferralStoreSetPromoterIdentityBindsBlog(t *testing.T) {
-	client, referralStore := setupReferralStore(t)
+	client := enttestOpen(t)
+	defer func() { _ = client.Close() }()
+	referralStore := NewReferralStore(client)
 	ctx := context.Background()
 	user := client.User.Create().
 		SetEmail("promoter@example.com").

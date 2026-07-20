@@ -1,6 +1,7 @@
 package blogssr
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -34,16 +35,44 @@ func TestResolveInviteCode(t *testing.T) {
 
 func TestBuildRegisterURL(t *testing.T) {
 	cases := []struct {
-		console, code, want string
+		console, code, site, returnTo string
 	}{
-		{"https://api.hop-base.com", "abc123", "https://api.hop-base.com/login?inv=abc123"},
-		{"https://api.hop-base.com/", "abc123", "https://api.hop-base.com/login?inv=abc123"},
-		{"https://api.hop-base.com", "", "https://api.hop-base.com/login"},
+		{"https://api.hop-base.com", "abc123", "ink", "https://hop-base.com/blog/post?lang=zh-Hant&inv=abc123"},
+		{"https://api.hop-base.com/", "abc123", "", ""},
+		{"https://api.hop-base.com", "", "", ""},
 	}
 	for _, tc := range cases {
-		if got := buildRegisterURL(tc.console, tc.code); got != tc.want {
-			t.Errorf("buildRegisterURL(%q,%q) = %q, want %q", tc.console, tc.code, got, tc.want)
+		got := buildRegisterURL(tc.console, tc.code, tc.site, tc.returnTo)
+		u, err := url.Parse(got)
+		if err != nil {
+			t.Fatalf("buildRegisterURL returned invalid URL %q: %v", got, err)
 		}
+		if u.Scheme+"://"+u.Host+u.Path != strings.TrimRight(tc.console, "/")+"/login" {
+			t.Errorf("login base = %q", got)
+		}
+		if u.Query().Get("inv") != tc.code || u.Query().Get("site") != tc.site || u.Query().Get("return_to") != tc.returnTo {
+			t.Errorf("register query = %v", u.Query())
+		}
+		wantLang := ""
+		if tc.returnTo != "" {
+			r, _ := url.Parse(tc.returnTo)
+			wantLang = canonicalLang(r.Query().Get("lang"))
+		}
+		if u.Query().Get("lang") != wantLang {
+			t.Errorf("login lang = %q, want %q", u.Query().Get("lang"), wantLang)
+		}
+	}
+}
+
+func assertRegisterURL(t *testing.T, raw, invite, site, returnTo string) {
+	t.Helper()
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("invalid register URL %q: %v", raw, err)
+	}
+	q := u.Query()
+	if q.Get("inv") != invite || q.Get("site") != site || q.Get("return_to") != returnTo {
+		t.Errorf("register URL query = %v, want inv=%q site=%q return_to=%q", q, invite, site, returnTo)
 	}
 }
 
@@ -110,9 +139,7 @@ func TestBuildDetailView_SEOAndCTA(t *testing.T) {
 	if v.OGImage != "https://hop-base.com/assets-runtime/cover.png" {
 		t.Errorf("og image = %q", v.OGImage)
 	}
-	if v.RegisterURL != "https://api.hop-base.com/login?inv=abc123" {
-		t.Errorf("register url = %q", v.RegisterURL)
-	}
+	assertRegisterURL(t, v.RegisterURL, "abc123", "", "https://hop-base.com/blog/my-post?inv=abc123")
 	jsonld := string(v.JSONLD)
 	for _, want := range []string{`"@type":"BlogPosting"`, `"isAccessibleForFree":true`, "My Post", "hop-base.com/blog/my-post"} {
 		if !strings.Contains(jsonld, want) {
@@ -122,9 +149,7 @@ func TestBuildDetailView_SEOAndCTA(t *testing.T) {
 
 	// ?inv= 覆盖
 	v2 := buildDetailView(b, post, "override9")
-	if v2.RegisterURL != "https://api.hop-base.com/login?inv=override9" {
-		t.Errorf("override register url = %q", v2.RegisterURL)
-	}
+	assertRegisterURL(t, v2.RegisterURL, "override9", "", "https://hop-base.com/blog/my-post?inv=override9")
 }
 
 func TestReadingTimeAndEyebrow(t *testing.T) {
@@ -292,9 +317,7 @@ func TestBuildDetailView_InviteThreadingAndCTA(t *testing.T) {
 	if v.HomeURL != "/blog?inv=reader9" {
 		t.Errorf("home url = %q, want /blog?inv=reader9", v.HomeURL)
 	}
-	if v.RegisterURL != "https://api.hop-base.com/login?inv=reader9" {
-		t.Errorf("register url = %q, want reader9", v.RegisterURL)
-	}
+	assertRegisterURL(t, v.RegisterURL, "reader9", "", "https://hop-base.com/blog/s?inv=reader9")
 	if v.CTATitle != "用 HopBase 亲手试试文中的用法" {
 		t.Errorf("cta title = %q", v.CTATitle)
 	}
@@ -304,9 +327,7 @@ func TestBuildDetailView_InviteThreadingAndCTA(t *testing.T) {
 	if vNo.HomeURL != "/blog" {
 		t.Errorf("no-invite home url = %q, want /blog", vNo.HomeURL)
 	}
-	if vNo.RegisterURL != "https://api.hop-base.com/login?inv=builtin1" {
-		t.Errorf("no-invite register url = %q, want builtin1", vNo.RegisterURL)
-	}
+	assertRegisterURL(t, vNo.RegisterURL, "builtin1", "", "https://hop-base.com/blog/s?inv=builtin1")
 
 	// 面包屑结构化数据含三级层级
 	bc := string(v.BreadcrumbLD)
@@ -331,9 +352,9 @@ func TestBuildDetailLangNav_StaysOnTranslatedArticle(t *testing.T) {
 		t.Fatalf("lang links len = %d, want 3", len(links))
 	}
 	wants := []NavLink{
-		{Label: "繁", Href: "/blog/topic-hant?inv=vip8", Active: false},
-		{Label: "EN", Href: "/blog/topic-english?inv=vip8", Active: true},
-		{Label: "简", Href: "/blog/topic?inv=vip8", Active: false},
+		{Label: "繁", Href: "/blog/topic-hant?inv=vip8&lang=zh-Hant", Active: false},
+		{Label: "EN", Href: "/blog/topic-english?inv=vip8&lang=en", Active: true},
+		{Label: "简", Href: "/blog/topic?inv=vip8&lang=zh", Active: false},
 	}
 	for i, want := range wants {
 		if links[i] != want {
@@ -351,9 +372,9 @@ func TestBuildDetailLangNav_UsesLanguageSlugSuffixes(t *testing.T) {
 
 	links := buildDetailLangNav(posts[0], posts, "zh-Hant", "", "")
 	wants := []string{
-		"/blog/fable-5-subscription-usage-pricing-hant",
-		"/blog/fable-5-subscription-usage-pricing-en",
-		"/blog/fable-5-subscription-usage-pricing-hans",
+		"/blog/fable-5-subscription-usage-pricing-hant?lang=zh-Hant",
+		"/blog/fable-5-subscription-usage-pricing-en?lang=en",
+		"/blog/fable-5-subscription-usage-pricing-hans?lang=zh",
 	}
 	for i, want := range wants {
 		if links[i].Href != want {
@@ -370,10 +391,10 @@ func TestBuildDetailLangNav_UsesBareTraditionalSlug(t *testing.T) {
 	}
 
 	links := buildDetailLangNav(posts[0], posts, "zh-Hant", "", "")
-	if links[1].Href != "/blog/claude-code-context-compact-clear-en" {
+	if links[1].Href != "/blog/claude-code-context-compact-clear-en?lang=en" {
 		t.Errorf("English link = %q", links[1].Href)
 	}
-	if links[2].Href != "/blog/claude-code-context-compact-clear-cn" {
+	if links[2].Href != "/blog/claude-code-context-compact-clear-cn?lang=zh" {
 		t.Errorf("Simplified link = %q", links[2].Href)
 	}
 }

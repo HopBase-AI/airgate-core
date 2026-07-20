@@ -17,6 +17,7 @@ import { DialogTriggerShim } from './shared/components/DialogTriggerShim';
 import { router } from './app/router';
 import { captureOriginSite } from './shared/originSite';
 import { captureInviteCode } from './shared/inviteCode';
+import { captureAuthReturnTo } from './shared/authReturnTo';
 import { tryReloadForStaleChunk } from './shared/chunkReload';
 import './i18n';
 import './index.css';
@@ -24,6 +25,7 @@ import './index.css';
 // 尽早捕获落地页来源参数（?site=/?ref=）与分销邀请码（?inv=），保证任意入口路由都不漏归因。
 captureOriginSite();
 captureInviteCode();
+captureAuthReturnTo();
 
 // 发版后旧 chunk 失效（哈希文件已被新版本替换）的全局兜底：Vite 预加载失败时
 // 无感整页刷新一次拿新版本，60 秒护栏内二次失败则放行给错误边界展示。

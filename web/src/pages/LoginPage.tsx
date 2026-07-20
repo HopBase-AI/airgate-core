@@ -14,6 +14,7 @@ import { useStatusPageEnabled } from '../shared/hooks/useStatusPageEnabled';
 import { getOriginSite } from '../shared/originSite';
 import { getInviteCode } from '../shared/inviteCode';
 import { ApiError, setToken } from '../shared/api/client';
+import { consumeAuthReturnTo } from '../shared/authReturnTo';
 import { Mail, Lock, User, ArrowRight, Sun, Moon, ShieldCheck, Activity, Layers, Gauge, BarChart3, BadgeCheck } from 'lucide-react';
 
 /* ==================== 第三方登录 ==================== */
@@ -180,7 +181,9 @@ function LoginForm() {
     try {
       const resp = await authApi.login({ email, password });
       login(resp.token, resp.user);
-      navigate({ to: '/' });
+      const returnTo = consumeAuthReturnTo();
+      if (returnTo) window.location.assign(returnTo);
+      else navigate({ to: '/' });
     } catch (err) {
       if (err instanceof ApiError) {
         setError(localizeServerMessage(t, err.message));
@@ -379,7 +382,9 @@ function RegisterForm() {
         invite_code: getInviteCode() || undefined,
       });
       login(resp.token, resp.user);
-      navigate({ to: '/' });
+      const returnTo = consumeAuthReturnTo();
+      if (returnTo) window.location.assign(returnTo);
+      else navigate({ to: '/' });
     } catch (err) {
       if (err instanceof ApiError) {
         // 验证码错误则回到第一步(判断用后端原文,展示用本地化文案)
@@ -604,7 +609,9 @@ export default function LoginPage() {
     usersApi.me()
       .then((userData) => {
         login(token, userData);
-        navigate({ to: '/' });
+        const returnTo = consumeAuthReturnTo();
+        if (returnTo) window.location.assign(returnTo);
+        else navigate({ to: '/' });
       })
       .catch(() => {
         setToken(null);
