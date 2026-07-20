@@ -230,22 +230,26 @@ func blogDetailURL(slug, reqInvite string) string {
 	return href
 }
 
-// chineseTranslationKey 兼容既有简/繁文章 slug 约定:繁体通常在简体 slug 后追加 -hant。
-// 英文 slug 会按英文标题重写,无法靠 slug 可靠关联,需回退 published_at 分组。
-func chineseTranslationKey(p appblog.Post) string {
-	switch canonicalLang(p.Lang) {
-	case "zh-Hant":
-		return strings.TrimSuffix(p.Slug, "-hant")
-	case "zh":
-		return p.Slug
-	default:
-		return ""
+// translationSlugKey 兼容两批既有三语文章的 slug 约定：
+// 旧内容通常是简体 base + 繁体 -hant，英文另起标题（再回退 published_at）；
+// 新内容使用同一 base，并按语言追加 -hant/-hans/-cn/-en 等后缀。
+func translationSlugKey(p appblog.Post) string {
+	key := strings.ToLower(strings.TrimSpace(p.Slug))
+	for _, suffix := range []string{
+		"-zh-hant", "-zh-hans", "-zh-cn", "-zh-tw", "-zh-hk",
+		"-traditional", "-simplified", "-english",
+		"-hant", "-hans", "-cn", "-en",
+	} {
+		if strings.HasSuffix(key, suffix) {
+			return strings.TrimSuffix(key, suffix)
+		}
 	}
+	return key
 }
 
 // findTranslatedPost 在当前站点的已发布文章里定位目标语言译文。
-// 先用简/繁既有 slug 约定精确匹配;其余语言按共享 published_at 关联。
-// published_at 若出现多个候选则拒绝猜测,由调用方回退目标语言列表。
+// 先用三语 slug 约定匹配，再按共享 published_at 兼容旧内容；任一规则若出现
+// 多个候选都拒绝猜测，由调用方回退目标语言列表。
 func findTranslatedPost(current appblog.Post, posts []appblog.Post, targetLang, siteKey string) (appblog.Post, bool) {
 	targetLang = canonicalLang(targetLang)
 	if targetLang == "" {
@@ -255,21 +259,28 @@ func findTranslatedPost(current appblog.Post, posts []appblog.Post, targetLang, 
 		return current, true
 	}
 
-	candidates := make([]appblog.Post, 0, 1)
-	currentKey := chineseTranslationKey(current)
+	slugCandidates := make([]appblog.Post, 0, 1)
+	timeCandidates := make([]appblog.Post, 0, 1)
+	currentKey := translationSlugKey(current)
 	for _, p := range posts {
 		if p.Status != appblog.StatusPublished || canonicalLang(p.Lang) != targetLang || !postVisibleOnSite(p.Sites, siteKey) {
 			continue
 		}
-		if currentKey != "" && chineseTranslationKey(p) == currentKey {
-			return p, true
+		if currentKey != "" && translationSlugKey(p) == currentKey {
+			slugCandidates = append(slugCandidates, p)
 		}
 		if current.PublishedAt != nil && p.PublishedAt != nil && p.PublishedAt.Equal(*current.PublishedAt) {
-			candidates = append(candidates, p)
+			timeCandidates = append(timeCandidates, p)
 		}
 	}
-	if len(candidates) == 1 {
-		return candidates[0], true
+	if len(slugCandidates) == 1 {
+		return slugCandidates[0], true
+	}
+	if len(slugCandidates) > 1 {
+		return appblog.Post{}, false
+	}
+	if len(timeCandidates) == 1 {
+		return timeCandidates[0], true
 	}
 	return appblog.Post{}, false
 }

@@ -106,8 +106,8 @@ func (r *Renderer) RenderDetail(c *gin.Context) {
 	reqInvite := c.Query("inv")
 	view := buildDetailView(b, post, reqInvite)
 	if view.ShowLangs {
-		// 详情语言切换应留在同一篇文章。译文是独立 post/slug,现有内容以共享
-		// published_at 作为翻译组标识;取全量已发布文章后只接受唯一匹配。
+		// 详情语言切换应留在同一篇文章。译文是独立 post/slug，先按三语
+		// slug 后缀关联，再用共享 published_at 兼容旧内容；只接受唯一匹配。
 		translations, listErr := r.posts.List(c.Request.Context(), appblog.ListFilter{
 			Status:   appblog.StatusPublished,
 			Page:     1,

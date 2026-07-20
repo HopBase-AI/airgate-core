@@ -342,6 +342,42 @@ func TestBuildDetailLangNav_StaysOnTranslatedArticle(t *testing.T) {
 	}
 }
 
+func TestBuildDetailLangNav_UsesLanguageSlugSuffixes(t *testing.T) {
+	posts := []appblog.Post{
+		{ID: 1, Slug: "fable-5-subscription-usage-pricing-hant", Lang: "zh-Hant", Status: appblog.StatusPublished},
+		{ID: 2, Slug: "fable-5-subscription-usage-pricing-en", Lang: "en", Status: appblog.StatusPublished},
+		{ID: 3, Slug: "fable-5-subscription-usage-pricing-hans", Lang: "zh", Status: appblog.StatusPublished},
+	}
+
+	links := buildDetailLangNav(posts[0], posts, "zh-Hant", "", "")
+	wants := []string{
+		"/blog/fable-5-subscription-usage-pricing-hant",
+		"/blog/fable-5-subscription-usage-pricing-en",
+		"/blog/fable-5-subscription-usage-pricing-hans",
+	}
+	for i, want := range wants {
+		if links[i].Href != want {
+			t.Errorf("links[%d].Href = %q, want %q", i, links[i].Href, want)
+		}
+	}
+}
+
+func TestBuildDetailLangNav_UsesBareTraditionalSlug(t *testing.T) {
+	posts := []appblog.Post{
+		{ID: 1, Slug: "claude-code-context-compact-clear", Lang: "zh-Hant", Status: appblog.StatusPublished},
+		{ID: 2, Slug: "claude-code-context-compact-clear-en", Lang: "en", Status: appblog.StatusPublished},
+		{ID: 3, Slug: "claude-code-context-compact-clear-cn", Lang: "zh", Status: appblog.StatusPublished},
+	}
+
+	links := buildDetailLangNav(posts[0], posts, "zh-Hant", "", "")
+	if links[1].Href != "/blog/claude-code-context-compact-clear-en" {
+		t.Errorf("English link = %q", links[1].Href)
+	}
+	if links[2].Href != "/blog/claude-code-context-compact-clear-cn" {
+		t.Errorf("Simplified link = %q", links[2].Href)
+	}
+}
+
 func TestFindTranslatedPost_AmbiguousPublishedTimeFallsBack(t *testing.T) {
 	pub := time.Date(2026, 7, 12, 8, 0, 0, 0, time.UTC)
 	current := appblog.Post{ID: 1, Slug: "topic-en", Lang: "en", Status: appblog.StatusPublished, PublishedAt: &pub}
