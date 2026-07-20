@@ -57,6 +57,7 @@ func (h *BlogHandler) ListPublishedArticles(c *gin.Context) {
 			Title:       item.Title,
 			Summary:     item.Summary,
 			CoverImage:  item.CoverImage,
+			Lang:        item.Lang,
 			PublishedAt: item.PublishedAt,
 		})
 	}

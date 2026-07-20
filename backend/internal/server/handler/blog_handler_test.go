@@ -87,11 +87,38 @@ func newBlogHandlerRouter(repo *blogFakeRepo) *gin.Engine {
 	r := gin.New()
 	r.Use(func(c *gin.Context) { c.Set("user_id", 1); c.Next() })
 	r.GET("/blog/posts", h.ListBlogPosts)
+	r.GET("/blog/articles", h.ListPublishedArticles)
 	r.POST("/blog/posts", h.CreateBlogPost)
 	r.GET("/blog/posts/:id", h.GetBlogPost)
 	r.PUT("/blog/posts/:id", h.UpdateBlogPost)
 	r.DELETE("/blog/posts/:id", h.DeleteBlogPost)
 	return r
+}
+
+func TestBlogHandler_ListPublishedArticlesIncludesLanguage(t *testing.T) {
+	repo := newBlogFakeRepo()
+	repo.posts[1] = appblog.Post{
+		ID: 1, Title: "English Post", Slug: "english-post-en",
+		Status: appblog.StatusPublished, Lang: appblog.LangEnglish,
+	}
+	r := newBlogHandlerRouter(repo)
+	w := doJSON(t, r, http.MethodGet, "/blog/articles", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Code int `json:"code"`
+		Data []struct {
+			Slug string `json:"slug"`
+			Lang string `json:"lang"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Code != 0 || len(resp.Data) != 1 || resp.Data[0].Slug != "english-post-en" || resp.Data[0].Lang != appblog.LangEnglish {
+		t.Fatalf("unexpected resp: %+v", resp)
+	}
 }
 
 func doJSON(t *testing.T, r *gin.Engine, method, path, body string) *httptest.ResponseRecorder {

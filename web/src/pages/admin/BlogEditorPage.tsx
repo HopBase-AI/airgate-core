@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button, Input, Label, ListBox, Select, Spinner, TextArea,
   TextField as HeroTextField,
@@ -13,6 +13,7 @@ import { blogApi } from '../../shared/api/blog';
 import { useCrudMutation } from '../../shared/hooks/useCrudMutation';
 import { queryKeys } from '../../shared/queryKeys';
 import { useToast } from '../../shared/ui';
+import { buildBlogShareURL, publicBlogBase } from '../../shared/blogShare';
 import type { BlogLanguage, BlogPostResp, BlogStatus, CreateBlogPostReq } from '../../shared/types';
 import { ArrowLeft, ImagePlus, X, Copy, ExternalLink } from 'lucide-react';
 
@@ -74,6 +75,7 @@ export default function BlogEditorPage() {
   const { t } = useTranslation();
   const { toast } = useToast();
   const { blog_sites } = useSiteSettings();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { id?: number };
   const editId = typeof search.id === 'number' ? search.id : undefined;
@@ -106,7 +108,8 @@ export default function BlogEditorPage() {
     successMessage: t('blog.save_success', '已保存'),
     queryKey: queryKeys.blog(),
     onSuccess: (created) => {
-      // 防止随后 edit 查询回来覆盖当前表单
+      queryClient.setQueryData(queryKeys.blogPost(created.id), created);
+      setForm(fromPost(created));
       initializedRef.current = created.id;
       navigate({ to: '/admin/blog/edit', search: { id: created.id } });
     },
@@ -116,6 +119,11 @@ export default function BlogEditorPage() {
     mutationFn: ({ id, data }: { id: number; data: CreateBlogPostReq }) => blogApi.update(id, data),
     successMessage: t('blog.save_success', '已保存'),
     queryKey: queryKeys.blog(),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(queryKeys.blogPost(updated.id), updated);
+      setForm(fromPost(updated));
+      initializedRef.current = updated.id;
+    },
   });
 
   const uploading = useRef(false);
@@ -172,11 +180,13 @@ export default function BlogEditorPage() {
   const selectedLanguageLabel = languageOptions.find((o) => o.id === form.lang)?.label ?? '';
 
   const coverInputRef = useRef<HTMLInputElement>(null);
-  const shareSlug = post?.slug || form.slug;
+  const shareURL = post?.status === 'published'
+    ? buildBlogShareURL(publicBlogBase(window.location.origin), post.slug, post.lang)
+    : '';
 
   const copyShare = () => {
-    const url = `${window.location.origin.replace(/^https?:\/\/api\./, 'https://')}/blog/${shareSlug}`;
-    navigator.clipboard?.writeText(url).then(
+    if (!shareURL) return;
+    navigator.clipboard?.writeText(shareURL).then(
       () => toast('success', t('blog.copied', '已复制')),
       () => toast('error', t('blog.copy_failed', '复制失败')),
     );
@@ -194,8 +204,8 @@ export default function BlogEditorPage() {
           {t('blog.back', '返回列表')}
         </Button>
         <div className="flex items-center gap-2">
-          {editId !== undefined && form.status === 'published' && (
-            <a href={`/blog/${shareSlug}`} target="_blank" rel="noreferrer">
+          {shareURL && (
+            <a href={shareURL} target="_blank" rel="noreferrer">
               <Button variant="secondary">
                 <ExternalLink className="h-4 w-4" />
                 {t('blog.preview', '预览')}
@@ -396,9 +406,9 @@ export default function BlogEditorPage() {
             </div>
           )}
 
-          {shareSlug && (
+          {shareURL && (
             <div className="rounded-md bg-surface px-3 py-2 text-xs text-text-secondary flex items-center justify-between gap-2">
-              <span className="font-mono truncate">/blog/{shareSlug}</span>
+              <span className="font-mono truncate" title={shareURL}>{shareURL}</span>
               <Button size="sm" variant="ghost" onPress={copyShare}>
                 <Copy className="h-3.5 w-3.5" />
                 {t('blog.copy_link', '复制链接')}

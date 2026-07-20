@@ -13,6 +13,8 @@ import { CommonTable } from '../../shared/components/CommonTable';
 import { TableLoadingRow } from '../../shared/components/TableLoadingRow';
 import { TablePaginationFooter } from '../../shared/components/TablePaginationFooter';
 import { useToast } from '../../shared/ui';
+import { buildBlogShareURL, publicBlogBase } from '../../shared/blogShare';
+import type { BlogLanguage } from '../../shared/types';
 
 function formatTime(date: string): string {
   return new Date(date).toLocaleString('zh-CN', {
@@ -55,12 +57,13 @@ export default function InvitePage() {
     placeholderData: keepPreviousData,
   });
 
-  // 博客分享基址:优先后台配的邀请链接前缀(通常指落地页域),否则用控制台域名去掉 api. 前缀
+  // 博客分享基址:优先后台配的邀请链接前缀(通常指落地页域),否则把
+  // console./api. 控制台域名归一为公开落地页根域。
   // (博客经反代挂在落地页域 /blog,与文章编辑页 copyShare 口径一致)。
   const blogBase = useMemo(() => {
     const configured = me?.link_base_url?.trim();
     if (configured) return configured.replace(/\/+$/, '');
-    return window.location.origin.replace(/:\/\/api\./, '://').replace(/\/+$/, '');
+    return publicBlogBase(window.location.origin);
   }, [me?.link_base_url]);
 
   // 邀请链接：后台可配前缀（如指向落地页），未配置则用当前控制台域名。
@@ -74,7 +77,7 @@ export default function InvitePage() {
   // 普通用户不显示分享文章入口(裸邀请链接仍可用)。
   const isOfficial = me?.tier === 'official';
 
-  // 「分享文章」软入口:列出已发布文章,拼 <blogBase>/blog/<slug>?inv=<我的码> 供分发。
+  // 「分享文章」软入口:列出已发布文章,拼带邀请码与文章语言的链接供分发。
   // 仅官方推广官请求与展示(后端 /blog/articles 亦按 official 校验,前后端一致)。
   const { data: articles, isLoading: articlesLoading } = useQuery({
     queryKey: queryKeys.blogPublishedArticles(),
@@ -83,8 +86,8 @@ export default function InvitePage() {
     enabled: isOfficial && !!me?.invite_code,
   });
 
-  const shareArticleUrl = (slug: string) =>
-    `${blogBase}/blog/${slug}${me?.invite_code ? `?inv=${me.invite_code}` : ''}`;
+  const shareArticleUrl = (slug: string, lang: BlogLanguage) =>
+    buildBlogShareURL(blogBase, slug, lang, me?.invite_code);
 
   const copyText = async (text: string) => {
     try {
@@ -203,7 +206,7 @@ export default function InvitePage() {
                     size="sm"
                     variant="secondary"
                     className="shrink-0 gap-1.5"
-                    onPress={() => copyText(shareArticleUrl(a.slug))}
+                    onPress={() => copyText(shareArticleUrl(a.slug, a.lang))}
                   >
                     <Copy className="h-3.5 w-3.5" />
                     {t('referral.copy_share_link')}

@@ -1067,6 +1067,7 @@ export interface BlogArticleBrief {
   title: string;
   summary: string;
   cover_image: string;
+  lang: BlogLanguage;
   published_at: string | null;
 }
 

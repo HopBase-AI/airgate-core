@@ -33,6 +33,7 @@ type BlogArticleBriefResp struct {
 	Title       string     `json:"title"`
 	Summary     string     `json:"summary"`
 	CoverImage  string     `json:"cover_image"`
+	Lang        string     `json:"lang"`
 	PublishedAt *time.Time `json:"published_at"`
 }
 
