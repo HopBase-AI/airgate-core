@@ -175,6 +175,31 @@ func TestSSR_Detail(t *testing.T) {
 	}
 }
 
+func TestOriginBaseUsesHTTPSForPublicDomainsBehindProxy(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cases := []struct {
+		name, host, forwarded, want string
+	}{
+		{"toc without proxy header", "essevin.com", "", "https://essevin.com"},
+		{"toc ignores stale http proxy header", "late.essevin.com", "http", "https://late.essevin.com"},
+		{"generic forwarded header", "preview.example.com", "https, http", "https://preview.example.com"},
+		{"local plain http", "127.0.0.1:9517", "", "http://127.0.0.1:9517"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx.Request = httptest.NewRequest(http.MethodGet, "http://"+tc.host+"/blog", nil)
+			ctx.Request.Host = tc.host
+			if tc.forwarded != "" {
+				ctx.Request.Header.Set("X-Forwarded-Proto", tc.forwarded)
+			}
+			if got := originBase(ctx); got != tc.want {
+				t.Errorf("originBase = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSSR_Detail_InviteOverride(t *testing.T) {
 	r := newTestRouter()
 	w := doGet(t, r, "/blog/published-post?inv=override9")

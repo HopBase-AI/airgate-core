@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"html/template"
+	"net"
 	"net/http"
 	"strings"
 
@@ -265,9 +266,23 @@ func (r *Renderer) write(c *gin.Context, status int, tmpl *template.Template, da
 func originBase(c *gin.Context) string {
 	scheme := "https"
 	if p := c.GetHeader("X-Forwarded-Proto"); p != "" {
-		scheme = p
+		p = strings.ToLower(strings.TrimSpace(strings.Split(p, ",")[0]))
+		if p == "http" || p == "https" {
+			scheme = p
+		}
 	} else if c.Request.TLS == nil {
 		scheme = "http"
+	}
+
+	// ToC 静态入口的 Nginx 目前不一定补 X-Forwarded-Proto；这些公开域名只提供
+	// HTTPS，对它们强制生成安全 canonical/OG/return_to，避免登录页拒绝 HTTP 回跳。
+	hostname := strings.ToLower(c.Request.Host)
+	if host, _, err := net.SplitHostPort(c.Request.Host); err == nil {
+		hostname = strings.ToLower(host)
+	}
+	switch hostname {
+	case "essevin.com", "www.essevin.com", "late.essevin.com", "kite.essevin.com", "hop-base.com", "www.hop-base.com":
+		scheme = "https"
 	}
 	return scheme + "://" + c.Request.Host
 }
