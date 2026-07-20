@@ -3,12 +3,15 @@ package blogssr
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"html/template"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/net/publicsuffix"
 
 	appblog "github.com/DouDOU-start/airgate-core/internal/app/blog"
 	appsettings "github.com/DouDOU-start/airgate-core/internal/app/settings"
@@ -145,6 +148,148 @@ func (r *Renderer) RenderDetail(c *gin.Context) {
 	}
 	r.write(c, http.StatusOK, r.set(b.Theme).detail, view)
 }
+
+// RenderSessionBridge 输出一个极小的控制台同源页面。公开博客通过 iframe 加载它，
+// 由它读取控制台 localStorage 中的 Token、校验 /users/me，再只把昵称/邮箱回传给博客。
+// Token 永远留在控制台源内，不写入博客 HTML、URL、Cookie 或 postMessage。
+func (r *Renderer) RenderSessionBridge(c *gin.Context) {
+	targetOrigin, ok := trustedSessionBridgeOrigin(originBase(c), c.Query("origin"))
+	if !ok {
+		c.Header("Cache-Control", "no-store")
+		c.Status(http.StatusForbidden)
+		return
+	}
+
+	targetJSON, _ := json.Marshal(targetOrigin)
+	body := strings.Replace(sessionBridgeHTML, "__TARGET_ORIGIN__", string(targetJSON), 1)
+	c.Header("Cache-Control", "private, no-store, max-age=0")
+	c.Header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors "+targetOrigin+"; base-uri 'none'; form-action 'none'")
+	c.Header("Cross-Origin-Resource-Policy", "cross-origin")
+	c.Header("Referrer-Policy", "no-referrer")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(body))
+}
+
+// trustedSessionBridgeOrigin 只允许同源或同一 registrable domain 的第一方博客嵌入。
+// publicsuffix 可正确区分 example.co.uk 与恶意的 other.co.uk，避免手写“最后两段”误判。
+func trustedSessionBridgeOrigin(requestOrigin, rawTarget string) (string, bool) {
+	requestURL, reqErr := url.Parse(requestOrigin)
+	targetURL, targetErr := url.Parse(strings.TrimSpace(rawTarget))
+	if reqErr != nil || targetErr != nil || requestURL.Host == "" || targetURL.Host == "" {
+		return "", false
+	}
+	if targetURL.User != nil || targetURL.RawQuery != "" || targetURL.Fragment != "" || (targetURL.Path != "" && targetURL.Path != "/") {
+		return "", false
+	}
+	if targetURL.Scheme != requestURL.Scheme || (targetURL.Scheme != "https" && targetURL.Scheme != "http") {
+		return "", false
+	}
+
+	targetOrigin := targetURL.Scheme + "://" + targetURL.Host
+	if strings.EqualFold(requestURL.Host, targetURL.Host) {
+		return targetOrigin, true
+	}
+	reqSite, reqSiteErr := publicsuffix.EffectiveTLDPlusOne(requestURL.Hostname())
+	targetSite, targetSiteErr := publicsuffix.EffectiveTLDPlusOne(targetURL.Hostname())
+	if reqSiteErr != nil || targetSiteErr != nil || !strings.EqualFold(reqSite, targetSite) {
+		return "", false
+	}
+	return targetOrigin, true
+}
+
+const sessionBridgeHTML = `<!doctype html><html><head><meta charset="utf-8"><meta name="robots" content="noindex"></head><body><script>
+(function(){
+'use strict';
+var targetOrigin=__TARGET_ORIGIN__;
+var messageType='airgate:blog-session';
+var cookieName='airgate_blog_session_v1';
+function cookieDomain(){
+var labels=location.hostname.split('.');
+return labels.length>=3?labels.slice(1).join('.'):'';
+}
+function cookieAttrs(maxAge,domain){
+var secure=location.protocol==='https:'?'; Secure':'';
+return '; Path=/blog; Max-Age='+Math.max(0,Math.floor(maxAge))+'; SameSite=Lax'+secure+(domain?'; Domain='+domain:'');
+}
+function tokenExpiry(token){
+try{
+var payload=token.split('.')[1]||'';
+var base64=payload.replace(/-/g,'+').replace(/_/g,'/');
+while(base64.length%4)base64+='=';
+var parsed=JSON.parse(atob(base64));
+if(typeof parsed.exp==='number')return parsed.exp;
+}catch(e){}
+return Math.floor(Date.now()/1000)+3600;
+}
+function hasHint(){
+try{return document.cookie.split(';').some(function(v){return v.trim().indexOf(cookieName+'=')===0;});}catch(e){return false;}
+}
+function syncHint(user,token){
+try{
+var email=typeof user.email==='string'?user.email.trim().slice(0,160):'';
+var name=typeof user.username==='string'?user.username.trim():'';
+if(!name&&typeof user.api_key_name==='string')name=user.api_key_name.trim();
+if(!name&&email)name=email.split('@')[0];
+var hint={v:1,name:(name||'User').slice(0,80),email:email,exp:tokenExpiry(token)};
+var value=encodeURIComponent(JSON.stringify(hint));
+var domain=cookieDomain();
+document.cookie=cookieName+'='+cookieAttrs(0,'');
+document.cookie=cookieName+'='+value+cookieAttrs(hint.exp-Date.now()/1000,domain);
+}catch(e){}
+}
+function clearHint(){
+try{
+document.cookie=cookieName+'='+cookieAttrs(0,'');
+var domain=cookieDomain();
+if(domain)document.cookie=cookieName+'='+cookieAttrs(0,domain);
+}catch(e){}
+}
+function post(authenticated,user){
+var payload={type:messageType,authenticated:authenticated};
+if(authenticated&&user){
+var email=typeof user.email==='string'?user.email.trim().slice(0,160):'';
+var name=typeof user.username==='string'?user.username.trim():'';
+if(!name&&typeof user.api_key_name==='string')name=user.api_key_name.trim();
+if(!name&&email)name=email.split('@')[0];
+payload.name=(name||'User').slice(0,80);
+payload.email=email;
+}
+window.parent.postMessage(payload,targetOrigin);
+}
+async function fetchMe(token){
+return fetch('/api/v1/users/me',{headers:{Authorization:'Bearer '+token},cache:'no-store'});
+}
+async function refresh(token){
+var response=await fetch('/api/v1/auth/refresh',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},cache:'no-store'});
+if(!response.ok)return '';
+var json=await response.json();
+return json&&json.code===0&&json.data&&typeof json.data.token==='string'?json.data.token:'';
+}
+async function run(){
+var token='';
+try{token=window.localStorage.getItem('token')||'';}catch(e){}
+// Safari 若阻止 iframe 读取 localStorage，但父域会话提示仍有效，不要误判为退出。
+// 真正退出时控制台会主动清除此 Cookie，届时才回传未登录。
+if(!token){if(!hasHint())post(false);return;}
+try{
+var response=await fetchMe(token);
+if(response.status===401){
+var next=await refresh(token);
+if(next){token=next;try{window.localStorage.setItem('token',next);}catch(e){}response=await fetchMe(next);}
+}
+if(response.status===401||response.status===403){
+try{window.localStorage.removeItem('token');}catch(e){}
+clearHint();
+post(false);return;
+}
+if(!response.ok)return;
+var json=await response.json();
+if(json&&json.code===0&&json.data){syncHint(json.data,token);post(true,json.data);return;}
+}catch(e){}
+}
+run();
+})();
+</script></body></html>`
 
 // RenderSitemap 输出博客动态 sitemap:列表页 + 每篇已发布文章的规范 URL 与 lastmod。
 // 让搜索引擎 / AI 爬虫发现全部文章(静态 sitemap 无法随发文自动更新)。即使查询失败也至少输出列表页。

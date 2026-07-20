@@ -250,6 +250,45 @@ func TestSSR_InkThemeRowsAndSignup(t *testing.T) {
 	}
 }
 
+func TestSSR_ThemedBlogAuthState(t *testing.T) {
+	posts := themedTestPosts()
+	posts[0].GateEnabled = true
+	posts[0].GatePosition = 50
+	for _, theme := range []string{"ember", "ink"} {
+		t.Run(theme, func(t *testing.T) {
+			r := newThemedRouter(theme, `{"signup_label":"免费注册"}`, posts)
+			list := doGet(t, r, "/blog").Body.String()
+			for _, want := range []string{
+				`data-blog-auth data-console-url="https://api.hop-base.com"`,
+				`class="sk-user" data-blog-auth-user href="https://api.hop-base.com"`,
+				`.sk-auth-guest[hidden]{display:none}`,
+				"airgate_blog_session_v1",
+				"new URL('/blog/session-bridge',consoleOrigin)",
+				"if(event.persisted)probe()",
+				"document.visibilityState==='visible'",
+			} {
+				if !strings.Contains(list, want) {
+					t.Errorf("%s list auth state missing %q", theme, want)
+				}
+			}
+
+			detail := doGet(t, r, "/blog/feature-post").Body.String()
+			for _, want := range []string{
+				`data-blog-acquisition`,
+				`#blog-gate[hidden]{display:none!important}`,
+				"document.addEventListener('airgate:blog-session',onBlogSession)",
+				"if(session.authenticated){stopGate();return;}",
+				"window.removeEventListener('touchmove',preventDownwardTouch)",
+				"node.hidden=authenticated",
+			} {
+				if !strings.Contains(detail, want) {
+					t.Errorf("%s detail auth state missing %q", theme, want)
+				}
+			}
+		})
+	}
+}
+
 func TestSSR_ThemeFallbacks(t *testing.T) {
 	// 未知皮肤名 → 默认模板(旧版结构,不出现 sk-nav)
 	r := newThemedRouter("neon", "", themedTestPosts())

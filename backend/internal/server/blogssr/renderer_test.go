@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -93,9 +94,87 @@ func newTestRouter() *gin.Engine {
 	r := gin.New()
 	rend := NewRenderer(svc, fakeSettings{})
 	r.GET("/blog", rend.RenderList)
+	r.GET("/blog/session-bridge", rend.RenderSessionBridge)
 	r.GET("/blog/sitemap.xml", rend.RenderSitemap)
 	r.GET("/blog/:slug", rend.RenderDetail)
 	return r
+}
+
+func TestTrustedSessionBridgeOrigin(t *testing.T) {
+	tests := []struct {
+		name    string
+		request string
+		target  string
+		want    string
+		ok      bool
+	}{
+		{name: "apex blog", request: "https://console.essevin.com", target: "https://essevin.com", want: "https://essevin.com", ok: true},
+		{name: "sibling blog", request: "https://console.essevin.com", target: "https://late.essevin.com", want: "https://late.essevin.com", ok: true},
+		{name: "public suffix aware", request: "https://console.example.co.uk", target: "https://blog.example.co.uk", want: "https://blog.example.co.uk", ok: true},
+		{name: "same origin", request: "https://api.hop-base.com", target: "https://api.hop-base.com/", want: "https://api.hop-base.com", ok: true},
+		{name: "different registrable domain", request: "https://console.example.co.uk", target: "https://evil.co.uk", ok: false},
+		{name: "external origin", request: "https://console.essevin.com", target: "https://evil.com", ok: false},
+		{name: "scheme downgrade", request: "https://console.essevin.com", target: "http://essevin.com", ok: false},
+		{name: "origin must not carry query", request: "https://console.essevin.com", target: "https://essevin.com?next=evil", ok: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := trustedSessionBridgeOrigin(tc.request, tc.target)
+			if ok != tc.ok || got != tc.want {
+				t.Fatalf("trustedSessionBridgeOrigin(%q, %q) = %q, %v; want %q, %v", tc.request, tc.target, got, ok, tc.want, tc.ok)
+			}
+		})
+	}
+}
+
+func TestSSR_SessionBridge(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	rend := NewRenderer(appblog.NewService(&ssrRepo{}), fakeSettings{})
+	r.GET("/blog/session-bridge", rend.RenderSessionBridge)
+
+	target := "https://hop-base.com"
+	req := httptest.NewRequest(http.MethodGet, "/blog/session-bridge?origin="+url.QueryEscape(target), nil)
+	req.Host = "api.hop-base.com"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("bridge status = %d, want 200", w.Code)
+	}
+	if got := w.Header().Get("Cache-Control"); !strings.Contains(got, "private, no-store") {
+		t.Errorf("bridge Cache-Control = %q", got)
+	}
+	if got := w.Header().Get("Content-Security-Policy"); !strings.Contains(got, "frame-ancestors https://hop-base.com") {
+		t.Errorf("bridge CSP = %q", got)
+	}
+	if got := w.Header().Get("Cross-Origin-Resource-Policy"); got != "cross-origin" {
+		t.Errorf("bridge CORP = %q, want cross-origin", got)
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		"window.localStorage.getItem('token')",
+		"/api/v1/users/me",
+		"/api/v1/auth/refresh",
+		"window.parent.postMessage(payload,targetOrigin)",
+		`var targetOrigin="https://hop-base.com"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("bridge body missing %q", want)
+		}
+	}
+	if strings.Contains(body, "payload.token") || strings.Contains(body, "token:token") {
+		t.Error("bridge must not include the Bearer Token in postMessage payload")
+	}
+
+	badReq := httptest.NewRequest(http.MethodGet, "/blog/session-bridge?origin="+url.QueryEscape("https://evil.com"), nil)
+	badReq.Host = "api.hop-base.com"
+	badReq.Header.Set("X-Forwarded-Proto", "https")
+	bad := httptest.NewRecorder()
+	r.ServeHTTP(bad, badReq)
+	if bad.Code != http.StatusForbidden || bad.Body.Len() != 0 {
+		t.Fatalf("untrusted bridge = status %d body %q, want empty 403", bad.Code, bad.Body.String())
+	}
 }
 
 func doGet(t *testing.T, r *gin.Engine, target string) *httptest.ResponseRecorder {

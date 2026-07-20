@@ -19,8 +19,16 @@ const skinHeaderStr = `<header class="sk-nav"><div class="sk-nav-inner">
 <nav class="sk-links">{{range .Nav}}<a href="{{.Href}}"{{if .Active}} class="act"{{end}}>{{.Label}}</a>{{end}}</nav>
 <div class="sk-nav-right">
 {{if .ShowLangs}}<span class="sk-langs">{{range $i, $l := .LangNav}}{{if $i}}<i>/</i>{{end}}<a href="{{$l.Href}}"{{if $l.Active}} class="act"{{end}}>{{$l.Label}}</a>{{end}}</span>{{end}}
+<span class="sk-auth" data-blog-auth data-console-url="{{.ConsoleURL}}">
+<span class="sk-auth-guest" data-blog-auth-guest>
 <a class="sk-login" href="{{.RegisterURL}}">{{.LoginLabel}}</a>
 {{if .SignupLabel}}<a class="sk-signup" href="{{.RegisterURL}}">{{.SignupLabel}}</a>{{end}}
+</span>
+<a class="sk-user" data-blog-auth-user href="{{.ConsoleURL}}" aria-label="{{.LoginLabel}}" title="{{.LoginLabel}}" hidden>
+<span class="sk-user-avatar" data-blog-auth-avatar aria-hidden="true">U</span>
+<span class="sk-user-name" data-blog-auth-name></span>
+</a>
+</span>
 </div>
 </div></header>
 `
@@ -149,7 +157,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 .sk-login:hover{border-color:rgba(255,181,148,.5);box-shadow:0 0 18px rgba(196,81,0,.25);text-decoration:none}
 .sk-signup{height:39px;display:inline-flex;align-items:center;padding:0 20px;border-radius:9999px;color:#fff;font-size:13.5px;font-weight:700;background:linear-gradient(180deg,#f0741b 0%,#cf5400 52%,#a83f00 100%);box-shadow:inset 0 1px 0 rgba(255,214,178,.55),0 0 0 1px rgba(255,181,148,.24),0 6px 18px rgba(196,81,0,.3);text-decoration:none}
 .sk-signup:hover{text-decoration:none;opacity:.94}
+.sk-auth,.sk-auth-guest{display:inline-flex;align-items:center;gap:12px}
+.sk-auth-guest[hidden]{display:none}
+.sk-user{height:40px;display:inline-flex;align-items:center;gap:9px;padding:0 12px 0 4px;border:1px solid rgba(255,181,148,.18);border-radius:9999px;background:rgba(255,255,255,.035);color:var(--fg);text-decoration:none;transition:border-color .2s,box-shadow .2s}
+.sk-user[hidden]{display:none}
+.sk-user:hover{border-color:rgba(255,181,148,.52);box-shadow:0 0 18px rgba(196,81,0,.22);text-decoration:none}
+.sk-user-avatar{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:linear-gradient(135deg,#ffb594,#c45100 72%);color:#fff;font-size:13px;font-weight:750;text-transform:uppercase;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
+.sk-user-name{max-width:126px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px;font-weight:600}
 @media (max-width:900px){.sk-links{display:none}}
+@media (max-width:560px){.sk-user{width:38px;padding:3px}.sk-user-name{display:none}}
 .sk-wrap{max-width:var(--navw);margin:0 auto;padding:0 24px}
 .sk-hero{position:relative;padding:64px 0 40px;overflow:hidden}
 .sk-hero::before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.028) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.028) 1px,transparent 1px);background-size:58px 58px;-webkit-mask-image:radial-gradient(720px 340px at 28% 0%,#000 30%,transparent 78%);mask-image:radial-gradient(720px 340px at 28% 0%,#000 30%,transparent 78%);pointer-events:none}
@@ -239,8 +255,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Ping
 .sk-login:hover{color:var(--rose);text-decoration:none}
 .sk-signup{display:inline-flex;align-items:center;border-radius:9999px;background:var(--rose);color:#fff;font-size:.9rem;font-weight:500;padding:9px 18px;transition:background .25s;text-decoration:none;white-space:nowrap}
 .sk-signup:hover{background:var(--rose-dk);text-decoration:none}
+.sk-auth,.sk-auth-guest{display:inline-flex;align-items:center;gap:18px}
+.sk-auth-guest[hidden]{display:none}
+.sk-user{height:42px;display:inline-flex;align-items:center;gap:9px;padding:0 13px 0 4px;border:1px solid var(--border);border-radius:9999px;background:rgba(251,250,246,.72);color:var(--fg);text-decoration:none;box-shadow:0 7px 24px -18px rgba(26,26,23,.5);transition:border-color .25s,background .25s}
+.sk-user[hidden]{display:none}
+.sk-user:hover{border-color:var(--blush);background:var(--card);text-decoration:none}
+.sk-user-avatar{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--rose);color:#fff;font-family:var(--serif);font-size:.95rem;font-weight:500;text-transform:uppercase}
+.sk-user-name{max-width:126px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.88rem;font-weight:500}
 @media (max-width:900px){.sk-links{display:none}}
-@media (max-width:480px){.sk-login{display:none}.sk-nav-inner{gap:16px}}
+@media (max-width:560px){.sk-user{width:40px;padding:3px}.sk-user-name{display:none}}
+@media (max-width:480px){.sk-login{display:none}.sk-nav-inner{gap:16px}.sk-auth-guest{gap:0}}
 .sk-wrap{max-width:var(--navw);margin:0 auto;padding:0 28px}
 .sk-hero{padding:68px 0 16px}
 .sk-eyebrow{font-size:.78rem;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:var(--rose);margin:0 0 16px}

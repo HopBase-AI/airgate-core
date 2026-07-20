@@ -8,6 +8,7 @@ import {
   getTokenRole,
 } from '../../shared/api/client';
 import { usersApi } from '../../shared/api/users';
+import { syncBlogSession } from '../../shared/blogSession';
 import { adoptOriginSite } from '../../shared/originSite';
 import { resetAdminCache } from '../routeGuards';
 
@@ -60,7 +61,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .then((userData) => {
           const currentToken = getToken();
           if (!cancelled && authRevisionRef.current === revision && currentToken) {
-            setUser(normalizeSessionUser(userData, currentToken));
+            const sessionUser = normalizeSessionUser(userData, currentToken);
+            syncBlogSession(sessionUser, currentToken);
+            setUser(sessionUser);
           }
         })
         .catch(() => {
@@ -87,14 +90,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const revision = authRevisionRef.current;
     resetAdminCache();
     setToken(token);
-    setUser(normalizeSessionUser(userData, token));
+    const sessionUser = normalizeSessionUser(userData, token);
+    syncBlogSession(sessionUser, token);
+    setUser(sessionUser);
     // 登录响应可能不包含全部用户字段（例如 API Key 登录时缺少 quota / expires_at），
     // 异步用 /me 拉一次完整数据补齐，避免首屏额度等信息显示不准。
     usersApi.me()
       .then((freshUser) => {
         const currentToken = getToken();
         if (authRevisionRef.current === revision && currentToken) {
-          setUser(normalizeSessionUser(freshUser, currentToken));
+          const freshSessionUser = normalizeSessionUser(freshUser, currentToken);
+          syncBlogSession(freshSessionUser, currentToken);
+          setUser(freshSessionUser);
         }
       })
       .catch(() => {});

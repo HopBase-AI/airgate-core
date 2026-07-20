@@ -384,6 +384,8 @@ func (s *Server) registerRoutes() {
 	// 否则会被 SPA / API Key 转发逻辑吃掉。
 	blogRenderer := blogssr.NewRenderer(handlers.BlogService, handlers.SettingsService)
 	r.GET("/blog", blogRenderer.RenderList)
+	// 控制台同源的只读会话桥；须在 :slug 之前注册，避免被识别成文章 slug。
+	r.GET("/blog/session-bridge", blogRenderer.RenderSessionBridge)
 	// sitemap 须在 :slug 之前注册;gin v1.10 静态路径优先于同层 param,不会被当作 slug。
 	r.GET("/blog/sitemap.xml", blogRenderer.RenderSitemap)
 	r.GET("/blog/:slug", blogRenderer.RenderDetail)

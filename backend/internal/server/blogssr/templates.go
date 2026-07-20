@@ -202,7 +202,7 @@ const detailBodyStr = `<main class="blog-wrap">
 <div class="article-content" id="blog-content">{{.Content}}</div>
 {{if .Tags}}<div class="article-tags">{{range .Tags}}<span class="article-tag">{{.}}</span>{{end}}</div>{{end}}
 </article>
-<aside class="blog-cta">
+<aside class="blog-cta" data-blog-acquisition>
 <p class="blog-cta-title">{{.CTATitle}}</p>
 <p class="blog-cta-desc">{{.CTADesc}}</p>
 <a class="blog-cta-btn" href="{{.RegisterURL}}">{{.UI.CTAButton}}</a>
@@ -226,6 +226,7 @@ var content=document.getElementById('blog-content');
 var gate=document.getElementById('blog-gate');
 if(!content||!gate)return;
 var gateOpen=false;
+var gateStarted=false;
 var limitY=0;
 var touchY=null;
 var downKeys={ArrowDown:1,PageDown:1,End:1};
@@ -259,6 +260,9 @@ if(window.scrollY>=limitY-1){showGate();}else{hideGate();}
 function syncGateWithSession(){
 onScroll();
 }
+function syncGateOnVisibility(){
+if(!document.hidden)syncGateWithSession();
+}
 function preventDownwardWheel(event){
 if(gateOpen&&event.deltaY>0)event.preventDefault();
 }
@@ -280,6 +284,13 @@ if(gateOpen&&downward)event.preventDefault();
 function onResize(){
 onScroll();
 }
+var navEntries=window.performance&&performance.getEntriesByType?performance.getEntriesByType('navigation'):[];
+var reloaded=navEntries.length&&navEntries[0].type==='reload';
+var resetAfterReload=function(){hideGate();window.scrollTo(0,0);};
+var resetOnPageShow=function(){setTimeout(resetAfterReload,0);};
+function startGate(){
+if(gateStarted)return;
+gateStarted=true;
 window.addEventListener('scroll',onScroll,{passive:true});
 window.addEventListener('resize',onResize,{passive:true});
 window.addEventListener('wheel',preventDownwardWheel,{passive:false});
@@ -290,20 +301,165 @@ window.addEventListener('touchcancel',clearTouch,{passive:true});
 window.addEventListener('keydown',preventDownwardKey);
 window.addEventListener('pageshow',syncGateWithSession);
 window.addEventListener('focus',syncGateWithSession);
-document.addEventListener('visibilitychange',function(){if(!document.hidden)syncGateWithSession();});
-var navEntries=window.performance&&performance.getEntriesByType?performance.getEntriesByType('navigation'):[];
-var reloaded=navEntries.length&&navEntries[0].type==='reload';
+document.addEventListener('visibilitychange',syncGateOnVisibility);
 if(reloaded){
 if('scrollRestoration' in history)history.scrollRestoration='manual';
-var resetAfterReload=function(){hideGate();window.scrollTo(0,0);};
 resetAfterReload();
 window.addEventListener('load',resetAfterReload,{once:true});
-window.addEventListener('pageshow',function(){setTimeout(resetAfterReload,0);},{once:true});
+window.addEventListener('pageshow',resetOnPageShow,{once:true});
 }
 syncGateWithSession();
+}
+function stopGate(){
+hideGate();
+if(!gateStarted)return;
+gateStarted=false;
+window.removeEventListener('scroll',onScroll);
+window.removeEventListener('resize',onResize);
+window.removeEventListener('wheel',preventDownwardWheel);
+window.removeEventListener('touchstart',rememberTouch);
+window.removeEventListener('touchmove',preventDownwardTouch);
+window.removeEventListener('touchend',clearTouch);
+window.removeEventListener('touchcancel',clearTouch);
+window.removeEventListener('keydown',preventDownwardKey);
+window.removeEventListener('pageshow',syncGateWithSession);
+window.removeEventListener('focus',syncGateWithSession);
+document.removeEventListener('visibilitychange',syncGateOnVisibility);
+window.removeEventListener('load',resetAfterReload);
+window.removeEventListener('pageshow',resetOnPageShow);
+}
+// 默认皮肤没有登录按钮/跨域会话桥，保持原有注册墙即时行为。
+if(!document.querySelector('[data-blog-auth]')){startGate();return;}
+var authSeen=false;
+function onBlogSession(event){
+authSeen=true;
+var session=event&&event.detail?event.detail:{};
+if(session.authenticated){stopGate();return;}
+if(session.resolved!==false)startGate();
+}
+document.addEventListener('airgate:blog-session',onBlogSession);
+if(window.__airgateBlogSession)onBlogSession({detail:window.__airgateBlogSession});
+// 会话脚本异常或 iframe 被策略拦截时仍保证访客注册墙可用。
+setTimeout(function(){if(!authSeen)startGate();},3500);
 })();
 </script>
 {{end}}
+`
+
+// authSessionScriptStr 在公开博客与控制台之间同步展示级登录态：父域 Cookie 负责
+// Safari/返回导航的快速恢复，控制台同源 iframe 再校验真实 Token。仅传昵称/邮箱，
+// 不让博客源接触 Bearer Token；登录用户同时隐藏注册按钮、常驻 CTA 和注册墙。
+const authSessionScriptStr = `<script>
+(function(){
+'use strict';
+var roots=Array.prototype.slice.call(document.querySelectorAll('[data-blog-auth]'));
+if(!roots.length)return;
+var cookieName='airgate_blog_session_v1';
+var consoleURL=roots[0].getAttribute('data-console-url')||'';
+var consoleOrigin='';
+try{consoleOrigin=new URL(consoleURL,location.href).origin;}catch(e){}
+var frame=null;
+var timer=0;
+var probeID=0;
+var lastProbe=0;
+function readHint(){
+try{
+var prefix=cookieName+'=';
+var item=document.cookie.split(';').map(function(v){return v.trim();}).find(function(v){return v.indexOf(prefix)===0;});
+if(!item)return null;
+var hint=JSON.parse(decodeURIComponent(item.slice(prefix.length)));
+if(hint&&hint.v===1&&typeof hint.exp==='number'&&hint.exp>Date.now()/1000){
+return {authenticated:true,name:String(hint.name||'User').slice(0,80),email:String(hint.email||'').slice(0,160),resolved:false};
+}
+}catch(e){}
+return null;
+}
+function clearHint(){
+try{
+var expired=cookieName+'=; Path=/blog; Max-Age=0; SameSite=Lax';
+document.cookie=expired;
+var host=consoleOrigin?new URL(consoleOrigin).hostname:'';
+var labels=host.split('.');
+if(labels.length>=3)document.cookie=expired+'; Domain='+labels.slice(1).join('.');
+}catch(e){}
+}
+function render(session){
+var authenticated=session&&session.authenticated===true;
+var name=authenticated?String(session.name||session.email||'User').slice(0,80):'';
+var email=authenticated?String(session.email||'').slice(0,160):'';
+var chars=Array.from(name||email||'U');
+var initial=(chars[0]||'U').toUpperCase();
+roots.forEach(function(root){
+var guest=root.querySelector('[data-blog-auth-guest]');
+var user=root.querySelector('[data-blog-auth-user]');
+if(guest)guest.hidden=authenticated;
+if(user){
+user.hidden=!authenticated;
+if(authenticated){
+var avatar=user.querySelector('[data-blog-auth-avatar]');
+var label=user.querySelector('[data-blog-auth-name]');
+if(avatar)avatar.textContent=initial;
+if(label)label.textContent=name;
+var title=email&&email!==name?name+' · '+email:name;
+user.setAttribute('aria-label',title);
+user.setAttribute('title',title);
+}
+}
+});
+document.querySelectorAll('[data-blog-acquisition]').forEach(function(node){node.hidden=authenticated;});
+var state={authenticated:authenticated,name:name,email:email,resolved:session&&session.resolved!==false};
+window.__airgateBlogSession=state;
+document.dispatchEvent(new CustomEvent('airgate:blog-session',{detail:state}));
+}
+function removeFrame(){
+if(frame){frame.remove();frame=null;}
+}
+function probe(){
+lastProbe=Date.now();
+probeID+=1;
+var id=probeID;
+var hint=readHint();
+if(hint)render(hint);
+clearTimeout(timer);
+removeFrame();
+if(!consoleOrigin){render(hint||{authenticated:false,resolved:true});return;}
+frame=document.createElement('iframe');
+frame.hidden=true;
+frame.tabIndex=-1;
+frame.setAttribute('aria-hidden','true');
+var src=new URL('/blog/session-bridge',consoleOrigin);
+src.searchParams.set('origin',location.origin);
+src.searchParams.set('_',String(Date.now()));
+frame.src=src.toString();
+document.body.appendChild(frame);
+timer=setTimeout(function(){
+if(id!==probeID)return;
+removeFrame();
+if(!hint)render({authenticated:false,resolved:true});
+},2500);
+}
+window.addEventListener('message',function(event){
+if(!frame||event.source!==frame.contentWindow||event.origin!==consoleOrigin)return;
+var data=event.data;
+if(!data||data.type!=='airgate:blog-session'||typeof data.authenticated!=='boolean')return;
+clearTimeout(timer);
+removeFrame();
+if(data.authenticated){
+render({authenticated:true,name:data.name,email:data.email,resolved:true});
+}else{
+var fallback=readHint();
+if(fallback){render(fallback);return;}
+clearHint();
+render({authenticated:false,resolved:true});
+}
+});
+window.addEventListener('pageshow',function(event){if(event.persisted)probe();});
+document.addEventListener('visibilitychange',function(){
+if(document.visibilityState==='visible'&&Date.now()-lastProbe>1000)probe();
+});
+probe();
+})();
+</script>
 `
 
 const notFoundBodyStr = `<main class="blog-wrap">
@@ -324,9 +480,9 @@ func assemble(head, css, header, body, footer, tail string) string {
 func listTemplateStr(theme string) string {
 	switch theme {
 	case themeEmber:
-		return assemble(listHeadStr, baseStyle+emberVars+emberChromeCSS, skinHeaderStr, emberListBodyStr, skinFooterStr, skinLangScriptStr)
+		return assemble(listHeadStr, baseStyle+emberVars+emberChromeCSS, skinHeaderStr, emberListBodyStr, skinFooterStr, skinLangScriptStr+authSessionScriptStr)
 	case themeInk:
-		return assemble(listHeadStr, baseStyle+inkVars+inkChromeCSS, skinHeaderStr, inkListBodyStr, skinFooterStr, skinLangScriptStr)
+		return assemble(listHeadStr, baseStyle+inkVars+inkChromeCSS, skinHeaderStr, inkListBodyStr, skinFooterStr, skinLangScriptStr+authSessionScriptStr)
 	default:
 		return assemble(listHeadStr, baseStyle, defaultHeaderStr, defaultListBodyStr, defaultFooterStr, "")
 	}
@@ -336,9 +492,9 @@ func listTemplateStr(theme string) string {
 func detailTemplateStr(theme string) string {
 	switch theme {
 	case themeEmber:
-		return assemble(detailHeadStr, baseStyle+emberVars+emberChromeCSS, skinHeaderStr, detailBodyStr, skinFooterStr, gateStr)
+		return assemble(detailHeadStr, baseStyle+emberVars+emberChromeCSS, skinHeaderStr, detailBodyStr, skinFooterStr, gateStr+authSessionScriptStr)
 	case themeInk:
-		return assemble(detailHeadStr, baseStyle+inkVars+inkChromeCSS, skinHeaderStr, detailBodyStr, skinFooterStr, gateStr)
+		return assemble(detailHeadStr, baseStyle+inkVars+inkChromeCSS, skinHeaderStr, detailBodyStr, skinFooterStr, gateStr+authSessionScriptStr)
 	default:
 		return assemble(detailHeadStr, baseStyle, defaultHeaderStr, detailBodyStr, defaultFooterStr, gateStr)
 	}
@@ -348,9 +504,9 @@ func detailTemplateStr(theme string) string {
 func notFoundTemplateStr(theme string) string {
 	switch theme {
 	case themeEmber:
-		return assemble(notFoundHeadStr, baseStyle+emberVars+emberChromeCSS, skinHeaderStr, notFoundBodyStr, skinFooterStr, "")
+		return assemble(notFoundHeadStr, baseStyle+emberVars+emberChromeCSS, skinHeaderStr, notFoundBodyStr, skinFooterStr, authSessionScriptStr)
 	case themeInk:
-		return assemble(notFoundHeadStr, baseStyle+inkVars+inkChromeCSS, skinHeaderStr, notFoundBodyStr, skinFooterStr, "")
+		return assemble(notFoundHeadStr, baseStyle+inkVars+inkChromeCSS, skinHeaderStr, notFoundBodyStr, skinFooterStr, authSessionScriptStr)
 	default:
 		return assemble(notFoundHeadStr, baseStyle, "", notFoundBodyStr, "", "")
 	}
