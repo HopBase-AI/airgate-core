@@ -167,8 +167,8 @@ func TestReadingTimeAndEyebrow(t *testing.T) {
 	if got := readingTimeLabel(long, "zh"); got != "2 分钟阅读" {
 		t.Errorf("reading time = %q, want 2 分钟阅读", got)
 	}
-	if got := readingTimeLabel("<p>短</p>", ""); got != "1 分钟阅读" {
-		t.Errorf("reading time min = %q, want 1 分钟阅读", got)
+	if got := readingTimeLabel("<p>短</p>", ""); got != "1 分鐘閱讀" {
+		t.Errorf("reading time min = %q, want 1 分鐘閱讀", got)
 	}
 	// 语言本地化后缀
 	if got := readingTimeLabel(long, "en"); got != "2 min read" {

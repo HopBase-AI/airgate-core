@@ -27,3 +27,15 @@ export function getInviteCode(): string {
     return '';
   }
 }
+
+/**
+ * 清除尚未消费的注册归因。
+ * 仅应在确认进入一个已有/新建的用户账户会话后调用；登录或注册失败时必须保留，方便重试。
+ */
+export function clearInviteCode(): void {
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // localStorage 不可用时本来也无法持久化邀请码，静默降级即可。
+  }
+}

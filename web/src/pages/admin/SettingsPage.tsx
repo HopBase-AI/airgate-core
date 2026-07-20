@@ -694,7 +694,7 @@ export default function SettingsPage() {
                     value={blogChromeRaw}
                     onChange={(e) => set('blog_chrome', e.target.value)}
                     className="h-56 w-full font-mono text-xs leading-5 mt-3"
-                    placeholder={'{\n  "brand_label": "HopBase",\n  "eyebrow": "HopBase · Blog",\n  "title": "博客 · 实践与洞察",\n  "subtitle": "AI 网关接入实践、模型评测与省钱技巧",\n  "nav": [ { "label": "首页", "href": "/" }, { "label": "博客", "href": "/blog" } ],\n  "footer": [ { "label": "接入文档", "href": "/docs" } ],\n  "footer_note": "企业级 AI 网关",\n  "login_label": "登录",\n  "signup_label": "",\n  "cta_desc": "",\n  "default_lang": "zh"\n}'}
+                    placeholder={'{\n  "brand_label": "HopBase",\n  "eyebrow": "HopBase · Blog",\n  "title": "博客 · 实践与洞察",\n  "subtitle": "AI 网关接入实践、模型评测与省钱技巧",\n  "nav": [ { "label": "首页", "href": "/" }, { "label": "博客", "href": "/blog" } ],\n  "footer": [ { "label": "接入文档", "href": "/docs" } ],\n  "footer_note": "企业级 AI 网关",\n  "login_label": "登录",\n  "signup_label": "",\n  "cta_desc": "",\n  "default_lang": "zh-Hant"\n}'}
                   />
                   {blogChromeError && (
                     <p className="text-[11px] text-danger mt-1.5">{blogChromeError}</p>

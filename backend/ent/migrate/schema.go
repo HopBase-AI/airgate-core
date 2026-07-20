@@ -194,7 +194,7 @@ var (
 		{Name: "invite_code", Type: field.TypeString, Nullable: true, Size: 16},
 		{Name: "gate_enabled", Type: field.TypeBool, Default: false},
 		{Name: "gate_position", Type: field.TypeInt, Default: 50},
-		{Name: "lang", Type: field.TypeString, Size: 16, Default: "zh"},
+		{Name: "lang", Type: field.TypeString, Size: 16, Default: "zh-Hant"},
 		{Name: "tags", Type: field.TypeJSON, Nullable: true},
 		{Name: "sites", Type: field.TypeJSON, Nullable: true},
 		{Name: "seo_title", Type: field.TypeString, Default: ""},

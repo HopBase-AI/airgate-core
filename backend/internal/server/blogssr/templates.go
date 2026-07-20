@@ -96,7 +96,7 @@ img{max-width:100%}
 // ―――――― 共享 head(所有皮肤一致,SEO 元信息) ――――――
 
 const listHeadStr = `<!doctype html>
-<html lang="{{if .HTMLLang}}{{.HTMLLang}}{{else}}zh-CN{{end}}">
+<html lang="{{if .HTMLLang}}{{.HTMLLang}}{{else}}zh-Hant{{end}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -110,7 +110,7 @@ const listHeadStr = `<!doctype html>
 `
 
 const detailHeadStr = `<!doctype html>
-<html lang="{{if .HTMLLang}}{{.HTMLLang}}{{else}}zh-CN{{end}}">
+<html lang="{{if .HTMLLang}}{{.HTMLLang}}{{else}}zh-Hant{{end}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -135,7 +135,7 @@ const detailHeadStr = `<!doctype html>
 `
 
 const notFoundHeadStr = `<!doctype html>
-<html lang="{{if .HTMLLang}}{{.HTMLLang}}{{else}}zh-CN{{end}}">
+<html lang="{{if .HTMLLang}}{{.HTMLLang}}{{else}}zh-Hant{{end}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -215,8 +215,8 @@ const gateStr = `{{if .GateEnabled}}
 <div id="blog-gate" class="blog-gate" role="dialog" aria-labelledby="blog-gate-title" hidden>
 <div class="blog-gate-card">
 <p class="blog-gate-title" id="blog-gate-title">{{.UI.GateTitle}}</p>
-<p class="blog-gate-desc">{{.UI.GateDesc}}</p>
-<a class="blog-gate-btn" href="{{.RegisterURL}}">{{.UI.GateButton}}</a>
+<p class="blog-gate-desc" id="blog-gate-desc">{{.UI.GateDesc}}</p>
+<a class="blog-gate-btn" id="blog-gate-btn" href="{{.RegisterURL}}">{{.UI.GateButton}}</a>
 </div>
 </div>
 <script>
@@ -225,6 +225,43 @@ var pos={{.GatePosition}};
 var content=document.getElementById('blog-content');
 var gate=document.getElementById('blog-gate');
 if(!content||!gate)return;
+// 注册墙跟随主站/控制台共用的语言偏好。SSR 文案只负责无 JS 兜底；弹窗打开前
+// 即完成替换，避免 CDN 缓存按首位访客的 Cookie 分叉或串语言。
+var gateCopy={
+'zh-HK':['註冊後繼續閱讀全文','免費註冊即可讀完本文，並獲得 API 額度體驗。','免費註冊 / 登入'],
+'zh':['注册后继续阅读全文','免费注册即可读完本文，并获得 API 额度体验。','免费注册 / 登录'],
+'en':['Sign up to keep reading','Create a free account to finish this article and get trial API credits.','Sign up / Log in'],
+'ja':['登録して続きを読む','無料アカウントを作成すると、記事の全文を読め、API のトライアルクレジットも利用できます。','無料登録 / ログイン']
+};
+function gateLang(){
+try{
+var queryLang=new URLSearchParams(location.search).get('lang')||'';
+if(queryLang)return normalizeGateLang(queryLang,false);
+var match=document.cookie.match(/(?:^|;\s*)lang=([^;]+)/);
+var value=match?decodeURIComponent(match[1]||''):(localStorage.getItem('lang')||'');
+if(value)return normalizeGateLang(value,false);
+var essevinLang=localStorage.getItem('essevin-lang')||'';
+if(essevinLang)return normalizeGateLang(essevinLang,true);
+if(localStorage.getItem('essevin-script')==='hans')return 'zh';
+}catch(e){}
+return 'zh-HK';
+}
+function normalizeGateLang(value,essevin){
+value=(value||'').toLowerCase();
+// Essevin SPA 以 zh=繁体、zh-CN=简体；HopBase/控制台则以 zh=简体、zh-HK=繁体。
+if(essevin&&value==='zh')return 'zh-HK';
+if(value==='zh'||value.indexOf('zh-cn')===0||value.indexOf('zh-sg')===0||value.indexOf('hans')>=0)return 'zh';
+if(value.indexOf('en')===0)return 'en';
+if(value.indexOf('ja')===0)return 'ja';
+return 'zh-HK';
+}
+var copy=gateCopy[gateLang()]||gateCopy['zh-HK'];
+var gateTitle=document.getElementById('blog-gate-title');
+var gateDesc=document.getElementById('blog-gate-desc');
+var gateBtn=document.getElementById('blog-gate-btn');
+if(gateTitle)gateTitle.textContent=copy[0];
+if(gateDesc)gateDesc.textContent=copy[1];
+if(gateBtn)gateBtn.textContent=copy[2];
 var gateOpen=false;
 var gateStarted=false;
 var limitY=0;

@@ -33,7 +33,7 @@ func (BlogPost) Fields() []ent.Field {
 			Comment("软性注册墙开关：开启后读到 gate_position% 弹注册遮罩。"),
 		field.Int("gate_position").Default(50).Min(0).Max(100).
 			Comment("注册墙触发位置（正文百分比 0~100）。"),
-		field.String("lang").Default("zh").MaxLen(16).
+		field.String("lang").Default("zh-Hant").MaxLen(16).
 			Comment("文章语言；多语言预留，MVP 单语言。"),
 		field.JSON("tags", []string{}).Optional().
 			Comment("轻量标签/分类。"),

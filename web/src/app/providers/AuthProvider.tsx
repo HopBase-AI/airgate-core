@@ -10,6 +10,7 @@ import {
 import { usersApi } from '../../shared/api/users';
 import { syncBlogSession } from '../../shared/blogSession';
 import { adoptOriginSite } from '../../shared/originSite';
+import { clearInviteCode } from '../../shared/inviteCode';
 import { resetAdminCache } from '../routeGuards';
 
 interface AuthContextType {
@@ -41,6 +42,12 @@ function normalizeSessionUser(user: UserResp, token = getToken()): UserResp {
   };
 }
 
+// 邀请码是「待完成的新账户归因」而非长期偏好。确认进入普通用户/管理员账户后即结束本次归因；
+// API Key 只读会话不代表用户已选择登录或注册账户，不能误清。
+function clearSettledInviteAttribution(token: string) {
+  if (getTokenRole(token) !== 'api_key') clearInviteCode();
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserResp | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,6 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .then((userData) => {
           const currentToken = getToken();
           if (!cancelled && authRevisionRef.current === revision && currentToken) {
+            clearSettledInviteAttribution(currentToken);
             const sessionUser = normalizeSessionUser(userData, currentToken);
             syncBlogSession(sessionUser, currentToken);
             setUser(sessionUser);
@@ -90,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const revision = authRevisionRef.current;
     resetAdminCache();
     setToken(token);
+    clearSettledInviteAttribution(token);
     const sessionUser = normalizeSessionUser(userData, token);
     syncBlogSession(sessionUser, token);
     setUser(sessionUser);

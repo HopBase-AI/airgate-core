@@ -52,6 +52,9 @@ func TestApplyChrome_DefaultsAndInvThreading(t *testing.T) {
 	if b.SignupLabel != "" {
 		t.Errorf("SignupLabel = %q, want 默认不显示", b.SignupLabel)
 	}
+	if b.HTMLLang != "zh-Hant" || b.UI.GateButton != "免費註冊 / 登入" {
+		t.Errorf("默认博客语言应为繁体,HTMLLang=%q GateButton=%q", b.HTMLLang, b.UI.GateButton)
+	}
 	// 默认导航 = 首页 + 博客,均透传读者 inv(小写化)
 	if len(b.Nav) != 2 {
 		t.Fatalf("Nav = %+v, want 2 项", b.Nav)

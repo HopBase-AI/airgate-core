@@ -8,6 +8,7 @@ import type { KeyForm } from './types';
 export interface KeyGroupOption {
   value: string;
   label: string;
+  description?: string;
   suffix?: ReactNode;
 }
 
@@ -36,7 +37,14 @@ export function EditKeyModal({
     id: option.value,
     label: (
       <div className="flex min-w-0 items-center justify-between gap-2">
-        <span className="truncate">{option.label}</span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate">{option.label}</div>
+          {option.description ? (
+            <div className="mt-0.5 truncate text-xs font-normal text-text-tertiary">
+              {option.description}
+            </div>
+          ) : null}
+        </div>
         {option.suffix ? <span className="shrink-0 text-xs">{option.suffix}</span> : null}
       </div>
     ),
@@ -102,6 +110,11 @@ export function EditKeyModal({
             </ListBox>
           </Select.Popover>
         </Select>
+        {selectedGroup?.description ? (
+          <p className="-mt-2 truncate text-xs leading-5 text-text-tertiary" title={selectedGroup.description}>
+            {selectedGroup.description}
+          </p>
+        ) : null}
         <HeroTextField fullWidth>
           <Label>{t('user_keys.quota_label')}</Label>
           <Input

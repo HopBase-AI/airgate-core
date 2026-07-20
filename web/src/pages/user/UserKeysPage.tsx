@@ -295,6 +295,7 @@ export default function UserKeysPage() {
     return {
       value: String(g.id),
       label: localizedGroupText(g.name, g.name_i18n, uiLang),
+      description: localizedGroupText(g.note ?? '', g.note_i18n, uiLang).trim() || undefined,
       suffix,
     };
   }), [groupList, groupQuotes, pricingFx, t, uiLang, userGroupRates]);

@@ -23,7 +23,7 @@ var inviteCodeRe = regexp.MustCompile(`^[A-Za-z0-9]{4,16}$`)
 // htmlTagRe 粗略剥离 HTML 标签用于估算阅读时长(不追求精确,仅取正文字数量级)。
 var htmlTagRe = regexp.MustCompile(`<[^>]+>`)
 
-// uiText 公开博客页的固定文案,按文章/列表语言本地化(zh/zh-Hant/en,空按 zh)。
+// uiText 公开博客页的固定文案,按文章/列表语言本地化(zh/zh-Hant/en,空按繁体)。
 type uiText struct {
 	ReadingSuffix string // 阅读时长后缀
 	Back          string // 返回博客
@@ -60,12 +60,12 @@ var uiTexts = map[string]uiText{
 	},
 }
 
-// textFor 取语言文案,未知语言回退简体。
+// textFor 取语言文案,未知语言回退繁体。
 func textFor(lang string) uiText {
 	if t, ok := uiTexts[lang]; ok {
 		return t
 	}
-	return uiTexts["zh"]
+	return uiTexts["zh-Hant"]
 }
 
 // readingTimeLabel 按约 400 字/分钟估算阅读时长(至少 1 分钟),后缀按语言本地化。
@@ -360,7 +360,7 @@ type Branding struct {
 	ShowLangs bool
 	Lang      string
 	LangNav   []NavLink
-	// UI 固定文案(返回/阅读时长后缀/CTA按钮/注册墙/空态),按 Lang 本地化,空语言=简体。
+	// UI 固定文案(返回/阅读时长后缀/CTA按钮/注册墙/空态),按 Lang 本地化,空语言=繁体。
 	UI uiText
 	// HTMLLang <html lang> 值(zh-CN/zh-Hant/en)。
 	HTMLLang string
@@ -396,7 +396,7 @@ func applyChrome(b *Branding, reqInvite, registerURL, lang string) {
 	}
 	b.UI = textFor(b.Lang)
 	switch b.Lang {
-	case "zh-Hant":
+	case "", "zh-Hant":
 		b.HTMLLang = "zh-Hant"
 	case "en":
 		b.HTMLLang = "en"
