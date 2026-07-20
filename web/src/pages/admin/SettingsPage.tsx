@@ -24,7 +24,7 @@ import { CommonModal } from '../../shared/components/CommonModal';
 // ==================== 设置 key 定义 ====================
 
 const SITE_KEYS = [
-  'site_name', 'site_subtitle', 'site_logo', 'api_base_url',
+  'site_name', 'site_subtitle', 'site_logo', 'api_base_url', 'console_url',
   'contact_info', 'doc_url', 'landing_pricing_json',
   // ToC 落地页/模型广场「未登录」展示牌价（fx 汇率 + multipliers 展示倍率；不自动跟随分组倍率）
   'toc_landing_pricing',
@@ -570,6 +570,9 @@ export default function SettingsPage() {
                 </Field>
                 <Field className="col-span-1 md:col-span-2" label={t('settings.api_base_url')} hint={t('settings.api_base_url_hint')}>
                   <Input value={val('api_base_url')} onChange={(e) => set('api_base_url', e.target.value)} placeholder="https://api.example.com" />
+                </Field>
+                <Field className="col-span-1 md:col-span-2" label={t('settings.console_url')} hint={t('settings.console_url_hint')}>
+                  <Input value={val('console_url')} onChange={(e) => set('console_url', e.target.value)} placeholder="https://console.example.com" />
                 </Field>
                 <Field label={t('settings.contact_info')}>
                   <Input value={val('contact_info')} onChange={(e) => set('contact_info', e.target.value)} />

@@ -74,6 +74,50 @@ func (fakeSettings) List(_ context.Context, group string) ([]appsettings.Setting
 	}, nil
 }
 
+type splitConsoleSettings struct {
+	items []appsettings.Setting
+}
+
+func (s splitConsoleSettings) List(_ context.Context, group string) ([]appsettings.Setting, error) {
+	if group != "site" {
+		return nil, nil
+	}
+	return s.items, nil
+}
+
+func TestBrandingConsoleURL(t *testing.T) {
+	tests := []struct {
+		name  string
+		items []appsettings.Setting
+		want  string
+	}{
+		{
+			name: "dedicated console URL wins regardless of settings order",
+			items: []appsettings.Setting{
+				{Key: "console_url", Value: "https://console.essevin.com", Group: "site"},
+				{Key: "api_base_url", Value: "https://api.essevin.com", Group: "site"},
+			},
+			want: "https://console.essevin.com",
+		},
+		{
+			name:  "legacy API URL remains the fallback",
+			items: []appsettings.Setting{{Key: "api_base_url", Value: "https://api.example.com", Group: "site"}},
+			want:  "https://api.example.com",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx.Request = httptest.NewRequest(http.MethodGet, "https://essevin.com/blog", nil)
+			got := NewRenderer(nil, splitConsoleSettings{items: tc.items}).branding(ctx).ConsoleURL
+			if got != tc.want {
+				t.Fatalf("ConsoleURL = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func newTestRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	pub := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)

@@ -327,7 +327,7 @@ var validThemes = map[string]bool{"": true, "ember": true, "ink": true}
 type Branding struct {
 	SiteName   string
 	LogoURL    string
-	ConsoleURL string // 控制台/登录基址,如 https://api.hop-base.com
+	ConsoleURL string // 控制台/登录基址,如 https://console.example.com
 	OriginBase string // 当前博客站点基址 scheme://host,用于 canonical/OG 绝对化
 	// LogoSrc 是给 <img src> 用的 logo 地址,类型 template.URL 以绕过 html/template 的
 	// URL 过滤——否则 site_logo 常见的 data:image/svg+xml URI 会被替换成 #ZgotmplZ(logo 裂图)。

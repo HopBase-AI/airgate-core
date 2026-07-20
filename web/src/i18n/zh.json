@@ -1035,6 +1035,8 @@
     "restore_default_logo": "恢复默认",
     "api_base_url": "API 基础地址",
     "api_base_url_hint": "展示给用户的 API 接口地址，用于密钥使用说明",
+    "console_url": "控制台地址",
+    "console_url_hint": "用户在浏览器访问的控制台地址，用于博客登录和注册链接",
     "frontend_url": "前端地址",
     "contact_info": "联系方式",
     "doc_url": "文档链接",

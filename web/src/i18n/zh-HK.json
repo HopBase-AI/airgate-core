@@ -1035,6 +1035,8 @@
     "restore_default_logo": "恢復預設",
     "api_base_url": "API 基本位址",
     "api_base_url_hint": "向用戶顯示的 API 介面位址，用於金鑰使用說明",
+    "console_url": "控制台網址",
+    "console_url_hint": "用戶在瀏覽器開啟的控制台網址，供網誌登入及註冊連結使用",
     "frontend_url": "前端網址",
     "contact_info": "聯絡方式",
     "doc_url": "文件連結",

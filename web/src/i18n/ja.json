@@ -1035,6 +1035,8 @@
     "restore_default_logo": "デフォルトに戻す",
     "api_base_url": "API ベースアドレス",
     "api_base_url_hint": "ユーザーに表示する API のアドレスで、API Key の使用説明に使われます",
+    "console_url": "コンソール URL",
+    "console_url_hint": "ブログのログイン・登録リンクに使用するブラウザ向けコンソール URL",
     "frontend_url": "フロントエンドアドレス",
     "contact_info": "連絡先",
     "doc_url": "ドキュメントリンク",

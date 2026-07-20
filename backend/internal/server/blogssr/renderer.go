@@ -204,6 +204,8 @@ func xmlEscape(s string) string {
 func (r *Renderer) branding(c *gin.Context) Branding {
 	b := Branding{OriginBase: originBase(c)}
 	sitesBrandingRaw := ""
+	apiBaseURL := ""
+	consoleURL := ""
 	items, err := r.settings.List(c.Request.Context(), "site")
 	if err == nil {
 		for _, it := range items {
@@ -213,7 +215,9 @@ func (r *Renderer) branding(c *gin.Context) Branding {
 			case "site_logo":
 				b.LogoURL = it.Value
 			case "api_base_url":
-				b.ConsoleURL = it.Value
+				apiBaseURL = it.Value
+			case "console_url":
+				consoleURL = it.Value
 			case "blog_site_key":
 				b.SiteKey = strings.TrimSpace(it.Value)
 			case "blog_theme":
@@ -226,6 +230,13 @@ func (r *Renderer) branding(c *gin.Context) Branding {
 				sitesBrandingRaw = it.Value
 			}
 		}
+	}
+	// 控制台(UI)与 API 可以部署在不同域名。博客登录 CTA 优先走专用
+	// console_url；旧实例未配置时继续兼容 api_base_url。
+	if strings.TrimSpace(consoleURL) != "" {
+		b.ConsoleURL = consoleURL
+	} else {
+		b.ConsoleURL = apiBaseURL
 	}
 	// 多落地页站点(ToC 舰队):sites_branding 条目配置 host 后,博客按请求 Host
 	// (或 ?site= 预览参数)匹配站点,覆盖品牌/皮肤/chrome,并以站点键过滤文章——
@@ -246,7 +257,7 @@ func (r *Renderer) branding(c *gin.Context) Branding {
 		}
 	}
 	if strings.TrimSpace(b.ConsoleURL) == "" {
-		// 兜底:同源(博客与控制台同域时可用;跨域时应配置 site.api_base_url)。
+		// 兜底:同源(博客与控制台同域时可用;跨域时应配置 site.console_url)。
 		b.ConsoleURL = b.OriginBase
 	}
 	return b
