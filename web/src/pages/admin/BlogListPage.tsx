@@ -22,6 +22,12 @@ function formatDate(raw?: string | null): string {
   return d.toLocaleDateString();
 }
 
+function languageKey(lang: BlogPostResp['lang']): string {
+  if (lang === 'zh-Hant') return 'blog.lang_zh_hant';
+  if (lang === 'en') return 'blog.lang_en';
+  return 'blog.lang_zh';
+}
+
 export default function BlogListPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -105,11 +111,12 @@ export default function BlogListPage() {
             totalPages={totalPages}
           />
         )}
-        minWidth={860}
+        minWidth={960}
       >
         <CommonTable.Header>
           <CommonTable.Column id="title">{t('blog.col_title', '标题')}</CommonTable.Column>
           <CommonTable.Column id="slug">{t('blog.col_slug', '短链')}</CommonTable.Column>
+          <CommonTable.Column id="language">{t('blog.col_language', '语言')}</CommonTable.Column>
           <CommonTable.Column id="status">{t('common.status', '状态')}</CommonTable.Column>
           <CommonTable.Column id="views">{t('blog.col_views', '阅读')}</CommonTable.Column>
           <CommonTable.Column id="updated">{t('blog.col_updated', '更新时间')}</CommonTable.Column>
@@ -117,10 +124,10 @@ export default function BlogListPage() {
         </CommonTable.Header>
         <CommonTable.Body>
           {isLoading ? (
-            <TableLoadingRow colSpan={6} />
+            <TableLoadingRow colSpan={7} />
           ) : rows.length === 0 ? (
             <CommonTable.Row id="empty">
-              <CommonTable.Cell colSpan={6}>
+              <CommonTable.Cell colSpan={7}>
                 <EmptyState>
                   <div className="text-sm text-default-500">{t('common.no_data', '暂无数据')}</div>
                 </EmptyState>
@@ -134,6 +141,9 @@ export default function BlogListPage() {
                 </CommonTable.Cell>
                 <CommonTable.Cell>
                   <span className="font-mono text-xs text-text-tertiary">{row.slug}</span>
+                </CommonTable.Cell>
+                <CommonTable.Cell>
+                  <Chip size="sm" variant="soft">{t(languageKey(row.lang))}</Chip>
                 </CommonTable.Cell>
                 <CommonTable.Cell>
                   <Chip color={row.status === 'published' ? 'success' : 'default'} size="sm" variant="soft">

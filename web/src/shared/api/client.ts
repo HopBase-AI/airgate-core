@@ -1,5 +1,6 @@
 import type { ApiResponse, SessionRole } from '../types';
 import i18n from '../../i18n';
+import { syncBlogReaderSession } from '../blogReaderSession';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -34,6 +35,7 @@ interface TokenClaims {
 export function setToken(token: string | null) {
   accessToken = token;
   writeBrowserStorage('localStorage', 'token', token);
+  syncBlogReaderSession(!!token, getTokenClaims(token)?.exp);
 }
 
 export function getToken(): string | null {
@@ -67,6 +69,9 @@ export function getTokenAPIKeyID(token = accessToken): number | null {
   const id = getTokenClaims(token)?.api_key_id;
   return typeof id === 'number' && id > 0 ? id : null;
 }
+
+// 兼容升级前已登录的浏览器：新 bundle 首次启动时即可补写跨子域阅读标记。
+syncBlogReaderSession(!!accessToken, getTokenClaims(accessToken)?.exp);
 
 // API Key 登录场景下用户输入的原文 Key，仅保留在 sessionStorage 内，
 // 退出登录或关闭浏览器即清除。供 CCS 导入等需要原文 Key 的客户端功能使用。

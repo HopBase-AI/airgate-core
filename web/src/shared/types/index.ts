@@ -1035,6 +1035,7 @@ export interface ModelInfo {
 // ==================== Blog（博客） ====================
 
 export type BlogStatus = 'draft' | 'published';
+export type BlogLanguage = 'zh-Hant' | 'en' | 'zh';
 
 export interface BlogPostResp {
   id: number;
@@ -1047,7 +1048,7 @@ export interface BlogPostResp {
   invite_code: string;
   gate_enabled: boolean;
   gate_position: number;
-  lang: string;
+  lang: BlogLanguage;
   tags: string[] | null;
   sites: string[] | null;
   seo_title: string;
@@ -1079,7 +1080,7 @@ export interface CreateBlogPostReq {
   invite_code?: string;
   gate_enabled?: boolean;
   gate_position?: number;
-  lang?: string;
+  lang?: BlogLanguage;
   tags?: string[];
   sites?: string[];
   seo_title?: string;

@@ -13,7 +13,7 @@ import { blogApi } from '../../shared/api/blog';
 import { useCrudMutation } from '../../shared/hooks/useCrudMutation';
 import { queryKeys } from '../../shared/queryKeys';
 import { useToast } from '../../shared/ui';
-import type { BlogPostResp, BlogStatus, CreateBlogPostReq } from '../../shared/types';
+import type { BlogLanguage, BlogPostResp, BlogStatus, CreateBlogPostReq } from '../../shared/types';
 import { ArrowLeft, ImagePlus, X, Copy, ExternalLink } from 'lucide-react';
 
 interface BlogForm {
@@ -23,6 +23,7 @@ interface BlogForm {
   cover_image: string;
   content_html: string;
   status: BlogStatus;
+  lang: BlogLanguage;
   invite_code: string;
   gate_enabled: boolean;
   gate_position: number;
@@ -35,14 +36,14 @@ interface BlogForm {
 
 const emptyForm: BlogForm = {
   title: '', slug: '', summary: '', cover_image: '', content_html: '',
-  status: 'draft', invite_code: '', gate_enabled: false, gate_position: 50,
+  status: 'draft', lang: 'zh-Hant', invite_code: '', gate_enabled: false, gate_position: 50,
   tags: '', sites: [], seo_title: '', seo_description: '', og_image: '',
 };
 
 function fromPost(p: BlogPostResp): BlogForm {
   return {
     title: p.title, slug: p.slug, summary: p.summary, cover_image: p.cover_image,
-    content_html: p.content_html, status: p.status, invite_code: p.invite_code,
+    content_html: p.content_html, status: p.status, lang: p.lang || 'zh-Hant', invite_code: p.invite_code,
     gate_enabled: p.gate_enabled, gate_position: p.gate_position || 50,
     tags: (p.tags ?? []).join(', '), sites: p.sites ?? [], seo_title: p.seo_title,
     seo_description: p.seo_description, og_image: p.og_image,
@@ -57,6 +58,7 @@ function toPayload(f: BlogForm): CreateBlogPostReq {
     cover_image: f.cover_image,
     content_html: f.content_html,
     status: f.status,
+    lang: f.lang,
     invite_code: f.invite_code.trim(),
     gate_enabled: f.gate_enabled,
     gate_position: f.gate_position,
@@ -162,6 +164,12 @@ export default function BlogEditorPage() {
     { id: 'published', label: t('blog.status_published', '已发布') },
   ];
   const selectedStatusLabel = statusOptions.find((o) => o.id === form.status)?.label ?? '';
+  const languageOptions = [
+    { id: 'zh-Hant', label: t('blog.lang_zh_hant', '繁體中文') },
+    { id: 'en', label: t('blog.lang_en', 'English') },
+    { id: 'zh', label: t('blog.lang_zh', '简体中文') },
+  ];
+  const selectedLanguageLabel = languageOptions.find((o) => o.id === form.lang)?.label ?? '';
 
   const coverInputRef = useRef<HTMLInputElement>(null);
   const shareSlug = post?.slug || form.slug;
@@ -276,6 +284,25 @@ export default function BlogEditorPage() {
         {/* 发布与转化设置 */}
         <div className="rounded-[var(--radius)] border border-border p-4 space-y-4">
           <div className="text-sm font-semibold text-text">{t('blog.section_publish', '发布与转化')}</div>
+
+          <Select
+            fullWidth
+            selectedKey={form.lang}
+            onSelectionChange={(key) => setForm({ ...form, lang: (key ?? 'zh-Hant') as BlogLanguage })}
+          >
+            <Label>{t('blog.field_language', '文章语言')}</Label>
+            <Select.Trigger>
+              <Select.Value>{selectedLanguageLabel}</Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox items={languageOptions}>
+                {(item) => (
+                  <ListBox.Item id={item.id} textValue={item.label}>{item.label}</ListBox.Item>
+                )}
+              </ListBox>
+            </Select.Popover>
+          </Select>
 
           <Select
             fullWidth

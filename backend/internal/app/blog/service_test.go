@@ -183,7 +183,7 @@ func TestNormalizeInviteCode(t *testing.T) {
 		{"abc123", "abc123", false},
 		{"ABC123", "abc123", false},
 		{"Ab12", "ab12", false},
-		{"abc", "", true},        // 太短
+		{"abc", "", true},                // 太短
 		{"toolongcode123456x", "", true}, // >16
 		{"has space", "", true},
 		{"has-dash", "", true},
@@ -228,11 +228,17 @@ func TestNormalizeStatus(t *testing.T) {
 }
 
 func TestNormalizeLang(t *testing.T) {
-	if normalizeLang("") != "zh" || normalizeLang("  ") != "zh" {
-		t.Error("empty lang should default zh")
+	if normalizeLang("") != LangTraditional || normalizeLang("  ") != LangTraditional {
+		t.Error("empty lang should default zh-Hant")
 	}
-	if normalizeLang("en") != "en" {
+	if normalizeLang("en") != LangEnglish {
 		t.Error("explicit lang kept")
+	}
+	if normalizeLang("zh-HK") != LangTraditional || normalizeLang("zh-CN") != LangSimplified {
+		t.Error("Chinese language aliases should be canonicalized")
+	}
+	if normalizeLang("fr") != LangTraditional {
+		t.Error("unsupported lang should default zh-Hant")
 	}
 }
 
@@ -333,8 +339,8 @@ func TestCreate_GateClampAndLangDefault(t *testing.T) {
 	if p.GatePosition != 100 {
 		t.Fatalf("gate clamp = %d, want 100", p.GatePosition)
 	}
-	if p.Lang != "zh" {
-		t.Fatalf("lang default = %q, want zh", p.Lang)
+	if p.Lang != LangTraditional {
+		t.Fatalf("lang default = %q, want zh-Hant", p.Lang)
 	}
 }
 

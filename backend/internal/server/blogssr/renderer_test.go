@@ -155,6 +155,10 @@ func TestSSR_Detail(t *testing.T) {
 		"var target=contentTop-window.innerHeight*0.5+total*(pos/100)",
 		"if(window.scrollY>limitY+1)",
 		"gate.setAttribute('hidden','')",
+		"airgate_reader_session=1",
+		"if(hasReaderSession()){hideGate();return;}",
+		"window.addEventListener('pageshow',syncGateWithSession)",
+		"window.addEventListener('focus',syncGateWithSession)",
 		"navEntries[0].type==='reload'",
 	}
 	for _, want := range wants {

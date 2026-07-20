@@ -47,7 +47,7 @@ type CreateBlogPostReq struct {
 	InviteCode     string   `json:"invite_code"`
 	GateEnabled    bool     `json:"gate_enabled"`
 	GatePosition   int      `json:"gate_position"`
-	Lang           string   `json:"lang"`
+	Lang           string   `json:"lang" binding:"omitempty,oneof=zh-Hant en zh"`
 	Tags           []string `json:"tags"`
 	Sites          []string `json:"sites"`
 	SEOTitle       string   `json:"seo_title"`
@@ -66,7 +66,7 @@ type UpdateBlogPostReq struct {
 	InviteCode     *string   `json:"invite_code"`
 	GateEnabled    *bool     `json:"gate_enabled"`
 	GatePosition   *int      `json:"gate_position"`
-	Lang           *string   `json:"lang"`
+	Lang           *string   `json:"lang" binding:"omitempty,oneof=zh-Hant en zh"`
 	Tags           *[]string `json:"tags"`
 	Sites          *[]string `json:"sites"`
 	SEOTitle       *string   `json:"seo_title"`

@@ -266,13 +266,18 @@ func clampGate(pos int) int {
 	return pos
 }
 
-// normalizeLang 语言兜底为 zh。
+// normalizeLang 只接受博客公开切换器支持的三种语言；新文章默认繁体。
 func normalizeLang(lang string) string {
-	lang = strings.TrimSpace(lang)
-	if lang == "" {
-		return "zh"
+	switch strings.ToLower(strings.TrimSpace(lang)) {
+	case "zh", "zh-cn", "zh-hans", "zh-sg":
+		return LangSimplified
+	case "en", "en-us", "en-gb":
+		return LangEnglish
+	case "zh-hant", "zh-hk", "zh-tw", "zh-mo":
+		return LangTraditional
+	default:
+		return LangTraditional
 	}
-	return lang
 }
 
 // normalizeSites 去空白、去空项、去重,保序;空/全空 → nil(表示所有站点可见)。

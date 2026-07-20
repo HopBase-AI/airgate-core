@@ -9,6 +9,9 @@ import (
 const (
 	StatusDraft     = "draft"
 	StatusPublished = "published"
+	LangTraditional = "zh-Hant"
+	LangEnglish     = "en"
+	LangSimplified  = "zh"
 )
 
 // Post 博客文章领域对象。
