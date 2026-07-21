@@ -14,13 +14,13 @@ const (
 // ―――――― 皮肤共用 chrome 标记 ――――――
 
 // skinHeaderStr 主站同款顶栏:logo/品牌回主站、导航项、登录(+可选注册)按钮。
-const skinHeaderStr = `<header class="sk-nav"><div class="sk-nav-inner">
-<a href="{{.SiteURL}}" class="sk-logo">{{if .LogoURL}}<img src="{{.LogoSrc}}" alt="{{.BrandLabel}}">{{end}}<b class="sk-brand">{{.BrandLabel}}</b></a>
-<nav class="sk-links">{{range .Nav}}<a href="{{.Href}}"{{if .Active}} class="act"{{end}}>{{.Label}}</a>{{end}}</nav>
+const skinHeaderStr = `<header class="sk-nav" data-sk-header><div class="sk-nav-inner">
+<a href="{{.SiteURL}}" class="sk-logo" aria-label="{{.BrandLabel}}">{{if .LogoURL}}<img src="{{.LogoSrc}}" alt="">{{end}}{{if .BrandProduct}}<span class="sk-brand-lockup"><b class="sk-brand sk-brand-product">{{.BrandProduct}}</b><span class="sk-brand-parent">{{.BrandParent}}</span></span>{{else}}<b class="sk-brand">{{.BrandLabel}}</b>{{end}}</a>
+<nav class="sk-links" aria-label="主要導航">{{range .Nav}}<a href="{{.Href}}"{{if .Active}} class="act"{{end}}>{{.Label}}</a>{{end}}</nav>
 <div class="sk-nav-right">
 {{if .ShowLangs}}<span class="sk-langs">{{range $i, $l := .LangNav}}{{if $i}}<i>/</i>{{end}}<a href="{{$l.Href}}"{{if $l.Active}} class="act"{{end}}>{{$l.Label}}</a>{{end}}</span>{{end}}
-<span class="sk-auth" data-blog-auth data-console-url="{{.ConsoleURL}}">
-<span class="sk-auth-guest" data-blog-auth-guest>
+<span class="sk-auth" data-blog-auth data-console-url="{{.ConsoleURL}}" data-auth-state="loading">
+<span class="sk-auth-guest" data-blog-auth-guest hidden>
 <a class="sk-login" href="{{.RegisterURL}}">{{.LoginLabel}}</a>
 {{if .SignupLabel}}<a class="sk-signup" href="{{.RegisterURL}}">{{.SignupLabel}}</a>{{end}}
 </span>
@@ -29,18 +29,65 @@ const skinHeaderStr = `<header class="sk-nav"><div class="sk-nav-inner">
 <span class="sk-user-name" data-blog-auth-name></span>
 </a>
 </span>
+<button class="sk-menu-button" type="button" aria-label="開啟選單" aria-expanded="false" data-sk-menu-button><span aria-hidden="true"></span></button>
 </div>
-</div></header>
+</div>
+<div class="sk-mobile-menu" data-sk-mobile-menu hidden><nav aria-label="行動版導航">{{range .Nav}}<a href="{{.Href}}"{{if .Active}} class="act"{{end}}>{{.Label}}</a>{{end}}{{if .ShowLangs}}<span class="sk-mobile-langs">{{range $i, $l := .LangNav}}<a href="{{$l.Href}}"{{if $l.Active}} class="act"{{end}}>{{$l.Label}}</a>{{end}}</span>{{end}}<a class="sk-mobile-login" href="{{.RegisterURL}}" data-blog-acquisition hidden>{{.LoginLabel}}</a></nav></div>
+</header>
 `
 
 // 语言只由 URL ?lang= 与服务端 default_lang 决定。禁止按浏览器语言二次跳转，
 // 否则 ToC 的“无 key 固定繁体”会在页面加载后被客户端悄悄改写。
 const skinLangScriptStr = ``
 
+// skinSharedChromeCSS 处理两套皮肤共用的母子品牌锁定、移动菜单和窄屏防挤压。
+const skinSharedChromeCSS = `
+.sk-logo{min-width:0;white-space:nowrap}
+.sk-brand-lockup{min-width:0;display:inline-flex;align-items:center;gap:10px;white-space:nowrap}
+.sk-brand-parent{padding-left:10px;border-left:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:10px;font-weight:600;line-height:1.2;letter-spacing:.045em;text-transform:none;white-space:nowrap}
+.sk-menu-button{box-sizing:border-box;width:44px;height:44px;flex:0 0 44px;padding:0;display:none;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:50%;color:var(--fg);background:rgba(255,255,255,.035);cursor:pointer}
+.sk-menu-button>span,.sk-menu-button>span::before,.sk-menu-button>span::after{width:17px;height:1.5px;display:block;content:"";background:currentColor;transition:transform .22s cubic-bezier(.22,1,.36,1),opacity .14s ease}
+.sk-menu-button>span{position:relative}.sk-menu-button>span::before{position:absolute;top:-5px}.sk-menu-button>span::after{position:absolute;top:5px}
+.sk-menu-button[aria-expanded=true]>span{background:transparent}.sk-menu-button[aria-expanded=true]>span::before{transform:translateY(5px) rotate(45deg)}.sk-menu-button[aria-expanded=true]>span::after{transform:translateY(-5px) rotate(-45deg)}
+.sk-mobile-menu{position:absolute;top:100%;right:0;left:0;padding:12px max(20px,env(safe-area-inset-right)) 22px max(20px,env(safe-area-inset-left));border-bottom:1px solid var(--border);background:var(--bg);box-shadow:0 24px 48px rgba(0,0,0,.32)}
+.sk-mobile-menu[hidden]{display:none}.sk-nav:not(.sk-nav--menu-open) .sk-mobile-menu{display:none}.sk-mobile-menu nav{display:grid}.sk-mobile-menu nav>a{min-height:48px;display:flex;align-items:center;border-bottom:1px solid var(--border);color:var(--fg);font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:.07em;text-decoration:none}.sk-mobile-menu nav>a.act{color:var(--accent)}
+.sk-mobile-langs{min-height:48px;display:flex;align-items:center;gap:20px;border-bottom:1px solid var(--border)}.sk-mobile-langs a{color:var(--muted);font-size:13px;text-decoration:none}.sk-mobile-langs a.act{color:var(--fg)}
+.sk-mobile-login{color:var(--accent)!important}.sk-mobile-login[hidden],[data-blog-acquisition][hidden]{display:none!important}
+.sk-auth[data-auth-state=loading] .sk-auth-guest,.sk-auth[data-auth-state=loading] .sk-user,.sk-auth[data-auth-state=guest] .sk-user,.sk-auth[data-auth-state=authenticated] .sk-auth-guest{display:none!important}
+.sk-nav :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+body.sk-menu-open{overflow:hidden}
+@media(max-width:900px){.sk-nav-inner{height:64px;padding-right:max(18px,env(safe-area-inset-right));padding-left:max(18px,env(safe-area-inset-left));gap:10px}.sk-links,.sk-langs{display:none!important}.sk-menu-button{display:inline-flex}.sk-nav-right{gap:9px}.sk-brand-lockup{gap:7px}.sk-brand-parent{padding-left:7px;font-size:8.5px}}
+@media(max-width:560px){.sk-logo img{width:28px!important;height:28px!important}.sk-brand-product{font-size:18px!important}.sk-signup{box-sizing:border-box;height:44px;padding:0 13px;font-size:12px;white-space:nowrap}.sk-user{box-sizing:border-box;width:44px!important;height:44px!important;padding:3px!important}.sk-user-avatar{width:36px;height:36px}.sk-login{display:none!important}}
+@media(max-width:370px){.sk-nav-inner{padding-right:12px;padding-left:12px;gap:7px}.sk-logo{gap:7px!important}.sk-brand-parent{font-size:8px}.sk-signup{padding:0 10px}}
+@media(prefers-reduced-motion:reduce){.sk-nav *,.sk-nav *::before,.sk-nav *::after{transition:none!important}}
+`
+
+const skinMenuScriptStr = `<script>
+(function(){
+'use strict';
+document.querySelectorAll('[data-sk-header]').forEach(function(header){
+var button=header.querySelector('[data-sk-menu-button]');
+var menu=header.querySelector('[data-sk-mobile-menu]');
+if(!button||!menu)return;
+var lastFocused=null;
+function setOpen(open){
+button.setAttribute('aria-expanded',String(open));menu.hidden=!open;header.classList.toggle('sk-nav--menu-open',open);document.body.classList.toggle('sk-menu-open',open);
+if(open){lastFocused=button;var first=menu.querySelector('a,button');if(first)first.focus();}
+else if(lastFocused&&menu.contains(document.activeElement)){lastFocused.focus();}
+}
+button.addEventListener('click',function(event){if(!event.isTrusted)return;setOpen(button.getAttribute('aria-expanded')!=='true');});
+menu.addEventListener('click',function(event){if(event.target.closest('a'))setOpen(false);});
+document.addEventListener('keydown',function(event){if(event.key==='Escape'&&!menu.hidden)setOpen(false);});
+document.addEventListener('click',function(event){if(!menu.hidden&&!header.contains(event.target))setOpen(false);});
+window.addEventListener('resize',function(){if(window.innerWidth>900&&!menu.hidden)setOpen(false);});
+});
+})();
+</script>`
+
 // skinFooterStr 主站风页脚:品牌 + 一句话 + 版权,右侧链接组。
 const skinFooterStr = `<footer class="sk-footer"><div class="sk-footer-inner">
 <div class="sk-footer-brand">
-<a href="{{.SiteURL}}" class="sk-logo">{{if .LogoURL}}<img src="{{.LogoSrc}}" alt="{{.BrandLabel}}">{{end}}<b class="sk-brand">{{.BrandLabel}}</b></a>
+<a href="{{.SiteURL}}" class="sk-logo" aria-label="{{.BrandLabel}}">{{if .LogoURL}}<img src="{{.LogoSrc}}" alt="">{{end}}{{if .BrandProduct}}<span class="sk-brand-lockup"><b class="sk-brand sk-brand-product">{{.BrandProduct}}</b><span class="sk-brand-parent">{{.BrandParent}}</span></span>{{else}}<b class="sk-brand">{{.BrandLabel}}</b>{{end}}</a>
 {{if .FooterNote}}<p class="sk-footer-note">{{.FooterNote}}</p>{{end}}
 <p class="sk-footer-copy">© {{.BrandLabel}}</p>
 </div>
@@ -48,34 +95,33 @@ const skinFooterStr = `<footer class="sk-footer"><div class="sk-footer-inner">
 </div></footer>
 `
 
-// emberListBodyStr HopBase 皮列表:hero + 头条大卡 + 卡片网格。
-const emberListBodyStr = `<main class="sk-main">
+// emberListBodyStr 暗色编辑部列表:hero + 头条稿件 + 日期/分类稿件轨道。
+const emberListBodyStr = `<main class="sk-main sk-journal">
 <section class="sk-hero"><div class="sk-wrap">
+<p class="sk-journal-label">OPEN LATE JOURNAL <span>／ 夜班稿件</span></p>
 <h1 class="sk-title">{{.Heading}}</h1>
 {{if .Subtitle}}<p class="sk-sub">{{.Subtitle}}</p>{{end}}
 </div></section>
 <div class="sk-wrap">
 {{if .Featured}}{{with .Featured}}
 <a class="sk-featured" href="{{.URL}}">
+<span class="sk-featured-rail"><b>01</b><span>LATEST<br>DISPATCH</span></span>
 <div class="sk-featured-body">
-{{if .Tag}}<span class="sk-pill">{{.Tag}}</span>{{end}}
+<p class="sk-featured-meta">{{if .PublishedAt}}<span>{{.PublishedAt}}</span>{{end}}{{if .Tag}}<span>{{.Tag}}</span>{{end}}</p>
 <h2 class="sk-featured-title">{{.Title}}</h2>
 {{if .Summary}}<p class="sk-featured-sum">{{.Summary}}</p>{{end}}
-<p class="sk-meta">{{if .PublishedAt}}<span>{{.PublishedAt}}</span>{{end}}{{if .ReadingTime}}<span class="d"></span><span>{{.ReadingTime}}</span>{{end}}</p>
+<p class="sk-meta">{{if .ReadingTime}}<span>{{.ReadingTime}}</span>{{end}}</p>
 </div>
-{{if .CoverImage}}<img class="sk-cover" src="{{.CoverImage}}" alt="" loading="lazy">{{else}}<div class="sk-cover {{.CoverClass}}">{{if .Tag}}<span class="sk-cover-tag">{{.Tag}}</span>{{end}}</div>{{end}}
+<span class="sk-featured-arrow" aria-hidden="true">↗</span>
 </a>
 {{end}}{{end}}
 {{if .Rest}}
-<div class="sk-grid">
+<div class="sk-dispatch-list">
 {{range .Rest}}
-<a class="sk-card" href="{{.URL}}">
-{{if .CoverImage}}<img class="sk-cover" src="{{.CoverImage}}" alt="" loading="lazy">{{else}}<div class="sk-cover {{.CoverClass}}">{{if .Tag}}<span class="sk-cover-tag">{{.Tag}}</span>{{end}}</div>{{end}}
-<div class="sk-card-body">
-<h3 class="sk-card-title">{{.Title}}</h3>
-{{if .Summary}}<p class="sk-card-sum">{{.Summary}}</p>{{end}}
-<p class="sk-meta">{{if .PublishedAt}}<span>{{.PublishedAt}}</span>{{end}}{{if .ReadingTime}}<span class="d"></span><span>{{.ReadingTime}}</span>{{end}}</p>
-</div>
+<a class="sk-dispatch" href="{{.URL}}">
+<span class="sk-dispatch-date">{{.PublishedAt}}</span>
+<span class="sk-dispatch-main"><h3>{{.Title}}</h3>{{if .Summary}}<p>{{.Summary}}</p>{{end}}</span>
+<span class="sk-dispatch-side">{{if .Tag}}<b>{{.Tag}}</b>{{end}}{{if .ReadingTime}}<span>{{.ReadingTime}}</span>{{end}}<i aria-hidden="true">→</i></span>
 </a>
 {{end}}
 </div>
@@ -198,6 +244,36 @@ div.sk-cover{display:flex;align-items:center;justify-content:center}
 .sk-card:hover .sk-card-title{color:var(--brand-light)}
 .sk-card-sum{color:var(--muted);font-size:13.5px;line-height:1.65;margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .sk-card .sk-meta{margin-top:auto;padding-top:4px}
+/* Open Late editorial list: a date/topic rail, not a generic card grid. */
+.sk-journal .sk-hero{padding:88px 0 42px;border-bottom:1px solid rgba(242,231,211,.08)}
+.sk-journal-label{position:relative;margin:0 0 22px;color:var(--brand-light);font-family:var(--mono);font-size:11px;font-weight:650;letter-spacing:.2em}
+.sk-journal-label span{color:var(--muted);letter-spacing:.11em}
+.sk-journal .sk-title{max-width:900px;font-family:"Archivo","Noto Sans TC",sans-serif;font-size:clamp(48px,6.5vw,78px);font-weight:850;line-height:1;letter-spacing:-.04em}
+.sk-journal .sk-sub{max-width:620px;margin-top:22px;font-size:16px;line-height:1.8}
+.sk-journal .sk-featured{position:relative;margin:0;display:grid;grid-template-columns:120px minmax(0,1fr) 72px;align-items:stretch;border:0;border-bottom:1px solid rgba(242,231,211,.18);border-radius:0;background:none;color:inherit;overflow:visible;transition:none}
+.sk-journal .sk-featured:hover{border-color:rgba(232,176,106,.52);box-shadow:none;transform:none}
+.sk-featured-rail{padding:34px 24px 34px 0;display:flex;flex-direction:column;justify-content:space-between;border-right:1px solid rgba(242,231,211,.14);color:var(--muted);font-family:var(--mono);font-size:10px;line-height:1.65;letter-spacing:.13em}
+.sk-featured-rail b{color:var(--brand-light);font-size:13px;font-weight:600}
+.sk-journal .sk-featured-body{min-width:0;padding:54px clamp(28px,4vw,64px);display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:18px}
+.sk-featured-meta{margin:0;display:flex;flex-wrap:wrap;gap:10px 18px;color:var(--brand-light);font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.1em}
+.sk-featured-meta span+span::before{margin-right:18px;color:rgba(242,231,211,.34);content:"/"}
+.sk-journal .sk-featured-title{max-width:820px;margin:0;color:var(--fg);font-family:"Archivo","Noto Sans TC",sans-serif;font-size:clamp(30px,4vw,48px);font-weight:780;line-height:1.14;letter-spacing:-.03em;text-wrap:balance;transition:color .22s ease}
+.sk-journal .sk-featured:hover .sk-featured-title{color:var(--brand-light)}
+.sk-journal .sk-featured-sum{max-width:720px;margin:0;color:var(--muted);font-size:15px;line-height:1.75;-webkit-line-clamp:2}
+.sk-journal .sk-meta{font-family:var(--mono);font-size:11px;letter-spacing:.08em}
+.sk-featured-arrow{display:flex;align-items:center;justify-content:center;border-left:1px solid rgba(242,231,211,.14);color:var(--fg);font-size:28px;transition:color .22s ease,transform .22s cubic-bezier(.22,1,.36,1)}
+.sk-journal .sk-featured:hover .sk-featured-arrow{color:var(--brand-light);transform:translate(3px,-3px)}
+.sk-dispatch-list{padding-bottom:82px}
+.sk-dispatch{min-height:154px;display:grid;grid-template-columns:120px minmax(0,1fr) 180px;align-items:center;border-bottom:1px solid rgba(242,231,211,.14);color:inherit;text-decoration:none;transition:border-color .22s ease}
+.sk-dispatch:hover{border-color:rgba(232,176,106,.52);text-decoration:none}
+.sk-dispatch-date{align-self:stretch;padding:31px 24px 31px 0;display:flex;align-items:flex-start;border-right:1px solid rgba(242,231,211,.1);color:var(--muted);font-family:var(--mono);font-size:11px;line-height:1.5;font-variant-numeric:tabular-nums}
+.sk-dispatch-main{min-width:0;padding:30px clamp(28px,4vw,64px)}
+.sk-dispatch-main h3{margin:0;color:var(--fg);font-family:"Archivo","Noto Sans TC",sans-serif;font-size:clamp(21px,2.3vw,29px);font-weight:720;line-height:1.25;letter-spacing:-.02em;transition:color .22s ease}
+.sk-dispatch-main p{max-width:720px;margin:11px 0 0;color:var(--muted);font-size:14px;line-height:1.7;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.sk-dispatch-side{align-self:stretch;padding:30px 0 30px 26px;display:grid;grid-template-columns:1fr auto;align-content:center;gap:9px 16px;border-left:1px solid rgba(242,231,211,.1);color:var(--muted);font-family:var(--mono);font-size:10px;line-height:1.4;letter-spacing:.06em}
+.sk-dispatch-side b{color:var(--brand-light);font-weight:600}.sk-dispatch-side span{grid-column:1}.sk-dispatch-side i{grid-column:2;grid-row:1/3;align-self:center;color:var(--fg);font-size:21px;font-style:normal;transition:color .22s ease,transform .22s cubic-bezier(.22,1,.36,1)}
+.sk-dispatch:hover h3,.sk-dispatch:hover i{color:var(--brand-light)}.sk-dispatch:hover i{transform:translateX(4px)}
+@media(max-width:760px){.sk-journal .sk-hero{padding:54px 0 28px}.sk-journal .sk-title{font-size:clamp(39px,12vw,54px)}.sk-journal .sk-featured{grid-template-columns:1fr 52px}.sk-featured-rail{grid-column:1/-1;padding:18px 0 14px;flex-direction:row;border-right:0;border-bottom:1px solid rgba(242,231,211,.12)}.sk-journal .sk-featured-body{padding:30px 22px 34px 0}.sk-featured-arrow{border-left:1px solid rgba(242,231,211,.12)}.sk-dispatch{min-height:0;grid-template-columns:1fr;padding:25px 0}.sk-dispatch-date{padding:0 0 10px;border:0}.sk-dispatch-main{padding:0}.sk-dispatch-main h3{font-size:22px}.sk-dispatch-side{padding:14px 0 0;display:flex;align-items:center;gap:12px;border:0}.sk-dispatch-side span::before{margin-right:12px;content:"/"}.sk-dispatch-side i{margin-left:auto}.sk-dispatch-list{padding-bottom:54px}}
 .sk-main .blog-empty{padding-bottom:110px}
 .sk-footer{border-top:1px solid rgba(255,255,255,.05);padding:42px 0;margin-top:40px}
 .sk-footer-inner{max-width:var(--navw);margin:0 auto;padding:0 24px;display:flex;flex-wrap:wrap;gap:24px;align-items:center;justify-content:space-between}
@@ -219,7 +295,7 @@ div.sk-cover{display:flex;align-items:center;justify-content:center}
 .blog-cta{border:1px solid rgba(255,181,148,.24);background:linear-gradient(135deg,rgba(196,81,0,.16),rgba(255,255,255,.02) 70%);border-radius:16px}
 .blog-cta-btn,.blog-gate-btn{color:#fff;background:linear-gradient(180deg,#f0741b 0%,#cf5400 52%,#a83f00 100%);box-shadow:inset 0 1px 0 rgba(255,214,178,.55),0 0 0 1px rgba(255,181,148,.24),0 10px 30px rgba(196,81,0,.34);border-radius:12px;transition:transform .2s,box-shadow .2s}
 .blog-cta-btn:hover,.blog-gate-btn:hover{transform:translateY(-2px);opacity:1;box-shadow:inset 0 1px 0 rgba(255,214,178,.6),0 0 0 1px rgba(255,181,148,.4),0 14px 38px rgba(196,81,0,.45)}
-@media (max-width:560px){.sk-title{font-size:31px}.sk-hero{padding:44px 0 28px}}
+@media (max-width:560px){.sk-wrap,.sk-footer-inner{padding-right:max(18px,env(safe-area-inset-right));padding-left:max(18px,env(safe-area-inset-left))}.sk-title{font-size:31px}.sk-hero{padding:44px 0 28px}.blog-wrap{box-sizing:border-box;width:100%;padding-top:34px;padding-right:max(18px,env(safe-area-inset-right));padding-left:max(18px,env(safe-area-inset-left));overflow-wrap:anywhere}.article-title{font-size:clamp(31px,9.5vw,38px);line-height:1.12}.article-byline{gap:7px 9px;flex-wrap:wrap}.article-cover{border-radius:10px}.article-content pre{max-width:calc(100vw - 36px);overflow-x:auto}.article-content img{max-width:100%;height:auto}}
 `
 
 // ―――――― ink(Essevin 水墨纸感)――――――

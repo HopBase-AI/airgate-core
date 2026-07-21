@@ -346,13 +346,15 @@ type Branding struct {
 	Chrome Chrome
 
 	// ―― 以下为渲染期按 Chrome+邀请码 推导的字段(applyChrome 填充) ――
-	BrandLabel  string    // 顶栏品牌字标
-	SiteURL     string    // 皮肤顶栏 logo/品牌指向的主站地址(带读者 inv 透传)
-	Nav         []NavLink // 顶栏导航
-	FooterNav   []NavLink // 页脚链接
-	FooterNote  string
-	LoginLabel  string
-	SignupLabel string
+	BrandLabel   string    // 顶栏品牌字标
+	BrandProduct string    // 母子品牌锁定中的产品名(如 LATE);空时使用普通 BrandLabel
+	BrandParent  string    // 母子品牌锁定中的母品牌签名(如 by Essevin)
+	SiteURL      string    // 皮肤顶栏 logo/品牌指向的主站地址(带读者 inv 透传)
+	Nav          []NavLink // 顶栏导航
+	FooterNav    []NavLink // 页脚链接
+	FooterNote   string
+	LoginLabel   string
+	SignupLabel  string
 	// RegisterURL 顶栏登录/注册与文末 CTA 的目标:<console>/login[?inv=...]。
 	// 列表页取读者自带码;详情页读者码优先、否则文章内置码。
 	RegisterURL string
@@ -405,6 +407,13 @@ func applyChrome(b *Branding, reqInvite, registerURL, lang string) {
 	}
 
 	b.BrandLabel = firstNonEmpty(c.BrandLabel, b.SiteName)
+	if b.SiteKey == "open-late" {
+		// Open Late 作为 Essevin 子站使用固定母子品牌锁定，避免后台旧配置继续
+		// 把 ESSEVIN OPEN LATE 挤成一段不可读的移动端字标。
+		b.BrandLabel = "LATE by Essevin"
+		b.BrandProduct = "LATE"
+		b.BrandParent = "by Essevin"
+	}
 	home := firstNonEmpty(c.HomeHref, "/")
 	b.SiteURL = withInv(home, nav)
 
@@ -729,7 +738,7 @@ func buildDetailView(b Branding, p appblog.Post, reqInvite string) DetailView {
 	breadcrumbLD := buildBreadcrumbLD(b.OriginBase, b.SiteName, seoTitle, canonical)
 
 	nav := navQuery(reqInvite)
-	branding := Branding{SiteName: b.SiteName, LogoURL: logoURL, LogoSrc: template.URL(logoURL), ConsoleURL: b.ConsoleURL, OriginBase: b.OriginBase, HomeURL: "/blog" + nav, Theme: b.Theme, Chrome: b.Chrome} //nolint:gosec // 可信后台设置,<img> 呈现
+	branding := Branding{SiteName: b.SiteName, LogoURL: logoURL, LogoSrc: template.URL(logoURL), ConsoleURL: b.ConsoleURL, OriginBase: b.OriginBase, HomeURL: "/blog" + nav, SiteKey: b.SiteKey, Theme: b.Theme, Chrome: b.Chrome} //nolint:gosec // 可信后台设置,<img> 呈现
 	returnURL := strings.TrimRight(b.OriginBase, "/") + blogDetailURL(p.Slug, p.Lang, inviteCode)
 	registerURL := buildRegisterURL(b.ConsoleURL, inviteCode, b.SiteKey, returnURL)
 	applyChrome(&branding, reqInvite, registerURL, p.Lang)
