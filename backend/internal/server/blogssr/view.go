@@ -105,9 +105,10 @@ func eyebrowFromTags(tags []string) string {
 
 // NavLink 皮肤顶栏/页脚的一条链接(Active=当前博客项,顶栏高亮)。
 type NavLink struct {
-	Label  string
-	Href   string
-	Active bool
+	Label     string
+	LongLabel string // 原生语言选择器使用的完整标签(普通导航忽略)
+	Href      string
+	Active    bool
 }
 
 // ChromeLink blog_chrome 配置里的一条链接。
@@ -178,8 +179,8 @@ func resolveChrome(c Chrome, lang string) Chrome {
 }
 
 // blogLangs 公开博客支持的语言;Code 即文章 lang 字段取值,Label 用于顶栏切换器。
-var blogLangs = []struct{ Code, Label string }{
-	{"zh-Hant", "繁"}, {"en", "EN"}, {"zh", "简"},
+var blogLangs = []struct{ Code, Label, LongLabel string }{
+	{"zh-Hant", "繁", "繁中"}, {"en", "EN", "EN"}, {"zh", "简", "简中"},
 }
 
 // canonicalLang 归一语言代码到 blogLangs 取值;不认识返回空。
@@ -302,7 +303,7 @@ func buildDetailLangNav(current appblog.Post, posts []appblog.Post, currentLang,
 		if translated, ok := findTranslatedPost(current, posts, lang.Code, siteKey); ok {
 			href = blogDetailURL(translated.Slug, lang.Code, reqInvite)
 		}
-		links = append(links, NavLink{Label: lang.Label, Href: href, Active: lang.Code == currentLang})
+		links = append(links, NavLink{Label: lang.Label, LongLabel: lang.LongLabel, Href: href, Active: lang.Code == currentLang})
 	}
 	return links
 }
@@ -320,8 +321,9 @@ func parseChrome(raw string) Chrome {
 	return c
 }
 
-// validThemes 允许的皮肤名;ember=HopBase 暗色,ink=Essevin 水墨纸感,空=中性默认模板。
-var validThemes = map[string]bool{"": true, "ember": true, "ink": true}
+// validThemes 允许的皮肤名;ember=HopBase 暗色,ink=Essevin 水墨纸感,
+// kite=KITE 技术网格,空=中性默认模板。
+var validThemes = map[string]bool{"": true, "ember": true, "ink": true, "kite": true}
 
 // Branding 站点品牌信息(从 site 设置读取)。
 type Branding struct {
@@ -340,7 +342,7 @@ type Branding struct {
 	// 仅用于 SSR 过滤,不渲染进页面。
 	SiteKey string
 
-	// Theme 皮肤名(设置 blog_theme):""/"ember"/"ink",未知值按 "" 处理。
+	// Theme 皮肤名(设置 blog_theme):""/"ember"/"ink"/"kite",未知值按 "" 处理。
 	Theme string
 	// Chrome 皮肤导航/文案配置(设置 blog_chrome)。
 	Chrome Chrome
@@ -393,7 +395,7 @@ func applyChrome(b *Branding, reqInvite, registerURL, lang string) {
 		blogHref = blogListURL(b.Lang, reqInvite)
 		b.LangNav = make([]NavLink, 0, len(blogLangs))
 		for _, l := range blogLangs {
-			b.LangNav = append(b.LangNav, NavLink{Label: l.Label, Href: blogListURL(l.Code, reqInvite), Active: l.Code == b.Lang})
+			b.LangNav = append(b.LangNav, NavLink{Label: l.Label, LongLabel: l.LongLabel, Href: blogListURL(l.Code, reqInvite), Active: l.Code == b.Lang})
 		}
 	}
 	b.UI = textFor(b.Lang)
@@ -418,6 +420,9 @@ func applyChrome(b *Branding, reqInvite, registerURL, lang string) {
 	b.SiteURL = withInv(home, nav)
 
 	links := c.Nav
+	if b.Theme == themeKite {
+		links = kiteHeaderLinks(b.Lang)
+	}
 	if len(links) == 0 {
 		links = []ChromeLink{{Label: "首页", Href: "/"}, {Label: "博客", Href: "/blog"}}
 	}
@@ -427,6 +432,43 @@ func applyChrome(b *Branding, reqInvite, registerURL, lang string) {
 	b.LoginLabel = firstNonEmpty(c.LoginLabel, "登录")
 	b.SignupLabel = c.SignupLabel
 	b.RegisterURL = registerURL
+}
+
+// kiteHeaderLinks 与 KITE 落地页的主导航保持一致。博客列表、详情与 404
+// 都由同一个 applyChrome 入口生成,避免进入博客后顶栏变成另一套站点结构。
+func kiteHeaderLinks(lang string) []ChromeLink {
+	switch canonicalLang(lang) {
+	case "en":
+		return []ChromeLink{
+			{Label: "Capabilities", Href: "/#capabilities"},
+			{Label: "Models & pricing", Href: "/#pricing"},
+			{Label: "Resources", Href: "/docs"},
+			{Label: "Blog", Href: "/blog"},
+			{Label: "Solutions", Href: "/solution"},
+			{Label: "About", Href: "/about"},
+			{Label: "FAQ", Href: "/#faq"},
+		}
+	case "zh-Hant":
+		return []ChromeLink{
+			{Label: "能做什麼", Href: "/#capabilities"},
+			{Label: "模型與價格", Href: "/#pricing"},
+			{Label: "資源中心", Href: "/docs"},
+			{Label: "網誌", Href: "/blog"},
+			{Label: "解決方案", Href: "/solution"},
+			{Label: "關於我們", Href: "/about"},
+			{Label: "常見問題", Href: "/#faq"},
+		}
+	default:
+		return []ChromeLink{
+			{Label: "能做什么", Href: "/#capabilities"},
+			{Label: "模型与价格", Href: "/#pricing"},
+			{Label: "资源中心", Href: "/docs"},
+			{Label: "博客", Href: "/blog"},
+			{Label: "解决方案", Href: "/solution"},
+			{Label: "关于我们", Href: "/about"},
+			{Label: "常见问题", Href: "/#faq"},
+		}
+	}
 }
 
 // decorateLinks 把配置链接转成渲染链接:"/blog" 项替换为带语言/邀请码的列表链接并标记 Active,

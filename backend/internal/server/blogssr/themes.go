@@ -3,12 +3,14 @@ package blogssr
 // 站点皮肤:博客页穿上落地页的设计语言,让 /blog 不再是「孤儿页」。
 // - ember:HopBase 主站同源(暖黑底 #0c0c0b + 品牌橙渐变 + 青色点缀,系统字栈近似 Sora/Manrope);
 // - ink  :Essevin ink 站同源(暖米白 #F4F1EA + 衬线标题 + 玫瑰陶土 #B5836F + 发丝线,Georgia/宋体近似 Newsreader)。
+// - kite :KITE 子站同源(浅绿技术网格 + Bricolage/IBM Plex + 洋红路线)。
 // 皮肤 CSS 叠加在 baseStyle 之上:先覆盖 CSS 变量(正文 Prose 排版自动换色),再补 chrome(顶栏/hero/头条/文章流/页脚)样式。
-// 两皮肤共用同一套 chrome 标记(sk-* 类),视觉差异全部在 CSS。
+// ember/ink 共用 sk-* chrome；kite 使用与落地页结构一致的独立顶栏。
 
 const (
 	themeEmber = "ember"
 	themeInk   = "ink"
+	themeKite  = "kite"
 )
 
 // ―――――― 皮肤共用 chrome 标记 ――――――
@@ -34,6 +36,22 @@ const skinHeaderStr = `<header class="sk-nav" data-sk-header><div class="sk-nav-
 </div>
 <div class="sk-mobile-menu" data-sk-mobile-menu hidden><nav aria-label="行動版導航">{{range .Nav}}<a href="{{.Href}}"{{if .Active}} class="act"{{end}}>{{.Label}}</a>{{end}}{{if .ShowLangs}}<span class="sk-mobile-langs">{{range $i, $l := .LangNav}}<a href="{{$l.Href}}"{{if $l.Active}} class="act"{{end}}>{{$l.Label}}</a>{{end}}</span>{{end}}<a class="sk-mobile-login" href="{{.RegisterURL}}" data-blog-acquisition hidden>{{.LoginLabel}}</a></nav></div>
 </header>
+`
+
+// kiteHeaderStr 与 KITE 落地页共用同一导航结构。登录态仍复用博客安全会话桥，
+// 但访客只显示落地页同款单一登录按钮，注册入口留在文章 CTA / reading gate。
+const kiteHeaderStr = `<header class="site-header" data-site-header><div class="kite-nav-frame">
+<a href="{{.SiteURL}}" class="kite-brand-lockup" aria-label="KITE home">
+{{if .LogoURL}}<img src="{{.LogoSrc}}" alt="">{{end}}<span class="kite-brand-name">KITE</span><span class="kite-brand-by">BY ESSEVIN</span>
+</a>
+<nav class="kite-primary-nav" aria-label="Primary navigation">
+{{range .Nav}}<a href="{{.Href}}"{{if .Active}} class="act" aria-current="page"{{end}}>{{.Label}}</a>{{end}}
+{{if .ShowLangs}}<label class="kite-language-select"><span class="kite-sr-only">Language</span><select aria-label="Language" onchange="if(this.value)location.href=this.value">{{range .LangNav}}<option value="{{.Href}}"{{if .Active}} selected{{end}}>{{if .LongLabel}}{{.LongLabel}}{{else}}{{.Label}}{{end}}</option>{{end}}</select></label>{{end}}
+<span class="sk-auth" data-blog-auth data-console-url="{{.ConsoleURL}}" data-auth-state="loading">
+<span class="sk-auth-guest" data-blog-auth-guest hidden><a class="sk-login" href="{{.RegisterURL}}">{{.LoginLabel}}</a></span>
+<a class="sk-user" data-blog-auth-user href="{{.ConsoleURL}}" aria-label="{{.LoginLabel}}" title="{{.LoginLabel}}" hidden><span class="sk-user-avatar" data-blog-auth-avatar aria-hidden="true">U</span><span class="sk-user-name" data-blog-auth-name></span></a>
+</span>
+</nav></div></header>
 `
 
 // 语言只由 URL ?lang= 与服务端 default_lang 决定。禁止按浏览器语言二次跳转，
@@ -166,6 +184,41 @@ const inkListBodyStr = `<main class="sk-main">
 {{end}}
 {{if not .Posts}}
 ` + emptyStateStr + `{{end}}
+</div>
+</main>
+`
+
+// kiteListBodyStr KITE 列表:技术网格 hero + 非卡片化头条 + 路线式文章 ledger。
+// 不渲染 eyebrow，避免回退到独立 Journal 的视觉语义。
+const kiteListBodyStr = `<main class="sk-main" id="main-content">
+<section class="kite-hero"><div class="sk-wrap kite-hero-inner">
+<div class="kite-hero-copy"><h1 class="sk-title">{{.Heading}}</h1>{{if .Subtitle}}<p class="sk-sub">{{.Subtitle}}</p>{{end}}</div>
+<span class="kite-hero-word" aria-hidden="true">NOTES</span>
+</div></section>
+<div class="sk-wrap">
+{{if .Featured}}{{with .Featured}}
+<a class="sk-featured" href="{{.URL}}">
+<div class="sk-featured-body">
+<p class="sk-meta">{{if .PublishedAt}}<span>{{.PublishedAt}}</span>{{end}}{{if .ReadingTime}}<span class="d"></span><span>{{.ReadingTime}}</span>{{end}}</p>
+<h2 class="sk-featured-title">{{.Title}}</h2>
+{{if .Summary}}<p class="sk-featured-sum">{{.Summary}}</p>{{end}}
+<span class="kite-read-link" aria-hidden="true">READ <b>→</b></span>
+</div>
+{{if .CoverImage}}<img class="sk-cover" src="{{.CoverImage}}" alt="" loading="lazy">{{else}}<div class="sk-cover {{.CoverClass}}"><img class="kite-cover-mark" src="{{$.LogoSrc}}" alt=""><span class="kite-cover-route" aria-hidden="true"></span></div>{{end}}
+</a>
+{{end}}{{end}}
+{{if .Rest}}
+<div class="sk-rows">
+{{range .Rest}}
+<a class="sk-row" href="{{.URL}}">
+<span class="sk-row-date">{{.PublishedAt}}</span>
+<span class="sk-row-main"><h3 class="sk-row-title">{{.Title}}</h3>{{if .Summary}}<p class="sk-row-sum">{{.Summary}}</p>{{end}}</span>
+<span class="sk-row-side">{{if .Tag}}<span class="sk-pill">{{.Tag}}</span>{{end}}<span class="sk-arrow">→</span></span>
+</a>
+{{end}}
+</div>
+{{end}}
+{{if not .Posts}}` + emptyStateStr + `{{end}}
 </div>
 </main>
 `
@@ -401,4 +454,39 @@ div.sk-cover{display:flex;align-items:center;justify-content:center}
 .blog-cta-btn,.blog-gate-btn{border-radius:9999px;background:var(--rose);color:#fff;font-weight:500;transition:background .25s}
 .blog-cta-btn:hover,.blog-gate-btn:hover{background:var(--rose-dk);opacity:1}
 @media (max-width:560px){.sk-title{font-size:34px}.article-title{font-size:31px}.sk-hero{padding:46px 0 12px}}
+`
+
+// ―――――― kite(KITE 技术网格)――――――
+
+const kiteVars = `
+@font-face{font-family:"Bricolage Grotesque";src:url("/assets/fonts/bricolage-grotesque-latin.woff2") format("woff2");font-style:normal;font-weight:200 800;font-stretch:75% 100%;font-display:swap}
+@font-face{font-family:"IBM Plex Sans";src:url("/assets/fonts/ibm-plex-sans-latin.woff2") format("woff2");font-style:normal;font-weight:400 600;font-display:swap}
+@font-face{font-family:"IBM Plex Mono";src:url("/assets/fonts/ibm-plex-mono-500-latin.woff2") format("woff2");font-style:normal;font-weight:500;font-display:swap}
+:root{color-scheme:light;--bg:#F3F7F3;--fg:#14231C;--muted:#526259;--border:#BBC8C0;--card:#FFFFFF;--accent:#C4285B;--accent-fg:#FFFFFF;--accent-soft:#F8E8EE;--code-bg:#14231C;--code-fg:#F3F7F3;--maxw:760px;--navw:1440px;--surface:#E5EDE8;--elevated:#FFFFFF;--subtle:#6F7F76;--font-display:"Bricolage Grotesque","PingFang SC","Microsoft YaHei",sans-serif;--font-body:"IBM Plex Sans","PingFang SC","Microsoft YaHei",sans-serif;--font-utility:"IBM Plex Mono","SFMono-Regular",Consolas,monospace;--ease-route:cubic-bezier(.16,1,.3,1);--page-gutter:clamp(24px,4vw,64px);--shadow:0 12px 32px rgba(20,35,28,.12)}
+`
+
+const kiteChromeCSS = `
+html{scroll-padding-top:96px;background:var(--bg)}
+body{min-width:320px;overflow-x:hidden;background:var(--bg);font-family:var(--font-body);font-size:16px;line-height:1.65}
+::selection{color:#fff;background:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.site-header{position:sticky;z-index:30;top:0;width:100%;height:72px;background:var(--elevated);border-bottom:1px solid var(--border);box-shadow:0 8px 28px rgba(20,35,28,.04)}
+.kite-nav-frame{width:min(100%,var(--navw));height:100%;margin-inline:auto;padding-inline:var(--page-gutter);display:flex;align-items:center;justify-content:space-between;gap:32px}
+.kite-brand-lockup{display:inline-grid;min-height:48px;grid-template-columns:34px auto auto;align-items:center;gap:12px;min-width:0;color:var(--fg);text-decoration:none}
+.kite-brand-lockup:hover{text-decoration:none}.kite-brand-lockup img{width:34px;height:34px;display:block}
+.kite-brand-name{font-family:var(--font-display);font-size:1.45rem;font-weight:700;line-height:1;letter-spacing:-.045em}.kite-brand-by{padding-left:12px;border-left:1px solid var(--border);color:var(--muted);font-family:var(--font-utility);font-size:.6875rem;line-height:1.3;letter-spacing:.06em}
+.kite-primary-nav{display:flex;align-items:center;gap:clamp(12px,1.4vw,24px);font-size:.9375rem;font-weight:500;min-width:0;margin-left:auto}.kite-primary-nav>a{display:inline-flex;min-height:48px;align-items:center;color:var(--fg);border-bottom:2px solid transparent;transition:color 120ms var(--ease-route),border-color 120ms var(--ease-route);text-decoration:none;white-space:nowrap}.kite-primary-nav>a:hover,.kite-primary-nav>a:focus-visible,.kite-primary-nav>a.act{color:var(--accent);border-bottom-color:var(--accent);text-decoration:none}
+.kite-language-select{position:relative;flex:0 0 68px;width:68px;height:48px}.kite-language-select::after{position:absolute;top:50%;right:12px;width:10px;height:6px;content:"";pointer-events:none;background:currentColor;clip-path:polygon(0 0,50% 100%,100% 0,84% 0,50% 68%,16% 0);transform:translateY(-50%)}.kite-language-select select{width:100%;height:48px;padding:0 28px 0 12px;color:var(--fg);background:var(--elevated);border:1px solid var(--fg);border-radius:8px;appearance:none;cursor:pointer;transition:color 120ms var(--ease-route),background 120ms var(--ease-route),border-color 120ms var(--ease-route)}.kite-language-select select:hover{color:var(--accent);background:var(--accent-soft);border-color:var(--accent)}.kite-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.sk-auth,.sk-auth-guest{display:inline-flex;align-items:center}.sk-auth-guest[hidden],.sk-user[hidden],[data-blog-acquisition][hidden]{display:none!important}.sk-auth[data-auth-state=loading] .sk-auth-guest,.sk-auth[data-auth-state=loading] .sk-user,.sk-auth[data-auth-state=guest] .sk-user,.sk-auth[data-auth-state=authenticated] .sk-auth-guest{display:none!important}.sk-login{min-width:80px;min-height:48px;display:inline-flex;align-items:center;justify-content:center;padding:0 20px;color:#fff;background:var(--fg);border-radius:8px;font-weight:600;text-decoration:none;white-space:nowrap;transition:background 120ms var(--ease-route)}.sk-login:hover{color:#fff;background:var(--accent);text-decoration:none}.sk-user{min-height:48px;display:inline-flex;align-items:center;gap:9px;padding:4px 12px 4px 4px;border:1px solid var(--fg);border-radius:8px;background:var(--elevated);color:var(--fg);text-decoration:none}.sk-user:hover{color:var(--accent);border-color:var(--accent);text-decoration:none}.sk-user-avatar{width:38px;height:38px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:var(--accent);color:#fff;font-family:var(--font-display);font-size:.9rem;font-weight:700;text-transform:uppercase}.sk-user-name{max-width:112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.875rem;font-weight:600}
+.sk-wrap{width:min(100%,var(--navw));margin-inline:auto;padding-inline:var(--page-gutter)}.kite-hero{position:relative;overflow:hidden;border-bottom:1px solid var(--border);background-image:linear-gradient(rgba(20,35,28,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(20,35,28,.055) 1px,transparent 1px);background-size:calc((100vw - 2 * var(--page-gutter))/12) 64px}.kite-hero-inner{min-height:330px;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px;align-items:center;position:relative}.kite-hero-copy{grid-column:1/8;position:relative;z-index:2;padding:72px 0}.kite-hero-word{grid-column:7/13;justify-self:end;align-self:end;margin-bottom:-34px;color:transparent;-webkit-text-stroke:1px rgba(20,35,28,.16);font-family:var(--font-display);font-size:clamp(7rem,12vw,12rem);font-weight:750;line-height:.72;letter-spacing:-.07em;user-select:none}.sk-title{font-family:var(--font-display);font-weight:650;font-size:clamp(3.2rem,6vw,5.8rem);letter-spacing:-.05em;line-height:.96;margin:0 0 24px;text-wrap:balance;color:var(--fg)}.sk-sub{color:var(--muted);font-size:1.08rem;line-height:1.65;margin:0;max-width:560px}
+.sk-featured{display:grid;grid-template-columns:5fr 7fr;gap:48px;align-items:stretch;padding:64px 0;border-bottom:1px solid var(--border);color:inherit;text-decoration:none}.sk-featured:hover{text-decoration:none}.sk-featured-body{display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:18px}.sk-featured-title{font-family:var(--font-display);font-size:clamp(2rem,3.1vw,3.35rem);font-weight:620;line-height:1.08;letter-spacing:-.04em;margin:0;color:var(--fg);transition:color 120ms var(--ease-route)}.sk-featured:hover .sk-featured-title{color:var(--accent)}.sk-featured-sum{color:var(--muted);font-size:1rem;line-height:1.72;margin:0;max-width:560px}.sk-meta{color:var(--muted);font-family:var(--font-utility);font-size:.75rem;display:flex;align-items:center;gap:8px;margin:0;font-variant-numeric:tabular-nums}.sk-meta .d{width:14px;height:1px;background:var(--border)}.kite-read-link{display:inline-flex;align-items:center;gap:12px;min-height:44px;margin-top:4px;border-bottom:1px solid currentColor;color:var(--fg);font-weight:600;transition:color 120ms var(--ease-route)}.kite-read-link b{color:var(--accent);font-size:1.2rem;transition:transform 120ms var(--ease-route)}.sk-featured:hover .kite-read-link{color:var(--accent)}.sk-featured:hover .kite-read-link b{transform:translateX(4px)}
+.sk-cover{width:100%;height:100%;min-height:360px;object-fit:cover;display:block;position:relative;overflow:hidden;border:1px solid var(--border);border-radius:8px;background:var(--surface)}div.sk-cover{display:flex;align-items:center;justify-content:center;background-image:linear-gradient(rgba(20,35,28,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(20,35,28,.06) 1px,transparent 1px);background-size:56px 56px}.kite-cover-mark{position:relative;z-index:2;width:96px;height:96px;filter:drop-shadow(0 10px 18px rgba(20,35,28,.08))}.kite-cover-route{position:absolute;left:0;right:0;top:50%;height:2px;background:var(--accent)}.kite-cover-route::after{content:"";position:absolute;right:12%;top:50%;width:14px;height:14px;border:2px solid var(--accent);background:var(--surface);transform:translateY(-50%) rotate(45deg)}
+.sk-rows{padding-bottom:80px}.sk-row{display:grid;grid-template-columns:128px minmax(0,1fr) auto;gap:32px;align-items:center;padding:32px 0;border-bottom:1px solid var(--border);color:inherit;text-decoration:none}.sk-row:hover{text-decoration:none}.sk-row-date{color:var(--muted);font-family:var(--font-utility);font-size:.75rem;font-variant-numeric:tabular-nums}.sk-row-title{font-family:var(--font-display);font-weight:600;font-size:1.55rem;line-height:1.25;letter-spacing:-.025em;margin:0 0 8px;color:var(--fg);transition:color 120ms var(--ease-route)}.sk-row:hover .sk-row-title{color:var(--accent)}.sk-row-sum{color:var(--muted);font-size:.92rem;line-height:1.65;margin:0;max-width:680px}.sk-row-side{display:flex;align-items:center;gap:18px}.sk-pill{display:inline-flex;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--muted);font-family:var(--font-utility);font-size:.68rem;padding:4px 8px}.sk-arrow{color:var(--accent);font-size:1.25rem;transition:transform 120ms var(--ease-route)}.sk-row:hover .sk-arrow{transform:translateX(4px)}
+.sk-footer{border-top:1px solid var(--border);background:var(--surface)}.sk-footer-inner{width:min(100%,var(--navw));margin-inline:auto;padding:48px var(--page-gutter);display:flex;flex-wrap:wrap;gap:32px;justify-content:space-between}.sk-footer .sk-logo{display:flex;align-items:center;gap:10px;color:var(--fg);text-decoration:none}.sk-footer .sk-logo img{width:28px;height:28px}.sk-footer .sk-brand{font-family:var(--font-display);font-weight:700}.sk-footer-note,.sk-footer-copy{color:var(--muted);font-size:.85rem;margin:10px 0 0}.sk-footer-links{display:flex;flex-wrap:wrap;gap:24px}.sk-footer-links a{color:var(--fg);text-decoration:none}.sk-footer-links a:hover{color:var(--accent)}
+.blog-wrap{padding-top:56px}.blog-back{font-family:var(--font-utility);font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.blog-back:hover{color:var(--accent)}.article-eyebrow{display:none}.article-title{font-family:var(--font-display);font-weight:630;font-size:clamp(2.5rem,4vw,3.8rem);line-height:1.06;letter-spacing:-.045em;margin-bottom:28px}.article-byline{padding:14px 0;margin-bottom:36px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);font-family:var(--font-utility);font-size:.75rem}.article-avatar{width:22px;height:22px;border-radius:4px;background:var(--accent)}.article-cover{border:1px solid var(--border);border-radius:8px;box-shadow:none}.article-content{font-family:var(--font-body);font-size:17px;line-height:1.82}.article-content>p:first-child{font-size:18px;line-height:1.75}.article-content h2,.article-content h3,.article-content h4{font-family:var(--font-display);letter-spacing:-.025em}.article-content h2{font-size:2rem;font-weight:620}.article-content h3{font-size:1.5rem;font-weight:600}.article-content blockquote{border-left:3px solid var(--accent);font-size:1.18rem}.article-content pre{border-radius:8px;box-shadow:none}.article-content :not(pre)>code{border-radius:4px}.article-content table{font-family:var(--font-body)}.article-content thead th{font-family:var(--font-utility);color:var(--muted)}.article-content img,.article-content iframe{border-radius:8px}.article-tag{border-radius:4px;font-family:var(--font-utility)}
+.blog-cta{border:1px solid var(--border);border-radius:12px;background:var(--surface);padding:24px;text-align:left}.blog-cta-title{font-family:var(--font-display);font-size:1.35rem}.blog-cta-btn,.blog-gate-btn{border-radius:8px;background:var(--accent);color:#fff}.blog-gate-card{background:var(--elevated);border-color:var(--border)}.sk-main .blog-empty{padding-bottom:96px}
+@media (max-width:1180px){.kite-primary-nav>a:nth-child(n+3):nth-child(-n+6){display:none}}
+@media (max-width:767px){.site-header{height:64px}.kite-nav-frame{display:grid;grid-template-columns:minmax(0,1fr) 140px;padding-inline:max(18px,env(safe-area-inset-left));gap:12px}.kite-brand-lockup{grid-template-columns:30px auto;gap:8px}.kite-brand-lockup img{width:30px;height:30px}.kite-brand-name{font-size:1.25rem}.kite-brand-by,.kite-primary-nav>a{display:none!important}.kite-primary-nav{width:140px;display:grid;grid-template-columns:68px 64px;gap:8px}.sk-login{min-width:64px;padding:0 12px}.sk-user{width:64px;padding:4px}.sk-user-name{display:none}.kite-hero-inner{grid-template-columns:repeat(4,minmax(0,1fr));min-height:280px}.kite-hero-copy{grid-column:1/5;padding:56px 0;z-index:2}.kite-hero-word{grid-column:1/5;font-size:7rem;margin-bottom:-20px;opacity:.7}.sk-title{font-size:3.2rem}.sk-featured{grid-template-columns:1fr;gap:24px;padding:40px 0}.sk-cover{min-height:240px;order:-1}.sk-row{grid-template-columns:1fr;gap:8px;padding:26px 0}.sk-row-side{display:none}.blog-wrap{padding-top:36px}.article-title{font-size:2.65rem}}
+@media (max-width:389px){.kite-nav-frame{grid-template-columns:minmax(0,1fr) 128px;gap:4px}.kite-brand-lockup{gap:4px}.kite-brand-lockup img{width:28px;height:28px}.kite-brand-name{font-size:1.1rem}.kite-primary-nav{width:128px;grid-template-columns:64px 60px;gap:4px}.kite-language-select{width:64px}.kite-language-select select{width:64px;padding-right:18px;padding-left:4px;font-size:.75rem}.sk-login,.sk-user{min-width:60px;width:60px;font-size:.75rem}.sk-title{font-size:2.65rem}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.sk-arrow,.kite-read-link b{transition:none!important}.sk-row:hover .sk-arrow,.sk-featured:hover .kite-read-link b{transform:none}}
 `

@@ -78,19 +78,19 @@ img{max-width:100%}
 .blog-back{display:inline-block;margin-bottom:22px;font-size:14px;color:var(--muted)}
 .blog-back:hover{color:var(--accent);text-decoration:none}
 .blog-footer{border-top:1px solid var(--border);color:var(--muted);font-size:13px;text-align:center;padding:26px 20px;margin-top:48px}
-.blog-gate{position:fixed;inset:0;pointer-events:none;display:flex;align-items:flex-end;justify-content:center;background:linear-gradient(to bottom,rgba(0,0,0,0) 0%,var(--bg) 58%);z-index:50}
+.blog-gate{position:fixed;inset:0;pointer-events:none;display:flex;align-items:flex-end;justify-content:center;background:linear-gradient(to bottom,rgba(0,0,0,0) 34%,var(--bg) 82%);z-index:50}
 #blog-gate[hidden]{display:none!important}
-.blog-gate-card{pointer-events:auto;text-align:center;max-width:428px;width:calc(100% - 40px);margin-bottom:8vh;padding:26px;border:1px solid var(--border);border-radius:18px;background:var(--card);box-shadow:0 14px 44px rgba(0,0,0,.2)}
-.blog-gate-title{font-size:18px;font-weight:650;margin:0 0 8px}
-.blog-gate-desc{font-size:14px;color:var(--muted);margin:0 0 16px;line-height:1.6}
-.blog-gate-btn{display:inline-block;background:var(--accent);color:var(--accent-fg);font-weight:600;padding:11px 28px;border-radius:10px}
+.blog-gate-card{pointer-events:auto;text-align:center;max-width:392px;width:calc(100% - 24px);margin-bottom:clamp(20px,5vh,48px);padding:18px 20px;border:1px solid var(--border);border-radius:12px;background:var(--card);box-shadow:0 12px 32px rgba(0,0,0,.14)}
+.blog-gate-title{font-size:17px;font-weight:650;line-height:1.35;margin:0 0 6px}
+.blog-gate-desc{font-size:13.5px;color:var(--muted);margin:0 0 12px;line-height:1.55}
+.blog-gate-btn{display:inline-flex;min-height:44px;align-items:center;justify-content:center;background:var(--accent);color:var(--accent-fg);font-weight:600;padding:9px 22px;border-radius:8px}
 .blog-gate-btn:hover{text-decoration:none;opacity:.92}
 .blog-cta{margin:52px 0 8px;border:1px solid color-mix(in srgb,var(--accent) 24%,var(--border));border-radius:18px;background:linear-gradient(135deg,var(--accent-soft),var(--card) 75%);padding:30px 28px}
 .blog-cta-title{font-size:19px;font-weight:700;margin:0 0 8px;color:var(--fg);letter-spacing:-.01em}
 .blog-cta-desc{font-size:14.5px;color:var(--muted);margin:0 0 18px;line-height:1.6}
 .blog-cta-btn{display:inline-block;background:var(--accent);color:var(--accent-fg);font-weight:600;padding:11px 26px;border-radius:11px;font-size:15px}
 .blog-cta-btn:hover{text-decoration:none;opacity:.92}
-@media (max-width:560px){.article-title{font-size:30px}.article-content{font-size:17px}.article-content>p:first-child{font-size:18px}.blog-intro-title{font-size:27px}}
+@media (max-width:560px){.article-title{font-size:30px}.article-content{font-size:17px}.article-content>p:first-child{font-size:18px}.blog-intro-title{font-size:27px}.blog-gate-card{padding:16px;margin-bottom:max(12px,env(safe-area-inset-bottom))}}
 `
 
 // ―――――― 共享 head(所有皮肤一致,SEO 元信息) ――――――
@@ -527,6 +527,8 @@ func listTemplateStr(theme string) string {
 		return assemble(listHeadStr, baseStyle+emberVars+emberChromeCSS+skinSharedChromeCSS, skinHeaderStr, emberListBodyStr, skinFooterStr, skinLangScriptStr+authSessionScriptStr+skinMenuScriptStr)
 	case themeInk:
 		return assemble(listHeadStr, baseStyle+inkVars+inkChromeCSS+skinSharedChromeCSS, skinHeaderStr, inkListBodyStr, skinFooterStr, skinLangScriptStr+authSessionScriptStr+skinMenuScriptStr)
+	case themeKite:
+		return assemble(listHeadStr, baseStyle+kiteVars+kiteChromeCSS, kiteHeaderStr, kiteListBodyStr, skinFooterStr, skinLangScriptStr+authSessionScriptStr)
 	default:
 		return assemble(listHeadStr, baseStyle, defaultHeaderStr, defaultListBodyStr, defaultFooterStr, "")
 	}
@@ -539,6 +541,8 @@ func detailTemplateStr(theme string) string {
 		return assemble(detailHeadStr, baseStyle+emberVars+emberChromeCSS+skinSharedChromeCSS, skinHeaderStr, detailBodyStr, skinFooterStr, gateStr+authSessionScriptStr+skinMenuScriptStr)
 	case themeInk:
 		return assemble(detailHeadStr, baseStyle+inkVars+inkChromeCSS+skinSharedChromeCSS, skinHeaderStr, detailBodyStr, skinFooterStr, gateStr+authSessionScriptStr+skinMenuScriptStr)
+	case themeKite:
+		return assemble(detailHeadStr, baseStyle+kiteVars+kiteChromeCSS, kiteHeaderStr, detailBodyStr, skinFooterStr, gateStr+authSessionScriptStr)
 	default:
 		return assemble(detailHeadStr, baseStyle, defaultHeaderStr, detailBodyStr, defaultFooterStr, gateStr)
 	}
@@ -551,6 +555,8 @@ func notFoundTemplateStr(theme string) string {
 		return assemble(notFoundHeadStr, baseStyle+emberVars+emberChromeCSS+skinSharedChromeCSS, skinHeaderStr, notFoundBodyStr, skinFooterStr, authSessionScriptStr+skinMenuScriptStr)
 	case themeInk:
 		return assemble(notFoundHeadStr, baseStyle+inkVars+inkChromeCSS+skinSharedChromeCSS, skinHeaderStr, notFoundBodyStr, skinFooterStr, authSessionScriptStr+skinMenuScriptStr)
+	case themeKite:
+		return assemble(notFoundHeadStr, baseStyle+kiteVars+kiteChromeCSS, kiteHeaderStr, notFoundBodyStr, skinFooterStr, authSessionScriptStr)
 	default:
 		return assemble(notFoundHeadStr, baseStyle, "", notFoundBodyStr, "", "")
 	}

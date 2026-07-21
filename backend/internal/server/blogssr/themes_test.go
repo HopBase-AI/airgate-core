@@ -274,6 +274,120 @@ func TestSSR_InkThemeRowsAndSignup(t *testing.T) {
 	}
 }
 
+func TestSSR_KiteThemeKeepsLandingHeaderAcrossPages(t *testing.T) {
+	chrome := `{"show_langs":true,"default_lang":"zh","signup_label":"免费注册"}`
+	posts := themedTestPosts()
+	for i := range posts {
+		posts[i].Lang = "zh"
+	}
+	r := newThemedRouter("kite", chrome, posts)
+
+	assertHeader := func(name, body string) {
+		t.Helper()
+		for _, want := range []string{
+			`class="site-header"`,
+			`class="kite-brand-lockup"`,
+			`class="kite-brand-name">KITE</span>`,
+			`class="kite-brand-by">BY ESSEVIN</span>`,
+			`class="kite-language-select"`,
+			`href="/#capabilities">能做什么</a>`,
+			`href="/#pricing">模型与价格</a>`,
+			`href="/blog?lang=zh" class="act" aria-current="page">博客</a>`,
+			`data-blog-auth data-console-url="https://api.hop-base.com" data-auth-state="loading"`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s KITE header 缺少 %q", name, want)
+			}
+		}
+		if strings.Contains(body, `class="sk-signup"`) {
+			t.Errorf("%s KITE header 不应额外渲染注册按钮", name)
+		}
+	}
+
+	list := doGet(t, r, "/blog?lang=zh").Body.String()
+	assertHeader("list", list)
+	for _, want := range []string{
+		"--bg:#F3F7F3",
+		"--fg:#14231C",
+		"--accent:#C4285B",
+		`font-family:"Bricolage Grotesque"`,
+		`class="kite-hero"`,
+		`class="sk-rows"`,
+	} {
+		if !strings.Contains(list, want) {
+			t.Errorf("KITE list 缺少 %q", want)
+		}
+	}
+	if strings.Contains(list, "--bg:#F4F1EA") || strings.Contains(list, `--serif:Georgia`) {
+		t.Error("KITE list 不应继承 ink 的米白/衬线 token")
+	}
+
+	detail := doGet(t, r, "/blog/feature-post?lang=zh").Body.String()
+	assertHeader("detail", detail)
+	for _, want := range []string{
+		"max-width:392px",
+		"padding:18px 20px",
+		"min-height:44px",
+		"border-radius:12px",
+	} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("紧凑 gate 缺少 %q", want)
+		}
+	}
+
+	notFound := doGet(t, r, "/blog/missing?lang=zh").Body.String()
+	assertHeader("404", notFound)
+}
+
+type consoleURLSettings struct {
+	console string
+	api     string
+}
+
+func (s consoleURLSettings) List(_ context.Context, group string) ([]appsettings.Setting, error) {
+	if group != "site" {
+		return nil, nil
+	}
+	return []appsettings.Setting{
+		{Key: "site_name", Value: "KITE", Group: "site"},
+		{Key: "blog_theme", Value: "kite", Group: "site"},
+		{Key: "console_url", Value: s.console, Group: "site"},
+		{Key: "api_base_url", Value: s.api, Group: "site"},
+	}, nil
+}
+
+func TestSSR_ConsoleURLWinsForBlogSessionBridge(t *testing.T) {
+	newRouter := func(settings consoleURLSettings) *gin.Engine {
+		t.Helper()
+		gin.SetMode(gin.TestMode)
+		r := gin.New()
+		renderer := NewRenderer(appblog.NewService(&ssrRepo{posts: themedTestPosts()}), settings)
+		r.GET("/blog", renderer.RenderList)
+		return r
+	}
+
+	preferred := doGet(t, newRouter(consoleURLSettings{
+		console: "https://console.essevin.com",
+		api:     "https://api.essevin.com",
+	}), "/blog").Body.String()
+	for _, want := range []string{
+		`data-console-url="https://console.essevin.com"`,
+		`href="https://console.essevin.com/login?`,
+	} {
+		if !strings.Contains(preferred, want) {
+			t.Errorf("console_url 优先缺少 %q", want)
+		}
+	}
+	if strings.Contains(preferred, `data-console-url="https://api.essevin.com"`) {
+		t.Error("配置 console_url 时不应把 session bridge 指向 api_base_url")
+	}
+
+	fallback := doGet(t, newRouter(consoleURLSettings{api: "https://api.essevin.com"}), "/blog").Body.String()
+	if !strings.Contains(fallback, `data-console-url="https://api.essevin.com"`) {
+		t.Error("console_url 缺失时应回退 api_base_url")
+	}
+}
+
 func TestSSR_ThemedBlogAuthState(t *testing.T) {
 	posts := themedTestPosts()
 	posts[0].GateEnabled = true

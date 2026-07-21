@@ -354,6 +354,8 @@ func xmlEscape(s string) string {
 func (r *Renderer) branding(c *gin.Context) Branding {
 	b := Branding{OriginBase: originBase(c)}
 	sitesBrandingRaw := ""
+	consoleURL := ""
+	apiBaseURL := ""
 	items, err := r.settings.List(c.Request.Context(), "site")
 	if err == nil {
 		for _, it := range items {
@@ -363,7 +365,9 @@ func (r *Renderer) branding(c *gin.Context) Branding {
 			case "site_logo":
 				b.LogoURL = it.Value
 			case "api_base_url":
-				b.ConsoleURL = it.Value
+				apiBaseURL = strings.TrimSpace(it.Value)
+			case "console_url":
+				consoleURL = strings.TrimSpace(it.Value)
 			case "blog_site_key":
 				b.SiteKey = strings.TrimSpace(it.Value)
 			case "blog_theme":
@@ -377,6 +381,9 @@ func (r *Renderer) branding(c *gin.Context) Branding {
 			}
 		}
 	}
+	// 登录 Token 存在控制台 origin 的 localStorage 中。会话桥必须优先加载
+	// console_url；旧安装没有该设置时才回退 api_base_url，保持向后兼容。
+	b.ConsoleURL = firstNonEmpty(consoleURL, apiBaseURL)
 	// 多落地页站点(ToC 舰队):sites_branding 条目配置 host 后,博客按请求 Host
 	// (或 ?site= 预览参数)匹配站点,覆盖品牌/皮肤/chrome,并以站点键过滤文章——
 	// 一份 core 服务 N 个落地页域名,各出各的博客。未命中时沿用实例级默认,行为同旧版。
