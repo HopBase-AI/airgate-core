@@ -106,6 +106,14 @@ func TestApplyChrome_ConfiguredNav(t *testing.T) {
 	}
 }
 
+func TestApplyChrome_OpenLateBrandLockup(t *testing.T) {
+	b := Branding{SiteName: "Essevin", SiteKey: "open-late", Chrome: Chrome{BrandLabel: "ESSEVIN OPEN LATE"}}
+	applyChrome(&b, "", "https://console.essevin.com/login", "")
+	if b.BrandLabel != "LATE by Essevin" || b.BrandProduct != "LATE" || b.BrandParent != "by Essevin" {
+		t.Fatalf("open-late brand lockup = %q / %q / %q", b.BrandLabel, b.BrandProduct, b.BrandParent)
+	}
+}
+
 func TestBuildListView_FeaturedSplitAndFallback(t *testing.T) {
 	pub := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
 	b := Branding{SiteName: "HopBase", OriginBase: "https://hop-base.com"}
@@ -199,16 +207,17 @@ func TestSSR_EmberThemeListAndDetail(t *testing.T) {
 	}
 	body := w.Body.String()
 	for _, want := range []string{
-		`class="sk-nav"`,          // 皮肤顶栏
-		`class="sk-featured"`,     // 头条
-		`class="sk-grid"`,         // 卡片网格(ember 专属)
-		">模型价格</a>",               // 配置导航项
-		`href="/#pricing"`,        // 锚点原样
-		` class="act"`,            // 博客项高亮
-		`class="sk-footer-links"`, // 页脚链接
-		">接入文档</a>",               // 页脚项
-		"color-scheme:dark",       // 暗色钉死
-		"Second Post",             // 次条进文章流
+		`class="sk-nav"`,           // 皮肤顶栏
+		`class="sk-featured"`,      // 头条
+		`class="sk-dispatch-list"`, // 夜班稿件轨道(ember 专属)
+		`OPEN LATE JOURNAL`,        // 编辑部语境
+		">模型价格</a>",                // 配置导航项
+		`href="/#pricing"`,         // 锚点原样
+		` class="act"`,             // 博客项高亮
+		`class="sk-footer-links"`,  // 页脚链接
+		">接入文档</a>",                // 页脚项
+		"color-scheme:dark",        // 暗色钉死
+		"Second Post",              // 次条进文章流
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("ember list 缺少 %q", want)
@@ -216,6 +225,9 @@ func TestSSR_EmberThemeListAndDetail(t *testing.T) {
 	}
 	if strings.Contains(body, `class="sk-rows"`) {
 		t.Error("ember 列表不应出现 ink 的文章流结构")
+	}
+	if strings.Contains(body, `class="sk-grid"`) {
+		t.Error("ember 列表不应退回通用卡片网格")
 	}
 	if strings.Contains(body, `class="sk-eyebrow"`) {
 		t.Error("博客列表不应显示装饰性 eyebrow 文案")
@@ -272,12 +284,16 @@ func TestSSR_ThemedBlogAuthState(t *testing.T) {
 			list := doGet(t, r, "/blog").Body.String()
 			for _, want := range []string{
 				`data-blog-auth data-console-url="https://api.hop-base.com"`,
+				`data-blog-auth-guest hidden`,
 				`class="sk-user" data-blog-auth-user href="https://api.hop-base.com"`,
+				`data-sk-menu-button`,
+				`data-sk-mobile-menu hidden`,
 				`.sk-auth-guest[hidden]{display:none}`,
 				"airgate_blog_session_v1",
 				"new URL('/blog/session-bridge',consoleOrigin)",
 				"if(event.persisted)probe()",
 				"document.visibilityState==='visible'",
+				"node.hidden=true",
 			} {
 				if !strings.Contains(list, want) {
 					t.Errorf("%s list auth state missing %q", theme, want)

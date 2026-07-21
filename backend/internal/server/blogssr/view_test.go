@@ -196,6 +196,10 @@ func TestBuildDetailView_Byline(t *testing.T) {
 	if v2 := buildDetailView(Branding{OriginBase: "https://x.com"}, post, ""); v2.AuthorName != "Blog" {
 		t.Errorf("author fallback = %q, want Blog", v2.AuthorName)
 	}
+	openLate := buildDetailView(Branding{SiteName: "Essevin", SiteKey: "open-late", OriginBase: "https://late.essevin.com", Chrome: Chrome{BrandLabel: "ESSEVIN OPEN LATE"}}, post, "")
+	if openLate.SiteKey != "open-late" || openLate.BrandLabel != "LATE by Essevin" || openLate.BrandProduct != "LATE" {
+		t.Errorf("detail lost open-late brand context: %+v", openLate.Branding)
+	}
 }
 
 func TestBuildDetailView_NormalizesStoredMarkdownTableParagraphs(t *testing.T) {

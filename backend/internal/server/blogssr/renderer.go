@@ -207,9 +207,9 @@ function cookieDomain(){
 var labels=location.hostname.split('.');
 return labels.length>=3?labels.slice(1).join('.'):'';
 }
-function cookieAttrs(maxAge,domain){
+function cookieAttrs(maxAge,domain,path){
 var secure=location.protocol==='https:'?'; Secure':'';
-return '; Path=/blog; Max-Age='+Math.max(0,Math.floor(maxAge))+'; SameSite=Lax'+secure+(domain?'; Domain='+domain:'');
+return '; Path='+(path||'/')+'; Max-Age='+Math.max(0,Math.floor(maxAge))+'; SameSite=Lax'+secure+(domain?'; Domain='+domain:'');
 }
 function tokenExpiry(token){
 try{
@@ -233,15 +233,20 @@ if(!name&&email)name=email.split('@')[0];
 var hint={v:1,name:(name||'User').slice(0,80),email:email,exp:tokenExpiry(token)};
 var value=encodeURIComponent(JSON.stringify(hint));
 var domain=cookieDomain();
-document.cookie=cookieName+'='+cookieAttrs(0,'');
-document.cookie=cookieName+'='+value+cookieAttrs(hint.exp-Date.now()/1000,domain);
+document.cookie=cookieName+'='+cookieAttrs(0,'','/blog');
+document.cookie=cookieName+'='+cookieAttrs(0,'','/');
+document.cookie=cookieName+'='+value+cookieAttrs(hint.exp-Date.now()/1000,domain,'/');
 }catch(e){}
 }
 function clearHint(){
 try{
-document.cookie=cookieName+'='+cookieAttrs(0,'');
+document.cookie=cookieName+'='+cookieAttrs(0,'','/');
+document.cookie=cookieName+'='+cookieAttrs(0,'','/blog');
 var domain=cookieDomain();
-if(domain)document.cookie=cookieName+'='+cookieAttrs(0,domain);
+if(domain){
+document.cookie=cookieName+'='+cookieAttrs(0,domain,'/');
+document.cookie=cookieName+'='+cookieAttrs(0,domain,'/blog');
+}
 }catch(e){}
 }
 function post(authenticated,user){

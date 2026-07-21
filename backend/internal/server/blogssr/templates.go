@@ -390,6 +390,7 @@ const authSessionScriptStr = `<script>
 'use strict';
 var roots=Array.prototype.slice.call(document.querySelectorAll('[data-blog-auth]'));
 if(!roots.length)return;
+document.querySelectorAll('[data-blog-acquisition]').forEach(function(node){node.hidden=true;});
 var cookieName='airgate_blog_session_v1';
 var consoleURL=roots[0].getAttribute('data-console-url')||'';
 var consoleOrigin='';
@@ -399,24 +400,30 @@ var timer=0;
 var probeID=0;
 var lastProbe=0;
 function readHint(){
+var best=null;
 try{
 var prefix=cookieName+'=';
-var item=document.cookie.split(';').map(function(v){return v.trim();}).find(function(v){return v.indexOf(prefix)===0;});
-if(!item)return null;
+document.cookie.split(';').forEach(function(item){
+item=item.trim();if(item.indexOf(prefix)!==0)return;
 var hint=JSON.parse(decodeURIComponent(item.slice(prefix.length)));
-if(hint&&hint.v===1&&typeof hint.exp==='number'&&hint.exp>Date.now()/1000){
-return {authenticated:true,name:String(hint.name||'User').slice(0,80),email:String(hint.email||'').slice(0,160),resolved:false};
-}
+if(hint&&hint.v===1&&typeof hint.exp==='number'&&hint.exp>Date.now()/1000&&(!best||hint.exp>best.exp))best=hint;
+});
 }catch(e){}
-return null;
+if(!best)return null;
+return {authenticated:true,name:String(best.name||'User').slice(0,80),email:String(best.email||'').slice(0,160),resolved:false};
 }
 function clearHint(){
 try{
-var expired=cookieName+'=; Path=/blog; Max-Age=0; SameSite=Lax';
-document.cookie=expired;
+var expired=cookieName+'=; Max-Age=0; SameSite=Lax';
+document.cookie=expired+'; Path=/';
+document.cookie=expired+'; Path=/blog';
 var host=consoleOrigin?new URL(consoleOrigin).hostname:'';
 var labels=host.split('.');
-if(labels.length>=3)document.cookie=expired+'; Domain='+labels.slice(1).join('.');
+if(labels.length>=3){
+var domain=labels.slice(1).join('.');
+document.cookie=expired+'; Path=/; Domain='+domain;
+document.cookie=expired+'; Path=/blog; Domain='+domain;
+}
 }catch(e){}
 }
 function render(session){
@@ -426,6 +433,7 @@ var email=authenticated?String(session.email||'').slice(0,160):'';
 var chars=Array.from(name||email||'U');
 var initial=(chars[0]||'U').toUpperCase();
 roots.forEach(function(root){
+root.setAttribute('data-auth-state',authenticated?'authenticated':'guest');
 var guest=root.querySelector('[data-blog-auth-guest]');
 var user=root.querySelector('[data-blog-auth-user]');
 if(guest)guest.hidden=authenticated;
@@ -516,9 +524,9 @@ func assemble(head, css, header, body, footer, tail string) string {
 func listTemplateStr(theme string) string {
 	switch theme {
 	case themeEmber:
-		return assemble(listHeadStr, baseStyle+emberVars+emberChromeCSS, skinHeaderStr, emberListBodyStr, skinFooterStr, skinLangScriptStr+authSessionScriptStr)
+		return assemble(listHeadStr, baseStyle+emberVars+emberChromeCSS+skinSharedChromeCSS, skinHeaderStr, emberListBodyStr, skinFooterStr, skinLangScriptStr+authSessionScriptStr+skinMenuScriptStr)
 	case themeInk:
-		return assemble(listHeadStr, baseStyle+inkVars+inkChromeCSS, skinHeaderStr, inkListBodyStr, skinFooterStr, skinLangScriptStr+authSessionScriptStr)
+		return assemble(listHeadStr, baseStyle+inkVars+inkChromeCSS+skinSharedChromeCSS, skinHeaderStr, inkListBodyStr, skinFooterStr, skinLangScriptStr+authSessionScriptStr+skinMenuScriptStr)
 	default:
 		return assemble(listHeadStr, baseStyle, defaultHeaderStr, defaultListBodyStr, defaultFooterStr, "")
 	}
@@ -528,9 +536,9 @@ func listTemplateStr(theme string) string {
 func detailTemplateStr(theme string) string {
 	switch theme {
 	case themeEmber:
-		return assemble(detailHeadStr, baseStyle+emberVars+emberChromeCSS, skinHeaderStr, detailBodyStr, skinFooterStr, gateStr+authSessionScriptStr)
+		return assemble(detailHeadStr, baseStyle+emberVars+emberChromeCSS+skinSharedChromeCSS, skinHeaderStr, detailBodyStr, skinFooterStr, gateStr+authSessionScriptStr+skinMenuScriptStr)
 	case themeInk:
-		return assemble(detailHeadStr, baseStyle+inkVars+inkChromeCSS, skinHeaderStr, detailBodyStr, skinFooterStr, gateStr+authSessionScriptStr)
+		return assemble(detailHeadStr, baseStyle+inkVars+inkChromeCSS+skinSharedChromeCSS, skinHeaderStr, detailBodyStr, skinFooterStr, gateStr+authSessionScriptStr+skinMenuScriptStr)
 	default:
 		return assemble(detailHeadStr, baseStyle, defaultHeaderStr, detailBodyStr, defaultFooterStr, gateStr)
 	}
@@ -540,9 +548,9 @@ func detailTemplateStr(theme string) string {
 func notFoundTemplateStr(theme string) string {
 	switch theme {
 	case themeEmber:
-		return assemble(notFoundHeadStr, baseStyle+emberVars+emberChromeCSS, skinHeaderStr, notFoundBodyStr, skinFooterStr, authSessionScriptStr)
+		return assemble(notFoundHeadStr, baseStyle+emberVars+emberChromeCSS+skinSharedChromeCSS, skinHeaderStr, notFoundBodyStr, skinFooterStr, authSessionScriptStr+skinMenuScriptStr)
 	case themeInk:
-		return assemble(notFoundHeadStr, baseStyle+inkVars+inkChromeCSS, skinHeaderStr, notFoundBodyStr, skinFooterStr, authSessionScriptStr)
+		return assemble(notFoundHeadStr, baseStyle+inkVars+inkChromeCSS+skinSharedChromeCSS, skinHeaderStr, notFoundBodyStr, skinFooterStr, authSessionScriptStr+skinMenuScriptStr)
 	default:
 		return assemble(notFoundHeadStr, baseStyle, "", notFoundBodyStr, "", "")
 	}
