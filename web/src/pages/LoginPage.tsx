@@ -12,7 +12,7 @@ import { queryKeys } from '../shared/queryKeys';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { useStatusPageEnabled } from '../shared/hooks/useStatusPageEnabled';
 import { getOriginSite } from '../shared/originSite';
-import { getInviteCode } from '../shared/inviteCode';
+import { clearInviteCode, getInviteCode, getInviteCodeFromURL } from '../shared/inviteCode';
 import { ApiError, setToken } from '../shared/api/client';
 import { consumeAuthReturnTo } from '../shared/authReturnTo';
 import { SiteBrand } from '../shared/components/SiteBrand';
@@ -577,9 +577,18 @@ export default function LoginPage() {
   const [oauthError, setOauthError] = useState('');
   const [oauthLoading, setOauthLoading] = useState(false);
 
-  // 访客侧「官方推广」认证条:带官方邀请码进来时解析,把官方团队推广与普通用户推广在视觉上区分。
-  // 邀请码由 main.tsx 的 captureInviteCode() 在 app 挂载时从 ?inv= 落 localStorage。
-  const inviteCode = getInviteCode();
+  // 展示身份只认「本次登录页地址明确携带的 ?inv=」，不能用 localStorage 中的历史归因，
+  // 否则访客日后直接打开普通 /login 也会误见上次推广人的认证条。
+  const [inviteCode] = useState(getInviteCodeFromURL);
+  const [isOAuthReturn] = useState(() => window.location.hash.includes('oauth_token=')
+    || new URLSearchParams(window.location.search).has('oauth_error'));
+
+  // 普通登录页代表一次无邀请的新入口：清掉未消费的旧归因，避免它不显示却仍被注册请求静默使用。
+  // OAuth 回跳失败时保留，方便用户在同一次邀请注册流程里重试。
+  useEffect(() => {
+    if (!inviteCode && !isOAuthReturn) clearInviteCode();
+  }, [inviteCode, isOAuthReturn]);
+
   const { data: resolvedInvite } = useQuery({
     queryKey: queryKeys.referralResolve(inviteCode),
     queryFn: () => referralApi.resolve(inviteCode),

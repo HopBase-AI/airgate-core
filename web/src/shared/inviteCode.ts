@@ -6,14 +6,25 @@ const STORAGE_KEY = 'ag_invite_code';
 // 与后端 sanitizeInviteCode 保持一致：4~16 位字母数字。
 const INVITE_CODE_PATTERN = /^[a-z0-9]{4,16}$/i;
 
+function normalizeInviteCode(raw: string | null): string {
+  const trimmed = (raw || '').trim();
+  return INVITE_CODE_PATTERN.test(trimmed) ? trimmed.toLowerCase() : '';
+}
+
+/** 返回当前地址明确携带的邀请码；不会回退到历史暂存。 */
+export function getInviteCodeFromURL(): string {
+  try {
+    return normalizeInviteCode(new URLSearchParams(window.location.search).get('inv'));
+  } catch {
+    return '';
+  }
+}
+
 /** 从当前 URL 捕获邀请码并持久化；非法值静默忽略。 */
 export function captureInviteCode(): void {
   try {
-    const params = new URLSearchParams(window.location.search);
-    const raw = (params.get('inv') || '').trim();
-    if (raw && INVITE_CODE_PATTERN.test(raw)) {
-      window.localStorage.setItem(STORAGE_KEY, raw.toLowerCase());
-    }
+    const code = getInviteCodeFromURL();
+    if (code) window.localStorage.setItem(STORAGE_KEY, code);
   } catch {
     // localStorage 不可用（隐私模式等）时静默降级为无归因
   }

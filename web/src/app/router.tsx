@@ -11,6 +11,7 @@ import type { PluginBreadcrumbItem } from '../shared/components/PluginBreadcrumb
 import { useAuth } from './providers/AuthProvider';
 import { ErrorBoundary } from './providers/ErrorBoundary';
 import { getToken, getTokenRole } from '../shared/api/client';
+import { getInviteCodeFromURL } from '../shared/inviteCode';
 import { ChatPageLoading, FullPageLoading, PageLoading } from '../shared/components/PageLoading';
 import { checkAdmin, checkBlogAuthor, withSetupCheck } from './routeGuards';
 import {
@@ -59,6 +60,13 @@ function requestIdle(work: () => void) {
 
   const id = globalThis.setTimeout(work, 500);
   return () => globalThis.clearTimeout(id);
+}
+
+// 任意受保护入口都可能由推广链接打开。重定向登录页时保留当前地址明确携带的邀请参数；
+// 不从 localStorage 回填，避免一次历史邀请污染之后的普通登录。
+function redirectToLogin() {
+  const inviteCode = getInviteCodeFromURL();
+  return redirect({ to: '/login', search: inviteCode ? { inv: inviteCode } : {} });
 }
 
 const AppShell = lazyWithPreload<{ children: ReactNode }>(() =>
@@ -139,7 +147,8 @@ const homeRoute = createRoute({
   path: '/home',
   beforeLoad: () => withSetupCheck((needs) => {
     if (needs) throw redirect({ to: '/setup' });
-    throw redirect({ to: getToken() ? '/' : '/login' });
+    if (getToken()) throw redirect({ to: '/' });
+    throw redirectToLogin();
   }),
   component: () => null,
 });
@@ -205,6 +214,9 @@ const privacyPolicyLegacyRoute = createRoute({
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
+  validateSearch: (search: Record<string, unknown>): { inv?: string } => ({
+    inv: typeof search.inv === 'string' ? search.inv : undefined,
+  }),
   beforeLoad: () => withSetupCheck((needs) => {
     if (needs) throw redirect({ to: '/setup' });
     const isOAuthCallback = window.location.hash.includes('oauth_token=')
@@ -224,7 +236,9 @@ const authLayout = createRoute({
   id: 'auth',
   beforeLoad: () => withSetupCheck((needs) => {
     if (needs) throw redirect({ to: '/setup' });
-    if (!getToken()) throw redirect({ to: '/login' });
+    if (!getToken()) {
+      throw redirectToLogin();
+    }
   }),
   component: () => (
     <Suspense fallback={<FullPageLoading />}>
@@ -323,7 +337,7 @@ const modelPlazaRoute = createRoute({ getParentRoute: () => authLayout, path: '/
 // 仍要求登录 + 安装完成；走 PluginShell 通用插件顶栏。
 const chatBeforeLoad = () => withSetupCheck((needs) => {
   if (needs) throw redirect({ to: '/setup' });
-  if (!getToken()) throw redirect({ to: '/login' });
+  if (!getToken()) throw redirectToLogin();
   if (getTokenRole() === 'api_key') throw redirect({ to: '/' });
 });
 const chatRoute = createRoute({
