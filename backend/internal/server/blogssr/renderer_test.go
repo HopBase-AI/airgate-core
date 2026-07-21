@@ -127,6 +127,23 @@ func TestTrustedSessionBridgeOrigin(t *testing.T) {
 	}
 }
 
+func TestBrowserConsoleURL(t *testing.T) {
+	tests := []struct {
+		apiBase, pageOrigin, want string
+	}{
+		{"https://api.essevin.com/", "https://late.essevin.com", "https://console.essevin.com"},
+		{"https://api.essevin.com", "https://kite.essevin.com", "https://console.essevin.com"},
+		{"https://api.essevin.com", "https://evil.example", "https://api.essevin.com"},
+		{"https://api.hop-base.com", "https://hop-base.com", "https://api.hop-base.com"},
+		{"not a url", "https://late.essevin.com", "not a url"},
+	}
+	for _, tt := range tests {
+		if got := browserConsoleURL(tt.apiBase, tt.pageOrigin); got != tt.want {
+			t.Errorf("browserConsoleURL(%q, %q) = %q, want %q", tt.apiBase, tt.pageOrigin, got, tt.want)
+		}
+	}
+}
+
 func TestSSR_SessionBridge(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
