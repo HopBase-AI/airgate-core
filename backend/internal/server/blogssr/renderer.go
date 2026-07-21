@@ -399,7 +399,25 @@ func (r *Renderer) branding(c *gin.Context) Branding {
 		// 兜底:同源(博客与控制台同域时可用;跨域时应配置 site.api_base_url)。
 		b.ConsoleURL = b.OriginBase
 	}
+	b.ConsoleURL = browserConsoleURL(b.ConsoleURL, b.OriginBase)
 	return b
+}
+
+// browserConsoleURL 把公开博客的认证/登录入口从 API 主机修正到浏览器实际
+// 保存 localStorage Token 的控制台主机。ToC 的 api_base_url 必须继续保留
+// api.essevin.com 给 SDK/回调使用，不能为了博客会话而改掉全局设置。
+func browserConsoleURL(apiBase, pageOrigin string) string {
+	apiURL, apiErr := url.Parse(strings.TrimSpace(apiBase))
+	pageURL, pageErr := url.Parse(strings.TrimSpace(pageOrigin))
+	if apiErr != nil || pageErr != nil {
+		return apiBase
+	}
+	pageHost := strings.ToLower(pageURL.Hostname())
+	if strings.EqualFold(apiURL.Hostname(), "api.essevin.com") &&
+		(pageHost == "essevin.com" || strings.HasSuffix(pageHost, ".essevin.com")) {
+		return "https://console.essevin.com"
+	}
+	return apiBase
 }
 
 // write 执行模板并输出 HTML。
