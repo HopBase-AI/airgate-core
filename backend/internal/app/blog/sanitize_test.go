@@ -14,8 +14,8 @@ func TestSanitizeHTML(t *testing.T) {
 		mustReject  []string
 	}{
 		{
-			name:       "strip script tag",
-			in:         `<p>hello</p><script>alert(1)</script>`,
+			name:        "strip script tag",
+			in:          `<p>hello</p><script>alert(1)</script>`,
 			mustContain: []string{"<p>hello</p>"},
 			mustReject:  []string{"<script", "alert(1)"},
 		},
@@ -96,6 +96,34 @@ func TestSanitizeHTML(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestNormalizeLegacyMarkdownTables(t *testing.T) {
+	raw := `<p>before</p><p>| 高危類型 | 例子 |</p><p></p><p>|---|---:|</p><p>| 日期 | 事件日期 |</p><p>| 出處 | URL |</p><p>after</p>`
+	got := SanitizeHTML(raw)
+	for _, want := range []string{
+		"<p>before</p>",
+		"<table>",
+		"<thead>",
+		"<th>高危類型</th>",
+		`<th style="text-align: right">例子</th>`,
+		`<td style="text-align: right">事件日期</td>`,
+		"<p>after</p>",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("normalized table missing %q\n got: %s", want, got)
+		}
+	}
+	if strings.Contains(got, "|---|---:|") {
+		t.Errorf("delimiter row leaked after normalization: %s", got)
+	}
+}
+
+func TestNormalizeLegacyMarkdownTablesLeavesOrdinaryPipesUntouched(t *testing.T) {
+	raw := `<p>| this is not | a table |</p><p>ordinary prose</p>`
+	if got := NormalizeLegacyMarkdownTables(raw); got != raw {
+		t.Errorf("ordinary pipe paragraphs changed\nwant: %s\n got: %s", raw, got)
 	}
 }
 

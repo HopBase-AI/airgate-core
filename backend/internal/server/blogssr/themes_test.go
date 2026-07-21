@@ -217,6 +217,9 @@ func TestSSR_EmberThemeListAndDetail(t *testing.T) {
 	if strings.Contains(body, `class="sk-rows"`) {
 		t.Error("ember 列表不应出现 ink 的文章流结构")
 	}
+	if strings.Contains(body, `class="sk-eyebrow"`) {
+		t.Error("博客列表不应显示装饰性 eyebrow 文案")
+	}
 
 	wd := doGet(t, r, "/blog/feature-post")
 	if wd.Code != http.StatusOK {
@@ -227,6 +230,9 @@ func TestSSR_EmberThemeListAndDetail(t *testing.T) {
 		if !strings.Contains(dbody, want) {
 			t.Errorf("ember detail 缺少 %q", want)
 		}
+	}
+	if strings.Contains(dbody, `class="article-eyebrow"`) {
+		t.Error("文章详情不应显示标签拼接的 eyebrow 文案")
 	}
 }
 
@@ -247,6 +253,9 @@ func TestSSR_InkThemeRowsAndSignup(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("ink list 缺少 %q", want)
 		}
+	}
+	if strings.Contains(body, `class="sk-eyebrow"`) {
+		t.Error("ink 博客列表不应显示装饰性 eyebrow 文案")
 	}
 	if strings.Contains(body, `class="sk-grid"`) {
 		t.Error("ink 列表不应出现 ember 的网格结构")

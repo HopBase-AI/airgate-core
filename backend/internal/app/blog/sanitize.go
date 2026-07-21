@@ -51,5 +51,5 @@ func sanitizerPolicy() *bluemonday.Policy {
 // SanitizeHTML 净化用户提交的正文 HTML,移除 <script>、事件处理器、危险标签与非白名单 iframe,
 // 防止存储型 XSS。落库前调用。
 func SanitizeHTML(raw string) string {
-	return sanitizerPolicy().Sanitize(raw)
+	return sanitizerPolicy().Sanitize(NormalizeLegacyMarkdownTables(raw))
 }

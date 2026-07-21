@@ -198,6 +198,22 @@ func TestBuildDetailView_Byline(t *testing.T) {
 	}
 }
 
+func TestBuildDetailView_NormalizesStoredMarkdownTableParagraphs(t *testing.T) {
+	b := Branding{SiteName: "Essevin", ConsoleURL: "https://console.essevin.com", OriginBase: "https://essevin.com"}
+	post := appblog.Post{
+		Title:       "T",
+		Slug:        "s",
+		ContentHTML: `<p>| 類型 | 例子 |</p><p>|---|---|</p><p>| 日期 | 事件日期 |</p>`,
+	}
+	v := buildDetailView(b, post, "")
+	content := string(v.Content)
+	for _, want := range []string{"<table>", "<th>類型</th>", "<td>事件日期</td>"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("normalized detail content missing %q\n got: %s", want, content)
+		}
+	}
+}
+
 func TestPostVisibleOnSite(t *testing.T) {
 	cases := []struct {
 		name    string

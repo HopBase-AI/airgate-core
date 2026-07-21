@@ -16,7 +16,7 @@ import {
   Quote, Code, Link2, Image as ImageIcon, Youtube as YoutubeIcon,
   AlignLeft, AlignCenter, AlignRight, Undo, Redo,
 } from 'lucide-react';
-import { looksLikeMarkdown, markdownToHTML, richTextInputToHTML } from '../markdown';
+import { looksLikeMarkdown, looksLikeMarkdownTable, markdownToHTML, richTextInputToHTML } from '../markdown';
 
 interface RichTextEditorProps {
   value: string;
@@ -110,7 +110,7 @@ export function RichTextEditor({ value, onChange, onImageUpload, placeholder }: 
         }
         const plain = event.clipboardData?.getData('text/plain') ?? '';
         const rich = event.clipboardData?.getData('text/html') ?? '';
-        if (!rich && looksLikeMarkdown(plain)) {
+        if (looksLikeMarkdownTable(plain) || (!rich && looksLikeMarkdown(plain))) {
           event.preventDefault();
           editorRef.current?.commands.insertContent(markdownToHTML(plain));
           return true;

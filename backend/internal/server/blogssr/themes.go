@@ -51,7 +51,6 @@ const skinFooterStr = `<footer class="sk-footer"><div class="sk-footer-inner">
 // emberListBodyStr HopBase 皮列表:hero + 头条大卡 + 卡片网格。
 const emberListBodyStr = `<main class="sk-main">
 <section class="sk-hero"><div class="sk-wrap">
-<p class="sk-eyebrow">{{.Eyebrow}}</p>
 <h1 class="sk-title">{{.Heading}}</h1>
 {{if .Subtitle}}<p class="sk-sub">{{.Subtitle}}</p>{{end}}
 </div></section>
@@ -90,7 +89,6 @@ const emberListBodyStr = `<main class="sk-main">
 // inkListBodyStr Essevin 皮列表:hero + 编辑式头条 + 发丝线文章流(去卡片化)。
 const inkListBodyStr = `<main class="sk-main">
 <section class="sk-hero"><div class="sk-wrap">
-<p class="sk-eyebrow">{{.Eyebrow}}</p>
 <h1 class="sk-title">{{.Heading}}</h1>
 {{if .Subtitle}}<p class="sk-sub">{{.Subtitle}}</p>{{end}}
 </div></section>

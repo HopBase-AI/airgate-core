@@ -190,7 +190,6 @@ const defaultListBodyStr = `<main class="blog-wrap">
 const detailBodyStr = `<main class="blog-wrap">
 <a href="{{.HomeURL}}" class="blog-back">{{.UI.Back}}</a>
 <article>
-{{if .Eyebrow}}<div class="article-eyebrow">{{.Eyebrow}}</div>{{end}}
 <h1 class="article-title">{{.Title}}</h1>
 <div class="article-byline">
 <span class="article-avatar" aria-hidden="true"></span>

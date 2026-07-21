@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Alert, Button, Card, Checkbox, FieldError, Form, Input, Label, Link as HeroLink, Tabs, TextField as HeroTextField } from '@heroui/react';
 import { useAuth } from '../app/providers/AuthProvider';
-import { useSiteSettings, defaultLogoUrl } from '../app/providers/SiteSettingsProvider';
+import { useSiteSettings } from '../app/providers/SiteSettingsProvider';
 import { authApi } from '../shared/api/auth';
 import { usersApi } from '../shared/api/users';
 import { referralApi } from '../shared/api/referral';
@@ -15,6 +15,7 @@ import { getOriginSite } from '../shared/originSite';
 import { getInviteCode } from '../shared/inviteCode';
 import { ApiError, setToken } from '../shared/api/client';
 import { consumeAuthReturnTo } from '../shared/authReturnTo';
+import { SiteBrand } from '../shared/components/SiteBrand';
 import { Mail, Lock, User, ArrowRight, Sun, Moon, ShieldCheck, Activity, Layers, Gauge, BarChart3, BadgeCheck } from 'lucide-react';
 
 /* ==================== 第三方登录 ==================== */
@@ -655,13 +656,8 @@ export default function LoginPage() {
         />
         {/* 内容 */}
         <div className="relative z-10 px-12 max-w-md">
-          <div className="flex items-center gap-3 mb-10">
-            <img
-              src={site.site_logo || defaultLogoUrl}
-              alt=""
-              className={`w-10 h-10 rounded-sm ${site.site_logo ? 'object-contain' : 'object-cover'}`}
-            />
-            <span className="text-xl font-bold tracking-tight">{site.site_name || 'HopBase'}</span>
+          <div className="mb-10 flex items-center text-white">
+            <SiteBrand iconSize={40} />
           </div>
           <h2 className="text-[34px] font-bold leading-snug tracking-tight mb-4">
             {t('auth.welcome_title')}
@@ -716,15 +712,8 @@ export default function LoginPage() {
         </Button>
         <div className="relative w-full max-w-[420px]">
           {/* 移动端 Logo */}
-          <div className="text-center mb-8 lg:hidden">
-            <img
-              src={site.site_logo || defaultLogoUrl}
-              alt=""
-              className={`w-11 h-11 rounded-sm mb-3 mx-auto ${site.site_logo ? 'object-contain' : 'object-cover'}`}
-            />
-            <h1 className="text-lg font-bold text-text">
-              {site.site_name || t('app_name')}
-            </h1>
+          <div className="mb-8 flex justify-center text-text lg:hidden">
+            <SiteBrand iconSize={40} />
           </div>
 
           {/* 官方推广认证条:仅当邀请码解析为官方推广官时显示,给访客一个信任背书 */}

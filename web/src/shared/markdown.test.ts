@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { looksLikeMarkdown, markdownToHTML, richTextInputToHTML } from './markdown';
+import {
+  looksLikeMarkdown,
+  looksLikeMarkdownTable,
+  markdownToHTML,
+  normalizeMarkdownTableSpacing,
+  richTextInputToHTML,
+} from './markdown';
 
 describe('Markdown compatibility', () => {
   it('recognizes block and inline Markdown without converting ordinary prose', () => {
@@ -28,5 +34,20 @@ describe('Markdown compatibility', () => {
   it('normalizes raw Markdown but leaves existing rich HTML untouched', () => {
     expect(richTextInputToHTML('## Imported')).toBe('<h2>Imported</h2>');
     expect(richTextInputToHTML('<p>## Literal text</p>')).toBe('<p>## Literal text</p>');
+  });
+
+  it('repairs GFM tables copied with blank lines between rows', () => {
+    const markdown = [
+      '| Type | Example |', '',
+      '| --- | --- |', '',
+      '| Dates | Event dates |', '',
+      '| Sources | URLs |',
+    ].join('\n');
+    expect(looksLikeMarkdownTable(markdown)).toBe(true);
+    expect(normalizeMarkdownTableSpacing(markdown)).not.toContain('|\n\n|');
+    const html = markdownToHTML(markdown);
+    expect(html).toContain('<table>');
+    expect(html).toContain('<th>Type</th>');
+    expect(html).toContain('<td>Event dates</td>');
   });
 });

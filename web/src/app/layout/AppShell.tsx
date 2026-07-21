@@ -7,15 +7,15 @@ import { useAuth } from '../providers/AuthProvider';
 import { getTokenRole } from '../../shared/api/client';
 import { setStoredLanguage } from '../../i18n';
 import { pluginsApi } from '../../shared/api/plugins';
-import { settingsApi } from '../../shared/api/settings';
 import { queryKeys } from '../../shared/queryKeys';
 import { useTheme } from '../providers/ThemeProvider';
-import { useSiteSettings, defaultLogoUrl } from '../providers/SiteSettingsProvider';
+import { useSiteSettings } from '../providers/SiteSettingsProvider';
 import { effectiveDocUrl } from '../../shared/utils/docUrl';
 import { useIsMobile } from '../../shared/hooks/useMediaQuery';
 import { usePersistentBoolean } from '../../shared/hooks/usePersistentBoolean';
 import { TopLoadingLine } from '../../shared/components/PageLoading';
 import { AnnouncementBanner } from '../../shared/components/AnnouncementBanner';
+import { SiteBrand } from '../../shared/components/SiteBrand';
 import {
   LayoutDashboard,
   Users,
@@ -222,14 +222,6 @@ export function AppShell({ children }: AppShellProps) {
   const isAPIKeySession = user?.role === 'api_key' || !!(user?.api_key_id && user.api_key_id > 0);
   const isAdmin = !isAPIKeySession && (getTokenRole() === 'admin' || user?.role === 'admin');
 
-  // 仅管理员拉取 core 版本号；普通用户和 API Key 会话不暴露版本指纹。
-  const { data: coreVersion } = useQuery({
-    queryKey: ['core-version'],
-    queryFn: () => settingsApi.getCoreVersion(),
-    enabled: isAdmin && !isAPIKeySession,
-    staleTime: 5 * 60_000,
-    refetchOnWindowFocus: false,
-  });
   const { adminItems: pluginAdminItems, userItems: pluginUserItems, healthInstalled } = usePluginMenuItems(isAdmin, isAPIKeySession);
   const showStatusEntry = healthInstalled;
   const sections = useMemo(() => {
@@ -277,10 +269,6 @@ export function AppShell({ children }: AppShellProps) {
   const currentLanguageOption = LANGUAGE_OPTIONS.find((item) => item.key === currentLanguage) ?? LANGUAGE_OPTIONS[0];
 
   const displayName = user?.username || user?.email?.split('@')[0] || site.site_name || 'HopBase';
-  const customRoleLabel = user?.display_badge?.trim();
-  const roleLabel = customRoleLabel || (user?.role === 'api_key'
-    ? 'API Key'
-    : isAdmin ? t('users.role_admin', 'Admin') : t('users.role_user', 'User'));
   useEffect(() => {
     document.title = site.site_name || 'HopBase';
   }, [site.site_name]);
@@ -291,33 +279,12 @@ export function AppShell({ children }: AppShellProps) {
   const sidebarContent = (
     <>
       <div className="flex h-20 items-center px-4">
-        <div className={`flex min-w-0 ${sidebarCollapsed ? 'w-full flex-col items-center justify-center' : 'w-full items-center gap-3'}`}>
-          <div
-            className={`relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius)] ${site.site_logo ? '' : 'bg-primary-subtle'}`}
-          >
-            {/* 自定义 logo(常为透明底 SVG)按原比例裸呈现,与落地页观感一致;仅内置默认 logo 保留底色容器 */}
-            <img
-              src={site.site_logo || defaultLogoUrl}
-              alt=""
-              className={`h-full w-full ${site.site_logo ? 'object-contain' : 'object-cover'}`}
-            />
-          </div>
-          {!sidebarCollapsed && (
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-1.5">
-                <h1 className="truncate text-sm font-semibold text-text">{displayName}</h1>
-                {coreVersion?.version && (
-                  <span
-                    className="shrink-0 text-[9px] text-text-tertiary font-mono"
-                    title={`${coreVersion.version} · ${coreVersion.platform} · ${coreVersion.go_version}`}
-                  >
-                    {coreVersion.version}
-                  </span>
-                )}
-              </div>
-              <p className="mt-0.5 truncate text-xs text-text-tertiary">{roleLabel}</p>
-            </div>
-          )}
+        <div className={`flex min-w-0 ${sidebarCollapsed ? 'w-full justify-center' : 'w-full items-center gap-3'}`}>
+          <SiteBrand
+            className={sidebarCollapsed ? 'text-text' : 'min-w-0 flex-1 text-text'}
+            iconOnly={sidebarCollapsed}
+            iconSize={sidebarCollapsed ? 40 : 32}
+          />
           {!isMobile && !sidebarCollapsed && (
             <Button
               aria-label={t('nav.collapse_sidebar', 'Collapse sidebar')}

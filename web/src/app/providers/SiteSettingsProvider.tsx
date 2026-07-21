@@ -16,6 +16,10 @@ interface SiteBranding {
   name?: string;
   logo?: string;
   doc_url?: string;
+  brand_label?: string;
+  blog_chrome?: {
+    brand_label?: string;
+  };
 }
 
 function parseSitesBranding(raw: string | undefined): Record<string, SiteBranding> {
@@ -54,7 +58,9 @@ function parseBlogSites(raw: string | undefined): BlogSiteOption[] {
 }
 
 interface SiteSettings {
+  site_id: string;
   site_name: string;
+  site_brand_label: string;
   site_subtitle: string;
   site_logo: string;
   api_base_url: string;
@@ -78,7 +84,9 @@ interface SiteSettings {
 }
 
 const defaults: SiteSettings = {
+  site_id: '',
   site_name: 'HopBase',
+  site_brand_label: 'HopBase',
   site_subtitle: 'Control Panel',
   site_logo: '',
   api_base_url: '',
@@ -117,7 +125,9 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
     ...defaults,
     ...data,
     // 来源站品牌覆盖：来源站在 sites_branding 有配置时优先生效
+    site_id: originSite,
     site_name: branding?.name || data?.site_name || defaults.site_name,
+    site_brand_label: branding?.brand_label || branding?.blog_chrome?.brand_label || branding?.name || data?.site_name || defaults.site_brand_label,
     site_logo: branding?.logo || data?.site_logo || defaults.site_logo,
     doc_url: branding?.doc_url || data?.doc_url || defaults.doc_url,
     // Boolean 字段从字符串转换

@@ -751,8 +751,8 @@ func buildDetailView(b Branding, p appblog.Post, reqInvite string) DetailView {
 		Branding:        branding,
 		Title:           seoTitle,
 		MetaDescription: metaDesc,
-		Content:         template.HTML(p.ContentHTML),                     //nolint:gosec // 已在 service 层经 bluemonday 净化
-		CoverImage:      template.URL(absURL(b.OriginBase, p.CoverImage)), //nolint:gosec // 可信后台设置,<img> 呈现
+		Content:         template.HTML(appblog.NormalizeLegacyMarkdownTables(p.ContentHTML)), //nolint:gosec // 已在 service 层经 bluemonday 净化;兼容旧版编辑器保存的 Markdown 表格段落
+		CoverImage:      template.URL(absURL(b.OriginBase, p.CoverImage)),                    //nolint:gosec // 可信后台设置,<img> 呈现
 		OGImage:         ogImage,
 		Canonical:       canonical,
 		Eyebrow:         eyebrowFromTags(p.Tags),
