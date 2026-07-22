@@ -175,7 +175,9 @@ func TestSSR_SessionBridge(t *testing.T) {
 		"/api/v1/auth/refresh",
 		"window.parent.postMessage(payload,targetOrigin)",
 		`var targetOrigin="https://hop-base.com"`,
-		"cookieAttrs(hint.exp-Date.now()/1000,domain,'/')",
+		"cookieAttrs(hint.exp-Date.now()/1000,domain,'/blog')",
+		"if(!token){if(storageReadable){clearHint();post(false);}return;}",
+		"cookieAttrs(0,domain,'/')",
 		"cookieAttrs(0,domain,'/blog')",
 	} {
 		if !strings.Contains(body, want) {

@@ -364,6 +364,9 @@ type Branding struct {
 	ShowLangs bool
 	Lang      string
 	LangNav   []NavLink
+	// HeaderLang* 为只提供繁简切换的子站 Header 准备单一语言入口。
+	HeaderLangLabel string
+	HeaderLangHref  string
 	// UI 固定文案(返回/阅读时长后缀/CTA按钮/注册墙/空态),按 Lang 本地化,空语言=繁体。
 	UI uiText
 	// HTMLLang <html lang> 值(zh-CN/zh-Hant/en)。
@@ -420,7 +423,10 @@ func applyChrome(b *Branding, reqInvite, registerURL, lang string) {
 	b.SiteURL = withInv(home, nav)
 
 	links := c.Nav
-	if b.Theme == themeKite {
+	if b.SiteKey == "open-late" {
+		links = openLateHeaderLinks(b.Lang)
+		b.HeaderLangLabel, b.HeaderLangHref = compactLanguageToggle(b.Lang, b.LangNav)
+	} else if b.Theme == themeKite {
 		links = kiteHeaderLinks(b.Lang)
 	}
 	if len(links) == 0 {
@@ -432,6 +438,56 @@ func applyChrome(b *Branding, reqInvite, registerURL, lang string) {
 	b.LoginLabel = firstNonEmpty(c.LoginLabel, "登录")
 	b.SignupLabel = c.SignupLabel
 	b.RegisterURL = registerURL
+}
+
+// openLateHeaderLinks 与 LATE 落地页共享同一导航信息架构。后台旧 blog_chrome
+// 只保留 5 项时也不再让博客 Header 缺少产品、关于我们和使用问题。
+func openLateHeaderLinks(lang string) []ChromeLink {
+	switch canonicalLang(lang) {
+	case "en":
+		return []ChromeLink{
+			{Label: "Products", Href: "/#hb-products"},
+			{Label: "Pricing", Href: "/#hb-pricing"},
+			{Label: "Docs", Href: "/docs"},
+			{Label: "Blog", Href: "/blog"},
+			{Label: "Solutions", Href: "/solution"},
+			{Label: "About", Href: "/about"},
+			{Label: "FAQ", Href: "/#hb-last"},
+		}
+	case "", "zh-Hant":
+		return []ChromeLink{
+			{Label: "產品", Href: "/#hb-products"},
+			{Label: "收費", Href: "/#hb-pricing"},
+			{Label: "接入文件", Href: "/docs"},
+			{Label: "網誌", Href: "/blog"},
+			{Label: "解決方案", Href: "/solution"},
+			{Label: "關於我們", Href: "/about"},
+			{Label: "使用問題", Href: "/#hb-last"},
+		}
+	default:
+		return []ChromeLink{
+			{Label: "产品", Href: "/#hb-products"},
+			{Label: "收费", Href: "/#hb-pricing"},
+			{Label: "接入文件", Href: "/docs"},
+			{Label: "博客", Href: "/blog"},
+			{Label: "解决方案", Href: "/solution"},
+			{Label: "关于我们", Href: "/about"},
+			{Label: "使用问题", Href: "/#hb-last"},
+		}
+	}
+}
+
+func compactLanguageToggle(lang string, links []NavLink) (string, string) {
+	targetLabel := "繁"
+	if canonicalLang(lang) == "zh-Hant" {
+		targetLabel = "简"
+	}
+	for _, link := range links {
+		if link.Label == targetLabel {
+			return targetLabel, link.Href
+		}
+	}
+	return "", ""
 }
 
 // kiteHeaderLinks 与 KITE 落地页的主导航保持一致。博客列表、详情与 404

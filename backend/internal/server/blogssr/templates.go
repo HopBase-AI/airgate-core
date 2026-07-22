@@ -491,8 +491,6 @@ removeFrame();
 if(data.authenticated){
 render({authenticated:true,name:data.name,email:data.email,resolved:true});
 }else{
-var fallback=readHint();
-if(fallback){render(fallback);return;}
 clearHint();
 render({authenticated:false,resolved:true});
 }
@@ -524,7 +522,7 @@ func assemble(head, css, header, body, footer, tail string) string {
 func listTemplateStr(theme string) string {
 	switch theme {
 	case themeEmber:
-		return assemble(listHeadStr, baseStyle+emberVars+emberChromeCSS+skinSharedChromeCSS, skinHeaderStr, emberListBodyStr, skinFooterStr, skinLangScriptStr+authSessionScriptStr+skinMenuScriptStr)
+		return assemble(listHeadStr, baseStyle+emberVars+emberChromeCSS+skinSharedChromeCSS+openLateHeaderCSS, emberHeaderStr, emberListBodyStr, skinFooterStr, skinLangScriptStr+authSessionScriptStr+skinMenuScriptStr+openLateMenuScriptStr)
 	case themeInk:
 		return assemble(listHeadStr, baseStyle+inkVars+inkChromeCSS+skinSharedChromeCSS, skinHeaderStr, inkListBodyStr, skinFooterStr, skinLangScriptStr+authSessionScriptStr+skinMenuScriptStr)
 	case themeKite:
@@ -538,7 +536,7 @@ func listTemplateStr(theme string) string {
 func detailTemplateStr(theme string) string {
 	switch theme {
 	case themeEmber:
-		return assemble(detailHeadStr, baseStyle+emberVars+emberChromeCSS+skinSharedChromeCSS, skinHeaderStr, detailBodyStr, skinFooterStr, gateStr+authSessionScriptStr+skinMenuScriptStr)
+		return assemble(detailHeadStr, baseStyle+emberVars+emberChromeCSS+skinSharedChromeCSS+openLateHeaderCSS, emberHeaderStr, detailBodyStr, skinFooterStr, gateStr+authSessionScriptStr+skinMenuScriptStr+openLateMenuScriptStr)
 	case themeInk:
 		return assemble(detailHeadStr, baseStyle+inkVars+inkChromeCSS+skinSharedChromeCSS, skinHeaderStr, detailBodyStr, skinFooterStr, gateStr+authSessionScriptStr+skinMenuScriptStr)
 	case themeKite:
@@ -552,7 +550,7 @@ func detailTemplateStr(theme string) string {
 func notFoundTemplateStr(theme string) string {
 	switch theme {
 	case themeEmber:
-		return assemble(notFoundHeadStr, baseStyle+emberVars+emberChromeCSS+skinSharedChromeCSS, skinHeaderStr, notFoundBodyStr, skinFooterStr, authSessionScriptStr+skinMenuScriptStr)
+		return assemble(notFoundHeadStr, baseStyle+emberVars+emberChromeCSS+skinSharedChromeCSS+openLateHeaderCSS, emberHeaderStr, notFoundBodyStr, skinFooterStr, authSessionScriptStr+skinMenuScriptStr+openLateMenuScriptStr)
 	case themeInk:
 		return assemble(notFoundHeadStr, baseStyle+inkVars+inkChromeCSS+skinSharedChromeCSS, skinHeaderStr, notFoundBodyStr, skinFooterStr, authSessionScriptStr+skinMenuScriptStr)
 	case themeKite:

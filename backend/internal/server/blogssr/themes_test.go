@@ -107,10 +107,18 @@ func TestApplyChrome_ConfiguredNav(t *testing.T) {
 }
 
 func TestApplyChrome_OpenLateBrandLockup(t *testing.T) {
-	b := Branding{SiteName: "Essevin", SiteKey: "open-late", Chrome: Chrome{BrandLabel: "ESSEVIN OPEN LATE"}}
+	b := Branding{SiteName: "Essevin", SiteKey: "open-late", Theme: themeEmber, Chrome: Chrome{
+		BrandLabel: "ESSEVIN OPEN LATE", ShowLangs: true, DefaultLang: "zh-Hant",
+	}}
 	applyChrome(&b, "", "https://console.essevin.com/login", "")
 	if b.BrandLabel != "LATE by Essevin" || b.BrandProduct != "LATE" || b.BrandParent != "by Essevin" {
 		t.Fatalf("open-late brand lockup = %q / %q / %q", b.BrandLabel, b.BrandProduct, b.BrandParent)
+	}
+	if len(b.Nav) != 7 || b.Nav[0].Label != "產品" || b.Nav[3].Label != "網誌" || b.Nav[6].Label != "使用問題" {
+		t.Fatalf("open-late nav = %+v", b.Nav)
+	}
+	if b.HeaderLangLabel != "简" || b.HeaderLangHref != "/blog?lang=zh" {
+		t.Fatalf("open-late compact language toggle = %q %q", b.HeaderLangLabel, b.HeaderLangHref)
 	}
 }
 
@@ -160,8 +168,9 @@ func TestBuildListView_FeaturedSplitAndFallback(t *testing.T) {
 
 // themedSettings 返回带皮肤配置的 site 设置。
 type themedSettings struct {
-	theme  string
-	chrome string
+	theme   string
+	chrome  string
+	siteKey string
 }
 
 func (s themedSettings) List(_ context.Context, group string) ([]appsettings.Setting, error) {
@@ -174,7 +183,53 @@ func (s themedSettings) List(_ context.Context, group string) ([]appsettings.Set
 		{Key: "api_base_url", Value: "https://api.hop-base.com", Group: "site"},
 		{Key: "blog_theme", Value: s.theme, Group: "site"},
 		{Key: "blog_chrome", Value: s.chrome, Group: "site"},
+		{Key: "blog_site_key", Value: s.siteKey, Group: "site"},
 	}, nil
+}
+
+func TestSSR_OpenLateKeepsLandingHeaderAcrossPages(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	posts := themedTestPosts()
+	for i := range posts {
+		posts[i].Lang = "zh-Hant"
+	}
+	svc := appblog.NewService(&ssrRepo{posts: posts})
+	r := gin.New()
+	renderer := NewRenderer(svc, themedSettings{
+		theme:   themeEmber,
+		siteKey: "open-late",
+		chrome:  `{"show_langs":true,"default_lang":"zh-Hant","login_label":"登入","signup_label":"免費註冊"}`,
+	})
+	r.GET("/blog", renderer.RenderList)
+	r.GET("/blog/:slug", renderer.RenderDetail)
+
+	assertHeader := func(name, body string) {
+		t.Helper()
+		for _, want := range []string{
+			`class="ol-header"`,
+			`class="ol-header__inner"`,
+			`class="ol-brand"`,
+			`class="ol-brand__product">LATE</span>`,
+			`class="ol-brand__parent">by Essevin</span>`,
+			`href="/#hb-products">產品</a>`,
+			`href="/blog?lang=zh-Hant" class="act" aria-current="page">網誌</a>`,
+			`class="ol-nav__language" href="/blog?lang=zh"`,
+			`data-blog-auth data-console-url="https://api.hop-base.com"`,
+			`data-open-late-menu-button`,
+			`data-open-late-menu hidden`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s Open Late header 缺少 %q", name, want)
+			}
+		}
+		if strings.Contains(body, `class="sk-nav"`) {
+			t.Errorf("%s Open Late 不应退回通用 sk-nav", name)
+		}
+	}
+
+	assertHeader("list", doGet(t, r, "/blog?lang=zh-Hant").Body.String())
+	assertHeader("detail", doGet(t, r, "/blog/feature-post?lang=zh-Hant").Body.String())
+	assertHeader("404", doGet(t, r, "/blog/missing?lang=zh-Hant").Body.String())
 }
 
 func newThemedRouter(theme, chrome string, posts []appblog.Post) *gin.Engine {
@@ -412,6 +467,9 @@ func TestSSR_ThemedBlogAuthState(t *testing.T) {
 				if !strings.Contains(list, want) {
 					t.Errorf("%s list auth state missing %q", theme, want)
 				}
+			}
+			if strings.Contains(list, "var fallback=readHint()") {
+				t.Errorf("%s 未登录结果不应回退到旧会话提示", theme)
 			}
 
 			detail := doGet(t, r, "/blog/feature-post").Body.String()

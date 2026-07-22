@@ -47,11 +47,16 @@ function sharedCookieDomain(hostname: string): string | null {
   return labels.length >= 3 ? labels.slice(1).join('.') : null;
 }
 
-function cookieAttributes(maxAge: number, domain?: string): string {
+function cookieAttributes(maxAge: number, domain?: string, path = '/blog'): string {
   const secure = window.location.protocol === 'https:' ? '; Secure' : '';
   const domainAttr = domain ? `; Domain=${domain}` : '';
-  // 只随 /blog 页面和 /blog/session-bridge 发送，不污染普通控制台/API 请求。
-  return `; Path=/blog; Max-Age=${Math.max(0, Math.floor(maxAge))}; SameSite=Lax${secure}${domainAttr}`;
+  return `; Path=${path}; Max-Age=${Math.max(0, Math.floor(maxAge))}; SameSite=Lax${secure}${domainAttr}`;
+}
+
+function clearCookieVariants(domain?: string) {
+  document.cookie = `${BLOG_SESSION_COOKIE}=${cookieAttributes(0, domain, '/blog')}`;
+  // 清理会话桥旧版本写到根路径的 Cookie，避免退出后博客继续读到旧头像。
+  document.cookie = `${BLOG_SESSION_COOKIE}=${cookieAttributes(0, domain, '/')}`;
 }
 
 function readBlogSessionHint(): BlogSessionHint | null {
@@ -80,8 +85,8 @@ function writeBlogSessionHint(hint: BlogSessionHint) {
   const value = encodeURIComponent(JSON.stringify(hint));
   inMemoryHint = hint;
   const domain = sharedCookieDomain(window.location.hostname);
-  // 先清理可能由旧部署留下的同名 host-only Cookie，避免控制台读到两份不同值。
-  document.cookie = `${BLOG_SESSION_COOKIE}=${cookieAttributes(0)}`;
+  clearCookieVariants();
+  if (domain) clearCookieVariants(domain);
   document.cookie = `${BLOG_SESSION_COOKIE}=${value}${cookieAttributes(maxAge, domain ?? undefined)}`;
 }
 
@@ -106,8 +111,7 @@ export function refreshBlogSessionExpiry(token: string) {
 export function clearBlogSession() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   inMemoryHint = null;
-  const expired = `${BLOG_SESSION_COOKIE}=${cookieAttributes(0)}`;
-  document.cookie = expired;
+  clearCookieVariants();
   const domain = sharedCookieDomain(window.location.hostname);
-  if (domain) document.cookie = `${expired}; Domain=${domain}`;
+  if (domain) clearCookieVariants(domain);
 }

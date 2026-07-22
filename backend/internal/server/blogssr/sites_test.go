@@ -177,7 +177,7 @@ func TestSSR_MultiSite_ListByHost(t *testing.T) {
 		t.Fatalf("status = %d", w.Code)
 	}
 	body := w.Body.String()
-	for _, want := range []string{"Essevin 深夜檔", "https://late.essevin.com/owl.svg", "檔口", "Everywhere Post", "Late Only Post"} {
+	for _, want := range []string{"Essevin 深夜檔", "https://late.essevin.com/owl.svg", "產品", "Everywhere Post", "Late Only Post"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("late list missing %q", want)
 		}

@@ -221,9 +221,6 @@ if(typeof parsed.exp==='number')return parsed.exp;
 }catch(e){}
 return Math.floor(Date.now()/1000)+3600;
 }
-function hasHint(){
-try{return document.cookie.split(';').some(function(v){return v.trim().indexOf(cookieName+'=')===0;});}catch(e){return false;}
-}
 function syncHint(user,token){
 try{
 var email=typeof user.email==='string'?user.email.trim().slice(0,160):'';
@@ -233,9 +230,13 @@ if(!name&&email)name=email.split('@')[0];
 var hint={v:1,name:(name||'User').slice(0,80),email:email,exp:tokenExpiry(token)};
 var value=encodeURIComponent(JSON.stringify(hint));
 var domain=cookieDomain();
-document.cookie=cookieName+'='+cookieAttrs(0,'','/blog');
 document.cookie=cookieName+'='+cookieAttrs(0,'','/');
-document.cookie=cookieName+'='+value+cookieAttrs(hint.exp-Date.now()/1000,domain,'/');
+document.cookie=cookieName+'='+cookieAttrs(0,'','/blog');
+if(domain){
+document.cookie=cookieName+'='+cookieAttrs(0,domain,'/');
+document.cookie=cookieName+'='+cookieAttrs(0,domain,'/blog');
+}
+document.cookie=cookieName+'='+value+cookieAttrs(hint.exp-Date.now()/1000,domain,'/blog');
 }catch(e){}
 }
 function clearHint(){
@@ -272,10 +273,11 @@ return json&&json.code===0&&json.data&&typeof json.data.token==='string'?json.da
 }
 async function run(){
 var token='';
-try{token=window.localStorage.getItem('token')||'';}catch(e){}
-// Safari 若阻止 iframe 读取 localStorage，但父域会话提示仍有效，不要误判为退出。
-// 真正退出时控制台会主动清除此 Cookie，届时才回传未登录。
-if(!token){if(!hasHint())post(false);return;}
+var storageReadable=true;
+try{token=window.localStorage.getItem('token')||'';}catch(e){storageReadable=false;}
+// 存储可读且 Token 为空就是明确退出，必须清除旧提示并通知博客。只有浏览器
+// 阻止 iframe 访问存储时才保留父域提示，避免 Safari 把有效会话误判为退出。
+if(!token){if(storageReadable){clearHint();post(false);}return;}
 try{
 var response=await fetchMe(token);
 if(response.status===401){

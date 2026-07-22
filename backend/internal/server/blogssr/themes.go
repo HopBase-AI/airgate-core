@@ -54,6 +54,46 @@ const kiteHeaderStr = `<header class="site-header" data-site-header><div class="
 </nav></div></header>
 `
 
+// openLateHeaderStr 复用 LATE 落地页的 ol-* 结构。open-late 仍沿用 ember
+// 的编辑部正文，但从落地页进入博客后品牌、导航、语言和登录区域不再换壳。
+const openLateHeaderStr = `<header class="ol-header" data-open-late-header><div class="ol-header__inner">
+<a class="ol-brand" href="{{.SiteURL}}" aria-label="LATE by Essevin 首頁">{{if .LogoURL}}<img src="{{.LogoSrc}}" alt="">{{end}}<span class="ol-brand__product">LATE</span><span class="ol-brand__parent">by Essevin</span></a>
+<nav class="ol-nav" aria-label="主要導航">{{range .Nav}}<a href="{{.Href}}"{{if .Active}} class="act" aria-current="page"{{end}}>{{.Label}}</a>{{end}}{{if .HeaderLangHref}}<a class="ol-nav__language" href="{{.HeaderLangHref}}" aria-label="切換語言">{{.HeaderLangLabel}}</a>{{end}}</nav>
+<div class="ol-actions">
+<span class="ol-auth" data-blog-auth data-console-url="{{.ConsoleURL}}" data-auth-state="loading">
+<span class="ol-auth__guest" data-blog-auth-guest hidden><a class="ol-auth__login" href="{{.RegisterURL}}">{{.LoginLabel}}</a>{{if .SignupLabel}}<a class="ol-auth__signup" href="{{.RegisterURL}}">{{.SignupLabel}}</a>{{end}}</span>
+<a class="ol-auth__user" data-blog-auth-user href="{{.ConsoleURL}}" aria-label="{{.LoginLabel}}" title="{{.LoginLabel}}" hidden><span class="ol-auth__avatar" data-blog-auth-avatar aria-hidden="true">U</span><span class="ol-auth__name" data-blog-auth-name></span></a>
+</span>
+<button class="ol-menu-button" type="button" aria-label="開啟選單" aria-expanded="false" data-open-late-menu-button><span class="ol-menu-button__icon" aria-hidden="true"></span></button>
+</div></div>
+<div class="ol-menu" data-open-late-menu hidden><nav aria-label="行動版導航">{{range .Nav}}<a href="{{.Href}}"{{if .Active}} class="act" aria-current="page"{{end}}>{{.Label}}</a>{{end}}{{if .HeaderLangHref}}<a class="ol-menu__meta" href="{{.HeaderLangHref}}">{{.HeaderLangLabel}}</a>{{end}}<a class="ol-menu__meta" href="{{.RegisterURL}}" data-blog-acquisition hidden>{{.LoginLabel}}</a></nav></div>
+</header>
+`
+
+const emberHeaderStr = `{{if eq .SiteKey "open-late"}}` + openLateHeaderStr + `{{else}}` + skinHeaderStr + `{{end}}`
+
+// openLateHeaderCSS 与落地页 assets/site-shell.css 的 Header token/尺寸一致。
+// 相邻 main 的留白补偿 fixed Header，不改变 ember 正文排版。
+const openLateHeaderCSS = `
+:root{--ol-night:#241a11;--ol-night-raised:#36271a;--ol-paper:#f2e7d3;--ol-tan:#cbb694;--ol-amber:#e8b06a;--ol-rule:rgba(242,231,211,.14)}
+.ol-header{position:fixed;z-index:80;top:0;right:0;left:0;height:66px;color:var(--ol-paper);background:rgba(36,26,17,.92);border-bottom:1px solid var(--ol-rule);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+.ol-header+.sk-main{padding-top:66px}.ol-header+.blog-wrap{margin-top:66px}
+.ol-header__inner{box-sizing:border-box;width:min(100%,1200px);height:66px;margin:0 auto;padding:0 28px;display:flex;align-items:center;justify-content:space-between;gap:24px}
+.ol-brand{min-width:0;min-height:44px;display:inline-grid;grid-template-columns:32px auto auto;align-items:center;gap:10px;color:var(--ol-paper);text-decoration:none;white-space:nowrap}.ol-brand:hover{color:var(--ol-paper);text-decoration:none}.ol-brand img{width:32px;height:32px;display:block}
+.ol-brand__product{color:var(--ol-paper);font-family:"Archivo","Noto Sans TC",system-ui,sans-serif;font-size:21px;font-weight:900;line-height:1}.ol-brand__parent{padding-left:10px;border-left:1px solid rgba(242,231,211,.28);color:var(--ol-tan);font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10px;font-weight:600;line-height:1.2;letter-spacing:.06em}
+.ol-nav{min-width:0;margin-left:auto;display:flex;align-items:center;gap:clamp(14px,1.7vw,26px)}.ol-nav>a,.ol-nav__language{min-height:44px;display:inline-flex;align-items:center;border:0;color:var(--ol-tan);background:none;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12px;font-weight:600;line-height:1;letter-spacing:.1em;text-decoration:none;white-space:nowrap;cursor:pointer}.ol-nav>a:hover,.ol-nav__language:hover,.ol-nav>a.act{color:var(--ol-paper);text-decoration:none}
+.ol-actions{display:flex;align-items:center;gap:10px}.ol-auth,.ol-auth__guest{display:inline-flex;align-items:center;gap:10px}.ol-auth__guest[hidden],.ol-auth__user[hidden],[data-blog-acquisition][hidden]{display:none!important}[data-blog-auth][data-auth-state=loading] .ol-auth__guest,[data-blog-auth][data-auth-state=loading] .ol-auth__user,[data-blog-auth][data-auth-state=guest] .ol-auth__user,[data-blog-auth][data-auth-state=authenticated] .ol-auth__guest{display:none!important}
+.ol-auth__login{min-height:44px;display:inline-flex;align-items:center;color:var(--ol-tan);font:600 12px/1 "IBM Plex Mono",ui-monospace,monospace;letter-spacing:.1em;white-space:nowrap;text-decoration:none}.ol-auth__login:hover{color:var(--ol-paper);text-decoration:none}.ol-auth__signup{box-sizing:border-box;min-height:44px;padding:0 18px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;color:var(--ol-night)!important;background:var(--ol-paper);font:800 13px/1 "Noto Sans TC",system-ui,sans-serif;text-decoration:none;white-space:nowrap}.ol-auth__signup:hover{text-decoration:none}
+.ol-auth__user{box-sizing:border-box;height:44px;max-width:180px;padding:3px 12px 3px 3px;display:inline-flex;align-items:center;gap:9px;border:1px solid rgba(232,176,106,.32);border-radius:999px;color:var(--ol-paper);background:rgba(242,231,211,.05);text-decoration:none}.ol-auth__user:hover{color:var(--ol-paper);text-decoration:none}.ol-auth__avatar{width:36px;height:36px;flex:0 0 36px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;color:var(--ol-night);background:var(--ol-amber);font:800 13px/1 "Archivo",system-ui,sans-serif}.ol-auth__name{overflow:hidden;color:var(--ol-paper);font-size:13px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
+.ol-menu-button{box-sizing:border-box;width:44px;height:44px;padding:0;display:none;align-items:center;justify-content:center;border:1px solid var(--ol-rule);border-radius:50%;color:var(--ol-paper);background:rgba(242,231,211,.04);cursor:pointer}.ol-menu-button__icon,.ol-menu-button__icon::before,.ol-menu-button__icon::after{width:17px;height:1.5px;display:block;content:"";background:currentColor;transition:transform 220ms cubic-bezier(.22,1,.36,1),opacity 140ms ease}.ol-menu-button__icon{position:relative}.ol-menu-button__icon::before{position:absolute;top:-5px}.ol-menu-button__icon::after{position:absolute;top:5px}.ol-menu-button[aria-expanded=true] .ol-menu-button__icon{background:transparent}.ol-menu-button[aria-expanded=true] .ol-menu-button__icon::before{transform:translateY(5px) rotate(45deg)}.ol-menu-button[aria-expanded=true] .ol-menu-button__icon::after{transform:translateY(-5px) rotate(-45deg)}
+.ol-menu{position:absolute;top:65px;right:0;left:0;padding:12px max(20px,env(safe-area-inset-right)) 22px max(20px,env(safe-area-inset-left));border-bottom:1px solid var(--ol-rule);background:rgba(36,26,17,.985);box-shadow:0 24px 48px rgba(0,0,0,.34)}.ol-menu[hidden],.ol-header:not(.ol-header--menu-open) .ol-menu{display:none}.ol-menu nav{display:grid}.ol-menu a{min-height:48px;display:flex;align-items:center;border-bottom:1px solid rgba(242,231,211,.1);color:var(--ol-paper);font:600 14px/1.3 "IBM Plex Mono",ui-monospace,monospace;letter-spacing:.07em;text-decoration:none}.ol-menu a:last-child{border-bottom:0}.ol-menu__meta{color:var(--ol-amber)!important}.ol-header :focus-visible{outline:2px solid var(--ol-amber);outline-offset:3px}
+@media(max-width:1040px){.ol-nav>a:nth-of-type(n+5){display:none}}
+@media(max-width:900px){.ol-header{height:64px}.ol-header+.sk-main{padding-top:64px}.ol-header+.blog-wrap{margin-top:64px}.ol-header__inner{height:64px;padding-right:max(18px,env(safe-area-inset-right));padding-left:max(18px,env(safe-area-inset-left));gap:10px}.ol-nav{display:none!important}.ol-menu-button{display:inline-flex;flex:0 0 44px}.ol-actions{margin-left:auto}body.ol-menu-open{overflow:hidden}}
+@media(max-width:560px){.ol-brand{grid-template-columns:28px auto auto;gap:7px}.ol-brand img{width:28px;height:28px}.ol-brand__product{font-size:18px}.ol-brand__parent{padding-left:7px;font-size:8.5px;letter-spacing:.025em}.ol-auth__login{display:none}.ol-auth__user{width:44px;padding:3px}.ol-auth__name{display:none}.ol-auth__signup{min-width:72px;padding:0 13px;font-size:12px}}
+@media(max-width:370px){.ol-header__inner{padding-right:12px;padding-left:12px;gap:7px}.ol-brand img{width:26px;height:26px}.ol-auth__signup{min-width:68px;padding:0 10px}}
+@media(prefers-reduced-motion:reduce){.ol-header *,.ol-header *::before,.ol-header *::after{transition:none!important}}
+`
+
 // 语言只由 URL ?lang= 与服务端 default_lang 决定。禁止按浏览器语言二次跳转，
 // 否则 ToC 的“无 key 固定繁体”会在页面加载后被客户端悄悄改写。
 const skinLangScriptStr = ``
@@ -90,6 +130,28 @@ if(!button||!menu)return;
 var lastFocused=null;
 function setOpen(open){
 button.setAttribute('aria-expanded',String(open));menu.hidden=!open;header.classList.toggle('sk-nav--menu-open',open);document.body.classList.toggle('sk-menu-open',open);
+if(open){lastFocused=button;var first=menu.querySelector('a,button');if(first)first.focus();}
+else if(lastFocused&&menu.contains(document.activeElement)){lastFocused.focus();}
+}
+button.addEventListener('click',function(event){if(!event.isTrusted)return;setOpen(button.getAttribute('aria-expanded')!=='true');});
+menu.addEventListener('click',function(event){if(event.target.closest('a'))setOpen(false);});
+document.addEventListener('keydown',function(event){if(event.key==='Escape'&&!menu.hidden)setOpen(false);});
+document.addEventListener('click',function(event){if(!menu.hidden&&!header.contains(event.target))setOpen(false);});
+window.addEventListener('resize',function(){if(window.innerWidth>900&&!menu.hidden)setOpen(false);});
+});
+})();
+</script>`
+
+const openLateMenuScriptStr = `<script>
+(function(){
+'use strict';
+document.querySelectorAll('[data-open-late-header]').forEach(function(header){
+var button=header.querySelector('[data-open-late-menu-button]');
+var menu=header.querySelector('[data-open-late-menu]');
+if(!button||!menu)return;
+var lastFocused=null;
+function setOpen(open){
+button.setAttribute('aria-expanded',String(open));menu.hidden=!open;header.classList.toggle('ol-header--menu-open',open);document.body.classList.toggle('ol-menu-open',open);
 if(open){lastFocused=button;var first=menu.querySelector('a,button');if(first)first.focus();}
 else if(lastFocused&&menu.contains(document.activeElement)){lastFocused.focus();}
 }
