@@ -16,6 +16,8 @@ export function SiteBrand({ className = '', iconOnly = false, iconSize = 30 }: S
   const { i18n } = useTranslation();
   const siteName = site.site_name.trim();
   const isEssevin = site.site_id === 'ink' || siteName.toLowerCase() === 'essevin';
+  const isKite = site.site_id === 'kite'
+    || /kite/i.test(`${site.site_name} ${site.site_brand_label} ${site.site_logo}`);
   const language = i18n.resolvedLanguage || i18n.language || '';
   const isChinese = language.startsWith('zh');
   const localName = language === 'zh-CN' || language === 'zh' ? '萃灵' : '萃靈';
@@ -52,12 +54,22 @@ export function SiteBrand({ className = '', iconOnly = false, iconSize = 30 }: S
           <path d="M16 15.6V21" stroke="#FBFAF6" strokeLinecap="round" strokeWidth="1" />
         </svg>
       ) : (
-        <img
-          alt=""
-          className="shrink-0 object-contain"
-          src={site.site_logo || defaultLogoUrl}
-          style={{ height: iconSize, width: iconSize }}
-        />
+        <span
+          aria-hidden="true"
+          className={`inline-flex shrink-0 items-center justify-center overflow-hidden ${isKite ? 'bg-[#f3f7f3]' : ''}`}
+          style={{
+            borderRadius: isKite ? 4 : 0,
+            height: iconSize,
+            padding: isKite ? Math.max(2, Math.round(iconSize * 0.075)) : 0,
+            width: iconSize,
+          }}
+        >
+          <img
+            alt=""
+            className="h-full w-full object-contain"
+            src={site.site_logo || defaultLogoUrl}
+          />
+        </span>
       )}
       {!iconOnly && isEssevin && (
         <span className="inline-flex min-w-0 items-baseline" style={{ gap: 8, whiteSpace: 'nowrap' }}>
