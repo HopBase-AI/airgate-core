@@ -2,10 +2,11 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Button, Link as HeroLink } from '@heroui/react';
 import { Activity, ArrowRight, Moon, ShieldCheck, Sun } from 'lucide-react';
-import { useSiteSettings, defaultLogoUrl } from '../app/providers/SiteSettingsProvider';
+import { useSiteSettings } from '../app/providers/SiteSettingsProvider';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { useStatusPageEnabled } from '../shared/hooks/useStatusPageEnabled';
 import { getToken } from '../shared/api/client';
+import { SiteBrand } from '../shared/components/SiteBrand';
 
 // 条款正文四语文案在 i18n/{zh,zh-HK,en,ja}.json 的 legal.terms 命名空间,修订正文改 JSON 即可。
 type LegalSection = { title: string; body: string[] };
@@ -25,9 +26,8 @@ export default function LegalTermsPage() {
     <div className="min-h-screen bg-bg-deep text-text">
       <nav className="sticky top-0 z-20 bg-bg-deep/80 backdrop-blur border-b border-border/50">
         <div className="flex items-center justify-between px-6 md:px-12 py-4 max-w-5xl mx-auto">
-          <Link to="/" className="flex items-center gap-2.5">
-            <img src={site.site_logo || defaultLogoUrl} alt="" className="w-8 h-8 rounded-sm object-cover" />
-            <span className="text-base font-bold">{siteName}</span>
+          <Link to="/" className="text-text no-underline">
+            <SiteBrand iconSize={30} />
           </Link>
           <div className="flex items-center gap-2">
             {showStatusEntry && (

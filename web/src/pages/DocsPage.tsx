@@ -4,10 +4,11 @@ import { useState, useMemo, useEffect, useRef, useCallback, type ReactNode } fro
 import { Button, Link as HeroLink } from '@heroui/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useSiteSettings, defaultLogoUrl } from '../app/providers/SiteSettingsProvider';
+import { useSiteSettings } from '../app/providers/SiteSettingsProvider';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { useClipboard } from '../shared/hooks/useClipboard';
 import { useStatusPageEnabled } from '../shared/hooks/useStatusPageEnabled';
+import { SiteBrand } from '../shared/components/SiteBrand';
 import { getToken } from '../shared/api/client';
 import { Sun, Moon, Activity, Copy, Check, ArrowRight, BookOpen } from 'lucide-react';
 
@@ -163,9 +164,8 @@ export default function DocsPage() {
       {/* 顶栏：拉到 7xl，和正文同宽，避免顶栏窄、正文宽的撕裂感 */}
       <nav className="sticky top-0 z-20 bg-bg-deep/80 backdrop-blur border-b border-border/50">
         <div className="flex items-center justify-between px-6 md:px-12 py-4 max-w-7xl mx-auto">
-          <Link to="/" className="flex items-center gap-2.5">
-            <img src={site.site_logo || defaultLogoUrl} alt="" className="w-8 h-8 rounded-sm object-cover" />
-            <span className="text-base font-bold">{siteName}</span>
+          <Link to="/" className="text-text no-underline">
+            <SiteBrand iconSize={30} />
           </Link>
           <div className="flex items-center gap-2">
             {showStatusEntry && (

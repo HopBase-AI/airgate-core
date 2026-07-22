@@ -1,9 +1,10 @@
 import { useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Button, Card, Link as HeroLink } from '@heroui/react';
-import { useSiteSettings, defaultLogoUrl } from '../app/providers/SiteSettingsProvider';
+import { useSiteSettings } from '../app/providers/SiteSettingsProvider';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { getToken } from '../shared/api/client';
+import { SiteBrand } from '../shared/components/SiteBrand';
 import { effectiveDocUrl } from '../shared/utils/docUrl';
 import { useStatusPageEnabled } from '../shared/hooks/useStatusPageEnabled';
 import {
@@ -34,10 +35,7 @@ export default function HomePage() {
     <div className="min-h-screen bg-bg-deep text-text relative overflow-hidden">
       {/* 导航栏 */}
       <nav className="relative z-10 flex items-center justify-between px-6 md:px-12 py-4 max-w-6xl mx-auto">
-        <div className="flex items-center gap-2.5">
-          <img src={site.site_logo || defaultLogoUrl} alt="" className="w-8 h-8 rounded-sm object-cover" />
-          <span className="text-base font-bold">{site.site_name || 'HopBase'}</span>
-        </div>
+        <SiteBrand iconSize={30} />
         <div className="flex items-center gap-2">
           {showStatusEntry && (
             <HeroLink

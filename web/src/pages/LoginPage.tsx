@@ -666,7 +666,7 @@ export default function LoginPage() {
         {/* 内容 */}
         <div className="relative z-10 px-12 max-w-md">
           <div className="mb-10 flex items-center text-white">
-            <SiteBrand iconSize={40} />
+            <SiteBrand iconSize={30} />
           </div>
           <h2 className="text-[34px] font-bold leading-snug tracking-tight mb-4">
             {t('auth.welcome_title')}
@@ -722,7 +722,7 @@ export default function LoginPage() {
         <div className="relative w-full max-w-[420px]">
           {/* 移动端 Logo */}
           <div className="mb-8 flex justify-center text-text lg:hidden">
-            <SiteBrand iconSize={40} />
+            <SiteBrand iconSize={30} />
           </div>
 
           {/* 官方推广认证条:仅当邀请码解析为官方推广官时显示,给访客一个信任背书 */}
