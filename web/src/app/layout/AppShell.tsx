@@ -283,7 +283,7 @@ export function AppShell({ children }: AppShellProps) {
           <SiteBrand
             className={sidebarCollapsed ? 'text-text' : 'min-w-0 flex-1 text-text'}
             iconOnly={sidebarCollapsed}
-            iconSize={sidebarCollapsed ? 40 : 32}
+            iconSize={30}
           />
           {!isMobile && !sidebarCollapsed && (
             <Button
