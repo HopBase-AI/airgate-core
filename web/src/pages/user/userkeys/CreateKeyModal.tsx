@@ -45,20 +45,21 @@ export function CreateKeyModal({
                 <div className="break-all rounded-lg border border-glass-border bg-bg-elevated p-3 font-mono text-sm text-text shadow-sm">
                   {createdKey}
                 </div>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onPress={() => copy(createdKey || '', t('user_keys.copy_key'))}
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                  {t('user_keys.copy_key')}
-                </Button>
               </div>
             </Modal.Body>
             <Modal.Footer>
-              <Button variant="primary" onPress={onClose}>
-                {t('user_keys.key_saved_close')}
-              </Button>
+              <div className="flex w-full justify-end gap-2">
+                <Button
+                  variant="secondary"
+                  onPress={() => copy(createdKey || '', t('user_keys.copy_key'))}
+                >
+                  <Copy className="h-4 w-4" />
+                  {t('user_keys.copy_key')}
+                </Button>
+                <Button variant="primary" onPress={onClose}>
+                  {t('user_keys.key_saved_close')}
+                </Button>
+              </div>
             </Modal.Footer>
           </Modal.Dialog>
         </Modal.Container>
