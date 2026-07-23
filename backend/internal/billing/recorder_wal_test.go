@@ -15,6 +15,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/ent/enttest"
 	entusagelog "github.com/DouDOU-start/airgate-core/ent/usagelog"
+	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
 
 // recorder_wal_test.go — Recorder 丢账防护链路测试：
@@ -115,6 +116,67 @@ func TestRecordSyncRequestID(t *testing.T) {
 	}
 	if row.RequestID == "" {
 		t.Fatal("RecordSync 应自动补齐并落库 request_id")
+	}
+}
+
+func TestRecordSyncChargeStrictBalanceAndRollback(t *testing.T) {
+	db := newBillingTestDB(t, "recordsync_charge_floor")
+	ctx := context.Background()
+	user := createBillingTestUser(t, ctx, db, "render-fee@example.com")
+	if err := db.User.UpdateOneID(user.ID).SetBalance(1).Exec(ctx); err != nil {
+		t.Fatalf("set balance: %v", err)
+	}
+	r := NewRecorder(db, 10)
+	record := UsageRecord{
+		UserID:     user.ID,
+		Platform:   "airgate-playground",
+		Model:      "document-render-pdf",
+		ActualCost: 0.4,
+		BilledCost: 0.4,
+		RequestID:  "document-render:asset-1",
+		UsageMetrics: []sdk.UsageMetric{{
+			Key: "document_render", Kind: "custom", Unit: "file", Value: 1,
+		}},
+	}
+	if _, err := r.RecordSyncCharge(ctx, record); err != nil {
+		t.Fatalf("first charge: %v", err)
+	}
+	updated, err := db.User.Get(ctx, user.ID)
+	if err != nil || updated.Balance < 0.599999 || updated.Balance > 0.600001 {
+		t.Fatalf("balance after charge = %v, err=%v", updated.Balance, err)
+	}
+	if got := countUsageLogs(t, db); got != 1 {
+		t.Fatalf("usage rows after first charge = %d, want 1", got)
+	}
+
+	if _, err := r.RecordSyncCharge(ctx, record); err == nil {
+		t.Fatal("duplicate idempotency key should not succeed as a second charge")
+	}
+	updated, _ = db.User.Get(ctx, user.ID)
+	if updated.Balance < 0.599999 || updated.Balance > 0.600001 || countUsageLogs(t, db) != 1 {
+		t.Fatalf("duplicate charge changed state: balance=%v rows=%d", updated.Balance, countUsageLogs(t, db))
+	}
+
+	tooMuch := record
+	tooMuch.RequestID = "document-render:asset-2"
+	tooMuch.ActualCost = 0.7
+	tooMuch.BilledCost = 0.7
+	if _, err := r.RecordSyncCharge(ctx, tooMuch); !errors.Is(err, ErrInsufficientBalance) {
+		t.Fatalf("insufficient balance error = %v, want ErrInsufficientBalance", err)
+	}
+	updated, _ = db.User.Get(ctx, user.ID)
+	if updated.Balance < 0.599999 || updated.Balance > 0.600001 || countUsageLogs(t, db) != 1 {
+		t.Fatalf("failed charge should roll back: balance=%v rows=%d", updated.Balance, countUsageLogs(t, db))
+	}
+
+	missingUser := record
+	missingUser.UserID = user.ID + 1000
+	missingUser.RequestID = "document-render:missing-user"
+	if _, err := r.RecordSyncCharge(ctx, missingUser); err == nil {
+		t.Fatal("missing user charge should fail")
+	}
+	if got := countUsageLogs(t, db); got != 1 {
+		t.Fatalf("missing user charge left a usage row: got %d, want 1", got)
 	}
 }
 

@@ -503,6 +503,16 @@ func extensionForContentType(ct string) string {
 		return ".mp4"
 	case "audio/mpeg":
 		return ".mp3"
+	case "application/pdf":
+		return ".pdf"
+	case "text/markdown":
+		return ".md"
+	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+		return ".docx"
+	case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+		return ".pptx"
+	case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+		return ".xlsx"
 	default:
 		return ".bin"
 	}
@@ -518,6 +528,16 @@ func contentTypeForAssetKey(objectKey string) string {
 		return "image/webp"
 	case ".gif":
 		return "image/gif"
+	case ".pdf":
+		return "application/pdf"
+	case ".md":
+		return "text/markdown"
+	case ".docx":
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case ".pptx":
+		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+	case ".xlsx":
+		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 	default:
 		return "application/octet-stream"
 	}

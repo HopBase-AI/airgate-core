@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -26,6 +27,12 @@ const (
 	batchSize         = 100  // 批量写入阈值
 	maxRetries        = 3    // 写入失败最大重试次数
 )
+
+// ErrInsufficientBalance is returned by synchronous custom usage charges when
+// the user's balance cannot cover the requested amount. Model usage keeps the
+// existing asynchronous/negative-balance semantics; only explicit product
+// charges use this strict floor.
+var ErrInsufficientBalance = errors.New("insufficient balance")
 
 // flushInterval 定时刷新间隔（测试注入点）
 var flushInterval = 5 * time.Second
@@ -195,6 +202,49 @@ func (r *Recorder) RecordSync(ctx context.Context, record UsageRecord) (int, err
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("提交事务失败: %w", err)
+	}
+	return log.ID, nil
+}
+
+// RecordSyncCharge persists a non-model product usage record and charges the
+// user's balance atomically. It is intentionally separate from RecordSync:
+// model usage is allowed to settle asynchronously, while a fixed render fee
+// must never be reported as successful after a failed charge.
+func (r *Recorder) RecordSyncCharge(ctx context.Context, record UsageRecord) (int, error) {
+	if record.RequestID == "" {
+		record.RequestID = uuid.NewString()
+	}
+	tx, err := r.db.Tx(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("开启事务失败: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	refs, err := loadUsageLogRefs(ctx, tx, []UsageRecord{record})
+	if err != nil {
+		return 0, err
+	}
+	if record.UserID <= 0 || !refs.hasUser(record.UserID) {
+		return 0, fmt.Errorf("计费用户不存在 user_id=%d", record.UserID)
+	}
+	log, err := usageLogCreate(tx, record, refs).Save(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("插入 UsageLog 失败: %w", err)
+	}
+	if record.ActualCost > 0 && refs.hasUser(record.UserID) {
+		updated, err := tx.User.Update().
+			Where(entuser.IDEQ(record.UserID), entuser.BalanceGTE(record.ActualCost)).
+			AddBalance(-record.ActualCost).
+			Save(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("扣减用户余额失败 user_id=%d cost=%.8f: %w", record.UserID, record.ActualCost, err)
+		}
+		if updated == 0 {
+			return 0, ErrInsufficientBalance
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("提交计费事务失败: %w", err)
 	}
 	return log.ID, nil
 }

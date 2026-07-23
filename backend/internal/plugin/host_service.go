@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/account"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/setting"
+	entusagelog "github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 	appreferral "github.com/DouDOU-start/airgate-core/internal/app/referral"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
@@ -192,6 +194,7 @@ const (
 	hostMethodModelsRefresh          = "models.refresh"
 	hostMethodUsersGet               = "users.get"
 	hostMethodUsersUpdateBalance     = "users.update_balance"
+	hostMethodUsageRecord            = "usage.record"
 	hostMethodUsersNotifyTopup       = "users.notify_topup"
 	hostMethodAssetsStore            = "assets.store"
 	hostMethodAssetsStoreURL         = "assets.store_url"
@@ -280,6 +283,15 @@ func (h *HostService) invoke(
 			req.IdempotencyKey = idempotencyKey
 		}
 		return h.updateUserBalance(ctx, pluginID, req)
+	case hostMethodUsageRecord:
+		var req hostRecordUsageRequest
+		if err := decodeHostPayload(payload, &req); err != nil {
+			return nil, err
+		}
+		if idempotencyKey != "" && req.IdempotencyKey == "" {
+			req.IdempotencyKey = idempotencyKey
+		}
+		return h.recordUsage(ctx, pluginID, req)
 	case hostMethodUsersNotifyTopup:
 		var req hostNotifyTopupRequest
 		if err := decodeHostPayload(payload, &req); err != nil {
@@ -409,15 +421,17 @@ type hostProbeForwardRequest struct {
 }
 
 type hostForwardRequest struct {
-	UserID   int64                  `json:"user_id"`
-	GroupID  int64                  `json:"group_id"`
-	APIKeyID int64                  `json:"api_key_id,omitempty"`
-	Model    string                 `json:"model"`
-	Method   string                 `json:"method"`
-	Path     string                 `json:"path"`
-	Headers  map[string]interface{} `json:"headers"`
-	Body     interface{}            `json:"body"`
-	Stream   bool                   `json:"stream"`
+	UserID    int64                  `json:"user_id"`
+	GroupID   int64                  `json:"group_id"`
+	APIKeyID  int64                  `json:"api_key_id,omitempty"`
+	RequestID string                 `json:"request_id,omitempty"`
+	TraceID   string                 `json:"trace_id,omitempty"`
+	Model     string                 `json:"model"`
+	Method    string                 `json:"method"`
+	Path      string                 `json:"path"`
+	Headers   map[string]interface{} `json:"headers"`
+	Body      interface{}            `json:"body"`
+	Stream    bool                   `json:"stream"`
 
 	// AccountID >0 时钉选指定上游账号：跳过调度与 failover，直接用该账号转发。
 	// 供异步任务型平台（提交任务后必须回到同一账号查询/取产物）使用；
@@ -1487,6 +1501,8 @@ func (h *HostService) recordHostForwardUsage(
 		imageFixedPriceReplacesTotal = override.replacesTotal
 	}
 	calc := h.calculator.Calculate(calcInput)
+	applyHostForwardBilling(usage, calc)
+	applyHostForwardTrace(usage, req.TraceID)
 
 	h.scheduler.AddWindowCost(ctx, accountID, calc.AccountCost)
 
@@ -1510,6 +1526,7 @@ func (h *HostService) recordHostForwardUsage(
 		CacheCreation5mTokens:        usageValues.CacheCreation5mTokens,
 		CacheCreation1hTokens:        usageValues.CacheCreation1hTokens,
 		ReasoningOutputTokens:        usageValues.ReasoningOutputTokens,
+		RequestID:                    req.RequestID,
 		InputPrice:                   usageValues.InputPrice,
 		OutputPrice:                  usageValues.OutputPrice,
 		CachedInputPrice:             usageValues.CachedInputPrice,
@@ -1544,6 +1561,31 @@ func (h *HostService) recordHostForwardUsage(
 		return 0, nil
 	}
 	return h.recorder.RecordSync(ctx, record)
+}
+
+// applyHostForwardBilling 将 Core 最终采用的用户计费口径回填给调用插件。
+// gateway 插件只负责上报基础成本；用户/分组倍率由 Core 决定，因此 Host
+// 调用方不能直接沿用插件原始 usage，否则展示费用可能与余额实际扣减不一致。
+func applyHostForwardBilling(usage *sdk.Usage, calc billing.CalculateResult) {
+	if usage == nil {
+		return
+	}
+	usage.UserCost = calc.ActualCost
+	usage.BillingMultiplier = calc.RateMultiplier
+}
+
+func applyHostForwardTrace(usage *sdk.Usage, traceID string) {
+	traceID = strings.TrimSpace(traceID)
+	if usage == nil || traceID == "" {
+		return
+	}
+	if len(traceID) > 128 {
+		traceID = traceID[:128]
+	}
+	if usage.Metadata == nil {
+		usage.Metadata = make(map[string]string)
+	}
+	usage.Metadata["trace_id"] = traceID
 }
 
 // listPlatforms 列出已加载的网关平台。
@@ -1750,6 +1792,154 @@ func (h *HostService) updateUserBalance(ctx context.Context, pluginID string, re
 		"user_id": int64(u.ID),
 		"balance": u.Balance,
 	}, nil
+}
+
+// hostRecordUsageRequest is the narrow, explicit contract for product-side
+// usage such as document rendering. It does not accept token counts or model
+// prices; callers provide a fixed, already-authorized charge and descriptive
+// custom metrics. This keeps rendering costs separate from gateway token math.
+type hostRecordUsageRequest struct {
+	UserID         int64             `json:"user_id"`
+	Platform       string            `json:"platform"`
+	Model          string            `json:"model"`
+	Format         string            `json:"format"`
+	Quantity       float64           `json:"quantity"`
+	AccountCost    float64           `json:"account_cost"`
+	UserCost       float64           `json:"user_cost"`
+	Currency       string            `json:"currency"`
+	AssetID        string            `json:"asset_id"`
+	TraceID        string            `json:"trace_id"`
+	IdempotencyKey string            `json:"idempotency_key"`
+	Metadata       map[string]string `json:"metadata"`
+}
+
+func (h *HostService) recordUsage(ctx context.Context, pluginID string, req hostRecordUsageRequest) (map[string]interface{}, error) {
+	if req.UserID <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "user_id 必须 > 0")
+	}
+	if strings.TrimSpace(req.Platform) == "" {
+		req.Platform = pluginID
+	}
+	if strings.TrimSpace(req.Model) == "" {
+		req.Model = "document-render"
+	}
+	if strings.TrimSpace(req.Format) == "" || len(req.Format) > 16 || strings.ContainsAny(req.Format, " /\\\t\r\n") {
+		return nil, status.Error(codes.InvalidArgument, "format 无效")
+	}
+	if req.Quantity <= 0 || math.IsNaN(req.Quantity) || math.IsInf(req.Quantity, 0) || req.Quantity > 10000 {
+		return nil, status.Error(codes.InvalidArgument, "quantity 必须在 0-10000 之间")
+	}
+	if req.AccountCost < 0 || math.IsNaN(req.AccountCost) || math.IsInf(req.AccountCost, 0) || req.UserCost < 0 || math.IsNaN(req.UserCost) || math.IsInf(req.UserCost, 0) {
+		return nil, status.Error(codes.InvalidArgument, "费用必须为有限非负数")
+	}
+	if req.IdempotencyKey == "" {
+		return nil, status.Error(codes.InvalidArgument, "idempotency_key 必填")
+	}
+	if len(req.IdempotencyKey) > 240 {
+		return nil, status.Error(codes.InvalidArgument, "idempotency_key 过长")
+	}
+	if _, err := h.db.User.Get(ctx, int(req.UserID)); err != nil {
+		if ent.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, "用户不存在")
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	metadata := make(map[string]string, len(req.Metadata)+5)
+	for key, value := range req.Metadata {
+		if strings.TrimSpace(key) == "" || len(key) > 64 || len(value) > 500 {
+			continue
+		}
+		metadata[key] = value
+	}
+	metadata["source"] = pluginID
+	metadata["format"] = req.Format
+	if req.AssetID != "" {
+		metadata["asset_id"] = req.AssetID
+	}
+	if req.TraceID != "" {
+		metadata["trace_id"] = req.TraceID
+	}
+	metric := sdk.UsageMetric{
+		Key:         "document_render",
+		Label:       "Document render",
+		Kind:        "custom",
+		Unit:        "file",
+		Value:       req.Quantity,
+		AccountCost: req.AccountCost,
+		Currency:    req.Currency,
+		Metadata:    metadata,
+	}
+	detail := sdk.UsageCostDetail{
+		Key:               "document_render",
+		Label:             "Document render fee",
+		AccountCost:       req.AccountCost,
+		UserCost:          req.UserCost,
+		BillingMultiplier: 1,
+		Currency:          req.Currency,
+		Metadata:          metadata,
+	}
+	record := billing.UsageRecord{
+		RequestID:             req.IdempotencyKey,
+		UserID:                int(req.UserID),
+		Platform:              req.Platform,
+		Model:                 req.Model,
+		TotalCost:             req.AccountCost,
+		ActualCost:            req.UserCost,
+		BilledCost:            req.UserCost,
+		AccountCost:           req.AccountCost,
+		RateMultiplier:        1,
+		AccountRateMultiplier: 1,
+		Endpoint:              "usage.record",
+		UsageMetrics:          []sdk.UsageMetric{metric},
+		UsageCostDetails:      []sdk.UsageCostDetail{detail},
+		UsageMetadata:         metadata,
+	}
+	usageID, err := h.recorder.RecordSyncCharge(ctx, record)
+	if err != nil {
+		if errors.Is(err, billing.ErrInsufficientBalance) {
+			return nil, status.Error(codes.FailedPrecondition, "余额不足，无法收取文件渲染费用")
+		}
+		if ent.IsConstraintError(err) {
+			row, queryErr := h.db.UsageLog.Query().Where(entusagelog.RequestIDEQ(req.IdempotencyKey)).Only(ctx)
+			if queryErr == nil && row.UserIDSnapshot == int(req.UserID) {
+				return map[string]interface{}{"usage_id": row.ID, "usage": customUsagePayloadFromLog(row)}, nil
+			}
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return map[string]interface{}{"usage_id": usageID, "usage": customUsagePayload(record)}, nil
+}
+
+func customUsagePayloadFromLog(row *ent.UsageLog) map[string]interface{} {
+	if row == nil {
+		return map[string]interface{}{}
+	}
+	return map[string]interface{}{
+		"model":              "",
+		"account_cost":       row.AccountCost,
+		"user_cost":          row.ActualCost,
+		"billing_multiplier": 1,
+		"currency":           "",
+		"metrics":            row.UsageMetrics,
+		"cost_details":       row.UsageCostDetails,
+		"metadata":           row.UsageMetadata,
+	}
+}
+
+func customUsagePayload(record billing.UsageRecord) map[string]interface{} {
+	return map[string]interface{}{
+		// Product usage is merged into a model request's aggregate usage. Leave
+		// model empty so the chat model name remains the user-visible model.
+		"model":              "",
+		"account_cost":       record.AccountCost,
+		"user_cost":          record.ActualCost,
+		"billing_multiplier": 1,
+		"currency":           "",
+		"metrics":            record.UsageMetrics,
+		"cost_details":       record.UsageCostDetails,
+		"metadata":           record.UsageMetadata,
+	}
 }
 
 // hostNotifyTopupRequest users.notify_topup 请求体。

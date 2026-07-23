@@ -12,12 +12,72 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/ent/enttest"
 	"github.com/DouDOU-start/airgate-core/ent/group"
+	"github.com/DouDOU-start/airgate-core/internal/billing"
 	"github.com/DouDOU-start/airgate-core/internal/routing"
 	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
+
+func TestApplyHostForwardBilling(t *testing.T) {
+	t.Parallel()
+
+	for _, multiplier := range []float64{0.8, 1, 2} {
+		t.Run(fmt.Sprintf("multiplier_%g", multiplier), func(t *testing.T) {
+			t.Parallel()
+			usage := &sdk.Usage{AccountCost: 0.25, UserCost: 999, BillingMultiplier: 999}
+			applyHostForwardBilling(usage, billing.CalculateResult{
+				ActualCost:     0.25 * multiplier,
+				RateMultiplier: multiplier,
+			})
+
+			if usage.UserCost != 0.25*multiplier {
+				t.Fatalf("UserCost = %v, want %v", usage.UserCost, 0.25*multiplier)
+			}
+			if usage.BillingMultiplier != multiplier {
+				t.Fatalf("BillingMultiplier = %v, want %v", usage.BillingMultiplier, multiplier)
+			}
+			if usage.AccountCost != 0.25 {
+				t.Fatalf("AccountCost = %v, want plugin-reported 0.25", usage.AccountCost)
+			}
+		})
+	}
+}
+
+func TestApplyHostForwardTrace(t *testing.T) {
+	t.Parallel()
+	usage := &sdk.Usage{}
+	applyHostForwardTrace(usage, " chat-request-1 ")
+	if usage.Metadata["trace_id"] != "chat-request-1" {
+		t.Fatalf("trace_id = %q", usage.Metadata["trace_id"])
+	}
+}
+
+func TestCustomUsagePayloadFromLogUsesPersistedCharge(t *testing.T) {
+	t.Parallel()
+
+	row := &ent.UsageLog{
+		AccountCost: 0.01,
+		ActualCost:  0.025,
+		UsageMetrics: []sdk.UsageMetric{{
+			Key: "document_render", Kind: "custom", Unit: "file", Value: 1,
+		}},
+		UsageCostDetails: []sdk.UsageCostDetail{{
+			Key: "document_render", AccountCost: 0.01, UserCost: 0.025,
+		}},
+		UsageMetadata: map[string]string{"asset_id": "asset-first"},
+	}
+	payload := customUsagePayloadFromLog(row)
+	if payload["user_cost"] != 0.025 || payload["account_cost"] != 0.01 {
+		t.Fatalf("payload costs = %#v, want persisted costs", payload)
+	}
+	metadata, _ := payload["metadata"].(map[string]string)
+	if metadata["asset_id"] != "asset-first" {
+		t.Fatalf("payload metadata = %#v, want persisted metadata", metadata)
+	}
+}
 
 func TestHostForwardTimeout(t *testing.T) {
 	cases := []struct {
