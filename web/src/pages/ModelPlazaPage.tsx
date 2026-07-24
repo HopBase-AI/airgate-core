@@ -400,7 +400,7 @@ export default function ModelPlazaPage() {
   const pricingFallback = !userMode && (settingsQuery.isLoading || settingsQuery.isError || !pricingConfig);
   const brands = useMemo(
     () => {
-      const priority = ['gemini_official', 'azure_google', 'byteplus', 'openai', 'claude', 'kiro', 'zhipu'];
+      const priority = ['gemini_official', 'azure_google', 'byteplus', 'openai', 'claude', 'zhipu'];
       return [...new Set(models.flatMap((model) => model.brands))]
         .sort((left, right) => {
           const leftIndex = priority.indexOf(left);

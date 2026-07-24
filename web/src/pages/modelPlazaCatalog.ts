@@ -22,6 +22,9 @@ export function mergeCatalog(platforms: Array<MyPlatformPricing | PublicPlatform
     if (!platform || !Array.isArray(platform.models)) continue;
     for (const model of platform.models as MyPricingModel[]) {
       if (!model?.id) continue;
+      // Kiro 与 Claude 目录高度重复，产品侧暂不在模型广场展示；
+      // 网关和 API 路由保持不变，仅隐藏广场入口。
+      if (platform.platform === 'kiro') continue;
       const key = `${platform.platform}:${model.id}`;
       if (merged.has(key)) continue;
       merged.set(key, {

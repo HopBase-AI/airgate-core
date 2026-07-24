@@ -28,4 +28,20 @@ describe('model plaza channel catalog', () => {
       ['openai', 'azure_google', 3.1],
     ]);
   });
+
+  it('temporarily hides the Kiro channel and its duplicate models', () => {
+    const models = mergeCatalog([
+      {
+        platform: 'kiro',
+        models: [{ id: 'claude-sonnet-4-6', input: 3, output: 15 }],
+      },
+      {
+        platform: 'claude',
+        models: [{ id: 'claude-sonnet-4-6', input: 3, output: 15 }],
+      },
+    ]);
+
+    expect(models).toHaveLength(1);
+    expect(models[0]?.platform).toBe('claude');
+  });
 });
