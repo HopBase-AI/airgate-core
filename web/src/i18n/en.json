@@ -1291,7 +1291,8 @@
     "max_concurrency_hint": "Leave blank or set to 0 for no limit",
     "rate_suffix": "multiplier",
     "rate_tooltip": "Billing multiplier {{rate}}x",
-    "group_quote": "¥{{m}} per official $1 · ≈{{off}}% off"
+    "group_quote_price": "¥{{m}} per official $1",
+    "group_quote_discount": "≈{{off}}% off"
   },
   "setup": {
     "title": "System Setup",

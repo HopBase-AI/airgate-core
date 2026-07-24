@@ -1291,7 +1291,8 @@
     "max_concurrency_hint": "留空或設為 0，代表不設限制",
     "rate_suffix": "倍率",
     "rate_tooltip": "結算倍率 {{rate}}x",
-    "group_quote": "¥{{m}}/$1 · 約 {{zhe}} 折"
+    "group_quote_price": "¥{{m}}/$1",
+    "group_quote_discount": "約 {{zhe}} 折"
   },
   "setup": {
     "title": "系統安裝向導",
