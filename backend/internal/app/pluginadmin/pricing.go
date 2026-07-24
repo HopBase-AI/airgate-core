@@ -48,6 +48,9 @@ type PublicPricingModel struct {
 	// 视频生成模型的桶价：bucket（<分辨率>_{no,with}_ref）→ 美元 / 百万 video_tokens。
 	// 非视频模型为 nil；有值时展示端按桶铺价，忽略 Input/Output。
 	VideoTokens map[string]float64
+	// 图片生成模型的按张价：bucket（如 le_236w / gt_236w）→ 美元 / 张。
+	// 非图片模型为 nil；有值时展示端按像素档位铺价，忽略 Input/Output。
+	Image map[string]float64
 }
 
 // OfficialPricing 官方直付参考价（美元 / 百万 token）。
@@ -66,9 +69,10 @@ type PublicPlatformPricing struct {
 // overlayModel 覆盖层条目的解析结构（与后台「模型目录」编辑器写入的 schema 一致，
 // 字段语义同各网关插件的 overlay 解析；这里只取公开展示需要的子集）。
 //
-// pricing 有两种形态，靠键名区分而非平台特判：
+// pricing 有三种形态，靠键名与 kind 区分而非平台特判：
 //   - token 模型：{input, cached_input, output}
 //   - 视频模型（seedance）：{"480p_no_ref": 7, "720p_with_ref": 4.3, ...}（桶价）
+//   - 图片模型（seedream）：kind=image + {"image_le_236w": 0.045, ...}（按张桶价）
 //
 // 故 pricing 存为原文 json.RawMessage，按需解析成 map[string]float64，
 // 有 input/output 键即 token 价、否则按视频桶价合并。
@@ -78,6 +82,7 @@ type overlayModel struct {
 	ContextWindow int             `json:"context_window"`
 	Enabled       *bool           `json:"enabled"`
 	Vendor        string          `json:"vendor"`
+	Kind          string          `json:"kind"`
 	Pricing       json.RawMessage `json:"pricing"`
 	// Currency 基准价货币口径（"CNY" 表示官方人民币牌价按 1:1 记账），
 	// OfficialPricing 官方直付参考价（美元，键 input/cached_input/output）。
@@ -187,6 +192,25 @@ func (s *Service) applyOverlay(ctx context.Context, platform string, models []Pu
 		if entry.Vendor != "" {
 			target.Vendor = entry.Vendor
 		}
+		// 图片模型：基座已有按张桶价，或新增条目显式声明 kind=image。
+		// 桶价 map 逐桶覆盖（价>0 覆盖、=0 收回该桶），忽略 token/长上下文字段。
+		if target.Image != nil || strings.EqualFold(entry.Kind, "image") {
+			if len(pricing) > 0 {
+				if target.Image == nil {
+					target.Image = make(map[string]float64, len(pricing))
+					target.Capabilities = []string{"image_generation"}
+				}
+				for bucket, price := range pricing {
+					bucket = strings.TrimPrefix(bucket, "image_")
+					if price > 0 {
+						target.Image[bucket] = price
+					} else {
+						delete(target.Image, bucket)
+					}
+				}
+			}
+			continue
+		}
 		// 视频模型：基座已有桶价，或本条 pricing 是桶价形态（非 token 键）。
 		// 桶价 map 逐桶覆盖（价>0 覆盖、=0 收回该桶），忽略 token/长上下文字段。
 		if target.VideoTokens != nil || (len(pricing) > 0 && !isTokenPricing(pricing)) {
@@ -240,8 +264,19 @@ func (s *Service) applyOverlay(ctx context.Context, platform string, models []Pu
 }
 
 // parseBuiltinPricing 把插件上报的 price.*/long_context.* metadata 解析为公开定价。
-// 无 price.input 或 price.output 视为"无价格提示"（老插件），跳过。
+// 无任何桶价且无 price.input/price.output 视为"无价格提示"（老插件），跳过。
 func parseBuiltinPricing(id, name string, contextWindow int, capabilities []string, metadata map[string]string) (PublicPricingModel, bool) {
+	// 图片生成模型：价格是 price.image.<bucket> 按张桶价，没有 input/output。
+	if buckets := parseImageBuckets(metadata); len(buckets) > 0 {
+		return PublicPricingModel{
+			ID:            id,
+			Name:          name,
+			ContextWindow: contextWindow,
+			Capabilities:  append([]string(nil), capabilities...),
+			Vendor:        metadata["vendor"],
+			Image:         buckets,
+		}, true
+	}
 	// 视频生成模型：价格是 price.video_tokens.<bucket> 桶价，没有 input/output。
 	if buckets := parseVideoBuckets(metadata); len(buckets) > 0 {
 		return PublicPricingModel{
@@ -315,6 +350,29 @@ func parsePriceValue(raw string) (float64, bool) {
 
 // videoTokenPricePrefix 视频桶价 metadata 键前缀（seedance 等视频插件上报）。
 const videoTokenPricePrefix = "price.video_tokens."
+
+// imagePricePrefix 图片按张桶价 metadata 键前缀（seedream 等生图插件上报）。
+const imagePricePrefix = "price.image."
+
+// parseImageBuckets 从 metadata 抽取所有 price.image.<bucket> 按张价（无则 nil）。
+func parseImageBuckets(metadata map[string]string) map[string]float64 {
+	var out map[string]float64
+	for key, raw := range metadata {
+		bucket, ok := strings.CutPrefix(key, imagePricePrefix)
+		if !ok || bucket == "" {
+			continue
+		}
+		value, ok := parsePriceValue(raw)
+		if !ok {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]float64)
+		}
+		out[bucket] = value
+	}
+	return out
+}
 
 // parseVideoBuckets 从 metadata 抽取所有 price.video_tokens.<bucket> 桶价（无则 nil）。
 func parseVideoBuckets(metadata map[string]string) map[string]float64 {

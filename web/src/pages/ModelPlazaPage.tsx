@@ -3,12 +3,13 @@ import { useQuery } from '@tanstack/react-query';
 import { Button, Chip, Input, Skeleton } from '@heroui/react';
 import { Check, Copy, Database, RefreshCw, Search, WifiOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { modelsApi, type MyPricingModel, type MyPlatformPricing, type PublicPlatformPricing } from '../shared/api/models';
+import { modelsApi } from '../shared/api/models';
 import { settingsApi } from '../shared/api/settings';
 import { ApiError } from '../shared/api/client';
 import { queryKeys } from '../shared/queryKeys';
 import { localizedGroupText } from '../shared/groupText';
 import { useToast } from '../shared/ui';
+import { mergeCatalog, type ModelLedgerItem } from './modelPlazaCatalog';
 
 interface TocPricingConfig {
   fx?: number;
@@ -17,15 +18,6 @@ interface TocPricingConfig {
   // 实付价展示货币："CNY"（¥，余额 ¥1=$1 平价，ToB 主站）或缺省 "USD"
   //（按 fx 折算的美元等值，ToC 美元余额站群的安全缺省）。
   plaza_currency?: string;
-}
-
-interface ModelLedgerItem extends MyPricingModel {
-  platform: string;
-  platforms: string[];
-  // brands 展示/筛选用的厂商标识(vendor 优先,插件未声明回退平台名):
-  // 如 gemini 系经 openai 协议接入,platforms=["openai"] 而 brands=["google"]。
-  brands: string[];
-  capabilities: string[];
 }
 
 // DisplayPrice 单模型价格展示态：
@@ -57,41 +49,6 @@ function parsePricingConfig(raw: string | undefined): TocPricingConfig | null {
   } catch {
     return null;
   }
-}
-
-function mergeCatalog(platforms: Array<MyPlatformPricing | PublicPlatformPricing>): ModelLedgerItem[] {
-  const merged = new Map<string, ModelLedgerItem>();
-  for (const platform of platforms) {
-    if (!platform || !Array.isArray(platform.models)) continue;
-    for (const model of platform.models as MyPricingModel[]) {
-      if (!model?.id) continue;
-      const brand = model.vendor || platform.platform;
-      const current = merged.get(model.id);
-      if (!current) {
-        merged.set(model.id, {
-          ...model,
-          platform: platform.platform,
-          platforms: [platform.platform],
-          brands: [brand],
-          capabilities: [...(model.capabilities ?? [])],
-        });
-        continue;
-      }
-      if (!current.platforms.includes(platform.platform)) current.platforms.push(platform.platform);
-      if (!current.brands.includes(brand)) current.brands.push(brand);
-      for (const capability of model.capabilities ?? []) {
-        if (!current.capabilities.includes(capability)) current.capabilities.push(capability);
-      }
-      // 同一模型出现在多个平台（如 claude/kiro）：保留更优（更低）的实付倍率
-      if (model.user_rate && (!current.user_rate || model.user_rate < current.user_rate)) {
-        current.user_rate = model.user_rate;
-        current.group_id = model.group_id;
-        current.group_name = model.group_name;
-        current.group_name_i18n = model.group_name_i18n;
-      }
-    }
-  }
-  return [...merged.values()];
 }
 
 // resolveMultiplier 解析该模型生效的售价倍率（board 单模型 > 平台 > default）与汇率。
@@ -171,7 +128,7 @@ function resolveStandardPrice(model: ModelLedgerItem, config: TocPricingConfig |
   };
 }
 
-interface VideoBucketPrice {
+interface BucketPrice {
   bucket: string;
   label: string;
   sale: number;
@@ -200,7 +157,7 @@ function resolveVideoPrices(
   userMode: boolean,
   saleCurrency: 'CNY' | 'USD',
   t: (k: string) => string,
-): VideoBucketPrice[] {
+): BucketPrice[] {
   const userRate = userMode ? (model.user_rate ?? 0) : 0;
   const { multiplier, fx } = resolveMultiplier(model, config);
   return Object.entries(model.video_tokens ?? {})
@@ -221,6 +178,48 @@ function resolveVideoPrices(
       return {
         bucket,
         label: `${res.toUpperCase()} · ${t(refKey)}`,
+        official,
+        sale,
+        officialOnly,
+      };
+    });
+}
+
+function isImageModel(model: ModelLedgerItem): boolean {
+  return !!model.image && Object.keys(model.image).length > 0;
+}
+
+// resolveImagePrices 把按张官方价（像素档位→$/张）铺成展示行。
+// 售价换算与 token/视频价保持同一倍率口径。
+function resolveImagePrices(
+  model: ModelLedgerItem,
+  config: TocPricingConfig | null,
+  userMode: boolean,
+  saleCurrency: 'CNY' | 'USD',
+  t: (k: string) => string,
+): BucketPrice[] {
+  const userRate = userMode ? (model.user_rate ?? 0) : 0;
+  const { multiplier, fx } = resolveMultiplier(model, config);
+  const order = ['le_236w', 'gt_236w'];
+  return Object.entries(model.image ?? {})
+    .sort(([a], [b]) => {
+      const ai = order.indexOf(a);
+      const bi = order.indexOf(b);
+      return (ai < 0 ? order.length : ai) - (bi < 0 ? order.length : bi);
+    })
+    .map(([bucket, official]) => {
+      let sale = official;
+      let officialOnly = true;
+      if (userMode && userRate > 0) {
+        sale = saleCurrency === 'CNY' ? official * userRate : official * userRate / fx;
+        officialOnly = false;
+      } else if (!userMode && multiplier != null) {
+        sale = official * multiplier / fx;
+        officialOnly = false;
+      }
+      return {
+        bucket,
+        label: t(`model_plaza.image_${bucket}`),
         official,
         sale,
         officialOnly,
@@ -269,20 +268,22 @@ function PriceCell({ label, sale, official, officialOnly, officialTitle, saleSym
   );
 }
 
-function PriceGrid({ model, price, video, videoSaleSymbol }: {
+function PriceGrid({ model, price, video, image, videoSaleSymbol }: {
   model: ModelLedgerItem;
   price: DisplayPrice | null;
-  video: VideoBucketPrice[] | null;
+  video: BucketPrice[] | null;
+  image: BucketPrice[] | null;
   videoSaleSymbol: '$' | '¥';
 }) {
   const { t, i18n } = useTranslation();
   const officialTitle = t('model_plaza.official_price');
-  // 视频生成模型：按桶（分辨率 × 是否带参考图）铺价，替代 input/cached/output。
-  if (video) {
+  // 视频生成按 video token 桶铺价；图片生成按像素档位的单张价铺价。
+  const buckets = video ?? image;
+  if (buckets) {
     return (
       <div className="ag-model-price-wrap">
         <dl className="ag-model-price-grid ag-model-price-grid-video">
-          {video.map((b) => (
+          {buckets.map((b) => (
             <PriceCell
               key={b.bucket}
               label={b.label}
@@ -295,7 +296,7 @@ function PriceGrid({ model, price, video, videoSaleSymbol }: {
             />
           ))}
         </dl>
-        {video[0]?.officialOnly ? <p className="ag-model-official-label">{officialTitle}</p> : null}
+        {buckets[0]?.officialOnly ? <p className="ag-model-official-label">{officialTitle}</p> : null}
       </div>
     );
   }
@@ -398,7 +399,18 @@ export default function ModelPlazaPage() {
   const plazaCurrency: 'CNY' | 'USD' = pricingConfig?.plaza_currency === 'CNY' ? 'CNY' : 'USD';
   const pricingFallback = !userMode && (settingsQuery.isLoading || settingsQuery.isError || !pricingConfig);
   const brands = useMemo(
-    () => [...new Set(models.flatMap((model) => model.brands))],
+    () => {
+      const priority = ['gemini_official', 'azure_google', 'byteplus', 'openai', 'claude', 'zhipu'];
+      return [...new Set(models.flatMap((model) => model.brands))]
+        .sort((left, right) => {
+          const leftIndex = priority.indexOf(left);
+          const rightIndex = priority.indexOf(right);
+          if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
+          if (leftIndex === -1) return 1;
+          if (rightIndex === -1) return -1;
+          return leftIndex - rightIndex;
+        });
+    },
     [models],
   );
   const capabilities = useMemo(
@@ -470,7 +482,7 @@ export default function ModelPlazaPage() {
                 variant={platformFilter === brand ? 'primary' : 'secondary'}
                 onPress={() => setPlatformFilter(brand)}
               >
-                {brand === 'all' ? t('common.all') : brand}
+                {brand === 'all' ? t('common.all') : t(`model_plaza.source_${brand}`, brand)}
               </Button>
             ))}
           </div>
@@ -531,17 +543,18 @@ export default function ModelPlazaPage() {
                 <th>{t('model_plaza.context')}</th>
                 <th>
                   {userMode ? t('model_plaza.your_price') : (pricingFallback ? t('model_plaza.official_price') : t('model_plaza.standard_price'))}
-                  <small>/ 1M tokens</small>
                 </th>
               </tr>
             </thead>
             <tbody>
               {filteredModels.map((model) => {
                 const video = isVideoModel(model) ? resolveVideoPrices(model, pricingConfig, userMode, plazaCurrency, t) : null;
-                const price = video ? null : (userMode ? resolveUserPrice(model, fx, plazaCurrency) : resolveStandardPrice(model, pricingConfig));
-                const officialOnly = video ? (video[0]?.officialOnly ?? true) : price!.officialOnly;
+                const image = isImageModel(model) ? resolveImagePrices(model, pricingConfig, userMode, plazaCurrency, t) : null;
+                const bucketPrices = video ?? image;
+                const price = bucketPrices ? null : (userMode ? resolveUserPrice(model, fx, plazaCurrency) : resolveStandardPrice(model, pricingConfig));
+                const officialOnly = bucketPrices ? (bucketPrices[0]?.officialOnly ?? true) : price!.officialOnly;
                 return (
-                  <tr key={model.id}>
+                  <tr key={`${model.platform}:${model.id}`}>
                     <td data-label={t('model_plaza.model')}>
                       <div className="ag-model-id-spine">
                         <div><code>{model.id}</code>{model.name ? <p>{model.name}</p> : <span className="sr-only">{t('model_plaza.name_missing')}</span>}</div>
@@ -559,7 +572,7 @@ export default function ModelPlazaPage() {
                     </td>
                     <td data-label={t('model_plaza.platform_capability')}>
                       <div className="ag-model-tags">
-                        <div>{model.brands.map((brand) => <Chip key={brand} size="sm" variant="soft">{brand}</Chip>)}</div>
+                        <div>{model.brands.map((brand) => <Chip key={brand} size="sm" variant="soft">{t(`model_plaza.source_${brand}`, brand)}</Chip>)}</div>
                         <p>{model.capabilities.length
                           ? model.capabilities.map((capability) => t(`model_plaza.capability_${capability}`, capability)).join(' · ')
                           : t('model_plaza.capabilities_none')}</p>
@@ -569,7 +582,7 @@ export default function ModelPlazaPage() {
                       <span className="ag-model-context">{formatCompact(model.context_window) ?? t('model_plaza.not_provided')}</span>
                     </td>
                     <td data-label={officialOnly ? t('model_plaza.official_price') : (userMode ? t('model_plaza.your_price') : t('model_plaza.standard_price'))}>
-                      <PriceGrid model={model} price={price} video={video} videoSaleSymbol={userMode && (model.user_rate ?? 0) > 0 && plazaCurrency === 'CNY' ? '¥' : '$'} />
+                      <PriceGrid model={model} price={price} video={video} image={image} videoSaleSymbol={userMode && (model.user_rate ?? 0) > 0 && plazaCurrency === 'CNY' ? '¥' : '$'} />
                     </td>
                   </tr>
                 );

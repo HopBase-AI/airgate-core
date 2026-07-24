@@ -51,7 +51,7 @@
 
 .ag-model-filter-rail {
   position: sticky;
-  top: 0.75rem;
+  top: 0;
   z-index: 10;
   display: flex;
   min-width: 0;
@@ -60,7 +60,7 @@
   gap: 0.625rem;
   border: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
   border-radius: var(--radius-2xl);
-  background: color-mix(in oklab, var(--surface) 92%, transparent);
+  background: var(--surface);
   box-shadow: var(--surface-shadow);
   padding: 0.625rem;
   backdrop-filter: blur(14px) saturate(150%);
@@ -392,7 +392,7 @@
   }
 
   .ag-model-filter-rail {
-    top: 0.5rem;
+    top: 0;
   }
 
   .ag-model-search,

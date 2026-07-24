@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apikeysApi } from '../../shared/api/apikeys';
@@ -49,6 +49,7 @@ import { UseKeyModal, useUseKeyModal } from './userkeys/UseKeyModal';
 import { CcsImportModal, useCcsImportModal } from './userkeys/CcsImportModal';
 import { OneClickModal, useOneClickModal } from './userkeys/OneClickModal';
 import { type KeyForm, emptyForm } from './userkeys/types';
+import { GroupQuoteSuffix } from './userkeys/GroupQuoteSuffix';
 
 export default function UserKeysPage() {
   const { t, i18n } = useTranslation();
@@ -243,7 +244,7 @@ export default function UserKeysPage() {
 
   const hasAvailableGroups = groupList.length > 0;
 
-  // 分组选项：右侧按统一口径展示报价——「¥X/$1 · 约X折」
+  // 分组选项：右侧按统一口径展示报价与折扣。
   // （倍率语义 = 每消耗官方 $1 扣多少 ¥ 余额；折 = 倍率 ÷ fx，全站同一定义）。
   // 报价不可用/无折扣意义（如倍率 0 的特殊分组）时回退旧倍率文案。
   // 用户有专属倍率时显示划线标准报价 + 专属报价。
@@ -252,7 +253,6 @@ export default function UserKeysPage() {
     const value = zhe * 10;
     return value < 1 ? value.toFixed(2) : value.toFixed(1);
   };
-  const formatMultiplier = (m: number) => (Math.round(m * 100) / 100).toString();
   const groupOptions = useMemo(() => groupList.map((g) => {
     const override = userGroupRates?.[g.id];
     const hasOverride = override != null && override > 0 && override !== g.rate_multiplier;
@@ -264,32 +264,33 @@ export default function UserKeysPage() {
     const standardMult = quote && usdMult != null && quote.group_rate > 0 && quote.effective_rate !== quote.group_rate
       ? usdMult * (quote.group_rate / quote.effective_rate)
       : null;
-    const quoteText = (m: number) => t('user_keys.group_quote', {
-      m: formatMultiplier(m),
-      zhe: formatGroupZhe(m / pricingFx),
-      off: Math.round((1 - m / pricingFx) * 100),
-    });
     const rateTooltip = t('user_keys.rate_tooltip', { rate: hasOverride ? override : g.rate_multiplier });
-    let suffix: ReactNode;
+    let suffix;
     if (usdMult != null && usdMult / pricingFx < 1 && g.rate_multiplier > 0) {
-      suffix = standardMult != null ? (
-        <span className="text-text-tertiary" title={rateTooltip}>
-          <span className="line-through opacity-60">{quoteText(standardMult)}</span>{' '}
-          <span className="text-primary font-medium">{quoteText(usdMult)}</span>
-        </span>
-      ) : (
-        <span className="text-text-tertiary" title={rateTooltip}>
-          {quoteText(usdMult)}
-        </span>
+      suffix = (
+        <GroupQuoteSuffix
+          data={{
+            multiplier: usdMult,
+            discountZhe: formatGroupZhe(usdMult / pricingFx),
+            discountPercent: Math.round((1 - usdMult / pricingFx) * 100),
+            standardMultiplier: standardMult ?? undefined,
+            hasOfficialDiscount: true,
+          }}
+          title={rateTooltip}
+        />
       );
     } else {
-      suffix = hasOverride ? (
-        <span className="text-text-tertiary">
-          <span className="line-through opacity-60">{g.rate_multiplier}x</span>{' '}
-          <span className="text-primary font-medium">{override}x</span>
-        </span>
-      ) : (
-        <span className="text-text-tertiary">{g.rate_multiplier}x {t('user_keys.rate_suffix', '倍率')}</span>
+      suffix = (
+        <GroupQuoteSuffix
+          data={{
+            multiplier: hasOverride ? override : g.rate_multiplier,
+            discountZhe: '',
+            discountPercent: 0,
+            standardMultiplier: hasOverride ? g.rate_multiplier : undefined,
+            hasOfficialDiscount: false,
+          }}
+          title={rateTooltip}
+        />
       );
     }
     return {

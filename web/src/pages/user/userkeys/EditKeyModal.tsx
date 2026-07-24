@@ -36,24 +36,32 @@ export function EditKeyModal({
   const groupItems = groupOptions.map((option) => ({
     id: option.value,
     label: (
-      <div className="flex min-w-0 items-center justify-between gap-2">
+      <div className="flex w-full min-w-0 items-center justify-between gap-6">
         <div className="min-w-0 flex-1">
           <div className="truncate">{option.label}</div>
           {option.description ? (
-            <div className="mt-0.5 truncate text-xs font-normal text-text-tertiary">
+            <div className="mt-0.5 truncate pr-2 text-xs font-normal leading-5 text-text-tertiary">
               {option.description}
             </div>
           ) : null}
         </div>
-        {option.suffix ? <span className="shrink-0 text-xs">{option.suffix}</span> : null}
+        {option.suffix ? (
+          <span className="ml-auto min-w-[9rem] shrink-0 text-right text-xs tabular-nums text-text-secondary">
+            {option.suffix}
+          </span>
+        ) : null}
       </div>
     ),
     textValue: option.label,
   }));
   const selectedGroupLabel = selectedGroup ? (
-    <div className="flex min-w-0 items-center justify-between gap-2">
+    <div className="flex w-full min-w-0 items-center justify-between gap-6">
       <span className="truncate">{selectedGroup.label}</span>
-      {selectedGroup.suffix ? <span className="shrink-0 text-xs">{selectedGroup.suffix}</span> : null}
+      {selectedGroup.suffix ? (
+        <span className="ml-auto min-w-[9rem] shrink-0 text-right text-xs tabular-nums text-text-secondary">
+          {selectedGroup.suffix}
+        </span>
+      ) : null}
     </div>
   ) : t('user_keys.select_group');
   const modalState = useOverlayState({
