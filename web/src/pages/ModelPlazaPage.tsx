@@ -3,12 +3,13 @@ import { useQuery } from '@tanstack/react-query';
 import { Button, Chip, Input, Skeleton } from '@heroui/react';
 import { Check, Copy, Database, RefreshCw, Search, WifiOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { modelsApi, type MyPricingModel, type MyPlatformPricing, type PublicPlatformPricing } from '../shared/api/models';
+import { modelsApi } from '../shared/api/models';
 import { settingsApi } from '../shared/api/settings';
 import { ApiError } from '../shared/api/client';
 import { queryKeys } from '../shared/queryKeys';
 import { localizedGroupText } from '../shared/groupText';
 import { useToast } from '../shared/ui';
+import { mergeCatalog, type ModelLedgerItem } from './modelPlazaCatalog';
 
 interface TocPricingConfig {
   fx?: number;
@@ -17,15 +18,6 @@ interface TocPricingConfig {
   // 实付价展示货币："CNY"（¥，余额 ¥1=$1 平价，ToB 主站）或缺省 "USD"
   //（按 fx 折算的美元等值，ToC 美元余额站群的安全缺省）。
   plaza_currency?: string;
-}
-
-interface ModelLedgerItem extends MyPricingModel {
-  platform: string;
-  platforms: string[];
-  // brands 展示/筛选用的厂商标识(vendor 优先,插件未声明回退平台名):
-  // 如 gemini 系经 openai 协议接入,platforms=["openai"] 而 brands=["google"]。
-  brands: string[];
-  capabilities: string[];
 }
 
 // DisplayPrice 单模型价格展示态：
@@ -57,41 +49,6 @@ function parsePricingConfig(raw: string | undefined): TocPricingConfig | null {
   } catch {
     return null;
   }
-}
-
-function mergeCatalog(platforms: Array<MyPlatformPricing | PublicPlatformPricing>): ModelLedgerItem[] {
-  const merged = new Map<string, ModelLedgerItem>();
-  for (const platform of platforms) {
-    if (!platform || !Array.isArray(platform.models)) continue;
-    for (const model of platform.models as MyPricingModel[]) {
-      if (!model?.id) continue;
-      const brand = model.vendor || platform.platform;
-      const current = merged.get(model.id);
-      if (!current) {
-        merged.set(model.id, {
-          ...model,
-          platform: platform.platform,
-          platforms: [platform.platform],
-          brands: [brand],
-          capabilities: [...(model.capabilities ?? [])],
-        });
-        continue;
-      }
-      if (!current.platforms.includes(platform.platform)) current.platforms.push(platform.platform);
-      if (!current.brands.includes(brand)) current.brands.push(brand);
-      for (const capability of model.capabilities ?? []) {
-        if (!current.capabilities.includes(capability)) current.capabilities.push(capability);
-      }
-      // 同一模型出现在多个平台（如 claude/kiro）：保留更优（更低）的实付倍率
-      if (model.user_rate && (!current.user_rate || model.user_rate < current.user_rate)) {
-        current.user_rate = model.user_rate;
-        current.group_id = model.group_id;
-        current.group_name = model.group_name;
-        current.group_name_i18n = model.group_name_i18n;
-      }
-    }
-  }
-  return [...merged.values()];
 }
 
 // resolveMultiplier 解析该模型生效的售价倍率（board 单模型 > 平台 > default）与汇率。
@@ -442,7 +399,18 @@ export default function ModelPlazaPage() {
   const plazaCurrency: 'CNY' | 'USD' = pricingConfig?.plaza_currency === 'CNY' ? 'CNY' : 'USD';
   const pricingFallback = !userMode && (settingsQuery.isLoading || settingsQuery.isError || !pricingConfig);
   const brands = useMemo(
-    () => [...new Set(models.flatMap((model) => model.brands))],
+    () => {
+      const priority = ['gemini_official', 'azure_google', 'byteplus', 'openai', 'claude', 'kiro', 'zhipu'];
+      return [...new Set(models.flatMap((model) => model.brands))]
+        .sort((left, right) => {
+          const leftIndex = priority.indexOf(left);
+          const rightIndex = priority.indexOf(right);
+          if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
+          if (leftIndex === -1) return 1;
+          if (rightIndex === -1) return -1;
+          return leftIndex - rightIndex;
+        });
+    },
     [models],
   );
   const capabilities = useMemo(
@@ -514,7 +482,7 @@ export default function ModelPlazaPage() {
                 variant={platformFilter === brand ? 'primary' : 'secondary'}
                 onPress={() => setPlatformFilter(brand)}
               >
-                {brand === 'all' ? t('common.all') : brand}
+                {brand === 'all' ? t('common.all') : t(`model_plaza.source_${brand}`, brand)}
               </Button>
             ))}
           </div>
@@ -586,7 +554,7 @@ export default function ModelPlazaPage() {
                 const price = bucketPrices ? null : (userMode ? resolveUserPrice(model, fx, plazaCurrency) : resolveStandardPrice(model, pricingConfig));
                 const officialOnly = bucketPrices ? (bucketPrices[0]?.officialOnly ?? true) : price!.officialOnly;
                 return (
-                  <tr key={model.id}>
+                  <tr key={`${model.platform}:${model.id}`}>
                     <td data-label={t('model_plaza.model')}>
                       <div className="ag-model-id-spine">
                         <div><code>{model.id}</code>{model.name ? <p>{model.name}</p> : <span className="sr-only">{t('model_plaza.name_missing')}</span>}</div>
@@ -604,7 +572,7 @@ export default function ModelPlazaPage() {
                     </td>
                     <td data-label={t('model_plaza.platform_capability')}>
                       <div className="ag-model-tags">
-                        <div>{model.brands.map((brand) => <Chip key={brand} size="sm" variant="soft">{brand}</Chip>)}</div>
+                        <div>{model.brands.map((brand) => <Chip key={brand} size="sm" variant="soft">{t(`model_plaza.source_${brand}`, brand)}</Chip>)}</div>
                         <p>{model.capabilities.length
                           ? model.capabilities.map((capability) => t(`model_plaza.capability_${capability}`, capability)).join(' · ')
                           : t('model_plaza.capabilities_none')}</p>
