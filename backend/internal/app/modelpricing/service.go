@@ -124,8 +124,8 @@ func groupUSDMultiplier(catalog []apppluginadmin.PublicPlatformPricing, g appgro
 			}
 			var ratio float64
 			switch {
-			case len(model.VideoTokens) > 0:
-				// 视频桶价（seedance）：官方美元牌价 × 分组倍率，比值即实付倍率
+			case len(model.VideoTokens) > 0 || len(model.Image) > 0:
+				// 视频 token 桶价 / 图片按张价：基准即官方美元牌价，比值即实付倍率。
 				ratio = effectiveRate
 			case model.Input > 0:
 				officialInput := model.Input

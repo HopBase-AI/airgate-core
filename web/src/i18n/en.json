@@ -145,7 +145,7 @@
   },
   "model_plaza": {
     "title": "Model Plaza",
-    "subtitle": "Prices are in USD / 1M tokens. Model IDs can be used directly in API requests.",
+    "subtitle": "Token models are priced in USD / 1M tokens; image models are priced in USD / image. Model IDs work directly in API requests.",
     "models": "models",
     "total_count": "{{count}} models total",
     "search_label": "Search models",
@@ -173,6 +173,8 @@
     "output": "Output",
     "video_no_ref": "Text-to-video",
     "video_with_ref": "Image-to-video",
+    "image_le_236w": "≤ 2.36 MP / image",
+    "image_gt_236w": "> 2.36 MP / image",
     "long_context": "Tiered rates apply beyond {{threshold}}",
     "name_missing": "No display name provided",
     "not_provided": "Not provided",

@@ -145,7 +145,7 @@
   },
   "model_plaza": {
     "title": "モデル広場",
-    "subtitle": "価格単位は USD / 1M tokens です。モデル ID は API リクエストで直接使用できます。",
+    "subtitle": "Token モデルは USD / 1M tokens、画像モデルは USD / 枚です。モデル ID は API リクエストで直接使用できます。",
     "models": "モデル",
     "total_count": "全 {{count}} モデル",
     "search_label": "モデルを検索",
@@ -173,6 +173,8 @@
     "output": "出力",
     "video_no_ref": "テキストから動画",
     "video_with_ref": "画像から動画",
+    "image_le_236w": "≤ 2.36 MP / 枚",
+    "image_gt_236w": "> 2.36 MP / 枚",
     "long_context": "{{threshold}} を超えると段階料金が適用されます",
     "name_missing": "表示名がありません",
     "not_provided": "未提供",

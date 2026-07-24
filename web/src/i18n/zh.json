@@ -145,7 +145,7 @@
   },
   "model_plaza": {
     "title": "模型广场",
-    "subtitle": "价格单位为美元 / 1M tokens，模型 ID 可直接用于 API 请求。",
+    "subtitle": "Token 模型按美元 / 1M tokens，生图模型按美元 / 张；模型 ID 可直接用于 API 请求。",
     "models": "个模型",
     "total_count": "共 {{count}} 个模型",
     "search_label": "搜索模型",
@@ -173,6 +173,8 @@
     "output": "输出",
     "video_no_ref": "文生视频",
     "video_with_ref": "图生视频",
+    "image_le_236w": "≤ 2.36 MP / 张",
+    "image_gt_236w": "> 2.36 MP / 张",
     "long_context": "超过 {{threshold}} 后按阶梯倍率计费",
     "name_missing": "未提供显示名称",
     "not_provided": "未提供",

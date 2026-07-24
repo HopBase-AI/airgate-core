@@ -9,7 +9,9 @@ import (
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
 )
 
-type fakeCatalog struct{ items []apppluginadmin.PublicPlatformPricing }
+type fakeCatalog struct {
+	items []apppluginadmin.PublicPlatformPricing
+}
 
 func (f *fakeCatalog) PublicModelPricing(context.Context) []apppluginadmin.PublicPlatformPricing {
 	return f.items
@@ -39,6 +41,7 @@ func testService(userRates map[int64]float64) *Service {
 		}},
 		{Platform: "seedance", Models: []apppluginadmin.PublicPricingModel{
 			{ID: "dreamina-seedance-2-0-hc", VideoTokens: map[string]float64{"480p_no_ref": 8.97}},
+			{ID: "seedream-5-0-pro", Image: map[string]float64{"le_236w": 0.045, "gt_236w": 0.09}},
 		}},
 	}}
 	groups := &fakeGroups{groups: []appgroup.Group{
@@ -50,6 +53,8 @@ func testService(userRates map[int64]float64) *Service {
 			ModelRouting: map[string][]int64{"glm-5.2": {32}}},
 		{ID: 2, Name: "Claude Max", Platform: "claude", RateMultiplier: 2.5},
 		{ID: 21, Name: "Seedance", Platform: "seedance", RateMultiplier: 6.12},
+		{ID: 24, Name: "Seedream", Platform: "seedance", RateMultiplier: 4.624,
+			ModelRouting: map[string][]int64{"seedream-5-0-pro": {41}}},
 		// 固定图价哨兵组：倍率 0 + 空路由（匹配所有 openai 模型），不得污染 token 报价
 		{ID: 7, Name: "Image 4k", Platform: "openai", RateMultiplier: 0, ModelRouting: map[string][]int64{}},
 	}}
@@ -81,6 +86,9 @@ func TestUserPricingPicksBestEligibleGroup(t *testing.T) {
 	if q := quotes["claude-fable-5"]; q.UserRate != 2.5 || q.GroupID != 2 {
 		t.Fatalf("claude-fable-5 = %+v", q)
 	}
+	if q := quotes["seedream-5-0-pro"]; q.UserRate != 4.624 || q.GroupID != 24 {
+		t.Fatalf("seedream-5-0-pro = %+v", q)
+	}
 
 	groupQuotes := map[int]GroupQuote{}
 	for _, g := range result.Groups {
@@ -100,6 +108,9 @@ func TestUserPricingPicksBestEligibleGroup(t *testing.T) {
 	// 视频模型分组：桶价即官方美元牌价，倍率直接可比
 	if g := groupQuotes[21]; g.USDMultiplier != 6.12 {
 		t.Fatalf("Seedance usd_multiplier = %v", g.USDMultiplier)
+	}
+	if g := groupQuotes[24]; g.USDMultiplier != 4.624 {
+		t.Fatalf("Seedream usd_multiplier = %v", g.USDMultiplier)
 	}
 }
 

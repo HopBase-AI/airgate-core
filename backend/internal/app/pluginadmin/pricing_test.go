@@ -229,3 +229,76 @@ func TestPublicModelPricingVideoBuckets(t *testing.T) {
 		})
 	}
 }
+
+// TestPublicModelPricingImageBuckets 图片生成模型的按张官方价投影：
+// 内置 price.image.* 铺出 → 覆盖层按像素档位改价/收回，不伪装成 token 价。
+func TestPublicModelPricingImageBuckets(t *testing.T) {
+	manager := &fakeCatalogManager{
+		metas: []plugin.PluginMeta{{Name: "airgate-seedance", Type: "gateway", Platform: "seedance"}},
+		models: map[string][]sdk.ModelInfo{
+			"seedance": {
+				{ID: "seedream-5-0-pro", Name: "Seedream 5.0 Pro",
+					Capabilities: []string{"image_generation"},
+					Metadata: map[string]string{
+						"family":              "seedream-image",
+						"kind":                "image",
+						"price.image.le_236w": "0.045",
+						"price.image.gt_236w": "0.09",
+					}},
+			},
+		},
+	}
+	svc := NewService(manager, nil)
+
+	cases := []struct {
+		name    string
+		overlay string
+		verify  func(t *testing.T, models []PublicPricingModel)
+	}{
+		{
+			name:    "无覆盖层：内置按张价铺出",
+			overlay: "",
+			verify: func(t *testing.T, models []PublicPricingModel) {
+				m := models[0]
+				if m.Input != 0 || m.Output != 0 || m.Image["le_236w"] != 0.045 || m.Image["gt_236w"] != 0.09 {
+					t.Fatalf("图片按张价解析失败: %+v", m)
+				}
+			},
+		},
+		{
+			name:    "覆盖层：改价 + 收回高像素档",
+			overlay: `[{"id":"seedream-5-0-pro","kind":"image","pricing":{"image_le_236w":0.05,"image_gt_236w":0}}]`,
+			verify: func(t *testing.T, models []PublicPricingModel) {
+				m := models[0]
+				if m.Image["le_236w"] != 0.05 {
+					t.Fatalf("图片桶价覆盖失败: %+v", m.Image)
+				}
+				if _, ok := m.Image["gt_236w"]; ok {
+					t.Fatalf("图片桶价=0 应收回该档: %+v", m.Image)
+				}
+			},
+		},
+		{
+			name:    "覆盖层新增图片模型",
+			overlay: `[{"id":"seedream-6-0","name":"Seedream 6.0","kind":"image","pricing":{"image_le_236w":0.06}}]`,
+			verify: func(t *testing.T, models []PublicPricingModel) {
+				if len(models) != 2 || models[1].ID != "seedream-6-0" || models[1].Image["le_236w"] != 0.06 {
+					t.Fatalf("新增图片模型投影失败: %+v", models)
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc.SetModelOverlayReader(func(context.Context, string) (string, error) {
+				return tc.overlay, nil
+			})
+			result := svc.PublicModelPricing(context.Background())
+			if len(result) != 1 || len(result[0].Models) == 0 {
+				t.Fatalf("result = %+v", result)
+			}
+			tc.verify(t, result[0].Models)
+		})
+	}
+}
