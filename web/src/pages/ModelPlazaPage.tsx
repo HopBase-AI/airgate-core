@@ -10,6 +10,7 @@ import { queryKeys } from '../shared/queryKeys';
 import { localizedGroupText } from '../shared/groupText';
 import { useToast } from '../shared/ui';
 import { mergeCatalog, type ModelLedgerItem } from './modelPlazaCatalog';
+import { formatModelPrice } from './modelPlazaPricing';
 
 interface TocPricingConfig {
   fx?: number;
@@ -234,12 +235,6 @@ function formatCompact(value: number | undefined) {
   return value.toLocaleString();
 }
 
-function formatPrice(value: number, symbol: '$' | '¥' = '$') {
-  if (!Number.isFinite(value) || value <= 0) return '—';
-  const rounded = Math.round(value * 100) / 100 || Math.round(value * 1_000) / 1_000;
-  return `${symbol}${rounded.toLocaleString(undefined, { maximumFractionDigits: 4 })}`;
-}
-
 // formatZhe 折扣文案数字："约 3.7 折"里的 3.7；深折（<1 折）保留两位小数（如 0.66 折）。
 function formatZhe(zhe: number): string {
   const value = zhe * 10;
@@ -261,8 +256,8 @@ function PriceCell({ label, sale, official, officialOnly, officialTitle, saleSym
     <div>
       <dt>{label}</dt>
       <dd>
-        {formatPrice(sale, officialOnly ? officialSymbol : saleSymbol)}
-        {showStrike ? <del title={officialTitle}>{formatPrice(official, officialSymbol)}</del> : null}
+        {formatModelPrice(sale, officialOnly ? officialSymbol : saleSymbol)}
+        {showStrike ? <del title={officialTitle}>{formatModelPrice(official, officialSymbol)}</del> : null}
       </dd>
     </div>
   );
