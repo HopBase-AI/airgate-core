@@ -16,8 +16,26 @@ export function sourceCategory(platform: string, model: MyPricingModel): string 
   return model.vendor || platform;
 }
 
+function modelVersion(id: string): number[] {
+  const match = id.match(/\d+(?:[.-]\d+)*/);
+  if (!match) return [];
+  return match[0].split(/[.-]/).map(Number);
+}
+
+function compareVersionDescending(left: string, right: string): number {
+  const leftVersion = modelVersion(left);
+  const rightVersion = modelVersion(right);
+  const length = Math.max(leftVersion.length, rightVersion.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (rightVersion[index] ?? 0) - (leftVersion[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return left.localeCompare(right, undefined, { numeric: true });
+}
+
 export function mergeCatalog(platforms: Array<MyPlatformPricing | PublicPlatformPricing>): ModelLedgerItem[] {
   const merged = new Map<string, ModelLedgerItem>();
+  const sourceOrder = new Map<string, number>();
   for (const platform of platforms) {
     if (!platform || !Array.isArray(platform.models)) continue;
     for (const model of platform.models as MyPricingModel[]) {
@@ -27,14 +45,20 @@ export function mergeCatalog(platforms: Array<MyPlatformPricing | PublicPlatform
       if (platform.platform === 'kiro') continue;
       const key = `${platform.platform}:${model.id}`;
       if (merged.has(key)) continue;
+      const source = sourceCategory(platform.platform, model);
+      if (!sourceOrder.has(source)) sourceOrder.set(source, sourceOrder.size);
       merged.set(key, {
         ...model,
         platform: platform.platform,
         platforms: [platform.platform],
-        brands: [sourceCategory(platform.platform, model)],
+        brands: [source],
         capabilities: [...(model.capabilities ?? [])],
       });
     }
   }
-  return [...merged.values()];
+  return [...merged.values()].sort((left, right) => {
+    const sourceDifference = (sourceOrder.get(left.brands[0] ?? '') ?? 0)
+      - (sourceOrder.get(right.brands[0] ?? '') ?? 0);
+    return sourceDifference || compareVersionDescending(left.id, right.id);
+  });
 }

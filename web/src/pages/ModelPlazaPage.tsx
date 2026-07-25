@@ -5,10 +5,14 @@ import { Check, Copy, Database, RefreshCw, Search, WifiOff } from 'lucide-react'
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../shared/api/models';
 import { settingsApi } from '../shared/api/settings';
+import { groupsApi } from '../shared/api/groups';
 import { ApiError } from '../shared/api/client';
 import { queryKeys } from '../shared/queryKeys';
 import { localizedGroupText } from '../shared/groupText';
+import { bestGroupForModel } from '../shared/modelPricing';
 import { useToast } from '../shared/ui';
+import { FETCH_ALL_PARAMS } from '../shared/constants';
+import { useAuth } from '../app/providers/AuthProvider';
 import { mergeCatalog, type ModelLedgerItem } from './modelPlazaCatalog';
 import { formatModelPrice } from './modelPlazaPricing';
 
@@ -263,20 +267,44 @@ function PriceCell({ label, sale, official, officialOnly, officialTitle, saleSym
   );
 }
 
-function PriceGrid({ model, price, video, image, videoSaleSymbol }: {
+function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode }: {
   model: ModelLedgerItem;
   price: DisplayPrice | null;
   video: BucketPrice[] | null;
   image: BucketPrice[] | null;
   videoSaleSymbol: '$' | '¥';
+  fx: number;
+  userMode: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const officialTitle = t('model_plaza.official_price');
+  const discountMeta = (
+    zhe: number | null,
+    groupName?: string,
+    groupNameI18n?: Record<string, string>,
+    leading = false,
+  ) => (
+    zhe != null && zhe > 0 && zhe < 1 ? (
+      <p className={`ag-model-price-meta${leading ? ' ag-model-price-meta-leading' : ''}`}>
+        <Chip color="success" size="sm" variant="soft">
+          {t('model_plaza.discount_badge', { zhe: formatZhe(zhe), off: Math.round((1 - zhe) * 100) })}
+        </Chip>
+        {groupName ? (
+          <span className="ag-model-price-group">
+            {t('model_plaza.via_group', { group: localizedGroupText(groupName, groupNameI18n, i18n.language) })}
+          </span>
+        ) : null}
+      </p>
+    ) : null
+  );
   // 视频生成按 video token 桶铺价；图片生成按像素档位的单张价铺价。
   const buckets = video ?? image;
   if (buckets) {
+    const bucketDiscount = userMode && (model.user_rate ?? 0) > 0 ? (model.user_rate ?? 0) / fx : null;
     return (
       <div className="ag-model-price-wrap">
+        {video ? <p className="ag-model-video-price-unit">{t('model_plaza.video_price_unit')}</p> : null}
+        {discountMeta(bucketDiscount, model.group_name, model.group_name_i18n, true)}
         <dl className="ag-model-price-grid ag-model-price-grid-video">
           {buckets.map((b) => (
             <PriceCell
@@ -291,6 +319,7 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol }: {
             />
           ))}
         </dl>
+        {video ? <p className="ag-model-video-price-note">{t('model_plaza.video_price_note')}</p> : null}
         {buckets[0]?.officialOnly ? <p className="ag-model-official-label">{officialTitle}</p> : null}
       </div>
     );
@@ -303,20 +332,9 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol }: {
         <PriceCell label={t('model_plaza.cached_input')} sale={price.cachedInput} official={price.official.cachedInput} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
         <PriceCell label={t('model_plaza.output')} sale={price.output} official={price.official.output} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
       </dl>
-      {price.zhe != null && price.zhe > 0 && price.zhe < 1 ? (
-        <p className="ag-model-price-meta">
-          <Chip color="success" size="sm" variant="soft">
-            {t('model_plaza.discount_badge', { zhe: formatZhe(price.zhe), off: Math.round((1 - price.zhe) * 100) })}
-          </Chip>
-          {price.groupName ? (
-            <span className="ag-model-price-group">
-              {t('model_plaza.via_group', { group: localizedGroupText(price.groupName, price.groupNameI18n, i18n.language) })}
-            </span>
-          ) : null}
-        </p>
-      ) : null}
+      {discountMeta(price.zhe, price.groupName, price.groupNameI18n)}
       {price.officialOnly ? <p className="ag-model-official-label">{t('model_plaza.official_price')}</p> : null}
-      {model.long_context?.threshold ? (
+      {/^gpt-5\.6-(?:luna|sol|terra)$/.test(model.id) && model.long_context?.threshold ? (
         <p className="ag-model-long-context">
           {t('model_plaza.long_context', { threshold: formatCompact(model.long_context.threshold) })}
         </p>
@@ -348,6 +366,7 @@ function ModelTableSkeleton() {
 export default function ModelPlazaPage() {
   const { t } = useTranslation();
   const { toast } = useToast();
+  const { user } = useAuth();
   const [search, setSearch] = useState('');
   const [platformFilter, setPlatformFilter] = useState('all');
   const [capabilityFilter, setCapabilityFilter] = useState('all');
@@ -380,9 +399,28 @@ export default function ModelPlazaPage() {
   const isError = useFallback && catalogQuery.isError;
   const loadError = catalogQuery.error ?? myPricingQuery.error;
 
+  const groupsQuery = useQuery({
+    queryKey: queryKeys.groupsForKeys(),
+    queryFn: () => groupsApi.listAvailable(FETCH_ALL_PARAMS),
+    staleTime: 60_000,
+    retry: 1,
+    enabled: userMode,
+  });
+
   const models = useMemo(
-    () => mergeCatalog(myPricingQuery.data?.platforms ?? catalogQuery.data ?? []),
-    [myPricingQuery.data?.platforms, catalogQuery.data],
+    () => mergeCatalog(myPricingQuery.data?.platforms ?? catalogQuery.data ?? []).map((model) => {
+      if (!userMode || (model.user_rate ?? 0) > 0) return model;
+      const best = bestGroupForModel(model, model.platforms, groupsQuery.data?.list ?? [], user?.group_rates);
+      if (!best) return model;
+      return {
+        ...model,
+        user_rate: best.rate,
+        group_id: best.group.id,
+        group_name: best.group.name,
+        group_name_i18n: best.group.name_i18n,
+      };
+    }),
+    [catalogQuery.data, groupsQuery.data?.list, myPricingQuery.data?.platforms, user?.group_rates, userMode],
   );
   const pricingConfig = useMemo(
     () => parsePricingConfig(settingsQuery.data?.toc_landing_pricing),
@@ -577,7 +615,15 @@ export default function ModelPlazaPage() {
                       <span className="ag-model-context">{formatCompact(model.context_window) ?? t('model_plaza.not_provided')}</span>
                     </td>
                     <td data-label={officialOnly ? t('model_plaza.official_price') : (userMode ? t('model_plaza.your_price') : t('model_plaza.standard_price'))}>
-                      <PriceGrid model={model} price={price} video={video} image={image} videoSaleSymbol={userMode && (model.user_rate ?? 0) > 0 && plazaCurrency === 'CNY' ? '¥' : '$'} />
+                      <PriceGrid
+                        fx={fx}
+                        image={image}
+                        model={model}
+                        price={price}
+                        userMode={userMode}
+                        video={video}
+                        videoSaleSymbol={userMode && (model.user_rate ?? 0) > 0 && plazaCurrency === 'CNY' ? '¥' : '$'}
+                      />
                     </td>
                   </tr>
                 );
