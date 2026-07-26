@@ -20,6 +20,9 @@ import type { SettingItem, TestSMTPReq } from '../../shared/types';
 import { SystemUpdatePanel } from './SystemUpdatePanel';
 import { NativeSwitch } from '../../shared/components/NativeSwitch';
 import { CommonModal } from '../../shared/components/CommonModal';
+import { TocPricingEditor } from './settings/TocPricingEditor';
+import { SitesBrandingEditor } from './settings/SitesBrandingEditor';
+import { BlogSitesEditor } from './settings/BlogSitesEditor';
 
 // ==================== 设置 key 定义 ====================
 
@@ -273,6 +276,10 @@ export default function SettingsPage() {
   const [isEmailPreviewOpen, setEmailPreviewOpen] = useState(false);
   const [isSmtpTestOpen, setSmtpTestOpen] = useState(false);
   const [modelCatalogErrors, setModelCatalogErrors] = useState<Record<string, string[]>>({});
+  // site tab 结构化编辑器的校验错误（按 setting key 归集）。与 models tab 的
+  // modelCatalogErrors 同构，但这些错误会阻塞 site tab 的保存——历史上这几个 JSON
+  // 是「只提示不阻塞」，打错一个括号照样能存进去，官网静默退回内置表。
+  const [siteFormErrors, setSiteFormErrors] = useState<Record<string, string[]>>({});
 
   // 获取所有设置
   const { data: settings, isLoading } = useQuery({
@@ -334,6 +341,28 @@ export default function SettingsPage() {
     });
   }, []);
 
+  // 结构化编辑器回报校验结果。errors 数组每次渲染都是新引用，故按内容比较后再
+  // setState，避免 effect ↔ render 死循环。
+  const setSiteErrors = useCallback((key: string, errors: string[]) => {
+    setSiteFormErrors((prev) => {
+      const prevErrors = prev[key] ?? [];
+      if (prevErrors.join('\n') === errors.join('\n')) return prev;
+      return { ...prev, [key]: errors };
+    });
+  }, []);
+  const handleTocPricingErrors = useCallback(
+    (errors: string[]) => setSiteErrors('toc_landing_pricing', errors),
+    [setSiteErrors],
+  );
+  const handleSitesBrandingErrors = useCallback(
+    (errors: string[]) => setSiteErrors('sites_branding', errors),
+    [setSiteErrors],
+  );
+  const handleBlogSitesErrors = useCallback(
+    (errors: string[]) => setSiteErrors('blog_sites', errors),
+    [setSiteErrors],
+  );
+
   function buildSaveItems(): SettingItem[] {
     if (activeTab === 'system') return [];
     if (activeTab === 'security') {
@@ -367,9 +396,13 @@ export default function SettingsPage() {
   }
 
   const hasModelCatalogErrors = Object.values(modelCatalogErrors).some((errs) => errs.length > 0);
+  const hasSiteFormErrors = Object.values(siteFormErrors).some((errs) => errs.length > 0);
+  // 当前 tab 是否存在阻塞保存的校验错误。
+  const saveBlocked =
+    (activeTab === 'models' && hasModelCatalogErrors) || (activeTab === 'site' && hasSiteFormErrors);
 
   function handleSave() {
-    if (activeTab === 'models' && hasModelCatalogErrors) {
+    if (saveBlocked) {
       toast('error', t('settings.models_fix_errors'));
       return;
     }
@@ -410,7 +443,7 @@ export default function SettingsPage() {
         {left ? <div className="ag-settings-card-footer-left">{left}</div> : null}
         <Button
           onPress={handleSave}
-          isDisabled={!hasChanges || saveMutation.isPending || (activeTab === 'models' && hasModelCatalogErrors)}
+          isDisabled={!hasChanges || saveMutation.isPending || saveBlocked}
           aria-busy={saveMutation.isPending}
         >
           <Save className="w-4 h-4" />
@@ -470,48 +503,12 @@ export default function SettingsPage() {
     }
   }
 
-  // ToC 展示牌价 JSON 的客户端校验：只提示不阻塞保存（留空 = 模型广场仅展示官方价）。
+  // 以下三个 key 已改为结构化编辑器（TocPricingEditor / SitesBrandingEditor /
+  // BlogSitesEditor）：原始值只作为初始值传进去，解析与校验都在编辑器内部完成，
+  // 校验错误经 onValidationChange 上报并阻塞保存。
   const tocPricingRaw = values['toc_landing_pricing'] ?? '';
-  let tocPricingError = '';
-  if (tocPricingRaw.trim() !== '') {
-    try {
-      const parsed = JSON.parse(tocPricingRaw);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        tocPricingError = t('settings.toc_landing_pricing_invalid');
-      }
-    } catch (e) {
-      tocPricingError = (e as Error).message;
-    }
-  }
-
-  // 多落地页品牌 JSON 的客户端校验：只提示不阻塞保存。
-  // 留空 = 所有来源统一用全局 site_name/site_logo/doc_url。
   const sitesBrandingRaw = values['sites_branding'] ?? '';
-  let sitesBrandingError = '';
-  if (sitesBrandingRaw.trim() !== '') {
-    try {
-      const parsed = JSON.parse(sitesBrandingRaw);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        sitesBrandingError = t('settings.sites_branding_invalid');
-      }
-    } catch (e) {
-      sitesBrandingError = (e as Error).message;
-    }
-  }
-
-  // 博客投放站点选项 JSON 的客户端校验（[{key,label}] 数组）：只提示不阻塞保存。
   const blogSitesRaw = values['blog_sites'] ?? '';
-  let blogSitesError = '';
-  if (blogSitesRaw.trim() !== '') {
-    try {
-      const parsed = JSON.parse(blogSitesRaw);
-      if (!Array.isArray(parsed) || !parsed.every((o) => o && typeof o === 'object' && typeof o.key === 'string')) {
-        blogSitesError = t('settings.blog_sites_invalid');
-      }
-    } catch (e) {
-      blogSitesError = (e as Error).message;
-    }
-  }
 
   // 博客皮肤 chrome JSON 的客户端校验（对象）：只提示不阻塞保存。
   const blogChromeRaw = values['blog_chrome'] ?? '';
@@ -611,62 +608,25 @@ export default function SettingsPage() {
                   )}
                 </SettingsSection>
 
-                <SettingsSection
-                  badge="toc_landing_pricing"
-                  description={t('settings.toc_landing_pricing_desc')}
-                  title={t('settings.toc_landing_pricing')}
-                >
-                  {/* 展示倍率不自动跟分组倍率——历史上多次造成官网展示价与实付价不一致，红字明示 */}
-                  <div className="mb-3 flex items-start gap-2 rounded-lg border border-danger/30 bg-danger-subtle px-3 py-2 text-xs leading-5 text-danger">
-                    <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                    <span>{t('settings.toc_landing_pricing_warn')}</span>
-                  </div>
-                  <TextArea
-                    aria-label={t('settings.toc_landing_pricing')}
-                    value={tocPricingRaw}
-                    onChange={(e) => set('toc_landing_pricing', e.target.value)}
-                    className="h-40 w-full font-mono text-xs leading-5"
-                    placeholder={'{\n  "fx": 6.8,\n  "multipliers": { "default": 2.4, "claude": 2.4, "openai": 2.2 },\n  "board": [ { "id": "claude-sonnet-4-6", "multiplier": 2.0 } ],\n  "plaza_currency": "USD"\n}'}
-                  />
-                  {tocPricingError && (
-                    <p className="text-[11px] text-danger mt-1.5">{tocPricingError}</p>
-                  )}
-                </SettingsSection>
+                <TocPricingEditor
+                  value={tocPricingRaw}
+                  onChange={(next) => set('toc_landing_pricing', next)}
+                  onValidationChange={handleTocPricingErrors}
+                />
 
-                <SettingsSection
-                  description={t('settings.sites_branding_desc')}
-                  title={t('settings.sites_branding')}
-                >
-                  <TextArea
-                    aria-label={t('settings.sites_branding')}
-                    value={sitesBrandingRaw}
-                    onChange={(e) => set('sites_branding', e.target.value)}
-                    className="h-40 w-full font-mono text-xs leading-5"
-                    placeholder={'{\n  "ink": { "name": "Essevin", "logo": "https://essevin.com/logo.svg", "doc_url": "https://essevin.com/docs",\n    "host": "essevin.com", "blog_theme": "ink", "blog_chrome": { "brand_label": "Essevin" } },\n  "open-late": { "name": "Essevin", "logo": "https://late.essevin.com/logo.svg", "doc_url": "https://late.essevin.com/docs",\n    "host": "late.essevin.com" },\n  "kite": { "name": "KITE", "logo": "data:image/svg+xml;base64,...", "doc_url": "https://kite.essevin.com/docs" }\n}\n// host/blog_theme/blog_chrome 为博客扩展字段:配置 host 后,/blog 按请求域名切换该站品牌/皮肤/chrome 并按站点键过滤文章'}
-                  />
-                  {sitesBrandingError && (
-                    <p className="text-[11px] text-danger mt-1.5">{sitesBrandingError}</p>
-                  )}
-                </SettingsSection>
+                <SitesBrandingEditor
+                  value={sitesBrandingRaw}
+                  onChange={(next) => set('sites_branding', next)}
+                  onValidationChange={handleSitesBrandingErrors}
+                />
 
-                <SettingsSection
-                  description={t('settings.blog_sites_desc')}
-                  title={t('settings.blog_sites_title')}
-                >
-                  <Field label={t('settings.blog_site_key')} hint={t('settings.blog_site_key_hint')}>
-                    <Input value={val('blog_site_key')} onChange={(e) => set('blog_site_key', e.target.value)} placeholder="essevin" />
-                  </Field>
-                  <TextArea
-                    aria-label={t('settings.blog_sites_title')}
-                    value={blogSitesRaw}
-                    onChange={(e) => set('blog_sites', e.target.value)}
-                    className="h-32 w-full font-mono text-xs leading-5 mt-3"
-                    placeholder={'[\n  { "key": "essevin", "label": "Essevin 主站" },\n  { "key": "kite", "label": "KITE" }\n]'}
-                  />
-                  {blogSitesError && (
-                    <p className="text-[11px] text-danger mt-1.5">{blogSitesError}</p>
-                  )}
-                </SettingsSection>
+                <BlogSitesEditor
+                  value={blogSitesRaw}
+                  siteKey={val('blog_site_key')}
+                  onChange={(next) => set('blog_sites', next)}
+                  onSiteKeyChange={(next) => set('blog_site_key', next)}
+                  onValidationChange={handleBlogSitesErrors}
+                />
 
                 <SettingsSection
                   description={t('settings.blog_theme_desc')}
@@ -2432,7 +2392,7 @@ function ModelCatalogEditor({ label, settingKey, set, value, builtinModels, onVa
   );
 }
 
-function SettingsSection({
+export function SettingsSection({
   action,
   children,
   description,
@@ -2511,7 +2471,7 @@ function SettingsSection({
   );
 }
 
-function Field({
+export function Field({
   className = '',
   label,
   hint,
