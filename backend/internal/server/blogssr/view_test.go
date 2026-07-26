@@ -419,6 +419,57 @@ func TestBuildDetailLangNav_UsesBareTraditionalSlug(t *testing.T) {
 	}
 }
 
+// TestBuildDetailHreflang_ClusterWithXDefault 三语齐全时输出三条互指 + x-default(默认语言);
+// URL 是不带查询串的规范地址,简体映射为 zh-Hans。
+func TestBuildDetailHreflang_ClusterWithXDefault(t *testing.T) {
+	posts := []appblog.Post{
+		{ID: 1, Slug: "topic-hant", Lang: "zh-Hant", Status: appblog.StatusPublished},
+		{ID: 2, Slug: "topic-en", Lang: "en", Status: appblog.StatusPublished},
+		{ID: 3, Slug: "topic-hans", Lang: "zh", Status: appblog.StatusPublished},
+	}
+
+	links := buildDetailHreflang("https://essevin.com/", posts[1], posts, "zh-Hant", "")
+	wants := []HreflangLink{
+		{Lang: "zh-Hant", Href: "https://essevin.com/blog/topic-hant"},
+		{Lang: "en", Href: "https://essevin.com/blog/topic-en"},
+		{Lang: "zh-Hans", Href: "https://essevin.com/blog/topic-hans"},
+		{Lang: "x-default", Href: "https://essevin.com/blog/topic-hant"},
+	}
+	if len(links) != len(wants) {
+		t.Fatalf("links len = %d, want %d: %+v", len(links), len(wants), links)
+	}
+	for i, want := range wants {
+		if links[i] != want {
+			t.Errorf("links[%d] = %+v, want %+v", i, links[i], want)
+		}
+	}
+}
+
+// TestBuildDetailHreflang_SingleLanguageOmitted 无译文的单语文章不输出 hreflang(只有自指=无效声明)。
+func TestBuildDetailHreflang_SingleLanguageOmitted(t *testing.T) {
+	only := appblog.Post{ID: 1, Slug: "solo", Lang: "en", Status: appblog.StatusPublished}
+	if links := buildDetailHreflang("https://hop-base.com", only, []appblog.Post{only}, "zh-Hant", ""); links != nil {
+		t.Errorf("single-language article should emit no hreflang, got %+v", links)
+	}
+}
+
+// TestBuildDetailHreflang_PartialPairNoDefault 只有两语且默认语言缺译文时:两条互指,无 x-default。
+func TestBuildDetailHreflang_PartialPairNoDefault(t *testing.T) {
+	posts := []appblog.Post{
+		{ID: 1, Slug: "pair-en", Lang: "en", Status: appblog.StatusPublished},
+		{ID: 2, Slug: "pair-hans", Lang: "zh", Status: appblog.StatusPublished},
+	}
+	links := buildDetailHreflang("https://hop-base.com", posts[0], posts, "zh-Hant", "")
+	if len(links) != 2 {
+		t.Fatalf("links len = %d, want 2 (no x-default): %+v", len(links), links)
+	}
+	for _, l := range links {
+		if l.Lang == "x-default" {
+			t.Errorf("x-default should be absent when default lang has no translation: %+v", links)
+		}
+	}
+}
+
 func TestFindTranslatedPost_AmbiguousPublishedTimeFallsBack(t *testing.T) {
 	pub := time.Date(2026, 7, 12, 8, 0, 0, 0, time.UTC)
 	current := appblog.Post{ID: 1, Slug: "topic-en", Lang: "en", Status: appblog.StatusPublished, PublishedAt: &pub}
