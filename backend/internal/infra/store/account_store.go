@@ -327,8 +327,8 @@ func (s *AccountStore) FindUsageLogs(ctx context.Context, id int, startDate, end
 		entusagelog.CreatedAtLTE(endDate),
 	}
 
-	logs, err := s.db.UsageLog.Query().
-		Where(predicates...).
+	// 账号用量口径只含成功请求：失败记录费用与 token 全为 0，且多数没打到上游。
+	logs, err := excludeFailedUsage(s.db.UsageLog.Query().Where(predicates...)).
 		Select(
 			entusagelog.FieldModel,
 			entusagelog.FieldInputTokens,
@@ -380,11 +380,11 @@ func (s *AccountStore) BatchWindowStats(ctx context.Context, accountIDs []int, s
 		ActualCost          float64 `json:"actual_cost"`
 	}
 
-	err := s.db.UsageLog.Query().
+	err := excludeFailedUsage(s.db.UsageLog.Query().
 		Where(
 			entusagelog.HasAccountWith(entaccount.IDIn(accountIDs...)),
 			entusagelog.CreatedAtGTE(startTime),
-		).
+		)).
 		GroupBy(entusagelog.AccountColumn).
 		Aggregate(
 			ent.Count(),
@@ -437,11 +437,11 @@ func (s *AccountStore) BatchImageStats(ctx context.Context, accountIDs []int, to
 
 	// 累计：不带 created_at 限制
 	var totalRows []row
-	if err := s.db.UsageLog.Query().
+	if err := excludeFailedUsage(s.db.UsageLog.Query().
 		Where(
 			entusagelog.HasAccountWith(entaccount.IDIn(accountIDs...)),
 			entusagelog.ModelHasPrefix(usagemodel.ImagePrefix),
-		).
+		)).
 		GroupBy(entusagelog.AccountColumn).
 		Aggregate(ent.Count()).
 		Scan(ctx, &totalRows); err != nil {
@@ -458,12 +458,12 @@ func (s *AccountStore) BatchImageStats(ctx context.Context, accountIDs []int, to
 
 	// 今日：created_at >= todayStart
 	var todayRows []row
-	if err := s.db.UsageLog.Query().
+	if err := excludeFailedUsage(s.db.UsageLog.Query().
 		Where(
 			entusagelog.HasAccountWith(entaccount.IDIn(accountIDs...)),
 			entusagelog.ModelHasPrefix(usagemodel.ImagePrefix),
 			entusagelog.CreatedAtGTE(todayStart),
-		).
+		)).
 		GroupBy(entusagelog.AccountColumn).
 		Aggregate(ent.Count()).
 		Scan(ctx, &todayRows); err != nil {

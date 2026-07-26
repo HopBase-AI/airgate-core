@@ -594,6 +594,14 @@ export interface UsageLogResp {
   usage_metrics?: UsageMetric[];
   usage_cost_details?: UsageCostDetail[];
   usage_metadata?: Record<string, string>;
+  /** 请求结果：success（正常计费）/ error（失败，token 与费用为 0） */
+  status?: string;
+  /** 失败分类，空表示成功；取值见 usage.error_code_* i18n 键 */
+  error_code?: string;
+  /** 失败时客户端收到的 HTTP 状态码 */
+  error_status?: number;
+  /** 失败原因。用户视角仅客户端类错误透出原文，上游故障只给分类 */
+  error_message?: string;
   created_at: string;
 }
 
@@ -648,6 +656,14 @@ export interface UserUsageLogResp {
   usage_metrics?: UsageMetric[];
   usage_cost_details?: UsageCostDetail[];
   usage_metadata?: Record<string, string>;
+  /** 请求结果：success（正常计费）/ error（失败，token 与费用为 0） */
+  status?: string;
+  /** 失败分类，空表示成功；取值见 usage.error_code_* i18n 键 */
+  error_code?: string;
+  /** 失败时客户端收到的 HTTP 状态码 */
+  error_status?: number;
+  /** 失败原因。用户视角仅客户端类错误透出原文，上游故障只给分类 */
+  error_message?: string;
   created_at: string;
 }
 
@@ -687,6 +703,14 @@ export interface CustomerUsageLogResp {
   usage_attributes?: UsageAttribute[];
   usage_metrics?: UsageMetric[];
   usage_metadata?: Record<string, string>;
+  /** 请求结果：success（正常计费）/ error（失败，token 与费用为 0） */
+  status?: string;
+  /** 失败分类，空表示成功；取值见 usage.error_code_* i18n 键 */
+  error_code?: string;
+  /** 失败时客户端收到的 HTTP 状态码 */
+  error_status?: number;
+  /** 失败原因。用户视角仅客户端类错误透出原文，上游故障只给分类 */
+  error_message?: string;
   created_at: string;
 }
 
@@ -699,10 +723,15 @@ export interface UsageQuery extends PageReq {
   model?: string;
   start_date?: string;
   end_date?: string;
+  /** 请求结果筛选：留空 = 全部，success = 只看成功，error = 只看失败 */
+  result?: 'success' | 'error';
 }
 
 export interface UsageStatsResp {
+  /** 只含成功请求，与费用/token 口径一致 */
   total_requests: number;
+  /** 同筛选条件下的失败请求数 */
+  failed_requests?: number;
   total_tokens: number;
   total_cost: number;
   total_actual_cost: number;

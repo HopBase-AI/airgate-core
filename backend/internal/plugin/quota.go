@@ -5,11 +5,13 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
@@ -25,6 +27,11 @@ func (f *Forwarder) checkBalance(c *gin.Context, state *forwardState) bool {
 	}
 	if state.keyInfo.UserBalance <= 0 {
 		protocolError(c, http.StatusPaymentRequired, "insufficient_quota", "insufficient_quota", "余额不足")
+		f.recordFailureUsage(c, state, usageFailure{
+			code:    appusage.ErrorCodeInsufficientQuota,
+			status:  http.StatusPaymentRequired,
+			message: "账户余额不足",
+		})
 		return false
 	}
 	return true
@@ -63,6 +70,11 @@ func (f *Forwarder) acquireClientQuota(c *gin.Context, state *forwardState) func
 	if max := state.keyInfo.UserMaxConcurrency; max > 0 {
 		if err := f.concurrency.AcquireUserSlot(ctx, userID, slotID, max, 0); err != nil {
 			protocolError(c, http.StatusTooManyRequests, "rate_limit_error", "user_concurrency_limit", "用户并发已达上限，请稍后重试")
+			f.recordFailureUsage(c, state, usageFailure{
+				code:    appusage.ErrorCodeConcurrencyLimit,
+				status:  http.StatusTooManyRequests,
+				message: "用户并发已达上限（" + strconv.Itoa(max) + "）",
+			})
 			return nil
 		}
 		userHeld = true
@@ -75,6 +87,11 @@ func (f *Forwarder) acquireClientQuota(c *gin.Context, state *forwardState) func
 				f.concurrency.ReleaseUserSlot(ctx, userID, slotID)
 			}
 			protocolError(c, http.StatusTooManyRequests, "rate_limit_error", "apikey_concurrency_limit", "API Key 并发已达上限，请稍后重试")
+			f.recordFailureUsage(c, state, usageFailure{
+				code:    appusage.ErrorCodeConcurrencyLimit,
+				status:  http.StatusTooManyRequests,
+				message: "API Key 并发已达上限（" + strconv.Itoa(max) + "）",
+			})
 			return nil
 		}
 		keyHeld = true

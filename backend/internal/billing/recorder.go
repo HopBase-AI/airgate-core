@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -88,6 +89,65 @@ type UsageRecord struct {
 	UsageMetrics                 []sdk.UsageMetric
 	UsageCostDetails             []sdk.UsageCostDetail
 	UsageMetadata                map[string]string
+
+	// Status 为 UsageStatusError 时表示这是一条失败请求记录：token 与费用均为 0，
+	// 不扣余额、不计入成功请求统计，只供用户与管理员查询错误情况。
+	// 零值（空串）等价于 UsageStatusSuccess，历史 WAL 回放据此保持旧语义。
+	Status       string
+	ErrorCode    string // 失败分类（转发判决 Kind 或 Core 侧拦截原因）
+	ErrorStatus  int    // 返回给客户端的 HTTP 状态码
+	ErrorMessage string // 脱敏后的失败原因
+}
+
+const (
+	// UsageStatusSuccess 正常计费的请求。
+	UsageStatusSuccess = "success"
+	// UsageStatusError 失败请求：落库留痕但不计费。
+	UsageStatusError = "error"
+
+	// usageErrorMessageMaxLen 失败原因落库上限（字节）。与 scheduler 的 error_msg 同口径。
+	usageErrorMessageMaxLen = 500
+	// usageErrorCodeMaxLen 失败分类上限（字节）。取值来自 Core 自己的常量，留足余量即可。
+	usageErrorCodeMaxLen = 64
+
+	// usageUnknownPlatform / usageUnknownModel 是 platform/model 的兜底值。
+	// 两列在 schema 上是 NotEmpty，失败请求可能在解析出模型前就中断；
+	// 空串会让整批 CreateBulk 失败并把同批正常记录一起拖进 WAL 死循环。
+	usageUnknownPlatform = "unknown"
+	usageUnknownModel    = "unknown"
+)
+
+// IsError 是否为失败请求记录。
+func (r UsageRecord) IsError() bool { return r.Status == UsageStatusError }
+
+// truncateBytesUTF8 按字节上限截断，并回退到合法 UTF-8 边界。
+// 中文/emoji 被从 rune 中间切断会产生非法 UTF-8，Postgres 直接拒绝整条写入，
+// 会让同批的正常计费记录一起进 WAL 反复重试（与 scheduler.truncateReason 同因）。
+func truncateBytesUTF8(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	cut := s[:maxLen]
+	for len(cut) > 0 && !utf8.ValidString(cut) {
+		cut = cut[:len(cut)-1]
+	}
+	return cut
+}
+
+// fallbackNonEmpty 空串时给兜底值。
+func fallbackNonEmpty(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+// normalizedStatus 归一化状态，空值按成功处理（兼容旧 WAL 记录）。
+func (r UsageRecord) normalizedStatus() string {
+	if r.Status == UsageStatusError {
+		return UsageStatusError
+	}
+	return UsageStatusSuccess
 }
 
 // Recorder 异步记录器
@@ -545,8 +605,8 @@ func hasUsageID(ids map[int]struct{}, id int) bool {
 
 func usageLogCreate(tx *ent.Tx, rec UsageRecord, refs *usageLogRefs) *ent.UsageLogCreate {
 	b := tx.UsageLog.Create().
-		SetPlatform(rec.Platform).
-		SetModel(rec.Model).
+		SetPlatform(fallbackNonEmpty(rec.Platform, usageUnknownPlatform)).
+		SetModel(fallbackNonEmpty(rec.Model, usageUnknownModel)).
 		SetInputTokens(rec.InputTokens).
 		SetOutputTokens(rec.OutputTokens).
 		SetCachedInputTokens(rec.CachedInputTokens).
@@ -585,7 +645,11 @@ func usageLogCreate(tx *ent.Tx, rec UsageRecord, refs *usageLogRefs) *ent.UsageL
 		SetUsageCostDetails(enrichUsageCostDetails(rec)).
 		SetUsageMetadata(rec.UsageMetadata).
 		SetUserIDSnapshot(rec.UserID).
-		SetUserEmailSnapshot(rec.UserEmail)
+		SetUserEmailSnapshot(rec.UserEmail).
+		SetStatus(rec.normalizedStatus()).
+		SetErrorCode(truncateBytesUTF8(rec.ErrorCode, usageErrorCodeMaxLen)).
+		SetErrorStatus(rec.ErrorStatus).
+		SetErrorMessage(truncateBytesUTF8(rec.ErrorMessage, usageErrorMessageMaxLen))
 	if refs.hasUser(rec.UserID) {
 		b.SetUserID(rec.UserID)
 	}

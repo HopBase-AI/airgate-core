@@ -34,6 +34,7 @@ func (f *Forwarder) writeResult(c *gin.Context, state *forwardState, execution f
 			"plugin", state.plugin.Name,
 			"kind", execution.outcome.Kind,
 			"error", execution.err)
+		f.recordFailureUsage(c, state, failureFromOutcome(execution))
 		writeFailureResponse(c, state, execution)
 		return
 	}
@@ -54,12 +55,19 @@ func (f *Forwarder) writeResult(c *gin.Context, state *forwardState, execution f
 		if !state.stream || !c.Writer.Written() {
 			writeClientErrorResponse(c, execution.outcome)
 		}
+		// 上游对这次 4xx 也计了费时照常落计费记录（费用必须与扣款一致），
+		// 但同时打上错误码，用户仍能在使用日志里认出它是一次失败请求。
+		// 上游没计费则落零费用失败记录。
 		if execution.outcome.Usage != nil {
 			f.recordUsage(c, state, execution)
+		} else {
+			f.recordFailureUsage(c, state, failureFromOutcome(execution))
 		}
 	default:
 		if execution.outcome.Usage != nil {
 			f.recordUsage(c, state, execution)
+		} else {
+			f.recordFailureUsage(c, state, failureFromOutcome(execution))
 		}
 		writeFailureResponse(c, state, execution)
 	}
@@ -292,6 +300,13 @@ func (f *Forwarder) recordUsage(c *gin.Context, state *forwardState, execution f
 	// 窗口费用沿用 account_cost（= total × account_rate），与用户账单解耦。
 	f.scheduler.AddWindowCost(ctx, state.account.ID, calc.AccountCost)
 
+	// 上游对失败请求（多为 4xx）也计费时走的是这条计费路径：status 仍是 success
+	// （费用真实发生、必须与扣款一致），但带上错误码让用户能认出这是一次失败请求。
+	var failure usageFailure
+	if execution.outcome.Kind != sdk.OutcomeSuccess {
+		failure = failureFromOutcome(execution)
+	}
+
 	f.recorder.Record(billing.UsageRecord{
 		UserID:                       state.keyInfo.UserID,
 		UserEmail:                    state.keyInfo.UserEmail,
@@ -339,6 +354,9 @@ func (f *Forwarder) recordUsage(c *gin.Context, state *forwardState, execution f
 		UsageMetrics:                 usage.Metrics,
 		UsageCostDetails:             usage.CostDetails,
 		UsageMetadata:                usage.Metadata,
+		ErrorCode:                    failure.code,
+		ErrorStatus:                  failure.status,
+		ErrorMessage:                 sanitizeFailureMessage(failure.message),
 	})
 
 	if state.stream {

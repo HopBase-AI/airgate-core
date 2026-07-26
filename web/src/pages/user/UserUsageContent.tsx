@@ -9,7 +9,7 @@ import { usePagination } from '../../shared/hooks/usePagination';
 import { usePlatforms } from '../../shared/hooks/usePlatforms';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { useToast } from '../../shared/ui';
-import { Activity, Hash, Coins, Clock, Gauge, Percent, Upload } from 'lucide-react';
+import { Activity, Hash, Coins, Clock, Gauge, Percent, TriangleAlert, Upload } from 'lucide-react';
 import type { UsageQuery } from '../../shared/types';
 import { useUsageColumns, fmtNum, type UsageColumnConfig, type UsageRow } from '../../shared/columns/usageColumns';
 import { getSessionAPIKey } from '../../shared/api/client';
@@ -211,6 +211,12 @@ export default function UserUsageContent() {
   ];
   const selectedPlatformLabel = platformOptions.find((item) => item.id === (filters.platform || ''))?.label ?? t('common.all');
 
+  const resultOptions = [
+    { id: '', label: t('common.all') },
+    { id: 'success', label: t('usage.result_success', '成功') },
+    { id: 'error', label: t('usage.result_failed', '失败') },
+  ];
+
   const { data: apiKeysData } = useQuery({
     queryKey: queryKeys.userKeys('usage-filter'),
     queryFn: () => apikeysApi.list(FETCH_ALL_PARAMS),
@@ -331,7 +337,7 @@ export default function UserUsageContent() {
       <APIKeyInfoBar />
 
       {/* 概览统计 */}
-      <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-3 2xl:gap-4">
+      <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:gap-4">
         <StatCard
           title={t('usage.total_requests')}
           value={(stats?.total_requests ?? 0).toLocaleString()}
@@ -349,6 +355,12 @@ export default function UserUsageContent() {
           value={<CostValue value={visibleActualCost} decimals={4} tone="actual" />}
           icon={<Coins className="w-5 h-5" />}
           accentColor="var(--ag-warning)"
+        />
+        <StatCard
+          title={t('usage.failed_requests', '失败请求')}
+          value={(stats?.failed_requests ?? 0).toLocaleString()}
+          icon={<TriangleAlert className="w-5 h-5" />}
+          accentColor="var(--ag-danger)"
         />
       </div>
 
@@ -383,6 +395,32 @@ export default function UserUsageContent() {
             </Select.Trigger>
             <Select.Popover>
               <ListBox items={platformOptions}>
+                {(item) => (
+                  <ListBox.Item id={item.id} textValue={item.label}>
+                    {item.label}
+                  </ListBox.Item>
+                )}
+              </ListBox>
+            </Select.Popover>
+          </Select>
+        </div>
+        <div className="w-full sm:w-40">
+          <Select
+            aria-label={t('usage.result', '结果')}
+            fullWidth
+            selectedKey={filters.result ?? ''}
+            onSelectionChange={(key) => updateFilter('result', key == null ? '' : String(key))}
+          >
+            <Select.Trigger>
+              <Select.Value>
+                {filters.result
+                  ? t(filters.result === 'error' ? 'usage.result_failed' : 'usage.result_success')
+                  : <span className="text-text-tertiary">{t('usage.result', '结果')}</span>}
+              </Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox items={resultOptions}>
                 {(item) => (
                   <ListBox.Item id={item.id} textValue={item.label}>
                     {item.label}

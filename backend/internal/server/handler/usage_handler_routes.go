@@ -41,6 +41,7 @@ func (h *UsageHandler) UserUsage(c *gin.Context) {
 		Model:       query.Model,
 		StartDate:   query.StartDate,
 		EndDate:     query.EndDate,
+		Result:      query.Result,
 		TZ:          c.Query("tz"),
 		ScopedToKey: scoped,
 	})
@@ -110,6 +111,7 @@ func (h *UsageHandler) UserUsageStats(c *gin.Context) {
 	if scoped {
 		resp := dto.UsageStatsResp{
 			TotalRequests:   result.Summary.TotalRequests,
+			FailedRequests:  result.Summary.FailedRequests,
 			TotalTokens:     result.Summary.TotalTokens,
 			TotalBilledCost: result.Summary.TotalBilledCost,
 		}
@@ -128,6 +130,7 @@ func (h *UsageHandler) UserUsageStats(c *gin.Context) {
 	// 普通用户聚合字段保持原有响应口径。
 	resp := dto.UsageStatsResp{
 		TotalRequests:   result.Summary.TotalRequests,
+		FailedRequests:  result.Summary.FailedRequests,
 		TotalTokens:     result.Summary.TotalTokens,
 		TotalCost:       result.Summary.TotalCost,
 		TotalActualCost: result.Summary.TotalActualCost,
@@ -230,6 +233,7 @@ func (h *UsageHandler) AdminUsage(c *gin.Context) {
 		Model:     query.Model,
 		StartDate: query.StartDate,
 		EndDate:   query.EndDate,
+		Result:    query.Result,
 		TZ:        c.Query("tz"),
 	})
 	if err != nil {

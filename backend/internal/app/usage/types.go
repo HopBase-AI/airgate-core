@@ -6,6 +6,17 @@ import (
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
 
+const (
+	// StatusSuccess 正常计费的请求记录。
+	StatusSuccess = "success"
+	// StatusError 失败请求记录：token 与费用为 0，不进成功请求统计口径。
+	StatusError = "error"
+
+	// ResultFilterSuccess / ResultFilterError 是列表的结果筛选取值。
+	ResultFilterSuccess = "success"
+	ResultFilterError   = "error"
+)
+
 // ListFilter 使用记录列表筛选。
 type ListFilter struct {
 	Page      int
@@ -19,6 +30,9 @@ type ListFilter struct {
 	StartDate string
 	EndDate   string
 	TZ        string // IANA 时区名，用于解析 StartDate/EndDate
+	// Result 按请求结果过滤：空 = 全部，ResultFilterSuccess = 只看成功，
+	// ResultFilterError = 只看失败。
+	Result string
 	// ScopedToKey 标记当前查询是被某个 API Key（end customer）发起的。
 	// handler 必须根据 CtxKeyAPIKeyID 强制设置 APIKeyID 并打开此标志，
 	// 后续 mapper 据此切换到 CustomerUsageLogResp，避免泄漏平台真实成本。
@@ -97,8 +111,19 @@ type LogRecord struct {
 	UsageMetrics          []sdk.UsageMetric
 	UsageCostDetails      []sdk.UsageCostDetail
 	UsageMetadata         map[string]string
+	Status                string // success / error，见 StatusSuccess、StatusError
+	ErrorCode             string // 失败分类；成功请求为空
+	ErrorStatus           int    // 失败时客户端收到的 HTTP 状态码；成功请求为 0
+	ErrorMessage          string // 失败原因（已脱敏截断）；成功请求为空
 	CreatedAt             string
 }
+
+// Failed 本条记录是否是一次失败请求。
+//
+// 判据是 ErrorCode 而非 Status：上游对失败请求（多为 4xx）也计费时，这条记录
+// 仍是正常计费行（Status=success，费用必须与扣款一致），但带错误码——用户同样
+// 需要在使用日志里看到它失败了。
+func (r LogRecord) Failed() bool { return r.ErrorCode != "" }
 
 // ListResult 使用记录列表结果。
 type ListResult struct {
@@ -112,7 +137,11 @@ type ListResult struct {
 // BilledCost 仅在 reseller / customer scope 的查询里被前端使用；
 // admin 视图通过 mapper 不暴露此字段。
 type Summary struct {
-	TotalRequests   int64
+	// TotalRequests 成功请求数。与 FailedRequests 按 error_code 划分，两者互不
+	// 重叠且相加等于总行数，口径与列表的「只看成功 / 只看失败」筛选一致。
+	TotalRequests int64
+	// FailedRequests 失败请求数，条数与「只看失败」列表一致。
+	FailedRequests  int64
 	TotalTokens     int64
 	TotalCost       float64
 	TotalActualCost float64
