@@ -80,6 +80,11 @@ func StatusVisible(v bool) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldStatusVisible, v))
 }
 
+// Delisted applies equality check predicate on the "delisted" field. It's identical to DelistedEQ.
+func Delisted(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldDelisted, v))
+}
+
 // ServiceTier applies equality check predicate on the "service_tier" field. It's identical to ServiceTierEQ.
 func ServiceTier(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldServiceTier, v))
@@ -308,6 +313,16 @@ func StatusVisibleEQ(v bool) predicate.Group {
 // StatusVisibleNEQ applies the NEQ predicate on the "status_visible" field.
 func StatusVisibleNEQ(v bool) predicate.Group {
 	return predicate.Group(sql.FieldNEQ(FieldStatusVisible, v))
+}
+
+// DelistedEQ applies the EQ predicate on the "delisted" field.
+func DelistedEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldDelisted, v))
+}
+
+// DelistedNEQ applies the NEQ predicate on the "delisted" field.
+func DelistedNEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldDelisted, v))
 }
 
 // SubscriptionTypeEQ applies the EQ predicate on the "subscription_type" field.

@@ -122,6 +122,11 @@ func (h *GroupHandler) CreateGroup(c *gin.Context) {
 	if req.StatusVisible != nil {
 		statusVisible = *req.StatusVisible
 	}
+	// Delisted 未提交时默认 false（未下架）。
+	delisted := false
+	if req.Delisted != nil {
+		delisted = *req.Delisted
+	}
 
 	item, err := h.service.Create(c.Request.Context(), appgroup.CreateInput{
 		Name:                     req.Name,
@@ -130,6 +135,7 @@ func (h *GroupHandler) CreateGroup(c *gin.Context) {
 		RateMultiplier:           req.RateMultiplier,
 		IsExclusive:              req.IsExclusive,
 		StatusVisible:            statusVisible,
+		Delisted:                 delisted,
 		AllowedUserIDs:           req.AllowedUserIDs,
 		SubscriptionType:         req.SubscriptionType,
 		Quotas:                   req.Quotas,
@@ -176,6 +182,7 @@ func (h *GroupHandler) UpdateGroup(c *gin.Context) {
 		RateMultiplier:    req.RateMultiplier,
 		IsExclusive:       req.IsExclusive,
 		StatusVisible:     req.StatusVisible,
+		Delisted:          req.Delisted,
 		AllowedUserIDs:    allowedUserIDs,
 		HasAllowedUserIDs: req.AllowedUserIDs != nil,
 		SubscriptionType:  req.SubscriptionType,

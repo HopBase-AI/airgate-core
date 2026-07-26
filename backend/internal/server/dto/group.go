@@ -9,7 +9,8 @@ type GroupResp struct {
 	Platform          string                       `json:"platform"`
 	RateMultiplier    float64                      `json:"rate_multiplier"`
 	IsExclusive       bool                         `json:"is_exclusive"`
-	StatusVisible     bool                         `json:"status_visible"`    // 是否在公开 /status 页展示
+	StatusVisible     bool                         `json:"status_visible"` // 是否在公开 /status 页展示
+	Delisted          bool                         `json:"delisted"`       // 是否已下架
 	SubscriptionType  string                       `json:"subscription_type"` // standard / subscription
 	Quotas            map[string]interface{}       `json:"quotas,omitempty"`  // 日/周/月限额
 	ModelRouting      map[string][]int64           `json:"model_routing,omitempty"`
@@ -47,6 +48,7 @@ type CreateGroupReq struct {
 	IsExclusive    bool              `json:"is_exclusive"`
 	// StatusVisible 用指针区分"字段未提交"和"显式置 false"，缺省视为 true（在公开状态页可见）。
 	StatusVisible *bool `json:"status_visible"`
+	Delisted      *bool `json:"delisted"` // 是否下架，缺省 false（未下架）
 	// AllowedUserIDs 专属分组的授权用户 ID（仅 is_exclusive 时有意义；空=仅管理员可见）。
 	AllowedUserIDs    []int64                      `json:"allowed_user_ids"`
 	SubscriptionType  string                       `json:"subscription_type" binding:"oneof=standard subscription"`
@@ -70,6 +72,7 @@ type UpdateGroupReq struct {
 	RateMultiplier *float64          `json:"rate_multiplier"`
 	IsExclusive    *bool             `json:"is_exclusive"`
 	StatusVisible  *bool             `json:"status_visible"`
+	Delisted       *bool             `json:"delisted"`
 	// AllowedUserIDs nil=不修改授权用户，[]=清空（仅管理员可见），[1,2]=设置。
 	AllowedUserIDs    *[]int64                     `json:"allowed_user_ids"`
 	SubscriptionType  *string                      `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`

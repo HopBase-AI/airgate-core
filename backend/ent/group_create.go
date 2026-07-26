@@ -85,6 +85,20 @@ func (gc *GroupCreate) SetNillableStatusVisible(b *bool) *GroupCreate {
 	return gc
 }
 
+// SetDelisted sets the "delisted" field.
+func (gc *GroupCreate) SetDelisted(b bool) *GroupCreate {
+	gc.mutation.SetDelisted(b)
+	return gc
+}
+
+// SetNillableDelisted sets the "delisted" field if the given value is not nil.
+func (gc *GroupCreate) SetNillableDelisted(b *bool) *GroupCreate {
+	if b != nil {
+		gc.SetDelisted(*b)
+	}
+	return gc
+}
+
 // SetSubscriptionType sets the "subscription_type" field.
 func (gc *GroupCreate) SetSubscriptionType(gt group.SubscriptionType) *GroupCreate {
 	gc.mutation.SetSubscriptionType(gt)
@@ -329,6 +343,10 @@ func (gc *GroupCreate) defaults() {
 		v := group.DefaultStatusVisible
 		gc.mutation.SetStatusVisible(v)
 	}
+	if _, ok := gc.mutation.Delisted(); !ok {
+		v := group.DefaultDelisted
+		gc.mutation.SetDelisted(v)
+	}
 	if _, ok := gc.mutation.SubscriptionType(); !ok {
 		v := group.DefaultSubscriptionType
 		gc.mutation.SetSubscriptionType(v)
@@ -385,6 +403,9 @@ func (gc *GroupCreate) check() error {
 	}
 	if _, ok := gc.mutation.StatusVisible(); !ok {
 		return &ValidationError{Name: "status_visible", err: errors.New(`ent: missing required field "Group.status_visible"`)}
+	}
+	if _, ok := gc.mutation.Delisted(); !ok {
+		return &ValidationError{Name: "delisted", err: errors.New(`ent: missing required field "Group.delisted"`)}
 	}
 	if _, ok := gc.mutation.SubscriptionType(); !ok {
 		return &ValidationError{Name: "subscription_type", err: errors.New(`ent: missing required field "Group.subscription_type"`)}
@@ -461,6 +482,10 @@ func (gc *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := gc.mutation.StatusVisible(); ok {
 		_spec.SetField(group.FieldStatusVisible, field.TypeBool, value)
 		_node.StatusVisible = value
+	}
+	if value, ok := gc.mutation.Delisted(); ok {
+		_spec.SetField(group.FieldDelisted, field.TypeBool, value)
+		_node.Delisted = value
 	}
 	if value, ok := gc.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeEnum, value)

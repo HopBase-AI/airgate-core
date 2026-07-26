@@ -57,6 +57,7 @@ type Group struct {
 	RateMultiplier float64
 	IsExclusive    bool
 	StatusVisible  bool
+	Delisted       bool
 	// AllowedUsers 仅在加载了 allowed_users 边时填充（管理员列表/详情）；
 	// 用户可用分组列表不填充，避免泄漏其他用户。
 	AllowedUsers     []GroupAllowedUser
@@ -113,6 +114,7 @@ type CreateInput struct {
 	RateMultiplier float64
 	IsExclusive    bool
 	StatusVisible  bool
+	Delisted       bool
 	// AllowedUserIDs 专属分组的授权用户 ID 列表（仅 IsExclusive 时有意义；空=仅管理员可见）。
 	AllowedUserIDs    []int64
 	SubscriptionType  string
@@ -136,6 +138,7 @@ type UpdateInput struct {
 	RateMultiplier *float64
 	IsExclusive    *bool
 	StatusVisible  *bool
+	Delisted       *bool
 	// AllowedUserIDs / HasAllowedUserIDs：HasAllowedUserIDs=false 时不改动授权用户；
 	// 为 true 时按 AllowedUserIDs 覆盖（空切片=清空，即仅管理员可见）。
 	AllowedUserIDs    []int64

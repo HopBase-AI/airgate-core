@@ -6744,6 +6744,7 @@ type GroupMutation struct {
 	addrate_multiplier   *float64
 	is_exclusive         *bool
 	status_visible       *bool
+	delisted             *bool
 	subscription_type    *group.SubscriptionType
 	quotas               *map[string]interface{}
 	model_routing        *map[string][]int64
@@ -7122,6 +7123,42 @@ func (m *GroupMutation) OldStatusVisible(ctx context.Context) (v bool, err error
 // ResetStatusVisible resets all changes to the "status_visible" field.
 func (m *GroupMutation) ResetStatusVisible() {
 	m.status_visible = nil
+}
+
+// SetDelisted sets the "delisted" field.
+func (m *GroupMutation) SetDelisted(b bool) {
+	m.delisted = &b
+}
+
+// Delisted returns the value of the "delisted" field in the mutation.
+func (m *GroupMutation) Delisted() (r bool, exists bool) {
+	v := m.delisted
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDelisted returns the old "delisted" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldDelisted(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDelisted is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDelisted requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDelisted: %w", err)
+	}
+	return oldValue.Delisted, nil
+}
+
+// ResetDelisted resets all changes to the "delisted" field.
+func (m *GroupMutation) ResetDelisted() {
+	m.delisted = nil
 }
 
 // SetSubscriptionType sets the "subscription_type" field.
@@ -7896,7 +7933,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 17)
+	fields := make([]string, 0, 18)
 	if m.name != nil {
 		fields = append(fields, group.FieldName)
 	}
@@ -7914,6 +7951,9 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.status_visible != nil {
 		fields = append(fields, group.FieldStatusVisible)
+	}
+	if m.delisted != nil {
+		fields = append(fields, group.FieldDelisted)
 	}
 	if m.subscription_type != nil {
 		fields = append(fields, group.FieldSubscriptionType)
@@ -7968,6 +8008,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.IsExclusive()
 	case group.FieldStatusVisible:
 		return m.StatusVisible()
+	case group.FieldDelisted:
+		return m.Delisted()
 	case group.FieldSubscriptionType:
 		return m.SubscriptionType()
 	case group.FieldQuotas:
@@ -8011,6 +8053,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldIsExclusive(ctx)
 	case group.FieldStatusVisible:
 		return m.OldStatusVisible(ctx)
+	case group.FieldDelisted:
+		return m.OldDelisted(ctx)
 	case group.FieldSubscriptionType:
 		return m.OldSubscriptionType(ctx)
 	case group.FieldQuotas:
@@ -8083,6 +8127,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetStatusVisible(v)
+		return nil
+	case group.FieldDelisted:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDelisted(v)
 		return nil
 	case group.FieldSubscriptionType:
 		v, ok := value.(group.SubscriptionType)
@@ -8287,6 +8338,9 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldStatusVisible:
 		m.ResetStatusVisible()
+		return nil
+	case group.FieldDelisted:
+		m.ResetDelisted()
 		return nil
 	case group.FieldSubscriptionType:
 		m.ResetSubscriptionType()

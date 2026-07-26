@@ -27,6 +27,8 @@ const (
 	FieldIsExclusive = "is_exclusive"
 	// FieldStatusVisible holds the string denoting the status_visible field in the database.
 	FieldStatusVisible = "status_visible"
+	// FieldDelisted holds the string denoting the delisted field in the database.
+	FieldDelisted = "delisted"
 	// FieldSubscriptionType holds the string denoting the subscription_type field in the database.
 	FieldSubscriptionType = "subscription_type"
 	// FieldQuotas holds the string denoting the quotas field in the database.
@@ -103,6 +105,7 @@ var Columns = []string{
 	FieldRateMultiplier,
 	FieldIsExclusive,
 	FieldStatusVisible,
+	FieldDelisted,
 	FieldSubscriptionType,
 	FieldQuotas,
 	FieldModelRouting,
@@ -146,6 +149,8 @@ var (
 	DefaultIsExclusive bool
 	// DefaultStatusVisible holds the default value on creation for the "status_visible" field.
 	DefaultStatusVisible bool
+	// DefaultDelisted holds the default value on creation for the "delisted" field.
+	DefaultDelisted bool
 	// DefaultServiceTier holds the default value on creation for the "service_tier" field.
 	DefaultServiceTier string
 	// DefaultForceInstructions holds the default value on creation for the "force_instructions" field.
@@ -219,6 +224,11 @@ func ByIsExclusive(opts ...sql.OrderTermOption) OrderOption {
 // ByStatusVisible orders the results by the status_visible field.
 func ByStatusVisible(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatusVisible, opts...).ToFunc()
+}
+
+// ByDelisted orders the results by the delisted field.
+func ByDelisted(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDelisted, opts...).ToFunc()
 }
 
 // BySubscriptionType orders the results by the subscription_type field.

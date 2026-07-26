@@ -419,6 +419,7 @@ export interface GroupResp {
   rate_multiplier: number;
   is_exclusive: boolean;
   status_visible: boolean;
+  delisted: boolean;
   subscription_type: 'standard' | 'subscription';
   quotas?: Record<string, unknown>;
   model_routing?: Record<string, number[]>;
@@ -450,6 +451,7 @@ export interface CreateGroupReq {
   rate_multiplier?: number;
   is_exclusive?: boolean;
   status_visible?: boolean;
+  delisted?: boolean;
   // 专属分组授权用户 ID（is_exclusive 时有意义；空数组=仅管理员可见）
   allowed_user_ids?: number[];
   subscription_type: 'standard' | 'subscription';
@@ -479,6 +481,7 @@ export interface UpdateGroupReq {
   rate_multiplier?: number;
   is_exclusive?: boolean;
   status_visible?: boolean;
+  delisted?: boolean;
   // 省略=不修改授权用户；空数组=清空（仅管理员可见）；[1,2]=设置
   allowed_user_ids?: number[];
   subscription_type?: 'standard' | 'subscription';

@@ -312,28 +312,32 @@ func init() {
 	groupDescStatusVisible := groupFields[5].Descriptor()
 	// group.DefaultStatusVisible holds the default value on creation for the status_visible field.
 	group.DefaultStatusVisible = groupDescStatusVisible.Default.(bool)
+	// groupDescDelisted is the schema descriptor for delisted field.
+	groupDescDelisted := groupFields[6].Descriptor()
+	// group.DefaultDelisted holds the default value on creation for the delisted field.
+	group.DefaultDelisted = groupDescDelisted.Default.(bool)
 	// groupDescServiceTier is the schema descriptor for service_tier field.
-	groupDescServiceTier := groupFields[10].Descriptor()
+	groupDescServiceTier := groupFields[11].Descriptor()
 	// group.DefaultServiceTier holds the default value on creation for the service_tier field.
 	group.DefaultServiceTier = groupDescServiceTier.Default.(string)
 	// groupDescForceInstructions is the schema descriptor for force_instructions field.
-	groupDescForceInstructions := groupFields[11].Descriptor()
+	groupDescForceInstructions := groupFields[12].Descriptor()
 	// group.DefaultForceInstructions holds the default value on creation for the force_instructions field.
 	group.DefaultForceInstructions = groupDescForceInstructions.Default.(string)
 	// groupDescNote is the schema descriptor for note field.
-	groupDescNote := groupFields[12].Descriptor()
+	groupDescNote := groupFields[13].Descriptor()
 	// group.DefaultNote holds the default value on creation for the note field.
 	group.DefaultNote = groupDescNote.Default.(string)
 	// groupDescSortWeight is the schema descriptor for sort_weight field.
-	groupDescSortWeight := groupFields[14].Descriptor()
+	groupDescSortWeight := groupFields[15].Descriptor()
 	// group.DefaultSortWeight holds the default value on creation for the sort_weight field.
 	group.DefaultSortWeight = groupDescSortWeight.Default.(int)
 	// groupDescCreatedAt is the schema descriptor for created_at field.
-	groupDescCreatedAt := groupFields[15].Descriptor()
+	groupDescCreatedAt := groupFields[16].Descriptor()
 	// group.DefaultCreatedAt holds the default value on creation for the created_at field.
 	group.DefaultCreatedAt = groupDescCreatedAt.Default.(func() time.Time)
 	// groupDescUpdatedAt is the schema descriptor for updated_at field.
-	groupDescUpdatedAt := groupFields[16].Descriptor()
+	groupDescUpdatedAt := groupFields[17].Descriptor()
 	// group.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	group.DefaultUpdatedAt = groupDescUpdatedAt.Default.(func() time.Time)
 	// group.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

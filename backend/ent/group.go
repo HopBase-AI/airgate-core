@@ -30,6 +30,8 @@ type Group struct {
 	IsExclusive bool `json:"is_exclusive,omitempty"`
 	// StatusVisible holds the value of the "status_visible" field.
 	StatusVisible bool `json:"status_visible,omitempty"`
+	// Delisted holds the value of the "delisted" field.
+	Delisted bool `json:"delisted,omitempty"`
 	// SubscriptionType holds the value of the "subscription_type" field.
 	SubscriptionType group.SubscriptionType `json:"subscription_type,omitempty"`
 	// Quotas holds the value of the "quotas" field.
@@ -127,7 +129,7 @@ func (*Group) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case group.FieldNameI18n, group.FieldQuotas, group.FieldModelRouting, group.FieldPluginSettings, group.FieldNoteI18n:
 			values[i] = new([]byte)
-		case group.FieldIsExclusive, group.FieldStatusVisible:
+		case group.FieldIsExclusive, group.FieldStatusVisible, group.FieldDelisted:
 			values[i] = new(sql.NullBool)
 		case group.FieldRateMultiplier:
 			values[i] = new(sql.NullFloat64)
@@ -195,6 +197,12 @@ func (gr *Group) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field status_visible", values[i])
 			} else if value.Valid {
 				gr.StatusVisible = value.Bool
+			}
+		case group.FieldDelisted:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field delisted", values[i])
+			} else if value.Valid {
+				gr.Delisted = value.Bool
 			}
 		case group.FieldSubscriptionType:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -348,6 +356,9 @@ func (gr *Group) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("status_visible=")
 	builder.WriteString(fmt.Sprintf("%v", gr.StatusVisible))
+	builder.WriteString(", ")
+	builder.WriteString("delisted=")
+	builder.WriteString(fmt.Sprintf("%v", gr.Delisted))
 	builder.WriteString(", ")
 	builder.WriteString("subscription_type=")
 	builder.WriteString(fmt.Sprintf("%v", gr.SubscriptionType))

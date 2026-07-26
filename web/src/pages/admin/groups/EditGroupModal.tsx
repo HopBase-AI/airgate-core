@@ -140,6 +140,7 @@ export function GroupFormModal({
     rate_multiplier: group?.rate_multiplier ?? 1,
     sort_weight: group?.sort_weight ?? 0,
     status_visible: group?.status_visible ?? true,
+    delisted: group?.delisted ?? false,
     subscription_type: group?.subscription_type ?? 'standard' as const,
   });
   // 多语言文案覆盖（name_i18n / note_i18n）；已有覆盖时默认展开折叠区便于回显。
@@ -557,6 +558,12 @@ export function GroupFormModal({
             isSelected={form.status_visible}
             label={<span className="text-sm text-text">{t('groups.status_visible_hint')}</span>}
             onChange={(selected) => setForm({ ...form, status_visible: selected })}
+          />
+
+          <NativeSwitch
+            isSelected={form.delisted}
+            label={<span className="text-sm text-text">{t('groups.delisted_hint')}</span>}
+            onChange={(selected) => setForm({ ...form, delisted: selected })}
           />
         </div>
 
