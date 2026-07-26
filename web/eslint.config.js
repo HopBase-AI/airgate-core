@@ -35,5 +35,20 @@ export default tseslint.config(
       "react-hooks/preserve-manual-memoization": "warn",
     },
   },
+  {
+    // 测试文件:mock/fixture 天然松散,豁免 any 流动与 async 形态类规则;
+    // 其余(rules-of-hooks、no-unused-vars 等)仍生效
+    files: ["**/*.test.*", "**/__tests__/**"],
+    rules: {
+      "@typescript-eslint/require-await": "off",
+      "@typescript-eslint/no-unsafe-call": "off",
+      "@typescript-eslint/no-unsafe-argument": "off",
+      "@typescript-eslint/no-unsafe-assignment": "off",
+      "@typescript-eslint/no-unsafe-member-access": "off",
+      "@typescript-eslint/no-unsafe-return": "off",
+      "@typescript-eslint/restrict-template-expressions": "off",
+      "@typescript-eslint/unbound-method": "off",
+    },
+  },
   { ignores: ["dist/"] },
 );
