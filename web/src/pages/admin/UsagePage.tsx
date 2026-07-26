@@ -385,120 +385,6 @@ function TokenTrendCard({
   );
 }
 
-// ==================== 缓存健康度（按上游账号）====================
-
-type CacheHealthRow = {
-  key: number;
-  name: string;
-  requests: number;
-  hitRate: number | null; // 0..1，无缓存活动时为 null
-  pct1h: number | null; // 1h 缓存占比 0..1，无缓存创建时为 null
-  creationCost: number; // 缓存重建成本（浪费代理指标）
-  actualCost: number;
-};
-
-function hitRateColor(r: number | null): string {
-  if (r == null) return 'var(--ag-muted)';
-  if (r >= 0.7) return 'var(--ag-success)';
-  if (r >= 0.4) return 'var(--ag-warning)';
-  return 'var(--ag-danger)';
-}
-
-function formatPct(v: number | null): string {
-  return v == null ? '—' : `${(v * 100).toFixed(0)}%`;
-}
-
-// CacheHealthCard 按上游账号展示缓存健康度，让"哪个账号缓存在退化/烧钱"一眼可见。
-// 命中率低 / 重建成本高 / 1h 占比低（实际只有 5m 缓存）的账号高亮提示。
-function CacheHealthCard({ rows }: { rows: CacheHealthRow[] }) {
-  const { t } = useTranslation();
-
-  return (
-    <SectionCard title={t('usage.cache_health', '缓存健康度（按上游账号）')}>
-      <div className="max-h-[288px] min-w-0 overflow-auto">
-        <CompactDataTable
-          ariaLabel={t('usage.cache_health', '缓存健康度（按上游账号）')}
-          className="ag-compact-data-table--dense"
-          emptyText={t('common.no_data')}
-          minWidth={560}
-          rowKey={(row) => row.key}
-          rows={rows}
-          columns={[
-            {
-              key: 'name',
-              title: t('usage.by_account', '账号'),
-              width: '26%',
-              render: (row, index) => (
-                <>
-                  <span className="shrink-0 font-mono text-[11px] font-semibold text-text-tertiary">#{index + 1}</span>
-                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: PIE_COLORS[index % PIE_COLORS.length] }} />
-                  <span className="min-w-0 truncate font-medium text-text" title={row.name}>{row.name}</span>
-                </>
-              ),
-            },
-            {
-              align: 'end',
-              key: 'requests',
-              title: t('usage.requests'),
-              width: '14%',
-              render: (row) => <span className="truncate font-mono text-text-secondary">{row.requests.toLocaleString()}</span>,
-            },
-            {
-              align: 'end',
-              key: 'hitRate',
-              title: t('usage.cache_hit_rate', '缓存命中率'),
-              width: '16%',
-              render: (row) => (
-                <span className="truncate font-mono font-semibold" style={{ color: hitRateColor(row.hitRate) }}>
-                  {formatPct(row.hitRate)}
-                </span>
-              ),
-            },
-            {
-              align: 'end',
-              key: 'pct1h',
-              title: t('usage.cache_1h_share', '1h占比'),
-              width: '16%',
-              render: (row) => (
-                <span className="inline-flex items-center justify-end gap-1 truncate">
-                  <span className="font-mono text-text-secondary">{formatPct(row.pct1h)}</span>
-                  {row.pct1h != null && row.pct1h < 0.5 ? (
-                    <span
-                      className="shrink-0 rounded px-1 text-[10px] font-semibold leading-tight"
-                      style={{ background: 'color-mix(in srgb, var(--ag-warning) 16%, transparent)', color: 'var(--ag-warning)' }}
-                      title={t('usage.cache_5m_hint', '该账号缓存主要为 5 分钟，不利大上下文复用')}
-                    >
-                      5m
-                    </span>
-                  ) : null}
-                </span>
-              ),
-            },
-            {
-              align: 'end',
-              key: 'creationCost',
-              title: t('usage.cache_recreation_cost', '缓存重建$'),
-              width: '14%',
-              render: (row) => (
-                <span className="truncate font-mono" style={{ color: row.creationCost > 0 ? 'var(--ag-warning)' : 'var(--ag-muted)' }}>
-                  ${row.creationCost.toFixed(2)}
-                </span>
-              ),
-            },
-            {
-              align: 'end',
-              key: 'actualCost',
-              title: t('usage.actual_cost'),
-              width: '14%',
-              render: (row) => <CostValue className="truncate font-mono" value={row.actualCost} tone="actual" />,
-            },
-          ]}
-        />
-      </div>
-    </SectionCard>
-  );
-}
-
 // ==================== 主页面 ====================
 
 export default function UsagePage() {
@@ -709,33 +595,6 @@ export default function UsagePage() {
     return dataMap[statsGroupBy] ?? [];
   }, [activeStats, statsGroupBy, t]);
 
-  // 缓存健康度行：按账号算命中率/1h占比/重建成本，按重建成本降序（烧钱多的排前）。
-  const cacheHealthRows = useMemo<CacheHealthRow[]>(() => {
-    return (activeStats?.by_account ?? [])
-      // 缓存健康度是"按上游账号"的视图:无归属日志(account_id=0,均为 2026-06-18
-      // 账号归属字段上线前的历史数据)无法反映任何上游账号的缓存状态,直接排除。
-      .filter((s) => s.account_id > 0)
-      .map((s) => {
-        const cached = s.cached_input_tokens ?? 0;
-        const creation = s.cache_creation_tokens ?? 0;
-        const input = s.input_tokens ?? 0;
-        const cacheDenom = cached + creation + input;
-        const c5 = s.cache_creation_5m_tokens ?? 0;
-        const c1 = s.cache_creation_1h_tokens ?? 0;
-        const creationDenom = c5 + c1;
-        return {
-          key: s.account_id,
-          name: s.name || `#${s.account_id}`,
-          requests: s.requests,
-          hitRate: cacheDenom > 0 ? cached / cacheDenom : null,
-          pct1h: creationDenom > 0 ? c1 / creationDenom : null,
-          creationCost: s.cache_creation_cost ?? 0,
-          actualCost: s.actual_cost,
-        };
-      })
-      .sort((a, b) => b.creationCost - a.creationCost);
-  }, [activeStats?.by_account]);
-
   const sharedColumns = useUsageColumns();
 
   const platformOptions = [
@@ -888,8 +747,6 @@ export default function UsagePage() {
               onActiveKeyChange={setStatsGroupBy}
             />
           </div>
-
-          <CacheHealthCard rows={cacheHealthRows} />
         </div>
       )}
 
