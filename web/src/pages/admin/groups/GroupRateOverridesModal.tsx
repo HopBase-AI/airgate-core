@@ -10,7 +10,7 @@ import { usersApi } from '../../../shared/api/users';
 import { useCrudMutation } from '../../../shared/hooks/useCrudMutation';
 import { useDebouncedValue } from '../../../shared/hooks/useDebouncedValue';
 import { queryKeys } from '../../../shared/queryKeys';
-import type { GroupResp, GroupRateOverrideResp, UserResp } from '../../../shared/types';
+import type { GroupResp, UserResp } from '../../../shared/types';
 
 interface GroupRateOverridesModalProps {
   open: boolean;
@@ -112,7 +112,7 @@ export function GroupRateOverridesModal({ open, group, onClose }: GroupRateOverr
   });
 
   const existingUserIds = useMemo(
-    () => new Set((overrides as GroupRateOverrideResp[]).map((row) => row.user_id)),
+    () => new Set((overrides).map((row) => row.user_id)),
     [overrides],
   );
   const searchResults = useMemo(
@@ -313,7 +313,7 @@ export function GroupRateOverridesModal({ open, group, onClose }: GroupRateOverr
           <p className="py-8 text-center text-sm text-text-tertiary">{t('groups.rate_override_empty')}</p>
         ) : (
           <div className="overflow-hidden rounded-lg border border-glass-border">
-            {(overrides as GroupRateOverrideResp[]).map((row, index) => {
+            {(overrides).map((row, index) => {
               const isEditing = editingUserId === row.user_id;
               return (
                 <div

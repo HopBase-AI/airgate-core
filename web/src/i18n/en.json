@@ -309,7 +309,7 @@
     "accounts": "Accounts",
     "accounts_status": "{{enabled}} enabled {{errors}} errors",
     "today_requests": "Today Requests",
-    "alltime_requests": "Total: {{count}}",
+    "alltime_requests": "Total: {{total}}",
     "users": "Users",
     "new_users": "+{{count}}",
     "total_count": "Total: {{count}}",

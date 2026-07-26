@@ -147,7 +147,7 @@ export default function ProxiesPage() {
     if (editingProxy) {
       updateMutation.mutate({ id: editingProxy.id, data: payload });
     } else {
-      createMutation.mutate(payload as CreateProxyReq);
+      createMutation.mutate(payload);
     }
   }
 

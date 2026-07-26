@@ -13,7 +13,18 @@ interface ItemState {
   name: string;
   status: ItemStatus;
   error?: string;
-  warning?: string;
+  warning?: boolean;
+}
+
+// SSE 事件契约(对齐后端批量刷新流);字段全可选,消费时显式兜底,防 null/undefined 直接入状态
+interface BulkRefreshEvent {
+  type?: string;
+  id?: number;
+  total?: number;
+  done?: number;
+  success?: boolean;
+  reauth_warning?: boolean;
+  error?: string;
 }
 
 /**
@@ -101,11 +112,12 @@ export function BulkRefreshProgressModal({
             const trimmed = line.trim();
             if (!trimmed.startsWith('data: ')) continue;
             try {
-              const evt = JSON.parse(trimmed.slice(6));
+              const evt = JSON.parse(trimmed.slice(6)) as BulkRefreshEvent;
               if (evt.type === 'start') {
-                setTotal(evt.total);
+                const evtTotal = evt.total ?? 0;
+                setTotal(evtTotal);
                 // 把第一条标成 running
-                if (evt.total > 0) {
+                if (evtTotal > 0) {
                   setItems((prev) => {
                     const next = [...prev];
                     if (next[0]) next[0] = { ...next[0], status: 'running' };
@@ -114,7 +126,7 @@ export function BulkRefreshProgressModal({
                   nextRunningIdx = 1;
                 }
               } else if (evt.type === 'progress') {
-                setDone(evt.done);
+                setDone(evt.done ?? 0);
                 if (evt.success) setSuccess((s) => s + 1);
                 else setFailed((f) => f + 1);
 
@@ -260,7 +272,7 @@ export function BulkRefreshProgressModal({
                 <span
                   className="truncate max-w-[180px]"
                   style={{ color: 'var(--ag-warning)' }}
-                  title={item.warning}
+                  title={t('accounts.refresh_quota_reauth_warning_short', '需重新授权')}
                 >
                   {t('accounts.refresh_quota_reauth_warning_short', '需重新授权')}
                 </span>

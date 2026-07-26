@@ -152,7 +152,7 @@ export function GroupFormModal({
   const [allowedUsers, setAllowedUsers] = useState<GroupAllowedUser[]>(() => group?.allowed_users ?? []);
   const [userQuery, setUserQuery] = useState('');
   const debouncedUserQuery = useDebouncedValue(userQuery.trim(), 250);
-  const [quotas, setQuotas] = useState(parseQuotas(group?.quotas as Record<string, unknown> | undefined));
+  const [quotas, setQuotas] = useState(parseQuotas(group?.quotas));
   const [claudeCodeOnly, setClaudeCodeOnly] = useState(group?.plugin_settings?.claude?.claude_code_only === 'true');
   const [imageEnabled, setImageEnabled] = useState(group?.plugin_settings?.openai?.image_enabled === 'true');
   const [imagePrices, setImagePrices] = useState<ImagePrices>(() => parseImagePrices(group?.plugin_settings));
@@ -276,7 +276,7 @@ export function GroupFormModal({
       allowed_user_ids: visibility === 'specific' ? allowedUsers.map((u) => u.user_id) : [],
       plugin_settings: Object.keys(pluginSettings).length > 0 ? pluginSettings : undefined,
       quotas: form.subscription_type === 'subscription' ? buildQuotas(quotas) : undefined,
-      subscription_type: form.subscription_type as 'standard' | 'subscription',
+      subscription_type: form.subscription_type,
       ...(isEdit ? { model_routing: modelRouting } : {}),
       ...(!isEdit && copyFromGroupIds.length > 0
         ? { copy_accounts_from_group_ids: copyFromGroupIds }

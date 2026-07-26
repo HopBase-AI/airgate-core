@@ -57,7 +57,7 @@ function formatEventTime(date: string): string {
 
 function EventTypeChip({ eventType }: { eventType: AccountEventType }) {
   const { t } = useTranslation();
-  const meta = EVENT_TYPE_META[eventType] ?? { labelKey: eventType as string, color: 'default' as ChipColor };
+  const meta = EVENT_TYPE_META[eventType] ?? { labelKey: eventType, color: 'default' };
   return (
     <Chip color={meta.color} size="sm" variant="soft">
       {t(meta.labelKey, eventType)}
@@ -106,7 +106,7 @@ export default function AccountEventsPage() {
   const { platforms, platformName } = usePlatforms();
 
   // 分组页"异常"数下钻会带 ?group_id=X 预置分组筛选。
-  const search = useSearch({ strict: false }) as { group_id?: number };
+  const search = useSearch({ strict: false });
   const searchGroupID = search.group_id;
   const { page, setPage, pageSize, setPageSize } = usePagination(DEFAULT_PAGE_SIZE, 'admin.account_events');
   const [platformFilter, setPlatformFilter] = useState('');

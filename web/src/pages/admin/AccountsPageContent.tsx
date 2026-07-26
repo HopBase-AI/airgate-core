@@ -125,7 +125,7 @@ export default function AccountsPageContent() {
   ];
 
   // 筛选状态。分组页下钻会带 ?group_id=X（state 支持深链 ?state=error 只看异常账号）。
-  const search = useSearch({ strict: false }) as { group_id?: number; state?: string };
+  const search: { group_id?: number | string; state?: string } = useSearch({ strict: false });
   const searchGroupID = search.group_id;
   const searchState = search.state;
   const { page, setPage, pageSize, setPageSize } = usePagination(20, 'admin.accounts');
@@ -246,7 +246,7 @@ export default function AccountsPageContent() {
       refetchOnWindowFocus: false,
     })),
     combine: (results) => results.map((query) => ({
-      data: query.data as AccountUsageInfo | undefined,
+      data: query.data,
     })),
   });
   const rawUsageWithSingleAccounts = useMemo<AccountUsageData | undefined>(() => {
@@ -421,7 +421,7 @@ export default function AccountsPageContent() {
             account.id === id
               ? {
                   ...account,
-                  state: (account.state === 'disabled' ? 'active' : 'disabled') as AccountResp['state'],
+                  state: (account.state === 'disabled' ? 'active' : 'disabled'),
                   state_until: undefined,
                 }
               : account
