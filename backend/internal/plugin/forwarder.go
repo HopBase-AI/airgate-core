@@ -408,6 +408,13 @@ type allRoutesFailureSummary struct {
 	accountDeadSeen       bool
 	upstreamTimeoutSeen   bool
 	upstreamFailureSeen   bool
+
+	// 结构性选号失败：重试不会恢复，最终响应要用 4xx 让客户端立刻停手。
+	groupOfflineSeen   bool
+	modelNotServedSeen bool
+	// transientPickFailureSeen 记录"容量型"选号失败（并发/RPM/window/session/failover 耗尽）。
+	// 只要出现过一次，就说明还有路线只是暂时不可用，此时不能降级成 4xx。
+	transientPickFailureSeen bool
 }
 
 func (s *allRoutesFailureSummary) recordExecution(execution forwardExecution) {
@@ -439,8 +446,18 @@ func (s *allRoutesFailureSummary) recordRetryAfter(retryAfter time.Duration) {
 	}
 }
 
-func (s *allRoutesFailureSummary) recordPickAccountError(error) {
+// recordPickAccountError 按 scheduler 的错误分类归档选号失败。
+// 三类互斥：分组已下线 / 分组不供该模型 / 容量型暂时不可用。
+func (s *allRoutesFailureSummary) recordPickAccountError(err error) {
 	s.accountUnavailable = true
+	switch {
+	case errors.Is(err, scheduler.ErrGroupOffline):
+		s.groupOfflineSeen = true
+	case errors.Is(err, scheduler.ErrModelNotServed):
+		s.modelNotServedSeen = true
+	default:
+		s.transientPickFailureSeen = true
+	}
 }
 
 func (s *allRoutesFailureSummary) recordLocalCapacityFailure() {
@@ -500,6 +517,31 @@ func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFa
 			errType: "server_error",
 			code:    "upstream_error",
 			message: "上游服务暂不可用，请稍后重试",
+		}
+	}
+	// 结构性失败用 404 收口。必须排在通用 accountUnavailable 分支之前，且只在没有任何
+	// "重试可能有救"的信号时才走：上面几个分支说明确实碰到过上游（限流/超时/5xx），
+	// transientPickFailureSeen / accountDeadSeen 说明另有路线只是暂时不可用——
+	// 那些情况仍旧要给可重试的 5xx，否则会把瞬时故障误判成永久失效。
+	//
+	// 这里返回 4xx 是刻意的：503 + "请稍后重试" 会让客户端 SDK 按 5xx 规则指数退避重试，
+	// 而分组已下线永远不会恢复，用户侧表现就是长时间卡死而非一个明确的报错。
+	if !summary.transientPickFailureSeen && !summary.accountDeadSeen {
+		if summary.groupOfflineSeen {
+			return allRoutesFailureResponse{
+				status:  http.StatusNotFound,
+				errType: "not_found_error",
+				code:    "group_offline",
+				message: "当前 API Key 所属分组已下线，无法继续提供服务。请在控制台重新创建 API Key 或改用其它分组。",
+			}
+		}
+		if summary.modelNotServedSeen {
+			return allRoutesFailureResponse{
+				status:  http.StatusNotFound,
+				errType: "not_found_error",
+				code:    "model_not_served",
+				message: "当前 API Key 所属分组未提供所请求的模型，请更换模型或改用其它分组。",
+			}
 		}
 	}
 	if summary.accountDeadSeen || summary.accountUnavailable {

@@ -163,7 +163,7 @@ func (s *Scheduler) maybeRegisterSession(ctx context.Context, selected *ent.Acco
 // 带来的错配。
 func (s *Scheduler) routeAccounts(ctx context.Context, platform, model string, groupID int) ([]*ent.Account, error) {
 	if accounts, routing, ok := s.routeCache.Get(groupID, platform); ok {
-		return applyModelRouting(accounts, routing, model), nil
+		return classifyRoutedAccounts(accounts, routing, model)
 	}
 
 	grp, err := s.db.Group.Get(ctx, groupID)
@@ -182,7 +182,34 @@ func (s *Scheduler) routeAccounts(ctx context.Context, platform, model string, g
 	// 缓存全量 platform 账号（包含所有 state）+ group 的 ModelRouting
 	s.routeCache.Set(groupID, platform, accounts, grp.ModelRouting)
 
-	return applyModelRouting(accounts, grp.ModelRouting, model), nil
+	return classifyRoutedAccounts(accounts, grp.ModelRouting, model)
+}
+
+// classifyRoutedAccounts 在候选为空时区分"结构性不可用"与"暂时不可用"，让上层能给客户端
+// 一个不可重试的 4xx，而不是让它对着一个永远不会恢复的分组无限退避重试。
+//
+// 判定顺序即语义优先级：
+//  1. 分组在本平台下没有任何账号        → ErrGroupOffline
+//  2. model_routing 把候选过滤空了      → ErrModelNotServed（分组还在，只是不供这个模型）
+//  3. 候选全是 disabled                 → ErrGroupOffline（管理员下线，或账号全部判死）
+//
+// 第 3 步只认 disabled 这一个终态：rate_limited / degraded 都会自行到期恢复，属于容量问题，
+// 必须继续走 ErrNoAvailableAccount 的 503 重试路径。读的 State 与 SchedulabilityOf 同源
+// （同一批 routeCache 对象，TTL 3s 且 admin 改动即失效），不引入额外的陈旧判断。
+func classifyRoutedAccounts(accounts []*ent.Account, routing map[string][]int64, model string) ([]*ent.Account, error) {
+	if len(accounts) == 0 {
+		return nil, ErrGroupOffline
+	}
+	routed := applyModelRouting(accounts, routing, model)
+	if len(routed) == 0 {
+		return nil, ErrModelNotServed
+	}
+	for _, acc := range routed {
+		if acc.State != account.StateDisabled {
+			return routed, nil
+		}
+	}
+	return nil, ErrGroupOffline
 }
 
 func normalizeGroupLookupError(err error) error {

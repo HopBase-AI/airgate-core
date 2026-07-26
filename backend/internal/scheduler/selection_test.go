@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/DouDOU-start/airgate-core/ent"
+	"github.com/DouDOU-start/airgate-core/ent/account"
 )
 
 func TestExcludeAccountsDoesNotMutateCandidates(t *testing.T) {
@@ -64,5 +65,90 @@ func TestNormalizeGroupAccountsLookupErrorWrapsGenericError(t *testing.T) {
 	got := normalizeGroupAccountsLookupError(orig)
 	if got.Error() != "查询分组账户失败: db offline" {
 		t.Fatalf("normalizeGroupAccountsLookupError(%v) = %q, want %q", orig, got.Error(), "查询分组账户失败: db offline")
+	}
+}
+
+func TestClassifyRoutedAccounts(t *testing.T) {
+	t.Parallel()
+
+	active := func(id int) *ent.Account {
+		return &ent.Account{ID: id, State: account.StateActive}
+	}
+	disabled := func(id int) *ent.Account {
+		return &ent.Account{ID: id, State: account.StateDisabled}
+	}
+
+	tests := []struct {
+		name     string
+		accounts []*ent.Account
+		routing  map[string][]int64
+		model    string
+		wantErr  error
+		wantIDs  []int
+	}{
+		{
+			name:     "empty group is offline",
+			accounts: nil,
+			wantErr:  ErrGroupOffline,
+		},
+		{
+			// Norman 的真实场景：分组成员还在，但被逐个 disabled 后整组归零。
+			name:     "all members disabled is offline",
+			accounts: []*ent.Account{disabled(1), disabled(2)},
+			wantErr:  ErrGroupOffline,
+		},
+		{
+			name:     "routing filters everything out",
+			accounts: []*ent.Account{active(1)},
+			routing:  map[string][]int64{"other-model": {1}},
+			model:    "claude-opus-5",
+			wantErr:  ErrModelNotServed,
+		},
+		{
+			name:     "one active member is servable",
+			accounts: []*ent.Account{disabled(1), active(2)},
+			wantIDs:  []int{1, 2},
+		},
+		{
+			// rate_limited / degraded 会自行到期恢复，属于容量问题，不能判成永久下线。
+			name:     "rate limited member is not offline",
+			accounts: []*ent.Account{{ID: 1, State: account.StateRateLimited}},
+			wantIDs:  []int{1},
+		},
+		{
+			name:     "degraded member is not offline",
+			accounts: []*ent.Account{{ID: 1, State: account.StateDegraded}},
+			wantIDs:  []int{1},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := classifyRoutedAccounts(tt.accounts, tt.routing, tt.model)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("err = %v, want %v", err, tt.wantErr)
+				}
+				// 分类错误必须仍满足既有的 ErrNoAvailableAccount 判定。
+				if !errors.Is(err, ErrNoAvailableAccount) {
+					t.Fatalf("err = %v, want it to wrap ErrNoAvailableAccount", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("err = %v, want nil", err)
+			}
+			if len(got) != len(tt.wantIDs) {
+				t.Fatalf("got %d accounts, want %d", len(got), len(tt.wantIDs))
+			}
+			for i, id := range tt.wantIDs {
+				if got[i].ID != id {
+					t.Fatalf("account[%d].ID = %d, want %d", i, got[i].ID, id)
+				}
+			}
+		})
 	}
 }

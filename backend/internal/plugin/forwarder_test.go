@@ -3,6 +3,8 @@ package plugin
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +16,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/routing"
+	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
 
@@ -432,6 +435,58 @@ func TestSelectAllRoutesFailureResponse(t *testing.T) {
 			wantStatus: http.StatusServiceUnavailable,
 			wantCode:   "no_available_account",
 		},
+		{
+			name: "group offline",
+			summary: allRoutesFailureSummary{
+				accountUnavailable: true,
+				groupOfflineSeen:   true,
+			},
+			wantStatus: http.StatusNotFound,
+			wantCode:   "group_offline",
+		},
+		{
+			name: "model not served",
+			summary: allRoutesFailureSummary{
+				accountUnavailable: true,
+				modelNotServedSeen: true,
+			},
+			wantStatus: http.StatusNotFound,
+			wantCode:   "model_not_served",
+		},
+		{
+			// 一条路线的分组下线、另一条只是容量满：整体仍可能恢复，必须保持可重试的 503。
+			name: "group offline alongside transient pick failure stays retryable",
+			summary: allRoutesFailureSummary{
+				accountUnavailable:       true,
+				groupOfflineSeen:         true,
+				transientPickFailureSeen: true,
+			},
+			wantStatus: http.StatusServiceUnavailable,
+			wantCode:   "no_available_account",
+		},
+		{
+			// 账号被判死是状态机的临时终态（可由 admin/探测恢复），不能升级成 404。
+			name: "group offline alongside dead account stays retryable",
+			summary: allRoutesFailureSummary{
+				accountUnavailable: true,
+				groupOfflineSeen:   true,
+				accountDeadSeen:    true,
+			},
+			wantStatus: http.StatusServiceUnavailable,
+			wantCode:   "no_available_account",
+		},
+		{
+			// 真碰到过上游限流，说明路线是通的，限流优先级高于结构性判定。
+			name: "rate limit outranks group offline",
+			summary: allRoutesFailureSummary{
+				accountUnavailable:    true,
+				groupOfflineSeen:      true,
+				rateLimitedSeen:       true,
+				rateLimitedRetryAfter: time.Second,
+			},
+			wantStatus: http.StatusTooManyRequests,
+			wantCode:   "all_routes_rate_limited",
+		},
 	}
 
 	for _, tt := range tests {
@@ -447,6 +502,75 @@ func TestSelectAllRoutesFailureResponse(t *testing.T) {
 				t.Fatalf("code = %q, want %q", got.code, tt.wantCode)
 			}
 		})
+	}
+}
+
+func TestRecordPickAccountErrorClassifies(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		err           error
+		wantOffline   bool
+		wantNotServed bool
+		wantTransient bool
+	}{
+		{
+			name:        "group offline",
+			err:         scheduler.ErrGroupOffline,
+			wantOffline: true,
+		},
+		{
+			name:          "model not served",
+			err:           scheduler.ErrModelNotServed,
+			wantNotServed: true,
+		},
+		{
+			name:          "plain capacity failure",
+			err:           scheduler.ErrNoAvailableAccount,
+			wantTransient: true,
+		},
+		{
+			// scheduler 会把分类错误再包一层上下文，errors.Is 必须仍然穿透。
+			name:        "wrapped group offline",
+			err:         fmt.Errorf("pick account: %w", scheduler.ErrGroupOffline),
+			wantOffline: true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			summary := allRoutesFailureSummary{}
+			summary.recordPickAccountError(tt.err)
+
+			if !summary.accountUnavailable {
+				t.Fatalf("accountUnavailable = false, want true")
+			}
+			if summary.groupOfflineSeen != tt.wantOffline {
+				t.Fatalf("groupOfflineSeen = %v, want %v", summary.groupOfflineSeen, tt.wantOffline)
+			}
+			if summary.modelNotServedSeen != tt.wantNotServed {
+				t.Fatalf("modelNotServedSeen = %v, want %v", summary.modelNotServedSeen, tt.wantNotServed)
+			}
+			if summary.transientPickFailureSeen != tt.wantTransient {
+				t.Fatalf("transientPickFailureSeen = %v, want %v", summary.transientPickFailureSeen, tt.wantTransient)
+			}
+		})
+	}
+}
+
+// 分类错误必须仍被既有的 errors.Is(err, ErrNoAvailableAccount) 判定接住——
+// pickAccount 的模型候选循环、quota.go 与 host_service.go 都依赖这个判断继续/收敛。
+func TestClassifiedErrorsRemainNoAvailableAccount(t *testing.T) {
+	t.Parallel()
+
+	for _, err := range []error{scheduler.ErrGroupOffline, scheduler.ErrModelNotServed} {
+		if !errors.Is(err, scheduler.ErrNoAvailableAccount) {
+			t.Fatalf("errors.Is(%v, ErrNoAvailableAccount) = false, want true", err)
+		}
 	}
 }
 

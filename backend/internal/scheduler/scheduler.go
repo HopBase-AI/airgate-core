@@ -4,6 +4,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -15,6 +16,15 @@ import (
 var (
 	ErrNoAvailableAccount = errors.New("无可用账户")
 	ErrGroupNotFound      = errors.New("分组不存在")
+
+	// ErrGroupOffline 分组已下线：该分组在本平台下没有任何账号，或全部账号都是 disabled。
+	// 与 ErrNoAvailableAccount 的容量语义相反——这是结构性的，重试不会恢复，需要管理员
+	// 重新配置分组或用户改用其它分组的 API Key。
+	ErrGroupOffline = fmt.Errorf("%w: 分组已下线", ErrNoAvailableAccount)
+
+	// ErrModelNotServed 分组的 model_routing 规则把候选账号过滤空了：分组本身还在服务，
+	// 只是不提供所请求的模型。同样是结构性错误，换模型才有救，重试无用。
+	ErrModelNotServed = fmt.Errorf("%w: 分组不支持该模型", ErrNoAvailableAccount)
 )
 
 // dbTimeout 后台 DB 操作超时，防止 goroutine 泄漏。
