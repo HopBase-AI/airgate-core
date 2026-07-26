@@ -138,6 +138,7 @@ func (r *Renderer) RenderDetail(c *gin.Context) {
 	view := buildDetailView(b, post, reqInvite)
 	if view.ShowLangs {
 		view.LangNav = buildDetailLangNav(post, candidates, view.Lang, reqInvite, b.SiteKey)
+		view.Hreflang = buildDetailHreflang(b.OriginBase, post, candidates, b.Chrome.DefaultLang, b.SiteKey)
 	}
 
 	if strings.TrimSpace(reqInvite) != "" {

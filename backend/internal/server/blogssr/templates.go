@@ -106,7 +106,11 @@ const listHeadStr = `<!doctype html>
 <link rel="canonical" href="{{.OriginBase}}/blog">
 <meta property="og:type" content="website">
 <meta property="og:title" content="{{.PageTitle}}">
+<meta property="og:description" content="{{.SiteName}} 博客:AI 使用方法、模型技巧与实践分享。">
 <meta property="og:url" content="{{.OriginBase}}/blog">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="{{.PageTitle}}">
+<meta name="twitter:description" content="{{.SiteName}} 博客:AI 使用方法、模型技巧与实践分享。">
 `
 
 const detailHeadStr = `<!doctype html>
@@ -118,7 +122,8 @@ const detailHeadStr = `<!doctype html>
 <meta name="description" content="{{.MetaDescription}}">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <link rel="canonical" href="{{.Canonical}}">
-<meta property="og:type" content="article">
+{{range .Hreflang}}<link rel="alternate" hreflang="{{.Lang}}" href="{{.Href}}">
+{{end}}<meta property="og:type" content="article">
 <meta property="og:site_name" content="{{.SiteName}}">
 <meta property="og:title" content="{{.Title}}">
 <meta property="og:description" content="{{.MetaDescription}}">

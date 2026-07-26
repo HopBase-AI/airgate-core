@@ -308,6 +308,50 @@ func buildDetailLangNav(current appblog.Post, posts []appblog.Post, currentLang,
 	return links
 }
 
+// HreflangLink 详情页 <link rel="alternate" hreflang> 项。Href 是译文的规范
+// URL(不带 ?lang=/?inv=)——hreflang 必须指向可索引地址,查询串变体会被搜索引擎忽略。
+type HreflangLink struct {
+	Lang string
+	Href string
+}
+
+// hreflangCode 把文章 lang 取值映射为 BCP 47 hreflang 代码(简体用脚本子标签,
+// 不绑定地区;繁体/英文取值本身已合规)。
+func hreflangCode(code string) string {
+	if code == "zh" {
+		return "zh-Hans"
+	}
+	return code
+}
+
+// buildDetailHreflang 为文章详情生成 hreflang 互指集群:每个存在译文的语言一条
+// (含自指,Google 要求),默认语言译文兼作 x-default。译文关联复用
+// findTranslatedPost 的判定(slug 后缀优先,published_at 兜底,不唯一则不认)。
+// 只有自身语言一条时返回 nil——单语文章不输出 hreflang,避免无效声明。
+func buildDetailHreflang(originBase string, current appblog.Post, posts []appblog.Post, defaultLang, siteKey string) []HreflangLink {
+	base := strings.TrimRight(originBase, "/")
+	links := make([]HreflangLink, 0, len(blogLangs)+1)
+	defaultHref := ""
+	for _, lang := range blogLangs {
+		translated, ok := findTranslatedPost(current, posts, lang.Code, siteKey)
+		if !ok {
+			continue
+		}
+		href := base + "/blog/" + strings.TrimSpace(translated.Slug)
+		links = append(links, HreflangLink{Lang: hreflangCode(lang.Code), Href: href})
+		if lang.Code == pickLang("", defaultLang) {
+			defaultHref = href
+		}
+	}
+	if len(links) < 2 {
+		return nil
+	}
+	if defaultHref != "" {
+		links = append(links, HreflangLink{Lang: "x-default", Href: defaultHref})
+	}
+	return links
+}
+
 // parseChrome 解析 blog_chrome JSON;空串或非法 JSON 一律返回零值(渲染走默认,不因配置错误 5xx)。
 func parseChrome(raw string) Chrome {
 	var c Chrome
@@ -627,6 +671,9 @@ type DetailView struct {
 	GatePosition    int
 	JSONLD          template.JS
 	BreadcrumbLD    template.JS // BreadcrumbList 结构化数据(首页 > 博客 > 本文)
+	// Hreflang 三语译文互指(rel=alternate);仅 show_langs 开启且存在关联译文时非空。
+	// 由 RenderDetail 注入——译文关联需要全量已发布列表,buildDetailView 拿不到。
+	Hreflang []HreflangLink
 }
 
 var beijingLoc = mustLoadBeijing()
