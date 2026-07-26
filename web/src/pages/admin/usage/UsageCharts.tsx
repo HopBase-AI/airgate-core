@@ -161,10 +161,8 @@ export function UsageTokenTrendChart({
           }}
           labelStyle={{ color: 'var(--ag-text)', fontWeight: 600, marginBottom: 4 }}
           labelFormatter={(_label, payload) => {
-            if (payload?.[0]?.payload?.rawTime) {
-              return payload[0].payload.rawTime;
-            }
-            return _label;
+            const rawTime = (payload?.[0]?.payload as { rawTime?: string } | undefined)?.rawTime;
+            return rawTime ?? String(_label);
           }}
           formatter={(value, name) => [
             TOKEN_TREND_RATIO_KEYS.has(String(name) as keyof typeof USAGE_TOKEN_COLORS) ? `${Number(value).toFixed(1)}%` : fmtNum(Number(value)),

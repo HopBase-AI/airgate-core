@@ -14,7 +14,9 @@ interface PluginPageProps {
 }
 
 export default function PluginPage({ pluginNameOverride, subPathOverride }: PluginPageProps = {}) {
-  const { pluginName, _splat } = useParams({ strict: false });
+  // strict:false 时路由未注册的 params 会推导成 any,用注解钉住类型
+  const params: { pluginName?: string; _splat?: string } = useParams({ strict: false });
+  const { pluginName, _splat } = params;
   const resolvedPluginName = pluginNameOverride || pluginName;
   const [mod, setMod] = useState<PluginFrontendModule | null>(null);
   const [loadedPluginName, setLoadedPluginName] = useState<string | null>(null);

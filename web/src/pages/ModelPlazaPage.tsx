@@ -49,7 +49,7 @@ function parsePricingConfig(raw: string | undefined): TocPricingConfig | null {
   try {
     const value = JSON.parse(raw) as unknown;
     return value && typeof value === 'object' && !Array.isArray(value)
-      ? value as TocPricingConfig
+      ? value
       : null;
   } catch {
     return null;

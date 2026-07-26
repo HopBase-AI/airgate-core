@@ -309,7 +309,7 @@
     "accounts": "帳號",
     "accounts_status": "{{enabled}} 啟用 {{errors}} 錯誤",
     "today_requests": "今日請求",
-    "alltime_requests": "總計: {{count}}",
+    "alltime_requests": "總計: {{total}}",
     "users": "用戶",
     "new_users": "+{{count}}",
     "total_count": "總計: {{count}}",

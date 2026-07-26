@@ -30,7 +30,8 @@ function getQueryLanguage() {
 // 大陆简体、港澳台繁体、日本日语、其余英文。出海默认英文且不牺牲既有区域体验。
 function detectBrowserLanguage(): string {
   if (typeof navigator === 'undefined') return DEFAULT_LANGUAGE;
-  const candidates = Array.isArray(navigator.languages) && navigator.languages.length
+  // 注意别用 Array.isArray 判定:它会把 readonly string[] 窄化成 any[],丢掉元素类型
+  const candidates: readonly string[] = navigator.languages?.length
     ? navigator.languages
     : [navigator.language];
   for (const raw of candidates) {

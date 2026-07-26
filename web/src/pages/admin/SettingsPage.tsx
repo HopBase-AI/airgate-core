@@ -358,7 +358,7 @@ export default function SettingsPage() {
       ];
     }
 
-    const tab = activeTab as SaveTabKey;
+    const tab = activeTab;
     const group = TAB_GROUP[tab];
     const keys = TAB_KEYS[tab];
     return keys.map((key) => ({
@@ -1182,7 +1182,7 @@ function SecurityPanel() {
               </div>
               {hasKey ? (
                 <code className="inline-block px-2.5 py-1.5 rounded-md bg-surface border border-glass-border text-[13px] font-mono text-text break-all">
-                  {data!.hint}
+                  {data.hint}
                 </code>
               ) : (
                 <span className="text-[13px] text-text-tertiary">

@@ -619,7 +619,7 @@ export default function ReferralPage() {
               {t('referral_admin.clear_override')}
             </Button>
             <div className="flex gap-2">
-              <Button size="sm" variant="secondary" onPress={rateModal.close}>{t('common.cancel')}</Button>
+              <Button size="sm" variant="secondary" onPress={() => rateModal.close()}>{t('common.cancel')}</Button>
               <Button
                 size="sm"
                 variant="primary"
@@ -716,7 +716,7 @@ export default function ReferralPage() {
         title={t('referral_admin.set_promoter')}
         footer={(
           <div className="flex w-full justify-end gap-2">
-            <Button size="sm" variant="secondary" onPress={promoterModal.close}>{t('common.cancel')}</Button>
+            <Button size="sm" variant="secondary" onPress={() => promoterModal.close()}>{t('common.cancel')}</Button>
             <Button
               size="sm"
               variant="primary"
@@ -836,7 +836,7 @@ export default function ReferralPage() {
         title={t('referral_admin.reverse')}
         footer={(
           <div className="flex w-full justify-end gap-2">
-            <Button size="sm" variant="secondary" onPress={reverseModal.close}>{t('common.cancel')}</Button>
+            <Button size="sm" variant="secondary" onPress={() => reverseModal.close()}>{t('common.cancel')}</Button>
             <Button
               size="sm"
               variant="danger"

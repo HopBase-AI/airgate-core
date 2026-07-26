@@ -226,7 +226,7 @@ export function useAccountTableColumns({
 
         const handleRefreshClick = async (event: MouseEvent<HTMLElement>) => {
           event.stopPropagation();
-          const target = event.currentTarget as HTMLElement;
+          const target = event.currentTarget;
           target.style.opacity = '0.5';
           target.style.pointerEvents = 'none';
           try {
