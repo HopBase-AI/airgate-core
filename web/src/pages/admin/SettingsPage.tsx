@@ -360,7 +360,9 @@ export default function SettingsPage() {
     if (!raw.trim()) return {};
     try {
       const parsed: unknown = JSON.parse(raw);
-      return parsed && typeof parsed === 'object' ? (parsed as LandingAnnouncement) : {};
+      // LandingAnnouncement 全属性可选,object 可直接赋值,断言反而触发
+      // no-unnecessary-type-assertion(CI error 级)。
+      return parsed && typeof parsed === 'object' ? parsed : {};
     } catch {
       return {};
     }
