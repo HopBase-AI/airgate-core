@@ -11,13 +11,22 @@ function globMatches(pattern: string, value: string): boolean {
   return new RegExp(`${source}$`).test(value);
 }
 
-export function groupServesModel(routing: GroupResp['model_routing'], modelID: string): boolean {
+type ModelRouting = Record<string, number[] | null>;
+
+export function groupServesModel(
+  routing: GroupResp['model_routing'] | ModelRouting | null,
+  modelID: string,
+): boolean {
   const entries = Object.entries(routing ?? {});
   if (entries.length === 0) return true;
   const exact = routing?.[modelID];
-  if (exact) return exact.length > 0;
+  if (Object.prototype.hasOwnProperty.call(routing, modelID)) {
+    return Array.isArray(exact) && exact.length > 0;
+  }
   for (const [pattern, accountIDs] of entries) {
-    if (globMatches(pattern, modelID)) return accountIDs.length > 0;
+    if (globMatches(pattern, modelID)) {
+      return Array.isArray(accountIDs) && accountIDs.length > 0;
+    }
   }
   return false;
 }
