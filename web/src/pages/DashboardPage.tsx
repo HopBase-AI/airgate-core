@@ -232,7 +232,7 @@ function StatsCards({ stats }: { stats: DashboardStatsResp }) {
         title={t('dashboard.today_requests')}
         value={`${fmtNum(todayTextRequests)}/${fmtNum(todayImageRequests)}`}
         valueSuffix={t('dashboard.image_suffix')}
-        meta={t('dashboard.alltime_requests', { count: fmtNum(stats.alltime_requests) } as Record<string, string>)}
+        meta={t('dashboard.alltime_requests', { total: fmtNum(stats.alltime_requests) })}
       />
       <MetricCard
         icon={<Users className="h-5 w-5" />}

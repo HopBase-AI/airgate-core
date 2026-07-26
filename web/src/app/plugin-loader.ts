@@ -5,7 +5,7 @@ function wrapPluginComponent<TProps extends object>(
   Component: ComponentType<TProps>,
 ): ComponentType<TProps> {
   return function WrappedPluginComponent(props) {
-    return createElement(Component, (props ?? {}) as TProps);
+    return createElement(Component, (props ?? {}));
   };
 }
 

@@ -1715,7 +1715,7 @@ export default function RelayDetectionPage() {
       <div className="flex min-h-[360px] flex-col items-center justify-center gap-3 p-6 text-center">
         <TriangleAlert className="h-6 w-6 text-danger" />
         <div className="text-sm font-semibold text-text">报告加载失败</div>
-        <div className="text-xs text-text-tertiary">{(detailQuery.error as Error).message}</div>
+        <div className="text-xs text-text-tertiary">{(detailQuery.error).message}</div>
         <Button variant="primary" onPress={() => void detailQuery.refetch()}><RefreshCw className="h-4 w-4" />重试</Button>
       </div>
     </Card>

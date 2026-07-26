@@ -12,7 +12,7 @@ import type { APIKeyResp, GroupResp } from '../../../shared/types';
 function getUseKeyConfig(
   baseUrl: string,
   platform: string,
-  tab: 'claude' | 'codex' | 'desktop' | 'desktop',
+  tab: 'claude' | 'codex' | 'desktop'  ,
   shell: 'unix' | 'cmd' | 'powershell',
   apiKey: string,
   siteName: string,

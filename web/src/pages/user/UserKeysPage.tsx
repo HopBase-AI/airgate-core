@@ -490,7 +490,7 @@ export default function UserKeysPage() {
                             ...(hasSellRate ? [{
                               color: 'default' as const,
                               label: t('user_keys.sell_rate_short', '销售倍率'),
-                              value: row.sell_rate!.toFixed(2),
+                              value: row.sell_rate.toFixed(2),
                             }] : []),
                           ]}
                         />

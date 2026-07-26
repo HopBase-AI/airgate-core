@@ -309,7 +309,7 @@
     "accounts": "アカウント",
     "accounts_status": "{{enabled}} 有効 {{errors}} エラー",
     "today_requests": "本日のリクエスト",
-    "alltime_requests": "総計: {{count}}",
+    "alltime_requests": "総計: {{total}}",
     "users": "ユーザー",
     "new_users": "+{{count}}",
     "total_count": "総計: {{count}}",

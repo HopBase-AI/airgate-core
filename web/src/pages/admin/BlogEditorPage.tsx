@@ -77,7 +77,7 @@ export default function BlogEditorPage() {
   const { blog_sites } = useSiteSettings();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const search = useSearch({ strict: false }) as { id?: number };
+  const search = useSearch({ strict: false });
   const editId = typeof search.id === 'number' ? search.id : undefined;
 
   const [form, setForm] = useState<BlogForm>(emptyForm);

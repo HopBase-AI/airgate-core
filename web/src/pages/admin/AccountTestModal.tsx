@@ -223,7 +223,10 @@ export function AccountTestModal({ open, account, onClose }: AccountTestModalPro
                   // ✓ 测试完成! 对称），不要再 addLine 到终端输出区，否则
                   // 同一条错误会被画两次。
                   setStatus('error');
-                  setErrorMessage(data.error || t('accounts.test_error'));
+                  const errText: unknown = data.error;
+                  setErrorMessage(
+                    typeof errText === 'string' && errText ? errText : t('accounts.test_error'),
+                  );
                 }
                 continue;
               }

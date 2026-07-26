@@ -183,7 +183,7 @@ export function createPluginOAuthBridge(pluginId: string): OAuthBridgeWithSessio
         accountType: r.account_type ?? 'oauth',
         accountName: r.account_name ?? '',
         credentials: r.credentials ?? {},
-        status: (r.status === 'ok' ? 'ok' : 'failed') as 'ok' | 'failed',
+        status: (r.status === 'ok' ? 'ok' : 'failed'),
         error: r.error,
       }));
     },
@@ -211,7 +211,7 @@ export function createPluginOAuthBridge(pluginId: string): OAuthBridgeWithSessio
         accountType: r.account_type ?? 'oauth',
         accountName: r.account_name ?? '',
         credentials: r.credentials ?? {},
-        status: (r.status === 'ok' ? 'ok' : 'failed') as 'ok' | 'failed',
+        status: (r.status === 'ok' ? 'ok' : 'failed'),
         error: r.error,
       }));
     },
@@ -242,7 +242,7 @@ export function createPluginOAuthBridge(pluginId: string): OAuthBridgeWithSessio
         accountType: r.account_type ?? 'oauth',
         accountName: r.account_name ?? '',
         credentials: r.credentials ?? {},
-        status: (r.status === 'ok' ? 'ok' : 'failed') as 'ok' | 'failed',
+        status: (r.status === 'ok' ? 'ok' : 'failed'),
         error: r.error,
       }));
     },
