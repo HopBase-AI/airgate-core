@@ -45,6 +45,7 @@ export const UsagePage = lazyWithPreload(() => import('../pages/admin/UsagePage'
 export const RelayDetectionPage = lazyWithPreload(() => import('../pages/admin/RelayDetectionPage'));
 export const PluginsPage = lazyWithPreload(() => import('../pages/admin/PluginsPage'));
 export const SettingsPage = lazyWithPreload(() => import('../pages/admin/SettingsPage'));
+export const NotificationsPage = lazyWithPreload(() => import('../pages/admin/NotificationsPage'));
 export const ReferralPage = lazyWithPreload(() => import('../pages/admin/ReferralPage'));
 export const BlogListPage = lazyWithPreload(() => import('../pages/admin/BlogListPage'));
 export const BlogEditorPage = lazyWithPreload(() => import('../pages/admin/BlogEditorPage'));

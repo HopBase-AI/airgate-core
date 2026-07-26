@@ -28,6 +28,7 @@ import {
   ModelPlazaPage,
   PluginPage,
   PluginsPage,
+  NotificationsPage,
   RelayDetectionPage,
   preloadRoutePage,
   PrivacyPolicyPage,
@@ -316,6 +317,7 @@ const adminUsageRoute = createRoute({ getParentRoute: () => adminLayout, path: '
 const adminRelayDetectionRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/relay-detection', component: renderPage(RelayDetectionPage) });
 const adminPluginsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/plugins', component: renderPage(PluginsPage) });
 const adminSettingsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/settings', component: renderPage(SettingsPage) });
+const adminNotificationsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/notifications', component: renderPage(NotificationsPage) });
 const adminReferralRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/referral', component: renderPage(ReferralPage) });
 const adminBlogRoute = createRoute({ getParentRoute: () => blogAuthorLayout, path: '/admin/blog', component: renderPage(BlogListPage) });
 const adminBlogEditRoute = createRoute({
@@ -422,6 +424,7 @@ const routeTree = rootRoute.addChildren([
       adminRelayDetectionRoute,
       adminPluginsRoute,
       adminSettingsRoute,
+      adminNotificationsRoute,
       adminReferralRoute,
     ]),
     blogAuthorLayout.addChildren([
