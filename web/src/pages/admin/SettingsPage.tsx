@@ -14,7 +14,7 @@ import { useToast } from '../../shared/ui';
 import {
   Save, Loader2, Globe, Mail, MailSearch, Send, Upload, X, RotateCcw,
   ShieldCheck, Copy, Trash2, KeyRound, Zap, Download, Database, Boxes, Plus, ChevronDown, Info,
-  TriangleAlert,
+  TriangleAlert, Megaphone,
 } from 'lucide-react';
 import type { SettingItem, TestSMTPReq } from '../../shared/types';
 import { SystemUpdatePanel } from './SystemUpdatePanel';
@@ -34,9 +34,31 @@ const SITE_KEYS = [
   'blog_sites', 'blog_site_key',
   // 博客站点皮肤：blog_theme=皮肤名(空/ember/ink);blog_chrome=导航/页脚/文案 JSON(见 SSR blogssr)
   'blog_theme', 'blog_chrome',
-  // 整站通知横幅（放 site 组：随站点 tab 保存，且 site 组全量走公开设置接口）
-  'announcement_enabled', 'announcement_level', 'announcement_content',
 ] as const;
+
+// 「通知」栏目（group 仍为 site：site 组全量走公开设置接口，改组会丢公开性）
+const NOTICE_KEYS = [
+  // 控制台整站通知横幅
+  'announcement_enabled', 'announcement_level', 'announcement_content',
+  // 官网落地页公告条：JSON {enabled,href,text{lang},link{lang}}，由 landing-app.js 消费，
+  // 未配置时落地页显示内置四语公告，语言缺项回退 en → zh
+  'landing_announcement_json',
+] as const;
+
+// 落地页公告条支持的语言（与 landing/assets/landing-i18n.js 的 SUPPORTED 对齐）
+const LANDING_ANNOUNCEMENT_LANGS = [
+  { code: 'zh', label: '中文' },
+  { code: 'zh-HK', label: '繁體中文' },
+  { code: 'en', label: 'English' },
+  { code: 'ja', label: '日本語' },
+] as const;
+
+type LandingAnnouncement = {
+  enabled?: boolean;
+  href?: string;
+  text?: Record<string, string>;
+  link?: Record<string, string>;
+};
 
 const REG_KEYS = [
   'registration_enabled', 'email_verify_enabled',
@@ -230,10 +252,11 @@ const DEFAULT_BALANCE_ALERT_BODY = `<div style="font-family: -apple-system, Blin
 
 // ==================== Tab 定义 ====================
 
-type TabKey = 'site' | 'security' | 'smtp' | 'storage' | 'models' | 'openclaw' | 'system';
+type TabKey = 'site' | 'notice' | 'security' | 'smtp' | 'storage' | 'models' | 'openclaw' | 'system';
 
 const TABS: { key: TabKey; labelKey: string; icon: typeof Globe }[] = [
   { key: 'site', labelKey: 'settings.tab_site', icon: Globe },
+  { key: 'notice', labelKey: 'settings.tab_notice', icon: Megaphone },
   { key: 'security', labelKey: 'settings.tab_security', icon: ShieldCheck },
   { key: 'smtp', labelKey: 'settings.tab_smtp', icon: Mail },
   { key: 'storage', labelKey: 'settings.tab_storage', icon: Database },
@@ -247,6 +270,7 @@ type SaveTabKey = Exclude<TabKey, 'security' | 'system'>;
 
 const TAB_GROUP: Record<SaveTabKey, string> = {
   site: 'site',
+  notice: 'site',
   smtp: 'smtp',
   storage: 'storage',
   models: 'models',
@@ -255,6 +279,7 @@ const TAB_GROUP: Record<SaveTabKey, string> = {
 
 const TAB_KEYS: Record<SaveTabKey, readonly string[]> = {
   site: SITE_KEYS,
+  notice: NOTICE_KEYS,
   smtp: SMTP_KEYS,
   storage: STORAGE_KEYS,
   models: MODELS_KEYS,
@@ -326,6 +351,31 @@ export default function SettingsPage() {
 
   function boolVal(key: string): boolean {
     return val(key) === 'true';
+  }
+
+  // 落地页公告条（landing_announcement_json）的结构化读写：
+  // 表单编辑对象字段，存储仍是单个 JSON setting，落地页按语言消费。
+  function landingAnnValue(): LandingAnnouncement {
+    const raw = values['landing_announcement_json'] ?? '';
+    if (!raw.trim()) return {};
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? (parsed as LandingAnnouncement) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function patchLandingAnn(patch: Partial<LandingAnnouncement>) {
+    set('landing_announcement_json', JSON.stringify({ ...landingAnnValue(), ...patch }));
+  }
+
+  function setLandingAnnLang(field: 'text' | 'link', lang: string, value: string) {
+    const cur = landingAnnValue();
+    const map = { ...(cur[field] ?? {}) };
+    if (value) map[lang] = value;
+    else delete map[lang];
+    patchLandingAnn({ [field]: map });
   }
 
   const handleModelCatalogValidationChange = useCallback((key: ModelCatalogSettingKey, errors: string[]) => {
@@ -701,6 +751,19 @@ export default function SettingsPage() {
                   )}
                 </SettingsSection>
 
+              </div>
+              {saveAction}
+            </Card.Content>
+          </Card>
+        )}
+
+        {activeTab === 'notice' && (
+          <Card>
+            <Card.Header>
+              <Card.Title>{t('settings.tab_notice')}</Card.Title>
+            </Card.Header>
+            <Card.Content>
+              <div className="ag-settings-section-stack">
                 <SettingsSection
                   description={t('settings.announcement_desc')}
                   title={t('settings.announcement_title')}
@@ -735,6 +798,49 @@ export default function SettingsPage() {
                         placeholder={t('settings.announcement_content_ph')}
                       />
                     </Field>
+                  </div>
+                </SettingsSection>
+
+                <SettingsSection
+                  description={t('settings.landing_announcement_desc')}
+                  title={t('settings.landing_announcement_title')}
+                >
+                  <div className="space-y-4">
+                    <NativeSwitch
+                      isSelected={landingAnnValue().enabled !== false}
+                      label={<span className="text-sm font-medium text-text">{t('settings.landing_announcement_enabled')}</span>}
+                      onChange={(v) => patchLandingAnn({ enabled: v })}
+                    />
+                    <Field
+                      label={t('settings.landing_announcement_href')}
+                      hint={t('settings.landing_announcement_href_hint')}
+                    >
+                      <Input
+                        className="max-w-md"
+                        value={landingAnnValue().href ?? ''}
+                        onChange={(e) => patchLandingAnn({ href: e.target.value })}
+                        placeholder="#pricing"
+                      />
+                    </Field>
+                    {LANDING_ANNOUNCEMENT_LANGS.map(({ code, label }) => (
+                      <div key={code} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Field label={`${t('settings.landing_announcement_text')} · ${label}`}>
+                          <Input
+                            value={landingAnnValue().text?.[code] ?? ''}
+                            onChange={(e) => setLandingAnnLang('text', code, e.target.value)}
+                            placeholder={code === 'zh' ? 'gpt-5.6 三规格已上线，价格与阶梯规则已更新' : ''}
+                          />
+                        </Field>
+                        <Field label={`${t('settings.landing_announcement_link')} · ${label}`}>
+                          <Input
+                            value={landingAnnValue().link?.[code] ?? ''}
+                            onChange={(e) => setLandingAnnLang('link', code, e.target.value)}
+                            placeholder={code === 'zh' || code === 'zh-HK' ? '查看价格' : 'View pricing'}
+                          />
+                        </Field>
+                      </div>
+                    ))}
+                    <p className="text-xs leading-5 text-text-tertiary">{t('settings.landing_announcement_hint')}</p>
                   </div>
                 </SettingsSection>
               </div>
