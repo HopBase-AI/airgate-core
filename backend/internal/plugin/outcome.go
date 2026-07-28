@@ -51,7 +51,9 @@ func (f *Forwarder) writeResult(c *gin.Context, state *forwardState, execution f
 			"group_id", state.keyInfo.GroupID,
 			"status_code", execution.outcome.Upstream.StatusCode,
 			"reason", execution.outcome.Reason)
-		if !state.stream || !c.Writer.Written() {
+		if state.stream && streamHeartbeatOnlyWritten(c) {
+			protocolStreamError(c, sanitizedClientErrorStatus(execution.outcome), "invalid_request_error", "invalid_request", sanitizedClientErrorMessage(execution.outcome))
+		} else if !state.stream || !c.Writer.Written() {
 			writeClientErrorResponse(c, execution.outcome)
 		}
 		if execution.outcome.Usage != nil {
@@ -130,6 +132,17 @@ func extractErrorMessage(body []byte) string {
 // 按 Kind 给出大类说明。流式已写入时 no-op。
 func writeFailureResponse(c *gin.Context, state *forwardState, execution forwardExecution) {
 	if state.stream && c.Writer.Written() {
+		if streamHeartbeatOnlyWritten(c) {
+			statusCode := http.StatusBadGateway
+			errType := "server_error"
+			code := "upstream_error"
+			if execution.outcome.Kind == sdk.OutcomeAccountRateLimited {
+				statusCode = http.StatusTooManyRequests
+				errType = "rate_limit_error"
+				code = "upstream_rate_limit"
+			}
+			protocolStreamError(c, statusCode, errType, code, sanitizedMessage(execution.outcome.Kind))
+		}
 		return
 	}
 	pluginName := ""
