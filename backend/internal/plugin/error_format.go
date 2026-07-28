@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -64,6 +65,100 @@ func protocolError(c *gin.Context, status int, errType, code, message string) {
 				"code":    code,
 			},
 		})
+	}
+}
+
+// protocolStreamError reports a failure after an SSE heartbeat already
+// committed HTTP 200. The HTTP status can no longer change, so the error must
+// use the selected wire protocol and terminate the existing stream cleanly.
+func protocolStreamError(c *gin.Context, status int, errType, code, message string) {
+	var prefix string
+	var payload any
+	if requestErrorFormat(c) == errorFormatAnthropic {
+		prefix = "event: error\ndata: "
+		payload = gin.H{
+			"type": "error",
+			"error": gin.H{
+				"type":    anthropicErrorType(errType, status),
+				"message": message,
+			},
+		}
+	} else if isResponsesStreamRequest(c) {
+		prefix = "event: response.failed\ndata: "
+		payload = responsesFailedStreamPayload(c, status, errType, code, message)
+	} else {
+		prefix = "data: "
+		payload = gin.H{
+			"error": gin.H{
+				"message": message,
+				"type":    errType,
+				"code":    code,
+			},
+		}
+	}
+	body, _ := json.Marshal(payload)
+	_, _ = c.Writer.WriteString(prefix + string(body) + "\n\n")
+	c.Writer.Flush()
+}
+
+func isResponsesStreamRequest(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+	path := c.Request.URL.Path
+	return pathHasAPIPrefix(path, "/v1/responses") || pathHasAPIPrefix(path, "/responses")
+}
+
+// responsesFailedStreamPayload uses the Responses API terminal failure event
+// instead of a generic OpenAI error object. Codex clients use response.failed
+// to stop the stream and surface the server-provided message.
+func responsesFailedStreamPayload(c *gin.Context, status int, errType, code, message string) gin.H {
+	model := "unknown"
+	if value, ok := c.Get(ginCtxKeyModel); ok {
+		if candidate, ok := value.(string); ok && candidate != "" {
+			model = candidate
+		}
+	}
+	responseCode := code
+	switch {
+	case status == http.StatusTooManyRequests || errType == "rate_limit_error":
+		responseCode = "rate_limit_exceeded"
+	case status >= http.StatusInternalServerError || errType == "server_error":
+		responseCode = "server_error"
+	case errType == "invalid_request_error":
+		responseCode = "invalid_prompt"
+	}
+	return gin.H{
+		"type":            "response.failed",
+		"sequence_number": 0,
+		"response": gin.H{
+			"id":                   "resp_hopbase_error",
+			"object":               "response",
+			"created_at":           time.Now().Unix(),
+			"status":               "failed",
+			"background":           false,
+			"error":                gin.H{"code": responseCode, "message": message},
+			"incomplete_details":   nil,
+			"instructions":         nil,
+			"max_output_tokens":    nil,
+			"model":                model,
+			"output":               []any{},
+			"parallel_tool_calls":  true,
+			"previous_response_id": nil,
+			"reasoning":            gin.H{"effort": "medium", "summary": nil},
+			"service_tier":         "default",
+			"store":                false,
+			"temperature":          1,
+			"text":                 gin.H{"format": gin.H{"type": "text"}, "verbosity": "medium"},
+			"tool_choice":          "auto",
+			"tools":                []any{},
+			"top_logprobs":         0,
+			"top_p":                1,
+			"truncation":           "disabled",
+			"usage":                nil,
+			"user":                 nil,
+			"metadata":             gin.H{},
+		},
 	}
 }
 

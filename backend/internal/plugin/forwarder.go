@@ -474,6 +474,10 @@ type allRoutesFailureResponse struct {
 
 func writeAllRoutesFailed(c *gin.Context, summary allRoutesFailureSummary) {
 	response := selectAllRoutesFailureResponse(summary)
+	if streamHeartbeatOnlyWritten(c) {
+		protocolStreamError(c, response.status, response.errType, response.code, response.message)
+		return
+	}
 	if response.status == http.StatusTooManyRequests {
 		protocolRateLimitError(c, response.status, response.code, response.message, response.retryAfter)
 		return
@@ -671,9 +675,10 @@ func keyInfoForRoute(base *auth.APIKeyInfo, route routing.Candidate) *auth.APIKe
 }
 
 // canFailover 是否允许换账号重试。
-// 流式已写入 → 不可；err 非 nil（插件自身崩）→ 可；其余由 Kind.ShouldFailover() 决定。
+// 流式业务数据已写入 → 不可；只有协议中立 SSE comment 心跳时仍可；
+// err 非 nil（插件自身崩）→ 可；其余由 Kind.ShouldFailover() 决定。
 func (f *Forwarder) canFailover(c *gin.Context, state *forwardState, execution forwardExecution) bool {
-	if state.stream && c.Writer.Written() {
+	if state.stream && streamApplicationResponseCommitted(c) {
 		return false
 	}
 	if execution.err != nil {

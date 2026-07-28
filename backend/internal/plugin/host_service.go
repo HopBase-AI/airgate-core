@@ -1347,7 +1347,10 @@ func hostForwardTimeout(mgr *Manager, req hostForwardRequest) time.Duration {
 // 成功响应（StatusCode < 400）立即提交到真正的 gRPC stream，实现真流式；
 // 错误响应缓冲数据，允许调用方丢弃后重试下一个账号。
 type failoverStreamWriter struct {
-	target    *hostStreamWriter
+	target interface {
+		http.ResponseWriter
+		Flush()
+	}
 	committed bool
 	bufStatus int
 	bufHdr    http.Header
@@ -1377,6 +1380,12 @@ func (w *failoverStreamWriter) WriteHeader(statusCode int) {
 
 func (w *failoverStreamWriter) Write(data []byte) (int, error) {
 	if w.committed {
+		return w.target.Write(data)
+	}
+	if isSSECommentOnly(data) {
+		for k, values := range w.bufHdr {
+			w.target.Header()[k] = append([]string(nil), values...)
+		}
 		return w.target.Write(data)
 	}
 	buf := make([]byte, len(data))
