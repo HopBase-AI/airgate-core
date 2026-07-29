@@ -21,10 +21,9 @@ import (
 //  2. 平台模型目录未就绪（插件刚启动、目录未推送）→ 放行；
 //  3. 分组配置了 model_routing：任一候选命中（语义同调度层 applyModelRouting）→ 放行；
 //     全部未命中 → 拦（主目标：GLM 分组请求 gpt-5.5 得到清晰 404 而非 503）；
-//  4. 分组未配 model_routing：任一候选在本平台目录 → 放行；候选全不在本平台时，
-//     仅当至少一个候选能在其他平台目录中找到（跨平台错配，如 claude 分组请求
-//     gpt-5.5）才拦；哪个平台目录都查不到的未知模型（如 codex-auto-review，
-//     上游实际在服务、走关键字兜底计费）必须放行——严禁拦目录外未知模型。
+//  4. 分组未配 model_routing：任一候选在本平台目录 → 放行；候选全不在本平台目录
+//     → 拦截。目标平台目录已就绪时，继续放行目录外模型会把无效请求打到上游，
+//     触发无意义的 failover，甚至把健康账号错误标记为 degraded。
 func (f *Forwarder) precheckModelServed(state *forwardState) (string, bool) {
 	if state == nil || state.keyInfo == nil || f.manager == nil {
 		return "", true
@@ -66,12 +65,5 @@ func (f *Forwarder) precheckModelServed(state *forwardState) (string, bool) {
 			return "", true
 		}
 	}
-	// 候选全不在本平台目录：仅当能在其他平台目录中找到（跨平台错配）才拦；
-	// 全平台未知的模型放行（现网存在目录外真实流量）。
-	for _, cand := range candidates {
-		if p := f.manager.FindPlatformByModelFold(cand); p != "" && p != platform {
-			return blockReason, false
-		}
-	}
-	return "", true
+	return blockReason, false
 }

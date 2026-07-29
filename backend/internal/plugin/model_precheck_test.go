@@ -26,11 +26,12 @@ func precheckTestState(platform, model string, schedulingModels []string, routin
 }
 
 func TestPrecheckModelServed(t *testing.T) {
-	// 目录：openai 平台有 gpt-5.4/gpt-5.5，anthropic 平台有 claude-sonnet-4-5
+	// 目录：openai 平台有 gpt-5.4/gpt-5.5/codex-auto-review，anthropic 平台有 claude-sonnet-4-5
 	catalog := map[string][]sdk.ModelInfo{
 		"openai": {
 			{ID: "gpt-5.4"},
 			{ID: "gpt-5.5"},
+			{ID: "codex-auto-review"},
 		},
 		"anthropic": {
 			{ID: "claude-sonnet-4-5"},
@@ -62,10 +63,16 @@ func TestPrecheckModelServed(t *testing.T) {
 			wantAllow: false,
 		},
 		{
-			name:      "routing空_全平台未知模型_放行",
+			name:      "routing空_目录内扩展模型_放行",
 			catalog:   catalog,
 			state:     precheckTestState("openai", "codex-auto-review", nil, nil),
 			wantAllow: true,
+		},
+		{
+			name:      "routing空_全平台未知模型_拦",
+			catalog:   catalog,
+			state:     precheckTestState("anthropic", "hopbase-invalid-model", nil, nil),
+			wantAllow: false,
 		},
 		{
 			name:      "routing非空_glob命中_放行",
