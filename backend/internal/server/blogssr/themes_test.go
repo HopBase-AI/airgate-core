@@ -256,7 +256,7 @@ func TestSSR_EmberThemeListAndDetail(t *testing.T) {
 	chrome := `{"nav":[{"label":"首页","href":"/"},{"label":"模型价格","href":"/#pricing"},{"label":"博客","href":"/blog"}],"footer":[{"label":"接入文档","href":"/docs"}],"cta_desc":"自定义CTA描述"}`
 	r := newThemedRouter("ember", chrome, themedTestPosts())
 
-	w := doGet(t, r, "/blog")
+	w := doGetHost(t, r, "example.com", "/blog")
 	if w.Code != http.StatusOK {
 		t.Fatalf("list status = %d", w.Code)
 	}
@@ -288,7 +288,7 @@ func TestSSR_EmberThemeListAndDetail(t *testing.T) {
 		t.Error("博客列表不应显示装饰性 eyebrow 文案")
 	}
 
-	wd := doGet(t, r, "/blog/feature-post")
+	wd := doGetHost(t, r, "example.com", "/blog/feature-post")
 	if wd.Code != http.StatusOK {
 		t.Fatalf("detail status = %d", wd.Code)
 	}
@@ -300,6 +300,95 @@ func TestSSR_EmberThemeListAndDetail(t *testing.T) {
 	}
 	if strings.Contains(dbody, `class="article-eyebrow"`) {
 		t.Error("文章详情不应显示标签拼接的 eyebrow 文案")
+	}
+}
+
+func TestSSR_HopBaseHostUsesLandingAlignedTheme(t *testing.T) {
+	chrome := `{"show_langs":true,"default_lang":"zh-Hant","nav":[{"label":"旧生态","href":"/#ecosystem"}],"footer_note":"Enterprise AI gateway."}`
+	posts := themedTestPosts()
+	for i := range posts {
+		posts[i].Lang = "en"
+	}
+	r := newThemedRouter("ember", chrome, posts)
+
+	w := doGetHost(t, r, "hop-base.com", "/blog?lang=en")
+	if w.Code != http.StatusOK {
+		t.Fatalf("list status = %d", w.Code)
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		`class="hb-header"`,
+		`class="hb-intro"`,
+		`class="hb-featured"`,
+		`class="hb-rows"`,
+		`class="hb-footer"`,
+		`--hb-canvas:#f2f2f0`,
+		`/assets/fonts/ibm-plex-sans-latin.woff2`,
+		`href="/#enterprise">Enterprise</a>`,
+		`href="/#pricing">Pricing</a>`,
+		`href="/docs">Docs</a>`,
+		`href="/blog?lang=en" class="act" aria-current="page">Blog</a>`,
+		`href="/#faq">FAQ</a>`,
+		`role="menuitemradio"`,
+		`landingLang=blogLang==='zh-Hant'?'zh-HK':blogLang`,
+		"Feature Post",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("hopbase list missing %q", want)
+		}
+	}
+	for _, rejected := range []string{"OPEN LATE JOURNAL", ">旧生态</a>", `class="sk-journal"`, `class="sk-dispatch-list"`} {
+		if strings.Contains(body, rejected) {
+			t.Errorf("hopbase list retained legacy treatment %q", rejected)
+		}
+	}
+
+	detail := doGetHost(t, r, "hop-base.com", "/blog/feature-post?lang=en").Body.String()
+	for _, want := range []string{`class="hb-header"`, `class="article-title"`, `class="blog-cta"`, `class="hb-footer"`} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("hopbase detail missing %q", want)
+		}
+	}
+
+	notFound := doGetHost(t, r, "hop-base.com", "/blog/missing?lang=en")
+	if notFound.Code != http.StatusNotFound {
+		t.Fatalf("404 status = %d", notFound.Code)
+	}
+	for _, want := range []string{"Article not found", "This article may have moved", `href="/blog?lang=en" class="blog-back">← Back to blog</a>`} {
+		if !strings.Contains(notFound.Body.String(), want) {
+			t.Errorf("localized 404 missing %q", want)
+		}
+	}
+}
+
+func TestSSR_HopBaseAuthChrome(t *testing.T) {
+	posts := themedTestPosts()
+	for i := range posts {
+		posts[i].Lang = "en"
+	}
+	posts[0].GateEnabled = true
+	posts[0].GatePosition = 50
+	r := newThemedRouter("ember", `{"show_langs":true,"default_lang":"en"}`, posts)
+	body := doGetHost(t, r, "hop-base.com", "/blog?lang=en").Body.String()
+	for _, want := range []string{
+		`data-blog-auth data-console-url="https://api.hop-base.com"`,
+		`class="hb-user" data-blog-auth-user`,
+		`data-hb-menu-button`,
+		`data-hb-mobile-menu hidden`,
+		`data-hb-language`,
+		"airgate_blog_session_v1",
+		"persistLandingLang(initialBlogLang)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("hopbase auth chrome missing %q", want)
+		}
+	}
+
+	detail := doGetHost(t, r, "hop-base.com", "/blog/feature-post?lang=en").Body.String()
+	for _, want := range []string{`data-blog-acquisition`, `class="blog-gate"`, "if(session.authenticated){stopGate();return;}"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("hopbase gated detail missing %q", want)
+		}
 	}
 }
 
@@ -450,7 +539,7 @@ func TestSSR_ThemedBlogAuthState(t *testing.T) {
 	for _, theme := range []string{"ember", "ink"} {
 		t.Run(theme, func(t *testing.T) {
 			r := newThemedRouter(theme, `{"signup_label":"免费注册"}`, posts)
-			list := doGet(t, r, "/blog").Body.String()
+			list := doGetHost(t, r, "example.com", "/blog").Body.String()
 			for _, want := range []string{
 				`data-blog-auth data-console-url="https://api.hop-base.com"`,
 				`data-blog-auth-guest hidden`,
@@ -472,7 +561,7 @@ func TestSSR_ThemedBlogAuthState(t *testing.T) {
 				t.Errorf("%s 未登录结果不应回退到旧会话提示", theme)
 			}
 
-			detail := doGet(t, r, "/blog/feature-post").Body.String()
+			detail := doGetHost(t, r, "example.com", "/blog/feature-post").Body.String()
 			for _, want := range []string{
 				`data-blog-acquisition`,
 				`#blog-gate[hidden]{display:none!important}`,
@@ -520,7 +609,7 @@ func TestSSR_ThemeFallbacks(t *testing.T) {
 
 func TestSSR_EmberInviteThreadingInNav(t *testing.T) {
 	r := newThemedRouter("ember", `{"nav":[{"label":"首页","href":"/"},{"label":"博客","href":"/blog"}]}`, themedTestPosts())
-	body := doGet(t, r, "/blog?inv=Vip8").Body.String()
+	body := doGetHost(t, r, "example.com", "/blog?inv=Vip8").Body.String()
 	for _, want := range []string{`href="/?inv=vip8"`, `href="/blog?inv=vip8"`, `href="/blog/feature-post?inv=vip8"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("ember 列表 inv 透传缺少 %q", want)
@@ -579,7 +668,7 @@ func TestSSR_LangFilterAndSwitcher(t *testing.T) {
 		t.Error("默认语言不得被浏览器语言或本地缓存二次改写")
 	}
 	hantAt, enAt, zhAt := strings.Index(body, ">繁</a>"), strings.Index(body, ">EN</a>"), strings.Index(body, ">简</a>")
-	if hantAt < 0 || enAt < 0 || zhAt < 0 || !(hantAt < enAt && enAt < zhAt) {
+	if hantAt < 0 || enAt < 0 || zhAt < 0 || hantAt >= enAt || enAt >= zhAt {
 		t.Errorf("ToC 语言顺序应为繁/EN/简,位置=%d/%d/%d", hantAt, enAt, zhAt)
 	}
 
@@ -659,7 +748,7 @@ func TestSSR_LangDisabledByDefault(t *testing.T) {
 
 func TestLocalizedStringsAndChromeI18n(t *testing.T) {
 	chrome := `{"show_langs":true,"default_lang":"zh","title":"博客 · 实践与洞察","cta_desc":"中文CTA","i18n":{"en":{"title":"Blog · Field Notes","cta_desc":"English CTA","nav":[{"label":"Home","href":"/"},{"label":"Blog","href":"/blog"}]}}}`
-	r := newThemedRouter("ember", chrome, trilingualPosts())
+	r := newThemedRouter("ink", chrome, trilingualPosts())
 
 	// 英文列表:标题/导航/空态相关文案走 i18n 覆盖与内置英文
 	body := doGet(t, r, "/blog?lang=en").Body.String()
