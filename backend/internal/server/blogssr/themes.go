@@ -8,9 +8,10 @@ package blogssr
 // ember/ink 共用 sk-* chrome；kite 使用与落地页结构一致的独立顶栏。
 
 const (
-	themeEmber = "ember"
-	themeInk   = "ink"
-	themeKite  = "kite"
+	themeEmber   = "ember"
+	themeHopBase = "hopbase"
+	themeInk     = "ink"
+	themeKite    = "kite"
 )
 
 // ―――――― 皮肤共用 chrome 标记 ――――――

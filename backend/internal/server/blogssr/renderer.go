@@ -94,8 +94,12 @@ func (r *Renderer) RenderDetail(c *gin.Context) {
 	if err != nil || !postVisibleOnSite(post.Sites, b.SiteKey) {
 		// 文章不存在,或已发布但未投放到当前站点 → 一律 404(不泄露"存在但别站可见")。
 		// 皮肤 404 页也渲染顶栏/页脚,需先推导 chrome 字段。
-		applyChrome(&b, "", buildRegisterURL(b.ConsoleURL, "", "", ""), "")
-		b.HomeURL = "/blog"
+		lang := ""
+		if b.Chrome.ShowLangs {
+			lang = pickLang(c.Query("lang"), b.Chrome.DefaultLang)
+		}
+		applyChrome(&b, "", buildRegisterURL(b.ConsoleURL, "", "", ""), lang)
+		b.HomeURL = blogListURL(b.Lang, "")
 		c.Header("Cache-Control", "no-store")
 		r.write(c, http.StatusNotFound, r.set(b.Theme).notFound, b)
 		return
@@ -404,6 +408,12 @@ func (r *Renderer) branding(c *gin.Context) Branding {
 			}
 			b.Chrome = mergeChromeOverride(b.Chrome, e.BlogChrome)
 		}
+	}
+	// The production setting still names the legacy ember theme. On the ToB
+	// host, resolve that value to the landing-aligned paper theme while leaving
+	// Open Late and every explicitly branded site on their existing theme.
+	if b.Theme == themeEmber && b.SiteKey != "open-late" && normalizeHost(c.Request.Host) == "hop-base.com" {
+		b.Theme = themeHopBase
 	}
 	if strings.TrimSpace(b.ConsoleURL) == "" {
 		// 兜底:同源(博客与控制台同域时可用;跨域时应配置 site.api_base_url)。

@@ -34,6 +34,8 @@ type uiText struct {
 	GateButton    string
 	EmptyTitle    string
 	EmptySub      string
+	NotFoundTitle string
+	NotFoundSub   string
 }
 
 var uiTexts = map[string]uiText{
@@ -43,6 +45,7 @@ var uiTexts = map[string]uiText{
 		GateTitle: "注册后继续阅读全文", GateDesc: "免费注册即可读完本文,并获得 API 额度体验。",
 		GateButton: "免费注册 / 登录",
 		EmptyTitle: "文章正在路上", EmptySub: "我们正在准备第一批内容,敬请期待。",
+		NotFoundTitle: "文章不存在", NotFoundSub: "该文章可能已下线或链接有误。",
 	},
 	"zh-Hant": {
 		ReadingSuffix: " 分鐘閱讀", Back: "← 返回 Blog", CTAButton: "免費開始 →",
@@ -50,6 +53,7 @@ var uiTexts = map[string]uiText{
 		GateTitle: "註冊後繼續閱讀全文", GateDesc: "免費註冊即可讀完本文,並獲得 API 額度體驗。",
 		GateButton: "免費註冊 / 登入",
 		EmptyTitle: "文章正在路上", EmptySub: "我們正在準備第一批內容,敬請期待。",
+		NotFoundTitle: "文章不存在", NotFoundSub: "該文章可能已下線或連結有誤。",
 	},
 	"en": {
 		ReadingSuffix: " min read", Back: "← Back to blog", CTAButton: "Start for free →",
@@ -57,6 +61,7 @@ var uiTexts = map[string]uiText{
 		GateTitle: "Sign up to keep reading", GateDesc: "Create a free account to finish this article and get trial API credits.",
 		GateButton: "Sign up / Log in",
 		EmptyTitle: "Articles on the way", EmptySub: "We are preparing the first batch of posts. Stay tuned.",
+		NotFoundTitle: "Article not found", NotFoundSub: "This article may have moved or is no longer available.",
 	},
 }
 
@@ -365,9 +370,9 @@ func parseChrome(raw string) Chrome {
 	return c
 }
 
-// validThemes 允许的皮肤名;ember=HopBase 暗色,ink=Essevin 水墨纸感,
-// kite=KITE 技术网格,空=中性默认模板。
-var validThemes = map[string]bool{"": true, "ember": true, "ink": true, "kite": true}
+// validThemes 允许的皮肤名;hopbase=ToB 纸面终端,ember=Open Late 暗色,
+// ink=Essevin 水墨纸感,kite=KITE 技术网格,空=中性默认模板。
+var validThemes = map[string]bool{"": true, "ember": true, "hopbase": true, "ink": true, "kite": true}
 
 // Branding 站点品牌信息(从 site 设置读取)。
 type Branding struct {
@@ -470,6 +475,8 @@ func applyChrome(b *Branding, reqInvite, registerURL, lang string) {
 	if b.SiteKey == "open-late" {
 		links = openLateHeaderLinks(b.Lang)
 		b.HeaderLangLabel, b.HeaderLangHref = compactLanguageToggle(b.Lang, b.LangNav)
+	} else if b.Theme == themeHopBase {
+		links = hopBaseHeaderLinks(b.Lang)
 	} else if b.Theme == themeKite {
 		links = kiteHeaderLinks(b.Lang)
 	}
@@ -482,6 +489,37 @@ func applyChrome(b *Branding, reqInvite, registerURL, lang string) {
 	b.LoginLabel = firstNonEmpty(c.LoginLabel, "登录")
 	b.SignupLabel = c.SignupLabel
 	b.RegisterURL = registerURL
+}
+
+// hopBaseHeaderLinks mirrors the current ToB landing navigation. Keeping this
+// in code prevents stale blog_chrome data from restoring removed landing links.
+func hopBaseHeaderLinks(lang string) []ChromeLink {
+	switch canonicalLang(lang) {
+	case "en":
+		return []ChromeLink{
+			{Label: "Enterprise", Href: "/#enterprise"},
+			{Label: "Pricing", Href: "/#pricing"},
+			{Label: "Docs", Href: "/docs"},
+			{Label: "Blog", Href: "/blog"},
+			{Label: "FAQ", Href: "/#faq"},
+		}
+	case "zh":
+		return []ChromeLink{
+			{Label: "企业能力", Href: "/#enterprise"},
+			{Label: "模型价格", Href: "/#pricing"},
+			{Label: "接入文档", Href: "/docs"},
+			{Label: "博客", Href: "/blog"},
+			{Label: "常见问题", Href: "/#faq"},
+		}
+	default:
+		return []ChromeLink{
+			{Label: "企業能力", Href: "/#enterprise"},
+			{Label: "模型價格", Href: "/#pricing"},
+			{Label: "接入文檔", Href: "/docs"},
+			{Label: "博客", Href: "/blog"},
+			{Label: "常見問題", Href: "/#faq"},
+		}
+	}
 }
 
 // openLateHeaderLinks 与 LATE 落地页共享同一导航信息架构。后台旧 blog_chrome

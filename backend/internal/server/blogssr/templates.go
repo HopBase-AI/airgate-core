@@ -510,9 +510,9 @@ probe();
 `
 
 const notFoundBodyStr = `<main class="blog-wrap">
-<h1 class="article-title">文章不存在</h1>
-<p class="blog-empty">该文章可能已下线或链接有误。</p>
-<a href="/blog" class="blog-back">← 返回博客</a>
+<h1 class="article-title">{{.UI.NotFoundTitle}}</h1>
+<p class="blog-empty">{{.UI.NotFoundSub}}</p>
+<a href="{{.HomeURL}}" class="blog-back">{{.UI.Back}}</a>
 </main>
 `
 
@@ -526,6 +526,8 @@ func assemble(head, css, header, body, footer, tail string) string {
 // listTemplateStr 按皮肤返回列表页模板串。
 func listTemplateStr(theme string) string {
 	switch theme {
+	case themeHopBase:
+		return assemble(listHeadStr, baseStyle+hopBaseVars+hopBaseCSS, hopBaseHeaderStr, hopBaseListBodyStr, hopBaseFooterStr, skinLangScriptStr+authSessionScriptStr+hopBaseChromeScriptStr)
 	case themeEmber:
 		return assemble(listHeadStr, baseStyle+emberVars+emberChromeCSS+skinSharedChromeCSS+openLateHeaderCSS, emberHeaderStr, emberListBodyStr, skinFooterStr, skinLangScriptStr+authSessionScriptStr+skinMenuScriptStr+openLateMenuScriptStr)
 	case themeInk:
@@ -540,6 +542,8 @@ func listTemplateStr(theme string) string {
 // detailTemplateStr 按皮肤返回详情页模板串。
 func detailTemplateStr(theme string) string {
 	switch theme {
+	case themeHopBase:
+		return assemble(detailHeadStr, baseStyle+hopBaseVars+hopBaseCSS, hopBaseHeaderStr, detailBodyStr, hopBaseFooterStr, gateStr+authSessionScriptStr+hopBaseChromeScriptStr)
 	case themeEmber:
 		return assemble(detailHeadStr, baseStyle+emberVars+emberChromeCSS+skinSharedChromeCSS+openLateHeaderCSS, emberHeaderStr, detailBodyStr, skinFooterStr, gateStr+authSessionScriptStr+skinMenuScriptStr+openLateMenuScriptStr)
 	case themeInk:
@@ -554,6 +558,8 @@ func detailTemplateStr(theme string) string {
 // notFoundTemplateStr 按皮肤返回 404 页模板串。
 func notFoundTemplateStr(theme string) string {
 	switch theme {
+	case themeHopBase:
+		return assemble(notFoundHeadStr, baseStyle+hopBaseVars+hopBaseCSS, hopBaseHeaderStr, notFoundBodyStr, hopBaseFooterStr, authSessionScriptStr+hopBaseChromeScriptStr)
 	case themeEmber:
 		return assemble(notFoundHeadStr, baseStyle+emberVars+emberChromeCSS+skinSharedChromeCSS+openLateHeaderCSS, emberHeaderStr, notFoundBodyStr, skinFooterStr, authSessionScriptStr+skinMenuScriptStr+openLateMenuScriptStr)
 	case themeInk:
