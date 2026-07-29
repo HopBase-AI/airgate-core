@@ -90,21 +90,6 @@ func (m *Manager) PlatformHasModel(platform, modelID string) bool {
 	return false
 }
 
-// FindPlatformByModelFold 大小写不敏感地根据模型 ID 反查所属平台；未找到返回空串。
-// 与 FindPlatformByModel 同构，供预校验识别「跨平台错配」。
-func (m *Manager) FindPlatformByModelFold(modelID string) string {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	for platform, models := range m.modelCache {
-		for i := range models {
-			if strings.EqualFold(models[i].ID, modelID) {
-				return platform
-			}
-		}
-	}
-	return ""
-}
-
 // UpdateModelCache 用插件推送的最新清单替换某平台的模型缓存快照。
 //
 // 模型缓存在插件启动时由一次 Models() 调用冻结,而模型目录覆盖层在插件进程内
