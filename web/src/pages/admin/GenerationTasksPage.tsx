@@ -1,19 +1,21 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Card, Chip, EmptyState, Label, ListBox, Select } from '@heroui/react';
-import { CircleCheck, CircleX, Clock3, LoaderCircle } from 'lucide-react';
+import { Button, Card, Chip, EmptyState, Label, ListBox, Select, Tooltip, useOverlayState } from '@heroui/react';
+import { CircleAlert, CircleCheck, CircleX, Clock3, Copy, Eye, LoaderCircle } from 'lucide-react';
 import { generationTasksApi } from '../../shared/api/generationTasks';
 import { queryKeys } from '../../shared/queryKeys';
 import { usePagination } from '../../shared/hooks/usePagination';
 import { ADMIN_AUTO_REFRESH_OPTIONS, usePersistentAutoRefresh } from '../../shared/hooks/usePersistentAutoRefresh';
 import { AutoRefreshControl } from '../../shared/components/AutoRefreshControl';
 import { CommonTable } from '../../shared/components/CommonTable';
+import { CommonModal } from '../../shared/components/CommonModal';
 import { TableLoadingRow } from '../../shared/components/TableLoadingRow';
 import { TablePaginationFooter } from '../../shared/components/TablePaginationFooter';
 import { StatusChip } from '../../shared/ui/display/StatusChip';
 import { DEFAULT_PAGE_SIZE } from '../../shared/constants';
 import { getTotalPages } from '../../shared/utils/pagination';
+import { useClipboard } from '../../shared/hooks/useClipboard';
 import type { GenerationTaskResp, GenerationTaskStatus } from '../../shared/types';
 
 const AUTO_REFRESH_STORAGE_KEY = 'airgate.admin.generation_tasks.auto_refresh';
@@ -49,12 +51,28 @@ function formatDuration(seconds: number) {
   return `${hours}h ${minutes % 60}m`;
 }
 
-function elapsedSeconds(from?: string, to?: string) {
+function elapsedSeconds(from?: string, to?: string, now = Date.now()) {
   if (!from) return 0;
   const start = Date.parse(from);
-  const end = to ? Date.parse(to) : Date.now();
+  const end = to ? Date.parse(to) : now;
   if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
   return (end - start) / 1000;
+}
+
+export function hasUpstreamTiming(task: GenerationTaskResp) {
+  return Boolean(
+    task.upstream_created_at
+    && (task.upstream_completed_at || ACTIVE_STATUSES.has(task.status)),
+  );
+}
+
+export function generationDurationSeconds(task: GenerationTaskResp, now = Date.now()) {
+  const upstream = hasUpstreamTiming(task);
+  const from = upstream ? task.upstream_created_at : task.created_at;
+  const to = upstream
+    ? task.upstream_completed_at
+    : task.completed_at || (ACTIVE_STATUSES.has(task.status) ? undefined : task.updated_at);
+  return elapsedSeconds(from, to, now);
 }
 
 function taskTypeLabel(taskType: string, t: ReturnType<typeof useTranslation>['t']) {
@@ -131,20 +149,31 @@ function TaskStatusCell({ task }: { task: GenerationTaskResp }) {
 function TimingCell({ task }: { task: GenerationTaskResp }) {
   const { t } = useTranslation();
   const queueEnd = task.started_at || task.completed_at || (ACTIVE_STATUSES.has(task.status) ? undefined : task.updated_at);
-  const runEnd = task.completed_at || (ACTIVE_STATUSES.has(task.status) ? undefined : task.updated_at);
   const queueSeconds = elapsedSeconds(task.created_at, queueEnd);
-  const runSeconds = task.started_at ? elapsedSeconds(task.started_at, runEnd) : 0;
+  const totalSeconds = generationDurationSeconds(task);
+  const upstreamTiming = hasUpstreamTiming(task);
   return (
     <div className="flex min-w-0 flex-col gap-0.5 font-mono text-[11px] tabular-nums">
       <span title={t('generation_tasks.queue_time')}>{t('generation_tasks.queue_short')} {formatDuration(queueSeconds)}</span>
-      <span className="text-text-tertiary" title={t('generation_tasks.run_time')}>
-        {t('generation_tasks.run_short')} {task.started_at ? formatDuration(runSeconds) : '-'}
+      <span
+        className="text-text-tertiary"
+        title={t(upstreamTiming ? 'generation_tasks.total_time_upstream' : 'generation_tasks.total_time_local')}
+      >
+        {t('generation_tasks.total_short')} {formatDuration(totalSeconds)}
       </span>
     </div>
   );
 }
 
-function ErrorCell({ task, staleThresholdSeconds }: { task: GenerationTaskResp; staleThresholdSeconds: number }) {
+function ErrorCell({
+  task,
+  staleThresholdSeconds,
+  onInspect,
+}: {
+  task: GenerationTaskResp;
+  staleThresholdSeconds: number;
+  onInspect: (task: GenerationTaskResp) => void;
+}) {
   const { t } = useTranslation();
   const stale = task.status === 'processing' && elapsedSeconds(task.updated_at) >= staleThresholdSeconds;
   const labels = [task.error_type, task.error_code].filter(Boolean);
@@ -153,18 +182,99 @@ function ErrorCell({ task, staleThresholdSeconds }: { task: GenerationTaskResp; 
     return <span className="text-text-tertiary">-</span>;
   }
   return (
-    <div className="flex min-w-0 flex-col gap-1" title={message || labels.join(' · ')}>
-      {labels.length > 0 ? (
-        <div className="flex min-w-0 gap-1 overflow-hidden">
-          {labels.map((label) => (
-            <Chip key={label} color="danger" size="sm" variant="soft" className="max-w-40 shrink truncate font-mono">
-              {label}
-            </Chip>
-          ))}
-        </div>
-      ) : null}
-      {message ? <span className={`line-clamp-2 ${stale ? 'text-warning' : 'text-text'}`}>{message}</span> : null}
+    <div className="flex min-w-0 items-start gap-1.5">
+      <div className="flex min-w-0 flex-1 flex-col gap-1" title={message || labels.join(' · ')}>
+        {labels.length > 0 ? (
+          <div className="flex min-w-0 gap-1 overflow-hidden">
+            {labels.map((label) => (
+              <Chip key={label} color="danger" size="sm" variant="soft" className="max-w-40 shrink truncate font-mono">
+                {label}
+              </Chip>
+            ))}
+          </div>
+        ) : null}
+        {message ? <span className={`line-clamp-2 break-words text-xs leading-4 ${stale ? 'text-warning' : 'text-text'}`}>{message}</span> : null}
+      </div>
+      <Tooltip>
+        <Tooltip.Trigger>
+          <Button
+            isIconOnly
+            aria-label={t('generation_tasks.inspect_error')}
+            className="h-7 w-7 min-w-7 shrink-0"
+            size="sm"
+            variant="ghost"
+            onPress={() => onInspect(task)}
+          >
+            <Eye className="h-3.5 w-3.5" />
+          </Button>
+        </Tooltip.Trigger>
+        <Tooltip.Content>{t('generation_tasks.inspect_error')}</Tooltip.Content>
+      </Tooltip>
     </div>
+  );
+}
+
+function TaskErrorModal({ task, onClose }: { task: GenerationTaskResp | null; onClose: () => void }) {
+  const { t } = useTranslation();
+  const copy = useClipboard();
+  const modalState = useOverlayState({
+    isOpen: task !== null,
+    onOpenChange: (open) => {
+      if (!open) onClose();
+    },
+  });
+  if (!task) return null;
+
+  const message = task.error_message || t('generation_tasks.stale_task');
+  const copyText = [
+    `${t('generation_tasks.error_type')}: ${task.error_type || '-'}`,
+    `${t('generation_tasks.error_code')}: ${task.error_code || '-'}`,
+    `${t('generation_tasks.error_message')}: ${message}`,
+  ].join('\n');
+
+  return (
+    <CommonModal
+      icon={<CircleAlert className="h-5 w-5" />}
+      iconClassName="bg-danger-subtle text-danger"
+      size="lg"
+      state={modalState}
+      surface={false}
+      title={t('generation_tasks.error_details')}
+      description={task.public_task_id || `#${task.id}`}
+      footer={(
+        <div className="flex w-full justify-end gap-2">
+          <Button
+            variant="secondary"
+            onPress={() => {
+              void copy(copyText);
+            }}
+          >
+            <Copy className="h-3.5 w-3.5" />
+            {t('generation_tasks.copy_error')}
+          </Button>
+          <Button onPress={onClose}>{t('common.close')}</Button>
+        </div>
+      )}
+    >
+      <div className="space-y-4">
+        <dl className="grid gap-3 sm:grid-cols-2">
+          <div className="min-w-0">
+            <dt className="text-xs font-medium text-text-tertiary">{t('generation_tasks.error_type')}</dt>
+            <dd className="mt-1 break-words font-mono text-sm text-text">{task.error_type || '-'}</dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="text-xs font-medium text-text-tertiary">{t('generation_tasks.error_code')}</dt>
+            <dd className="mt-1 break-words font-mono text-sm text-text">{task.error_code || '-'}</dd>
+          </div>
+        </dl>
+        <div>
+          <div className="text-xs font-medium text-text-tertiary">{t('generation_tasks.error_message')}</div>
+          <pre className="mt-2 max-h-[55vh] overflow-auto whitespace-pre-wrap break-words rounded-[var(--field-radius)] border border-danger/25 bg-danger-subtle p-3 font-mono text-sm leading-6 text-text select-text">
+            {message}
+          </pre>
+        </div>
+      </div>
+    </CommonModal>
   );
 }
 
@@ -176,6 +286,7 @@ export default function GenerationTasksPage() {
   const [kindFilter, setKindFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [pluginFilter, setPluginFilter] = useState('');
+  const [errorTask, setErrorTask] = useState<GenerationTaskResp | null>(null);
   const [autoRefresh, setAutoRefresh] = usePersistentAutoRefresh(
     AUTO_REFRESH_STORAGE_KEY,
     5,
@@ -394,12 +505,17 @@ export default function GenerationTasksPage() {
                 </span>
               </CommonTable.Cell>
               <CommonTable.Cell className="max-w-0">
-                <ErrorCell task={task} staleThresholdSeconds={summary?.stale_threshold_seconds ?? 900} />
+                <ErrorCell
+                  task={task}
+                  staleThresholdSeconds={summary?.stale_threshold_seconds ?? 900}
+                  onInspect={setErrorTask}
+                />
               </CommonTable.Cell>
             </CommonTable.Row>
           ))}
         </CommonTable.Body>
       </CommonTable>
+      <TaskErrorModal task={errorTask} onClose={() => setErrorTask(null)} />
     </div>
   );
 }

@@ -247,6 +247,8 @@ export interface GenerationTaskResp {
   updated_at: string;
   started_at?: string;
   completed_at?: string;
+  upstream_created_at?: string;
+  upstream_completed_at?: string;
 }
 
 export interface GenerationTaskSummaryResp {

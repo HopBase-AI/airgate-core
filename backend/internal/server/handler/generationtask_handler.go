@@ -89,6 +89,12 @@ func toGenerationTaskResp(item appgenerationtask.Task) dto.GenerationTaskResp {
 	if item.CompletedAt != nil {
 		resp.CompletedAt = item.CompletedAt.UTC().Format(time.RFC3339Nano)
 	}
+	if item.UpstreamCreatedAt != nil {
+		resp.UpstreamCreatedAt = item.UpstreamCreatedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if item.UpstreamCompletedAt != nil {
+		resp.UpstreamCompletedAt = item.UpstreamCompletedAt.UTC().Format(time.RFC3339Nano)
+	}
 	return resp
 }
 

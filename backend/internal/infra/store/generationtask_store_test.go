@@ -37,7 +37,14 @@ func TestGenerationTaskStoreListAndSummary(t *testing.T) {
 			builder.SetCompletedAt(updatedAt)
 		}
 		if status == enttask.StatusFailed {
-			builder.SetErrorType("upstream_error").SetErrorCode("E_UPSTREAM").SetErrorMessage("上游生成失败")
+			builder.
+				SetErrorType("upstream_error").
+				SetErrorCode("E_UPSTREAM").
+				SetErrorMessage("上游生成失败").
+				SetExecution(map[string]interface{}{
+					"upstream_created_at":   createdAt.Add(30 * time.Second).Format(time.RFC3339Nano),
+					"upstream_completed_at": updatedAt.Add(-30 * time.Second).Format(time.RFC3339Nano),
+				})
 		}
 		task, createErr := builder.Save(ctx)
 		if createErr != nil {
@@ -67,6 +74,11 @@ func TestGenerationTaskStoreListAndSummary(t *testing.T) {
 	}
 	if list[0].UserEmail != "creator@example.com" || list[0].Model != "seedance-test" || list[0].ErrorCode != "E_UPSTREAM" {
 		t.Fatalf("mapped failed task = %+v", list[0])
+	}
+	if list[0].UpstreamCreatedAt == nil || list[0].UpstreamCompletedAt == nil ||
+		!list[0].UpstreamCreatedAt.Equal(list[0].CreatedAt.Add(30*time.Second)) ||
+		!list[0].UpstreamCompletedAt.Equal(list[0].UpdatedAt.Add(-30*time.Second)) {
+		t.Fatalf("mapped upstream timing = %+v", list[0])
 	}
 
 	summary, err := store.Summary(ctx, now.Add(-24*time.Hour), now.Add(-5*time.Minute), now.Add(-15*time.Minute))

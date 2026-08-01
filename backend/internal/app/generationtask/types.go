@@ -17,26 +17,28 @@ const (
 
 // Task 是管理员监控页所需的精简任务视图，不包含提示词、参考图或执行载荷。
 type Task struct {
-	ID           int
-	PublicTaskID string
-	PluginID     string
-	TaskType     string
-	Kind         string
-	Model        string
-	Status       string
-	Stage        string
-	UserID       int
-	UserEmail    string
-	Progress     int
-	Attempts     int
-	MaxAttempts  int
-	ErrorType    string
-	ErrorCode    string
-	ErrorMessage string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	StartedAt    *time.Time
-	CompletedAt  *time.Time
+	ID                  int
+	PublicTaskID        string
+	PluginID            string
+	TaskType            string
+	Kind                string
+	Model               string
+	Status              string
+	Stage               string
+	UserID              int
+	UserEmail           string
+	Progress            int
+	Attempts            int
+	MaxAttempts         int
+	ErrorType           string
+	ErrorCode           string
+	ErrorMessage        string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	StartedAt           *time.Time
+	CompletedAt         *time.Time
+	UpstreamCreatedAt   *time.Time
+	UpstreamCompletedAt *time.Time
 }
 
 // ListFilter 是生成任务列表筛选条件。
