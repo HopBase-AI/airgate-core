@@ -14,6 +14,7 @@ export const queryKeys = {
   platforms: () => ['installed-platforms'] as const,
   accounts: (...args: unknown[]) => ['accounts', ...args] as const,
   accountEvents: (...args: unknown[]) => ['account-events', ...args] as const,
+  generationTasks: (...args: unknown[]) => ['generation-tasks', ...args] as const,
   accountModels: (...args: unknown[]) => ['account-models', ...args] as const,
   accountUsage: (...args: unknown[]) => ['account-usage', ...args] as const,
   credentialsSchema: (...args: unknown[]) => ['credentials-schema', ...args] as const,

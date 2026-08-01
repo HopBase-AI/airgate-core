@@ -14,6 +14,11 @@ const statusMap: Record<string, { color: ChipColor; label: string }> = {
   installed: { color: 'accent', label: 'status.installed' },
   paid: { color: 'success', label: 'status.paid' },
   pending: { color: 'accent', label: 'status.pending' },
+  processing: { color: 'accent', label: 'status.processing' },
+  retrying: { color: 'warning', label: 'status.retrying' },
+  completed: { color: 'success', label: 'status.completed' },
+  cancelling: { color: 'warning', label: 'status.cancelling' },
+  cancelled: { color: 'default', label: 'status.cancelled' },
   suspended: { color: 'warning', label: 'status.suspended' },
 };
 

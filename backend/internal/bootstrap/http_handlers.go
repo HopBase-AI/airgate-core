@@ -18,6 +18,7 @@ import (
 	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
 	appblog "github.com/DouDOU-start/airgate-core/internal/app/blog"
 	appdashboard "github.com/DouDOU-start/airgate-core/internal/app/dashboard"
+	appgenerationtask "github.com/DouDOU-start/airgate-core/internal/app/generationtask"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 	appmodelpricing "github.com/DouDOU-start/airgate-core/internal/app/modelpricing"
 	apponeclick "github.com/DouDOU-start/airgate-core/internal/app/oneclick"
@@ -71,6 +72,7 @@ type HTTPHandlers struct {
 	Upgrade        *handler.UpgradeHandler
 	RelayDetection *handler.RelayDetectionHandler
 	AccountEvent   *handler.AccountEventHandler
+	GenerationTask *handler.GenerationTaskHandler
 	Referral       *handler.ReferralHandler
 	ModelPricing   *handler.ModelPricingHandler
 	Blog           *handler.BlogHandler
@@ -109,6 +111,8 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 	relayDetectionService := apprelaydetect.NewService(dep.DB, dep.Config.APIKeySecret())
 	accountEventStore := store.NewAccountEventStore(dep.DB)
 	accountEventService := appaccountevent.NewService(accountEventStore)
+	generationTaskStore := store.NewGenerationTaskStore(dep.DB)
+	generationTaskService := appgenerationtask.NewService(generationTaskStore)
 	blogStore := store.NewBlogStore(dep.DB)
 	blogService := appblog.NewService(blogStore)
 
@@ -168,6 +172,7 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 		Upgrade:        handler.NewUpgradeHandler(upgradeService),
 		RelayDetection: handler.NewRelayDetectionHandler(relayDetectionService),
 		AccountEvent:   handler.NewAccountEventHandler(accountEventService),
+		GenerationTask: handler.NewGenerationTaskHandler(generationTaskService),
 		Referral:       handler.NewReferralHandler(referralService),
 		ModelPricing:   handler.NewModelPricingHandler(modelPricingService),
 		Blog:           handler.NewBlogHandler(blogService),

@@ -23,6 +23,7 @@ import {
   DocsPage,
   LegalTermsPage,
   GroupsPage,
+  GenerationTasksPage,
   lazyWithPreload,
   LoginPage,
   ModelPlazaPage,
@@ -301,6 +302,7 @@ const adminAccountsRoute = createRoute({
   }),
 });
 const adminGroupsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/groups', component: renderPage(GroupsPage) });
+const adminGenerationTasksRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/generation-tasks', component: renderPage(GenerationTasksPage) });
 // 异常监控页：分组页"异常"数下钻会带 ?group_id=X 预置分组筛选。
 const adminAccountEventsRoute = createRoute({
   getParentRoute: () => adminLayout,
@@ -415,6 +417,7 @@ const routeTree = rootRoute.addChildren([
       adminUsersRoute,
       adminAccountsRoute,
       adminGroupsRoute,
+      adminGenerationTasksRoute,
       adminAccountEventsRoute,
       adminSubscriptionsRoute,
       adminProxiesRoute,

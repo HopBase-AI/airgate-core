@@ -48,6 +48,7 @@ import {
   ChevronRight,
   ChevronDown,
   Boxes,
+  Clapperboard,
 } from 'lucide-react';
 
 interface AppShellProps {
@@ -67,11 +68,12 @@ const adminMenuItems: MenuItem[] = [
   { path: '/admin/users', labelKey: 'nav.users', icon: <Users className="h-5 w-5" />, sectionKey: 'nav.management' },
   { path: '/admin/accounts', labelKey: 'nav.accounts', icon: <IdCard className="h-5 w-5" /> },
   { path: '/admin/groups', labelKey: 'nav.groups', icon: <FolderTree className="h-5 w-5" /> },
-  { path: '/admin/account-events', labelKey: 'nav.account_events', icon: <TriangleAlert className="h-5 w-5" /> },
   { path: '/admin/subscriptions', labelKey: 'nav.subscriptions', icon: <CreditCard className="h-5 w-5" /> },
   { path: '/admin/proxies', labelKey: 'nav.proxies', icon: <Globe className="h-5 w-5" /> },
   { path: '/admin/usage', labelKey: 'nav.usage', icon: <ChartNoAxesCombined className="h-5 w-5" /> },
   { path: '/admin/relay-detection', labelKey: 'nav.relay_detection', icon: <Radar className="h-5 w-5" /> },
+  { path: '/admin/generation-tasks', labelKey: 'nav.generation_tasks', icon: <Clapperboard className="h-5 w-5" />, sectionKey: 'nav.monitoring' },
+  { path: '/admin/account-events', labelKey: 'nav.account_events', icon: <TriangleAlert className="h-5 w-5" /> },
   // 营销分组：分销返利是首个成员，后续营销玩法（阶梯比例/活动）都挂这里
   { path: '/admin/referral', labelKey: 'nav.referral_admin', icon: <Megaphone className="h-5 w-5" />, sectionKey: 'nav.marketing' },
   { path: '/admin/blog', labelKey: 'nav.blog', icon: <FileText className="h-5 w-5" /> },

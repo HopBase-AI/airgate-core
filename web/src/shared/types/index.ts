@@ -217,6 +217,59 @@ export interface AccountEventResp {
   api_key_name?: string;
 }
 
+export type GenerationTaskStatus =
+  | 'pending'
+  | 'processing'
+  | 'retrying'
+  | 'completed'
+  | 'failed'
+  | 'cancelling'
+  | 'cancelled';
+
+export interface GenerationTaskResp {
+  id: number;
+  public_task_id?: string;
+  plugin_id: string;
+  task_type: string;
+  kind: string;
+  model?: string;
+  status: GenerationTaskStatus;
+  stage?: string;
+  user_id: number;
+  user_email?: string;
+  progress: number;
+  attempts: number;
+  max_attempts: number;
+  error_type?: string;
+  error_code?: string;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+  started_at?: string;
+  completed_at?: string;
+}
+
+export interface GenerationTaskSummaryResp {
+  pending: number;
+  processing: number;
+  retrying: number;
+  cancelling: number;
+  queued: number;
+  active: number;
+  completed_recent: number;
+  failed_recent: number;
+  cancelled_recent: number;
+  failure_rate_recent: number;
+  backlog: number;
+  stale_processing: number;
+  oldest_queued_at?: string;
+  recent_window_seconds: number;
+  backlog_threshold_seconds: number;
+  stale_threshold_seconds: number;
+  plugins: string[];
+  task_types: string[];
+}
+
 export interface CreateAccountReq {
   name: string;
   platform: string;
