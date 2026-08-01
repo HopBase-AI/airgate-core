@@ -205,6 +205,10 @@ func (s *Server) registerRoutes() {
 		// 账号异常事件（异常监控页）
 		adminGroup.GET("/account-events", handlers.AccountEvent.ListAccountEvents)
 
+		// 生成任务监控（仅管理员，只读）
+		adminGroup.GET("/generation-tasks", handlers.GenerationTask.ListGenerationTasks)
+		adminGroup.GET("/generation-tasks/summary", handlers.GenerationTask.GenerationTaskSummary)
+
 		// 博客后台路由已上移至 blogAuthorGroup(允许 admin 或 can_author_blog)
 
 		// 分组管理
