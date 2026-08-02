@@ -13,6 +13,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
+	"github.com/DouDOU-start/airgate-core/internal/infra/store"
 )
 
 // RunStartupTasks 运行启动阶段的整理任务。
@@ -21,8 +22,23 @@ func RunStartupTasks(db *ent.Client, drv *entsql.Driver, apiKeySecret string) {
 	backfillKeyHints(db, apiKeySecret)
 	backfillResellerMarkupColumns(drv)
 	migrateAccountState(drv)
+	backfillEmptyModelRouting(db)
 	migrateUserHistoryRefs(drv)
 	slog.Info("bootstrap_startup_tasks_done")
+}
+
+func backfillEmptyModelRouting(db *ent.Client) {
+	if db == nil {
+		return
+	}
+	groups, routes, err := store.NewGroupStore(db).BackfillEmptyModelRouting(context.Background())
+	if err != nil {
+		slog.Warn("bootstrap_model_routing_backfill_failed", sdk.LogFieldError, err)
+		return
+	}
+	if groups > 0 {
+		slog.Info("bootstrap_model_routing_backfill_done", "groups", groups, "routes", routes)
+	}
 }
 
 // migrateUserHistoryRefs 允许硬删除用户，同时保留历史使用记录和余额流水。

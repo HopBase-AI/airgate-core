@@ -174,6 +174,9 @@ func (s *AccountStore) Create(ctx context.Context, input appaccount.CreateInput)
 	if err != nil {
 		return appaccount.Account{}, err
 	}
+	if err := NewGroupStore(s.db).reconcileModelRoutingForAccount(ctx, item.ID, toIntSlice(input.GroupIDs)...); err != nil {
+		return appaccount.Account{}, err
+	}
 
 	return s.FindByID(ctx, item.ID, appaccount.LoadOptions{WithGroups: true, WithProxy: true})
 }
@@ -251,13 +254,51 @@ func (s *AccountStore) Update(ctx context.Context, id int, input appaccount.Upda
 		return appaccount.Account{}, err
 	}
 	if input.HasGroupIDs {
-		affectedGroupIDs := append(previousGroupIDs, toIntSlice(input.GroupIDs)...)
-		if err := NewGroupStore(s.db).sanitizeModelRoutingForGroups(ctx, affectedGroupIDs...); err != nil {
+		groupStore := NewGroupStore(s.db)
+		currentGroupIDs := toIntSlice(input.GroupIDs)
+		previousGroups := intSet(previousGroupIDs)
+		currentGroups := intSet(currentGroupIDs)
+		removedGroupIDs := intSetDifference(previousGroupIDs, currentGroups)
+		addedGroupIDs := intSetDifference(currentGroupIDs, previousGroups)
+
+		if err := groupStore.sanitizeModelRoutingForGroups(ctx, removedGroupIDs...); err != nil {
+			return appaccount.Account{}, err
+		}
+		if err := groupStore.reconcileModelRoutingForAccount(ctx, id, addedGroupIDs...); err != nil {
+			return appaccount.Account{}, err
+		}
+	}
+	if input.State != nil && *input.State != string(entaccount.StateDisabled) {
+		if err := NewGroupStore(s.db).reconcileModelRoutingForAccount(ctx, id); err != nil {
 			return appaccount.Account{}, err
 		}
 	}
 
 	return s.FindByID(ctx, id, appaccount.LoadOptions{WithGroups: true, WithProxy: true})
+}
+
+func intSet(values []int) map[int]struct{} {
+	result := make(map[int]struct{}, len(values))
+	for _, value := range values {
+		result[value] = struct{}{}
+	}
+	return result
+}
+
+func intSetDifference(values []int, excluded map[int]struct{}) []int {
+	result := make([]int, 0, len(values))
+	seen := make(map[int]struct{}, len(values))
+	for _, value := range values {
+		if _, ok := excluded[value]; ok {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 // Delete 删除账号。

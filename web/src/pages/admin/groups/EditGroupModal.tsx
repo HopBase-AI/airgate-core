@@ -11,6 +11,7 @@ import { usersApi } from '../../../shared/api/users';
 import { useDebouncedValue } from '../../../shared/hooks/useDebouncedValue';
 import { NativeSwitch } from '../../../shared/components/NativeSwitch';
 import type { GroupResp, GroupAllowedUser, CreateGroupReq, UpdateGroupReq } from '../../../shared/types';
+import { isModelRouteSelected, normalizeModelRouting, toggleModelRoute } from './modelRouting';
 
 // 分组可见性：公开（所有用户）/ 指定用户可见 / 仅管理员可见。
 // 后端实际只有 is_exclusive + allowed_users 两个原语，这里在 UI 层归并成三态：
@@ -184,15 +185,7 @@ export function GroupFormModal({
     new Set([...candidateModels.map((m) => m.id), ...Object.keys(modelRouting)]),
   ).sort();
   const toggleModel = (modelId: string, checked: boolean) => {
-    setModelRouting((prev) => {
-      const next = { ...prev };
-      if (checked) {
-        if (!next[modelId]) next[modelId] = defaultModelAccountIds;
-      } else {
-        delete next[modelId];
-      }
-      return next;
-    });
+    setModelRouting((prev) => toggleModelRoute(prev, modelId, checked, defaultModelAccountIds));
   };
 
   const { data: copySourceData } = useQuery({
@@ -277,7 +270,7 @@ export function GroupFormModal({
       plugin_settings: Object.keys(pluginSettings).length > 0 ? pluginSettings : undefined,
       quotas: form.subscription_type === 'subscription' ? buildQuotas(quotas) : undefined,
       subscription_type: form.subscription_type,
-      ...(isEdit ? { model_routing: modelRouting } : {}),
+      ...(isEdit ? { model_routing: normalizeModelRouting(modelRouting) } : {}),
       ...(!isEdit && copyFromGroupIds.length > 0
         ? { copy_accounts_from_group_ids: copyFromGroupIds }
         : {}),
@@ -371,7 +364,7 @@ export function GroupFormModal({
                     {supportedModelIds.map((modelId) => (
                       <Checkbox
                         key={modelId}
-                        isSelected={!!modelRouting[modelId]}
+                        isSelected={isModelRouteSelected(modelRouting, modelId)}
                         onChange={(selected) => toggleModel(modelId, selected)}
                       >
                         <Checkbox.Control>

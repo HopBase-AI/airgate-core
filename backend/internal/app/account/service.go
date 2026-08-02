@@ -54,6 +54,8 @@ const autoQuotaRefreshInterval = 6 * time.Hour
 // StateWriter 管理员巡检场景下对账号状态的写入口。
 // 由 scheduler 包实现；让 account service 不直接依赖 scheduler。
 type StateWriter interface {
+	// InvalidateRouteCache 清除账号或分组变更前生成的调度路由快照。
+	InvalidateRouteCache(groupID int)
 	// MarkRateLimited 把账号打入 rate_limited 状态直到 until。
 	MarkRateLimited(ctx context.Context, accountID int, until time.Time, reason string)
 	// ClearRateLimited 账号已从限流中恢复，回到 active。
@@ -248,6 +250,9 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Account, error
 		sdk.LogFieldPlatform, account.Platform,
 		"type", account.Type,
 		"name", account.Name)
+	if s.stateWriter != nil {
+		s.stateWriter.InvalidateRouteCache(0)
+	}
 	s.InvalidateUsageCache("") // 新账号创建后清除用量缓存
 	return account, err
 }
@@ -307,6 +312,9 @@ func (s *Service) Update(ctx context.Context, id int, input UpdateInput) (Accoun
 			sdk.LogFieldError, err)
 		return updated, err
 	}
+	if s.stateWriter != nil {
+		s.stateWriter.InvalidateRouteCache(0)
+	}
 	if manualState != "" {
 		if err := s.applyManualState(ctx, id, manualState); err != nil {
 			logger.Error("account_state_apply_failed",
@@ -362,6 +370,9 @@ func (s *Service) Delete(ctx context.Context, id int) error {
 		return err
 	}
 	logger.Info("account_deleted", sdk.LogFieldAccountID, id)
+	if s.stateWriter != nil {
+		s.stateWriter.InvalidateRouteCache(0)
+	}
 	s.InvalidateUsageCache("")
 	return err
 }
@@ -406,6 +417,9 @@ func (s *Service) BulkDelete(ctx context.Context, ids []int) BulkResult {
 		result.appendSuccess(id)
 	}
 	if result.Success > 0 {
+		if s.stateWriter != nil {
+			s.stateWriter.InvalidateRouteCache(0)
+		}
 		s.InvalidateUsageCache("")
 	}
 	return result
