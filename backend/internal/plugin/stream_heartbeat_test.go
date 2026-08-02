@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -52,19 +53,93 @@ func TestSSECommentOnlyClassification(t *testing.T) {
 
 func TestCanFailoverAfterHeartbeatUntilApplicationData(t *testing.T) {
 	t.Parallel()
-	c, _ := heartbeatContext(t, "/v1/responses")
 	f := &Forwarder{}
+	retryable := []sdk.OutcomeKind{
+		sdk.OutcomeAccountRateLimited,
+		sdk.OutcomeAccountDead,
+		sdk.OutcomeUpstreamTransient,
+	}
+	for _, kind := range retryable {
+		kind := kind
+		t.Run(kind.String(), func(t *testing.T) {
+			t.Parallel()
+			c, _ := heartbeatContext(t, "/v1/responses")
+			state := &forwardState{stream: true}
+			execution := forwardExecution{outcome: sdk.ForwardOutcome{Kind: kind}}
+			if !f.canFailover(c, state, execution) {
+				t.Fatalf("heartbeat-only stream should allow %s failover", kind)
+			}
+		})
+	}
+
+	c, _ := heartbeatContext(t, "/v1/responses")
 	state := &forwardState{stream: true}
 	execution := forwardExecution{outcome: sdk.ForwardOutcome{Kind: sdk.OutcomeUpstreamTransient}}
-
-	if !f.canFailover(c, state, execution) {
-		t.Fatal("heartbeat-only stream should remain failover-eligible")
-	}
 	if _, err := c.Writer.Write([]byte("data: {\"type\":\"response.created\"}\n\n")); err != nil {
 		t.Fatalf("write application event: %v", err)
 	}
 	if f.canFailover(c, state, execution) {
 		t.Fatal("application SSE data should commit the selected account")
+	}
+}
+
+func TestCanFailoverOutcomeMatrixBeforeResponseCommit(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		kind sdk.OutcomeKind
+		err  error
+		want bool
+	}{
+		{name: "429 account rate limit", kind: sdk.OutcomeAccountRateLimited, want: true},
+		{name: "403 or 401 account dead", kind: sdk.OutcomeAccountDead, want: true},
+		{name: "502 or 503 upstream transient", kind: sdk.OutcomeUpstreamTransient, want: true},
+		{name: "client 4xx", kind: sdk.OutcomeClientError, want: false},
+		{name: "committed stream abort", kind: sdk.OutcomeStreamAborted, want: false},
+		{name: "success", kind: sdk.OutcomeSuccess, want: false},
+		{name: "unknown without plugin error", kind: sdk.OutcomeUnknown, want: false},
+		{name: "plugin transport failure", kind: sdk.OutcomeUnknown, err: io.ErrUnexpectedEOF, want: true},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+			installTTFTWriter(c)
+			got := (&Forwarder{}).canFailover(c, &forwardState{stream: true}, forwardExecution{
+				outcome: sdk.ForwardOutcome{Kind: tt.kind},
+				err:     tt.err,
+			})
+			if got != tt.want {
+				t.Fatalf("canFailover(kind=%s, err=%v) = %v, want %v", tt.kind, tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCanFailoverRejectsCommittedStreamEvenForRetryableFailure(t *testing.T) {
+	t.Parallel()
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	installTTFTWriter(c)
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	if _, err := c.Writer.Write([]byte("data: {\"type\":\"response.created\"}\n\n")); err != nil {
+		t.Fatalf("write application data: %v", err)
+	}
+
+	for _, execution := range []forwardExecution{
+		{outcome: sdk.ForwardOutcome{Kind: sdk.OutcomeAccountRateLimited}},
+		{outcome: sdk.ForwardOutcome{Kind: sdk.OutcomeAccountDead}},
+		{outcome: sdk.ForwardOutcome{Kind: sdk.OutcomeUpstreamTransient}},
+		{err: io.ErrUnexpectedEOF},
+	} {
+		if (&Forwarder{}).canFailover(c, &forwardState{stream: true}, execution) {
+			t.Fatalf("committed stream must not replay execution %+v", execution)
+		}
 	}
 }
 

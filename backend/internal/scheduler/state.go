@@ -107,6 +107,9 @@ func (sm *StateMachine) notifyCritical() {
 func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 	switch j.Kind {
 	case sdk.OutcomeSuccess:
+		if j.IsPool {
+			sm.resetPoolDeadStreak(accountID)
+		}
 		sm.transitionActive(ctx, accountID, eventSourceForward)
 
 	case sdk.OutcomeAccountRateLimited:
@@ -249,9 +252,6 @@ func poolDeadDegradeWindow(streak int) time.Duration {
 // disabled 状态受保护：只有管理员操作（ManualRecover / ToggleScheduling）才能解除，
 // forwarder 的 Success 判决不会覆盖它——防止在飞请求的成功回调把手动禁用的账号重新激活。
 func (sm *StateMachine) transitionActive(ctx context.Context, accountID int, source string) {
-	// 一次成功即证明上游可用，清零池账号死信连击（无论当前处于何种状态）。
-	sm.resetPoolDeadStreak(accountID)
-
 	now := time.Now()
 	dbCtx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()

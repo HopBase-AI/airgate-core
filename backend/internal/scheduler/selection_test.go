@@ -152,3 +152,88 @@ func TestClassifyRoutedAccounts(t *testing.T) {
 		})
 	}
 }
+
+func TestClassifyRoutedAccountTiers(t *testing.T) {
+	t.Parallel()
+
+	pool := func(id int, state account.State) *ent.Account {
+		return &ent.Account{ID: id, State: state, UpstreamIsPool: true}
+	}
+	regular := func(id int, state account.State) *ent.Account {
+		return &ent.Account{ID: id, State: state}
+	}
+
+	tests := []struct {
+		name             string
+		accounts         []*ent.Account
+		routing          map[string][]int64
+		wantPrimary      []int
+		wantPoolFallback []int
+		wantErr          error
+	}{
+		{
+			name:             "pool route exposes same group pool standby",
+			accounts:         []*ent.Account{pool(1, account.StateActive), pool(2, account.StateActive), regular(3, account.StateActive)},
+			routing:          map[string][]int64{"gpt-5.6": {1}},
+			wantPrimary:      []int{1},
+			wantPoolFallback: []int{2},
+		},
+		{
+			name:             "disabled pool primary is recoverable through active standby",
+			accounts:         []*ent.Account{pool(1, account.StateDisabled), pool(2, account.StateActive)},
+			routing:          map[string][]int64{"gpt-5.6": {1}},
+			wantPrimary:      []int{1},
+			wantPoolFallback: []int{2},
+		},
+		{
+			name:        "regular route remains strict",
+			accounts:    []*ent.Account{regular(1, account.StateActive), pool(2, account.StateActive)},
+			routing:     map[string][]int64{"gpt-5.6": {1}},
+			wantPrimary: []int{1},
+		},
+		{
+			name:     "explicitly disabled model stays disabled",
+			accounts: []*ent.Account{pool(1, account.StateActive), pool(2, account.StateActive)},
+			routing:  map[string][]int64{"gpt-5.6": {}},
+			wantErr:  ErrModelNotServed,
+		},
+		{
+			name:     "all pool candidates disabled is offline",
+			accounts: []*ent.Account{pool(1, account.StateDisabled), pool(2, account.StateDisabled)},
+			routing:  map[string][]int64{"gpt-5.6": {1}},
+			wantErr:  ErrGroupOffline,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tiers, err := classifyRoutedAccountTiers(tt.accounts, tt.routing, "gpt-5.6")
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("err = %v, want %v", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("classify tiers: %v", err)
+			}
+			assertAccountIDs(t, tiers.primary, tt.wantPrimary)
+			assertAccountIDs(t, tiers.poolFallback, tt.wantPoolFallback)
+		})
+	}
+}
+
+func assertAccountIDs(t *testing.T, accounts []*ent.Account, want []int) {
+	t.Helper()
+	if len(accounts) != len(want) {
+		t.Fatalf("account count = %d, want %d; accounts=%+v", len(accounts), len(want), accounts)
+	}
+	for i, id := range want {
+		if accounts[i].ID != id {
+			t.Fatalf("accounts[%d].ID = %d, want %d", i, accounts[i].ID, id)
+		}
+	}
+}
