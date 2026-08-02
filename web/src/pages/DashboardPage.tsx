@@ -723,8 +723,6 @@ export default function DashboardPage() {
         </Alert>
       ) : null}
 
-      {statsQuery.isLoading ? <StatsSkeleton /> : statsQuery.data ? <StatsCards stats={statsQuery.data} /> : null}
-
       <div className="ag-dashboard-toolbar flex flex-col gap-3 p-4 2xl:p-5 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <span className="shrink-0 text-sm font-semibold text-text">{t('dashboard.time_range')}</span>
@@ -841,6 +839,8 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {statsQuery.isLoading ? <StatsSkeleton /> : statsQuery.data ? <StatsCards stats={statsQuery.data} /> : null}
 
       {trendQuery.isLoading && !trendQuery.data ? (
         <div className="ag-dashboard-trends space-y-4 2xl:space-y-5">
