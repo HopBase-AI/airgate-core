@@ -141,7 +141,7 @@ func TestPoolDeadStreakResetOnSuccess(t *testing.T) {
 	for i := 0; i < poolDeadStreakThreshold-1; i++ {
 		sm.Apply(ctx, acc.ID, poolDeadJudgment())
 	}
-	sm.Apply(ctx, acc.ID, Judgment{Kind: sdk.OutcomeSuccess})
+	sm.Apply(ctx, acc.ID, Judgment{Kind: sdk.OutcomeSuccess, IsPool: true})
 	// 清零后再撞阈值-1 次，不应降级。
 	for i := 0; i < poolDeadStreakThreshold-1; i++ {
 		sm.Apply(ctx, acc.ID, poolDeadJudgment())
@@ -154,6 +154,29 @@ func TestPoolDeadStreakResetOnSuccess(t *testing.T) {
 	}
 	if got.State != entaccount.StateActive {
 		t.Fatalf("state = %s, want active（成功已清零连击）", got.State)
+	}
+}
+
+// TestPoolDeadStreakNonPoolSuccessLeavesKeyAlone 非池成功不应在热路径访问池账号连击键。
+func TestPoolDeadStreakNonPoolSuccessLeavesKeyAlone(t *testing.T) {
+	db := enttestOpenEvents(t)
+	rdb, _ := newTestRedis(t)
+	ctx := context.Background()
+	acc := createEventTestAccount(t, db, entaccount.StateActive)
+	sm := NewStateMachine(db, rdb, nil)
+
+	key := poolDeadStreakKey(acc.ID)
+	if err := rdb.Set(ctx, key, 2, poolDeadStreakTTL).Err(); err != nil {
+		t.Fatalf("seed pool dead streak: %v", err)
+	}
+	sm.Apply(ctx, acc.ID, Judgment{Kind: sdk.OutcomeSuccess})
+
+	got, err := rdb.Get(ctx, key).Int()
+	if err != nil {
+		t.Fatalf("read pool dead streak: %v", err)
+	}
+	if got != 2 {
+		t.Fatalf("pool dead streak = %d, want unchanged 2", got)
 	}
 }
 
