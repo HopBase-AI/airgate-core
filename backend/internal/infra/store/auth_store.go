@@ -120,7 +120,10 @@ func (s *AuthStore) ValidateAPIKeyForLogin(ctx context.Context, key string) (app
 		WithUser().
 		Only(ctx)
 	if err != nil {
-		return appauth.APIKeyLoginInfo{}, appauth.ErrInvalidAPIKey
+		if ent.IsNotFound(err) {
+			return appauth.APIKeyLoginInfo{}, appauth.ErrInvalidAPIKey
+		}
+		return appauth.APIKeyLoginInfo{}, err
 	}
 
 	if ak.ExpiresAt != nil && ak.ExpiresAt.Before(time.Now()) {
@@ -146,6 +149,9 @@ func (s *AuthStore) GetAPIKeyBrief(ctx context.Context, keyID int) (appauth.APIK
 		WithGroup().
 		Only(ctx)
 	if err != nil {
+		if ent.IsNotFound(err) {
+			return appauth.APIKeyBrief{}, appauth.ErrInvalidAPIKeySession
+		}
 		return appauth.APIKeyBrief{}, err
 	}
 

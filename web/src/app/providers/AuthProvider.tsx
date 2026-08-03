@@ -6,7 +6,9 @@ import {
   setSessionAPIKey,
   getTokenAPIKeyID,
   getTokenRole,
+  ApiError,
 } from '../../shared/api/client';
+import { isExplicitSessionRejection } from '../../shared/authSessionPolicy';
 import { usersApi } from '../../shared/api/users';
 import { syncBlogSession } from '../../shared/blogSession';
 import { adoptOriginSite } from '../../shared/originSite';
@@ -84,8 +86,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(sessionUser);
           }
         })
-        .catch(() => {
-          if (!cancelled && authRevisionRef.current === revision && getToken() === token) {
+        .catch((error: unknown) => {
+          const currentToken = getToken();
+          const explicitlyRejected = error instanceof ApiError
+            && isExplicitSessionRejection(error.httpStatus);
+          if (
+            explicitlyRejected
+            && !cancelled
+            && authRevisionRef.current === revision
+            && (currentToken === null || currentToken === token)
+          ) {
             resetAdminCache();
             setToken(null);
             clearAllOnboardingSessions();

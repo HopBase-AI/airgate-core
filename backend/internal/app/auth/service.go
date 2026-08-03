@@ -78,10 +78,10 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (LoginResult, err
 	if err != nil {
 		if IsUserMissing(err) {
 			logger.Warn("user_login_rejected", sdk.LogFieldReason, "user_not_found")
-		} else {
-			logger.Error("user_lookup_failed", sdk.LogFieldError, err)
+			return LoginResult{}, ErrInvalidCredentials
 		}
-		return LoginResult{}, ErrInvalidCredentials
+		logger.Error("user_lookup_failed", sdk.LogFieldError, err)
+		return LoginResult{}, err
 	}
 
 	if user.Status != "active" {
@@ -126,6 +126,9 @@ func (s *Service) LoginByAPIKey(ctx context.Context, input LoginByAPIKeyInput) (
 	user, err := s.repo.FindByID(ctx, info.UserID, true)
 	if err != nil {
 		logger.Error("user_lookup_failed", sdk.LogFieldUserID, info.UserID, sdk.LogFieldError, err)
+		if IsUserMissing(err) {
+			return LoginByAPIKeyResult{}, ErrInvalidAPIKey
+		}
 		return LoginByAPIKeyResult{}, err
 	}
 

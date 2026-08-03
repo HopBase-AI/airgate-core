@@ -4,6 +4,7 @@ package handler
 import (
 	"errors"
 	"log/slog"
+	"net/http"
 
 	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
@@ -31,7 +32,7 @@ func (h *AuthHandler) handleLoginError(err error) (int, string, bool) {
 		return 403, err.Error(), true
 	default:
 		slog.Error("登录失败", "error", err)
-		return 500, "登录失败", false
+		return http.StatusServiceUnavailable, "认证服务暂不可用", false
 	}
 }
 
@@ -59,11 +60,13 @@ func (h *AuthHandler) handleAPIKeyLoginError(err error) (int, string) {
 		return 401, "API Key 已过期"
 	case errors.Is(err, appauth.ErrInvalidAPIKey):
 		return 401, "无效的 API Key"
+	case errors.Is(err, appauth.ErrInvalidAPIKeySession):
+		return 401, "API Key 登录会话已失效"
 	case errors.Is(err, appauth.ErrUserDisabled):
 		return 403, "用户已被禁用"
 	default:
 		slog.Error("API Key 登录失败", "error", err)
-		return 500, "登录失败"
+		return http.StatusServiceUnavailable, "认证服务暂不可用"
 	}
 }
 

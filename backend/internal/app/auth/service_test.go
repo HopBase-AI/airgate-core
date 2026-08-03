@@ -318,6 +318,20 @@ func TestRefreshTokenRejectsInvalidAPIKeySession(t *testing.T) {
 	}
 }
 
+func TestLoginPreservesTransientStoreFailure(t *testing.T) {
+	storeErr := errors.New("database unavailable")
+	service := NewService(authStubRepository{
+		findByEmail: func() (User, error) {
+			return User{}, storeErr
+		},
+	}, corauth.NewJWTManager("secret", 24))
+
+	_, err := service.Login(t.Context(), LoginInput{Email: "u@test.com", Password: "password"})
+	if !errors.Is(err, storeErr) {
+		t.Fatalf("登录错误 = %v，期望保留存储错误 %v", err, storeErr)
+	}
+}
+
 func TestFindAndEmailDelegatesToRepository(t *testing.T) {
 	service := NewService(authStubRepository{
 		emailExists: func() (bool, error) { return true, nil },

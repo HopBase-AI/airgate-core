@@ -37,7 +37,15 @@ func (h *UserHandler) GetMe(c *gin.Context) {
 
 	item, err := h.service.Get(c.Request.Context(), userID)
 	if err != nil {
+		if errors.Is(err, appuser.ErrUserNotFound) {
+			response.Unauthorized(c, "登录会话已失效，请重新登录")
+			return
+		}
 		httpCode, message := h.handleError("查询当前用户失败", "查询失败", err)
+		if httpCode == http.StatusInternalServerError {
+			httpCode = http.StatusServiceUnavailable
+			message = "认证服务暂不可用"
+		}
 		response.Error(c, httpCode, httpCode, message)
 		return
 	}

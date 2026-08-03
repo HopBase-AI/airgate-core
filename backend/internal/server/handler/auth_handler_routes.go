@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"net/http"
 	"strings"
 	"time"
 
@@ -38,7 +39,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			response.BadRequest(c, message)
 			return
 		}
-		response.InternalError(c, message)
+		response.Error(c, httpCode, httpCode, message)
 		return
 	}
 
@@ -68,6 +69,8 @@ func (h *AuthHandler) LoginByAPIKey(c *gin.Context) {
 			response.Unauthorized(c, message)
 		case 403:
 			response.Forbidden(c, message)
+		case http.StatusServiceUnavailable:
+			response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, message)
 		default:
 			response.InternalError(c, message)
 		}
@@ -198,7 +201,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 			response.Forbidden(c, "用户已被禁用")
 			return
 		}
-		response.InternalError(c, "刷新 Token 失败")
+		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "认证服务暂不可用")
 		return
 	}
 

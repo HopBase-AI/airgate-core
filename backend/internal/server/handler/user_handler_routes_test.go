@@ -19,15 +19,17 @@ type getMeAPIKeyRepo struct {
 	appuser.Repository
 	brief      appuser.APIKeyBrief
 	err        error
+	findErr    error
 	findCalled bool
 }
 
 func (r *getMeAPIKeyRepo) FindByID(context.Context, int, bool) (appuser.User, error) {
 	r.findCalled = true
-	return appuser.User{
+	item := appuser.User{
 		ID: 77, Email: "reseller@example.com", Username: "owner", Balance: 999,
 		MaxConcurrency: 88, Status: "active",
-	}, nil
+	}
+	return item, r.findErr
 }
 
 func (r *getMeAPIKeyRepo) GetAPIKeyInfo(_ context.Context, userID, keyID int) (appuser.APIKeyBrief, error) {
@@ -104,6 +106,36 @@ func TestGetMeAPIKeySessionKeepsTransientStoreErrorsRetryable(t *testing.T) {
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/users/me", nil))
 	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGetMeUserSessionKeepsTransientStoreErrorsRetryable(t *testing.T) {
+	repo := &getMeAPIKeyRepo{findErr: errors.New("db unavailable")}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(middleware.CtxKeyUserID, 77)
+	})
+	router.GET("/users/me", NewUserHandler(appuser.NewService(repo), nil).GetMe)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/users/me", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGetMeUserSessionRejectsDeletedOwner(t *testing.T) {
+	repo := &getMeAPIKeyRepo{findErr: appuser.ErrUserNotFound}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(middleware.CtxKeyUserID, 77)
+	})
+	router.GET("/users/me", NewUserHandler(appuser.NewService(repo), nil).GetMe)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/users/me", nil))
+	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

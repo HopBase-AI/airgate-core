@@ -92,8 +92,7 @@ func TestJWTRejectsMismatchedAPIKeySessionClaims(t *testing.T) {
 	tests := []Claims{
 		{UserID: 7, Role: APIKeySessionRole},
 		{UserID: 7, Role: "user", APIKeyID: 11},
-		{UserID: 7, Role: APIKeySessionRole, Email: "owner@example.com", APIKeyID: 11},
-		{Role: APIKeySessionRole, Email: "owner@example.com", APIKeyID: 11},
+		{Role: APIKeySessionRole, Email: "owner@example.com"},
 	}
 	for _, claims := range tests {
 		claims.RegisteredClaims = jwt.RegisteredClaims{
@@ -108,6 +107,37 @@ func TestJWTRejectsMismatchedAPIKeySessionClaims(t *testing.T) {
 		if _, err := mgr.ParseToken(token); !errors.Is(err, ErrInvalidToken) {
 			t.Fatalf("claims=%+v err=%v，期望 ErrInvalidToken", claims, err)
 		}
+	}
+}
+
+func TestJWTAcceptsLegacyAPIKeySessionAndRefreshDropsOwnerClaims(t *testing.T) {
+	mgr := NewJWTManager("jwt-secret", 1)
+	legacy := Claims{
+		UserID: 99, Role: APIKeySessionRole, Email: "owner@example.com", APIKeyID: 11,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "airgate",
+		},
+	}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, legacy).SignedString(mgr.secret)
+	if err != nil {
+		t.Fatalf("签发旧版 token 失败: %v", err)
+	}
+	claims, err := mgr.ParseToken(token)
+	if err != nil {
+		t.Fatalf("迁移期应接受旧版 API Key token: %v", err)
+	}
+	refreshed, err := mgr.RefreshToken(claims)
+	if err != nil {
+		t.Fatalf("刷新旧版 token 失败: %v", err)
+	}
+	minimal, err := mgr.ParseToken(refreshed)
+	if err != nil {
+		t.Fatalf("解析刷新 token 失败: %v", err)
+	}
+	if minimal.APIKeyID != 11 || minimal.Role != APIKeySessionRole || minimal.UserID != 0 || minimal.Email != "" {
+		t.Fatalf("刷新后未收敛为最小 claims: %+v", minimal)
 	}
 }
 

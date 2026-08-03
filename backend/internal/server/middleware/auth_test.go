@@ -5,9 +5,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"entgo.io/ent/dialect/sql/schema"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/DouDOU-start/airgate-core/ent/enttest"
@@ -65,7 +67,17 @@ func TestJWTUserAuthResolvesAPIKeyOwnerInternallyWithoutEmailContext(t *testing.
 	owner := db.User.Create().SetEmail("owner@example.com").SetPasswordHash("hash").SaveX(ctx)
 	key := db.APIKey.Create().SetName("customer").SetKeyHash("hash").SetUser(owner).SaveX(ctx)
 	jwtMgr := corauth.NewJWTManager("secret", 24)
-	token, err := jwtMgr.GenerateAPIKeyToken(key.ID)
+	// 旧版 Token 携带错误的 owner/admin 身份；中间件只能信任 api_key_id，
+	// 并必须从数据库恢复真实 owner，同时清空 email。
+	legacyClaims := corauth.Claims{
+		UserID: 999, Role: corauth.APIKeySessionRole, Email: "leaked-owner@example.com", APIKeyID: key.ID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "airgate",
+		},
+	}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, legacyClaims).SignedString([]byte("secret"))
 	if err != nil {
 		t.Fatalf("签发 API Key JWT 失败: %v", err)
 	}

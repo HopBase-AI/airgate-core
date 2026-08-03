@@ -79,14 +79,14 @@ func (m *JWTManager) ParseToken(tokenStr string) (*Claims, error) {
 	return claims, nil
 }
 
-// validAPIKeySessionClaims 保证受限会话角色和 Key 范围不可分离，并拒绝
-// 仍携带 owner 身份的旧版 API Key JWT。
+// validAPIKeySessionClaims 保证受限会话角色和 Key 范围不可分离。迁移期允许
+// 旧版 API Key JWT 携带 owner 字段；中间件不得信任这些字段，必须按 Key ID 查库。
 func validAPIKeySessionClaims(claims *Claims) bool {
 	if claims == nil {
 		return false
 	}
 	if claims.Role == APIKeySessionRole {
-		return claims.APIKeyID > 0 && claims.UserID == 0 && claims.Email == ""
+		return claims.APIKeyID > 0
 	}
 	return claims.APIKeyID == 0
 }
