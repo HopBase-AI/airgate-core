@@ -65,6 +65,9 @@ type MyPricingModelResp struct {
 	GroupName string  `json:"group_name,omitempty"`
 	// GroupNameI18n 分组名多语言覆盖（键=语言码 en / zh-HK / ja；zh 基准即 group_name）。
 	GroupNameI18n map[string]string `json:"group_name_i18n,omitempty"`
+	ImagePrice1K  *float64          `json:"image_price_1k,omitempty"`
+	ImagePrice2K  *float64          `json:"image_price_2k,omitempty"`
+	ImagePrice4K  *float64          `json:"image_price_4k,omitempty"`
 }
 
 // MyGroupQuoteResp 单分组的报价摘要。usd_multiplier 是相对官方美元价的有效倍率

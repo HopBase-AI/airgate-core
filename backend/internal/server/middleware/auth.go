@@ -2,15 +2,19 @@
 package middleware
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 
 	"github.com/DouDOU-start/airgate-core/ent"
+	entapikey "github.com/DouDOU-start/airgate-core/ent/apikey"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/server/response"
@@ -29,6 +33,20 @@ const (
 // 从 Authorization: Bearer <token> 头解析 JWT，将 user_id、role 设置到 Context。
 // 管理员路由可传入 db，以额外支持 admin-xxx 管理员 API Key 作为替代凭证。
 func JWTAuth(jwtMgr *auth.JWTManager, db ...*ent.Client) gin.HandlerFunc {
+	var client *ent.Client
+	if len(db) > 0 {
+		client = db[0]
+	}
+	return jwtAuth(jwtMgr, client, client != nil)
+}
+
+// JWTUserAuth 认证普通控制台路由，并为不含 owner 数据的 API Key JWT
+// 从数据库恢复内部 user_id。它不会启用 admin-xxx 替代凭证。
+func JWTUserAuth(jwtMgr *auth.JWTManager, db *ent.Client) gin.HandlerFunc {
+	return jwtAuth(jwtMgr, db, false)
+}
+
+func jwtAuth(jwtMgr *auth.JWTManager, db *ent.Client, allowAdminAPIKey bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenStr := extractBearerToken(c)
 		if tokenStr == "" {
@@ -39,8 +57,8 @@ func JWTAuth(jwtMgr *auth.JWTManager, db ...*ent.Client) gin.HandlerFunc {
 		}
 
 		// 显式管理员 API Key 认证。仅调用方传入 db 的路由启用，避免 admin-xxx 在普通用户路由中生效。
-		if auth.IsAdminAPIKey(tokenStr) && len(db) > 0 && db[0] != nil {
-			if err := auth.ValidateAdminAPIKey(c.Request.Context(), db[0], tokenStr); err != nil {
+		if auth.IsAdminAPIKey(tokenStr) && allowAdminAPIKey && db != nil {
+			if err := auth.ValidateAdminAPIKey(c.Request.Context(), db, tokenStr); err != nil {
 				slog.Warn("admin_api_key_validation_failed", sdk.LogFieldReason, "invalid_admin_key", sdk.LogFieldError, err, sdk.LogFieldRequestID, RequestIDFromGinContext(c))
 				response.Unauthorized(c, "管理员 API Key 无效")
 				c.Abort()
@@ -65,21 +83,75 @@ func JWTAuth(jwtMgr *auth.JWTManager, db ...*ent.Client) gin.HandlerFunc {
 			return
 		}
 
-		c.Set(CtxKeyUserID, claims.UserID)
+		userID := claims.UserID
+		if claims.Role == auth.APIKeySessionRole {
+			if db == nil {
+				response.Unauthorized(c, "API Key 登录会话无效，请重新登录")
+				c.Abort()
+				return
+			}
+			resolvedUserID, resolveErr := resolveAPIKeySessionOwner(c.Request.Context(), db, claims.APIKeyID)
+			if resolveErr != nil {
+				if errors.Is(resolveErr, auth.ErrInvalidAPIKey) || errors.Is(resolveErr, auth.ErrAPIKeyExpired) || errors.Is(resolveErr, auth.ErrUserDisabled) {
+					response.Unauthorized(c, "API Key 登录会话已失效，请重新登录")
+				} else {
+					response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "认证服务暂不可用")
+				}
+				c.Abort()
+				return
+			}
+			userID = resolvedUserID
+		}
+
+		c.Set(CtxKeyUserID, userID)
 		c.Set(CtxKeyRole, claims.Role)
-		c.Set(CtxKeyEmail, claims.Email)
+		if claims.Role == auth.APIKeySessionRole {
+			c.Set(CtxKeyEmail, "")
+		} else {
+			c.Set(CtxKeyEmail, claims.Email)
+		}
 		if claims.APIKeyID > 0 {
 			c.Set(CtxKeyAPIKeyID, claims.APIKeyID)
 		}
 		// 用 user_id / role / api_key_id 派生新 logger 写回 ctx
 		ctx := c.Request.Context()
-		logger := sdk.LoggerFromContext(ctx).With(sdk.LogFieldUserID, claims.UserID, "role", claims.Role)
+		logger := sdk.LoggerFromContext(ctx).With(sdk.LogFieldUserID, userID, "role", claims.Role)
 		if claims.APIKeyID > 0 {
 			logger = logger.With(sdk.LogFieldAPIKeyID, claims.APIKeyID)
 		}
 		c.Request = c.Request.WithContext(sdk.WithLogger(ctx, logger))
 		c.Next()
 	}
+}
+
+func resolveAPIKeySessionOwner(ctx context.Context, db *ent.Client, keyID int) (int, error) {
+	if db == nil || keyID <= 0 {
+		return 0, auth.ErrInvalidAPIKey
+	}
+	ak, err := db.APIKey.Query().
+		Where(
+			entapikey.IDEQ(keyID),
+			entapikey.StatusEQ(entapikey.StatusActive),
+		).
+		WithUser().
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return 0, auth.ErrInvalidAPIKey
+		}
+		return 0, err
+	}
+	if ak.ExpiresAt != nil && ak.ExpiresAt.Before(time.Now()) {
+		return 0, auth.ErrAPIKeyExpired
+	}
+	user, err := ak.Edges.UserOrErr()
+	if err != nil {
+		return 0, auth.ErrInvalidAPIKey
+	}
+	if user.Status != entuser.StatusActive {
+		return 0, auth.ErrUserDisabled
+	}
+	return user.ID, nil
 }
 
 // APIKeyAuth API Key 认证中间件

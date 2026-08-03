@@ -211,7 +211,7 @@
     "capability_embedding": "向量嵌入",
     "subtitle_user": "展示你可用分组中最优的实付价，划线为官方直付参考价；模型 ID 可直接用于 API 请求。",
     "subtitle_api_key": "展示当前 API Key 可调用模型的实付价，划线为官方直付参考价。",
-    "personal_price_notice": "个性化价格加载失败，当前显示公开标准价格",
+    "personal_price_notice": "个性化价格加载失败，当前显示公开价格",
     "your_price": "你的实付价",
     "discount_badge": "约 {{zhe}} 折 · 省 {{off}}%",
     "via_group": "分组：{{group}}",

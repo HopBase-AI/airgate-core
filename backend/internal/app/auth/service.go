@@ -135,7 +135,7 @@ func (s *Service) LoginByAPIKey(ctx context.Context, input LoginByAPIKeyInput) (
 	}
 
 	// 签发带 api_key_id 的受限 JWT。API Key 登录不继承管理员角色。
-	token, err := s.jwtMgr.GenerateAPIKeyToken(user.ID, corauth.APIKeySessionRole, user.Email, info.KeyID)
+	token, err := s.jwtMgr.GenerateAPIKeyToken(info.KeyID)
 	if err != nil {
 		logger.Error("jwt_issue_failed", sdk.LogFieldUserID, user.ID, sdk.LogFieldError, err)
 		return LoginByAPIKeyResult{}, err
@@ -143,22 +143,25 @@ func (s *Service) LoginByAPIKey(ctx context.Context, input LoginByAPIKeyInput) (
 
 	result := LoginByAPIKeyResult{
 		Token:      token,
-		User:       user,
 		APIKeyID:   info.KeyID,
 		APIKeyName: info.KeyName,
 	}
 
 	// 填充 API Key 维度的字段（额度/已用/到期/倍率），与 GetMe 行为对齐，
 	// 否则前端首屏拿不到 quota，会先显示"无限"再因 /me 刷新而跳变。
-	if brief, briefErr := s.repo.GetAPIKeyBrief(ctx, info.KeyID); briefErr == nil {
-		result.QuotaUSD = brief.QuotaUSD
-		result.UsedQuota = brief.UsedQuota
-		result.ExpiresAt = brief.ExpiresAt
-		if brief.SellRate > 0 {
-			result.Rate = brief.SellRate
-		} else {
-			result.Rate = brief.GroupRate
-		}
+	brief, err := s.repo.GetAPIKeyBrief(ctx, info.KeyID)
+	if err != nil {
+		logger.Error("api_key_brief_lookup_failed", sdk.LogFieldAPIKeyID, info.KeyID, sdk.LogFieldError, err)
+		return LoginByAPIKeyResult{}, err
+	}
+	result.QuotaUSD = brief.QuotaUSD
+	result.UsedQuota = brief.UsedQuota
+	result.ExpiresAt = brief.ExpiresAt
+	result.Platform = brief.Platform
+	if brief.SellRate > 0 {
+		result.Rate = brief.SellRate
+	} else {
+		result.Rate = brief.GroupRate
 	}
 
 	logger.Info("api_key_login_succeeded", sdk.LogFieldUserID, user.ID, sdk.LogFieldAPIKeyID, info.KeyID)
@@ -465,7 +468,7 @@ func (s *Service) loadEmailTemplate(ctx context.Context) (siteName, subjectTpl, 
 // RefreshToken 刷新 JWT。
 func (s *Service) RefreshToken(ctx context.Context, identity AuthIdentity) (string, error) {
 	if identity.APIKeyID > 0 {
-		user, err := s.repo.ValidateAPIKeySession(ctx, identity.UserID, identity.APIKeyID)
+		_, err := s.repo.ValidateAPIKeySession(ctx, identity.APIKeyID)
 		if err != nil {
 			slog.Default().Warn("api_key_session_refresh_rejected",
 				sdk.LogFieldUserID, identity.UserID,
@@ -474,7 +477,7 @@ func (s *Service) RefreshToken(ctx context.Context, identity AuthIdentity) (stri
 			)
 			return "", err
 		}
-		token, err := s.jwtMgr.GenerateAPIKeyToken(user.ID, corauth.APIKeySessionRole, user.Email, identity.APIKeyID)
+		token, err := s.jwtMgr.GenerateAPIKeyToken(identity.APIKeyID)
 		if err != nil {
 			slog.Default().Error("jwt_issue_failed",
 				sdk.LogFieldUserID, identity.UserID,

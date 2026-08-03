@@ -7,7 +7,7 @@ type UserResp struct {
 	Username              string                                 `json:"username"`
 	DisplayBadge          string                                 `json:"display_badge"`
 	Balance               float64                                `json:"balance"`
-	Role                  string                                 `json:"role"` // admin / user / api_key
+	Role                  string                                 `json:"role"`            // admin / user / api_key
 	CanAuthorBlog         bool                                   `json:"can_author_blog"` // 是否可进入后台写博客(管理员天然可)
 	MaxConcurrency        int                                    `json:"max_concurrency"`
 	GroupRates            map[int64]float64                      `json:"group_rates,omitempty"`           // 用户专属分组倍率
@@ -27,6 +27,20 @@ type UserResp struct {
 	// APIKeyPlatform 当前 Key 所属分组平台（如 anthropic / openai），用于前端 CCS 导入识别客户端类型。
 	APIKeyPlatform string `json:"api_key_platform,omitempty"`
 	TimeMixin
+}
+
+// APIKeySessionUserResp 是 API Key 登录会话唯一允许返回的用户态投影。
+// 这里故意不嵌入 UserResp，避免未来给用户 DTO 增加字段时意外把 reseller
+// 的身份、余额、并发或账户元数据透传给下游 Key 持有者。
+type APIKeySessionUserResp struct {
+	Role            string  `json:"role"`
+	APIKeyID        int64   `json:"api_key_id"`
+	APIKeyName      string  `json:"api_key_name"`
+	APIKeyQuotaUSD  float64 `json:"api_key_quota_usd"`
+	APIKeyUsedQuota float64 `json:"api_key_used_quota"`
+	APIKeyExpiresAt string  `json:"api_key_expires_at,omitempty"`
+	APIKeyRate      float64 `json:"api_key_rate,omitempty"`
+	APIKeyPlatform  string  `json:"api_key_platform,omitempty"`
 }
 
 // UpdateProfileReq 用户更新资料请求

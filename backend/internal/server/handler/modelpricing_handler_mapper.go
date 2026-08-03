@@ -16,6 +16,9 @@ func toMyModelPricingResp(result appmodelpricing.Result) dto.MyModelPricingResp 
 				GroupID:                m.GroupID,
 				GroupName:              m.GroupName,
 				GroupNameI18n:          m.GroupNameI18n,
+				ImagePrice1K:           m.ImagePrice1K,
+				ImagePrice2K:           m.ImagePrice2K,
+				ImagePrice4K:           m.ImagePrice4K,
 			})
 		}
 		platforms = append(platforms, dto.MyPlatformPricingResp{Platform: platform.Platform, Models: models})

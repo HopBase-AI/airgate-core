@@ -14,7 +14,7 @@ import { useToast } from '../shared/ui';
 import { FETCH_ALL_PARAMS } from '../shared/constants';
 import { useAuth } from '../app/providers/AuthProvider';
 import { mergeCatalog, type ModelLedgerItem } from './modelPlazaCatalog';
-import { formatModelPrice } from './modelPlazaPricing';
+import { formatModelPrice, resolveFixedImageTierPrices } from './modelPlazaPricing';
 
 interface TocPricingConfig {
   fx?: number;
@@ -372,14 +372,16 @@ export default function ModelPlazaPage() {
   const [capabilityFilter, setCapabilityFilter] = useState('all');
   const [copiedID, setCopiedID] = useState<string | null>(null);
 
-  // 首选登录态实付价视图；失败（老后端/网络）回退公开目录 + 全站标准售价。
+  // 首选登录态实付价视图。普通账号失败时可回退公开目录；API Key
+  // 会话必须 fail closed，避免把当前 Key 不可调用的全量模型展示给下游。
   const myPricingQuery = useQuery({
     queryKey: queryKeys.myModelPricing(),
     queryFn: modelsApi.myPricing,
     staleTime: 60_000,
     retry: 1,
   });
-  const useFallback = myPricingQuery.isError;
+  const apiKeyPricingError = isAPIKeySession && myPricingQuery.isError;
+  const useFallback = !isAPIKeySession && myPricingQuery.isError;
   const catalogQuery = useQuery({
     queryKey: queryKeys.modelPricing(),
     queryFn: modelsApi.pricing,
@@ -396,8 +398,8 @@ export default function ModelPlazaPage() {
 
   const userMode = !!myPricingQuery.data;
   const isLoading = myPricingQuery.isLoading || (useFallback && catalogQuery.isLoading);
-  const isError = useFallback && catalogQuery.isError;
-  const loadError = catalogQuery.error ?? myPricingQuery.error;
+  const isError = apiKeyPricingError || (useFallback && catalogQuery.isError);
+  const loadError = apiKeyPricingError ? myPricingQuery.error : (catalogQuery.error ?? myPricingQuery.error);
 
   const groupsQuery = useQuery({
     queryKey: queryKeys.groupsForKeys(),
@@ -555,7 +557,10 @@ export default function ModelPlazaPage() {
         <div className="ag-model-state-panel" role="alert">
           {errorIsOffline ? <WifiOff aria-hidden="true" /> : <Database aria-hidden="true" />}
           <div><h2>{t('model_plaza.load_error')}</h2><p>{errorIsOffline ? t('model_plaza.offline_hint') : (loadError instanceof Error ? loadError.message : '')}</p></div>
-          <Button variant="secondary" onPress={() => { void myPricingQuery.refetch(); void catalogQuery.refetch(); }}>
+          <Button variant="secondary" onPress={() => {
+            void myPricingQuery.refetch();
+            if (useFallback) void catalogQuery.refetch();
+          }}>
             <RefreshCw className="h-4 w-4" />{t('common.retry', 'Retry')}
           </Button>
         </div>
@@ -589,7 +594,18 @@ export default function ModelPlazaPage() {
             <tbody>
               {filteredModels.map((model) => {
                 const video = isVideoModel(model) ? resolveVideoPrices(model, pricingConfig, userMode, plazaCurrency, t) : null;
-                const image = isImageModel(model) ? resolveImagePrices(model, pricingConfig, userMode, plazaCurrency, t) : null;
+                const fixedImage = userMode
+                  ? resolveFixedImageTierPrices(model, fx, plazaCurrency).map(({ tier, sale }) => ({
+                      bucket: tier,
+                      label: tier.toUpperCase(),
+                      sale,
+                      official: 0,
+                      officialOnly: false,
+                    }))
+                  : [];
+                const image = fixedImage.length > 0
+                  ? fixedImage
+                  : isImageModel(model) ? resolveImagePrices(model, pricingConfig, userMode, plazaCurrency, t) : null;
                 const bucketPrices = video ?? image;
                 const price = bucketPrices ? null : (userMode ? resolveUserPrice(model, fx, plazaCurrency) : resolveStandardPrice(model, pricingConfig));
                 const officialOnly = bucketPrices ? (bucketPrices[0]?.officialOnly ?? true) : price!.officialOnly;
@@ -629,7 +645,7 @@ export default function ModelPlazaPage() {
                         price={price}
                         userMode={userMode}
                         video={video}
-                        videoSaleSymbol={userMode && (model.user_rate ?? 0) > 0 && plazaCurrency === 'CNY' ? '¥' : '$'}
+                        videoSaleSymbol={userMode && ((model.user_rate ?? 0) > 0 || fixedImage.length > 0) && plazaCurrency === 'CNY' ? '¥' : '$'}
                       />
                     </td>
                   </tr>

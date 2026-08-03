@@ -73,21 +73,31 @@ func (m *JWTManager) ParseToken(tokenStr string) (*Claims, error) {
 		return nil, ErrInvalidToken
 	}
 	claims, ok := token.Claims.(*Claims)
-	if !ok || !token.Valid {
+	if !ok || !token.Valid || !validAPIKeySessionClaims(claims) {
 		return nil, ErrInvalidToken
 	}
 	return claims, nil
 }
 
+// validAPIKeySessionClaims 保证受限会话角色和 Key 范围不可分离，并拒绝
+// 仍携带 owner 身份的旧版 API Key JWT。
+func validAPIKeySessionClaims(claims *Claims) bool {
+	if claims == nil {
+		return false
+	}
+	if claims.Role == APIKeySessionRole {
+		return claims.APIKeyID > 0 && claims.UserID == 0 && claims.Email == ""
+	}
+	return claims.APIKeyID == 0
+}
+
 // GenerateAPIKeyToken 签发 API Key 登录 Token。
 // API Key 登录是受限会话，只能访问该 Key 允许的资源；无论 Key 归属用户是否为管理员，
 // 都不继承管理员或普通用户角色。
-func (m *JWTManager) GenerateAPIKeyToken(userID int, _ string, email string, apiKeyID int) (string, error) {
+func (m *JWTManager) GenerateAPIKeyToken(apiKeyID int) (string, error) {
 	now := time.Now()
 	claims := Claims{
-		UserID:   userID,
 		Role:     APIKeySessionRole,
-		Email:    email,
 		APIKeyID: apiKeyID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(m.expireHour) * time.Hour)),
@@ -114,7 +124,7 @@ func (m *JWTManager) ParseTokenForRefresh(tokenStr string, refreshGrace time.Dur
 		return nil, ErrInvalidToken
 	}
 	claims, ok := token.Claims.(*Claims)
-	if !ok || !token.Valid {
+	if !ok || !token.Valid || !validAPIKeySessionClaims(claims) {
 		return nil, ErrInvalidToken
 	}
 	return claims, nil
@@ -123,7 +133,7 @@ func (m *JWTManager) ParseTokenForRefresh(tokenStr string, refreshGrace time.Dur
 // RefreshToken 刷新 Token（基于旧 Claims 签发新 Token）
 func (m *JWTManager) RefreshToken(claims *Claims) (string, error) {
 	if claims.APIKeyID > 0 {
-		return m.GenerateAPIKeyToken(claims.UserID, claims.Role, claims.Email, claims.APIKeyID)
+		return m.GenerateAPIKeyToken(claims.APIKeyID)
 	}
 	return m.GenerateToken(claims.UserID, claims.Role, claims.Email)
 }

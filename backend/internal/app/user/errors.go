@@ -19,4 +19,6 @@ var (
 	ErrInvalidRateMultiplier = errors.New("专属倍率不能为负数")
 	// ErrDuplicateBalanceChange 幂等键已存在，同一笔余额变更已入账。
 	ErrDuplicateBalanceChange = errors.New("余额变更已入账（幂等键重复）")
+	// ErrInvalidAPIKeySession API Key scoped JWT 已不再对应有效 Key/owner。
+	ErrInvalidAPIKeySession = errors.New("API Key 登录会话已失效")
 )

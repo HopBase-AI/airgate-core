@@ -784,7 +784,7 @@ func (h *HostService) listGroups(ctx context.Context, req hostListGroupsRequest)
 	}
 	items := make([]map[string]interface{}, 0, len(groups))
 	for _, g := range groups {
-		items = append(items, map[string]interface{}{
+		item := map[string]interface{}{
 			"id":              int64(g.ID),
 			"name":            g.Name,
 			"name_i18n":       g.NameI18n,
@@ -794,7 +794,11 @@ func (h *HostService) listGroups(ctx context.Context, req hostListGroupsRequest)
 			"note":            g.Note,
 			"note_i18n":       g.NoteI18n,
 			"status_visible":  g.StatusVisible,
-		})
+		}
+		if prices := resolvedFixedImagePrices(nil, g.PluginSettings); prices != nil {
+			item["fixed_image_prices"] = prices
+		}
+		items = append(items, item)
 	}
 	return map[string]interface{}{"groups": items}, nil
 }
@@ -854,7 +858,7 @@ func (h *HostService) listEligibleGroups(ctx context.Context, req hostListGroups
 		if strings.TrimSpace(req.Model) != "" && !h.groupHasSchedulableAccountForModel(ctx, c, req.Model, req.NeedsImage) {
 			continue
 		}
-		items = append(items, map[string]interface{}{
+		item := map[string]interface{}{
 			"id":              int64(g.ID),
 			"name":            g.Name,
 			"name_i18n":       g.NameI18n,
@@ -865,9 +869,30 @@ func (h *HostService) listEligibleGroups(ctx context.Context, req hostListGroups
 			"note":            g.Note,
 			"note_i18n":       g.NoteI18n,
 			"status_visible":  g.StatusVisible,
-		})
+		}
+		if prices := resolvedFixedImagePrices(u.GroupPluginSettings[int64(g.ID)], g.PluginSettings); prices != nil {
+			item["fixed_image_prices"] = prices
+		}
+		items = append(items, item)
 	}
 	return map[string]interface{}{"groups": items}, nil
+}
+
+// resolvedFixedImagePrices 暴露给插件的固定图价白名单投影。计费解析器负责
+// 用户覆盖优先级和无效值过滤；绝不透传 group/user plugin_settings。
+func resolvedFixedImagePrices(userSettings, groupSettings map[string]map[string]string) map[string]interface{} {
+	prices := make(map[string]interface{}, 4)
+	for _, tier := range []string{"1k", "2k", "4k"} {
+		if price, _, ok := billing.ResolveImageTierPrice(tier, userSettings, groupSettings); ok {
+			prices[tier] = price
+		}
+	}
+	if len(prices) == 0 {
+		return nil
+	}
+	// 与 recorder 的 fixed_unit=USD/image 计费元数据保持一致。
+	prices["currency"] = "USD"
+	return prices
 }
 
 func (h *HostService) groupHasSchedulableAccountForModel(ctx context.Context, c routing.Candidate, model string, needsImage bool) bool {

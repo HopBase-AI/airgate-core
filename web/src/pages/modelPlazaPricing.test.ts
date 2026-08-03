@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatModelPrice } from './modelPlazaPricing';
+import { formatModelPrice, resolveFixedImageTierPrices } from './modelPlazaPricing';
 
 describe('model plaza price formatting', () => {
   it('preserves sub-cent image prices and their discounts', () => {
@@ -17,5 +17,27 @@ describe('model plaza price formatting', () => {
   it('does not present invalid or zero values as prices', () => {
     expect(formatModelPrice(0)).toBe('—');
     expect(formatModelPrice(Number.NaN)).toBe('—');
+  });
+});
+
+describe('fixed image prices', () => {
+  it('displays all effective 1K/2K/4K prices in CNY without a token multiplier', () => {
+    expect(resolveFixedImageTierPrices({
+      image_price_1k: 0.08,
+      image_price_2k: 0.12,
+      image_price_4k: 0.15,
+    }, 6.8, 'CNY')).toEqual([
+      { tier: '1k', sale: 0.08 },
+      { tier: '2k', sale: 0.12 },
+      { tier: '4k', sale: 0.15 },
+    ]);
+  });
+
+  it('converts fixed balance-unit prices for the USD plaza and ignores invalid tiers', () => {
+    const prices = resolveFixedImageTierPrices({
+      image_price_1k: 0.068,
+      image_price_2k: Number.NaN,
+    }, 6.8, 'USD');
+    expect(prices).toEqual([{ tier: '1k', sale: 0.01 }]);
   });
 });

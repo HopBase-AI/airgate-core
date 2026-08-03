@@ -211,7 +211,7 @@
     "capability_embedding": "Embeddings",
     "subtitle_user": "Prices show what you actually pay with your best available group; struck-through values are official direct-pay references.",
     "subtitle_api_key": "Prices show what this API key pays for the models it can call; struck-through values are official direct-pay references.",
-    "personal_price_notice": "Personalized pricing failed to load; public standard prices are shown",
+    "personal_price_notice": "Personalized pricing failed to load; public prices are shown",
     "your_price": "Your price",
     "discount_badge": "Save ≈{{off}}%",
     "via_group": "Group: {{group}}",

@@ -8,7 +8,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
-	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/server/dto"
 	"github.com/DouDOU-start/airgate-core/internal/server/response"
 )
@@ -75,20 +74,17 @@ func (h *AuthHandler) LoginByAPIKey(c *gin.Context) {
 		return
 	}
 
-	userResp := userToResp(result.User)
-	userResp.Role = auth.APIKeySessionRole
-	userResp.APIKeyID = int64(result.APIKeyID)
-	userResp.APIKeyName = result.APIKeyName
-	userResp.APIKeyQuotaUSD = result.QuotaUSD
-	userResp.APIKeyUsedQuota = result.UsedQuota
-	userResp.APIKeyRate = result.Rate
-	if result.ExpiresAt != nil {
-		userResp.APIKeyExpiresAt = result.ExpiresAt.Format(time.RFC3339)
-	}
-
-	response.Success(c, dto.LoginResp{
-		Token:      result.Token,
-		User:       userResp,
+	response.Success(c, dto.APIKeyLoginResp{
+		Token: result.Token,
+		User: apiKeySessionUserResp(
+			result.APIKeyID,
+			result.APIKeyName,
+			result.QuotaUSD,
+			result.UsedQuota,
+			result.Rate,
+			result.ExpiresAt,
+			result.Platform,
+		),
 		APIKeyID:   int64(result.APIKeyID),
 		APIKeyName: result.APIKeyName,
 	})

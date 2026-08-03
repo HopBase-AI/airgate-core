@@ -40,6 +40,11 @@ type ModelQuote struct {
 	GroupName string
 	// GroupNameI18n 分组名多语言覆盖（键=语言码 en / zh-HK / ja；zh 基准即 GroupName）。
 	GroupNameI18n map[string]string
+	// ImagePrice* 是命中 user/group plugin_settings 后的最终固定图价（余额单位/张）。
+	// nil 表示该档位没有固定价，必须继续使用 token 计费。
+	ImagePrice1K *float64
+	ImagePrice2K *float64
+	ImagePrice4K *float64
 }
 
 // PlatformQuotes 单平台的模型报价清单。

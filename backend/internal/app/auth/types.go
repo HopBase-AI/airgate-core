@@ -36,7 +36,6 @@ type LoginByAPIKeyInput struct {
 // LoginByAPIKeyResult API Key 登录结果。
 type LoginByAPIKeyResult struct {
 	Token      string
-	User       User
 	APIKeyID   int
 	APIKeyName string
 	// API Key 维度字段（额度/已用/到期/倍率）
@@ -44,6 +43,7 @@ type LoginByAPIKeyResult struct {
 	UsedQuota float64
 	Rate      float64
 	ExpiresAt *time.Time
+	Platform  string
 }
 
 // RegisterInput 注册输入。
@@ -103,6 +103,7 @@ type APIKeyBrief struct {
 	ExpiresAt *time.Time
 	SellRate  float64
 	GroupRate float64
+	Platform  string
 }
 
 // CreateUserInput 创建用户输入。
@@ -139,7 +140,7 @@ type Repository interface {
 	EmailExists(context.Context, string) (bool, error)
 	Create(context.Context, CreateUserInput) (User, error)
 	FindByID(context.Context, int, bool) (User, error)
-	ValidateAPIKeySession(context.Context, int, int) (User, error)
+	ValidateAPIKeySession(context.Context, int) (User, error)
 	// ValidateAPIKeyForLogin 验证 API Key 用于 Web 登录（不要求绑定分组）。
 	ValidateAPIKeyForLogin(ctx context.Context, key string) (APIKeyLoginInfo, error)
 	// GetAPIKeyBrief 获取 API Key 概要信息（额度/已用/到期/倍率）。

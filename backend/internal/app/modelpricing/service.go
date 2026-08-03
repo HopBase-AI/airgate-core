@@ -3,7 +3,10 @@ package modelpricing
 import (
 	"context"
 	"path/filepath"
+	"strings"
+	"time"
 
+	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 	apppluginadmin "github.com/DouDOU-start/airgate-core/internal/app/pluginadmin"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
@@ -56,6 +59,11 @@ func (s *Service) UserPricing(ctx context.Context, userID int) (Result, error) {
 				if g.Platform != platform.Platform || !groupServesModel(g.ModelRouting, model.ID) {
 					continue
 				}
+				mergeLowestImagePrices(&quote, resolveFixedImagePrices(
+					model.ID,
+					u.GroupPluginSettings[int64(g.ID)],
+					g.PluginSettings,
+				))
 				rate, ok := effectiveGroupRate(u.GroupRates, g)
 				if !ok {
 					continue // 固定图价/特殊分组（倍率哨兵 0）：不参与 token 报价
@@ -66,6 +74,14 @@ func (s *Service) UserPricing(ctx context.Context, userID int) (Result, error) {
 					quote.GroupName = g.Name
 					quote.GroupNameI18n = g.NameI18n
 				}
+			}
+			if hasFixedImagePrices(quote) {
+				// 固定价覆盖纯图片模型整单 token 成本。不要同时返回 token 倍率，
+				// 否则展示端会制造一份实际不会扣取的 token 报价。
+				quote.UserRate = 0
+				quote.GroupID = 0
+				quote.GroupName = ""
+				quote.GroupNameI18n = nil
 			}
 			quotes.Models = append(quotes.Models, quote)
 		}
@@ -97,6 +113,9 @@ func (s *Service) APIKeyPricing(ctx context.Context, userID, apiKeyID int) (Resu
 	if err != nil {
 		return Result{}, err
 	}
+	if key.Status != "active" || (key.ExpiresAt != nil && key.ExpiresAt.Before(time.Now())) {
+		return Result{}, appauth.ErrInvalidAPIKeySession
+	}
 	if key.GroupID == nil {
 		return Result{}, appgroup.ErrGroupNotFound
 	}
@@ -109,6 +128,9 @@ func (s *Service) APIKeyPricing(ctx context.Context, userID, apiKeyID int) (Resu
 	if err != nil {
 		return Result{}, err
 	}
+	if u.Status != "active" {
+		return Result{}, appauth.ErrInvalidAPIKeySession
+	}
 
 	rate := key.SellRate
 	rateAvailable := rate > 0
@@ -117,6 +139,7 @@ func (s *Service) APIKeyPricing(ctx context.Context, userID, apiKeyID int) (Resu
 	}
 
 	catalog := s.catalog.PublicModelPricing(ctx)
+	userPluginSettings := u.GroupPluginSettings[int64(group.ID)]
 	result := Result{Platforms: make([]PlatformQuotes, 0, 1)}
 	for _, platform := range catalog {
 		if platform.Platform != group.Platform {
@@ -131,7 +154,11 @@ func (s *Service) APIKeyPricing(ctx context.Context, userID, apiKeyID int) (Resu
 				continue
 			}
 			quote := ModelQuote{PublicPricingModel: model}
-			if rateAvailable {
+			prices := resolveFixedImagePrices(model.ID, userPluginSettings, group.PluginSettings)
+			quote.ImagePrice1K = prices.ImagePrice1K
+			quote.ImagePrice2K = prices.ImagePrice2K
+			quote.ImagePrice4K = prices.ImagePrice4K
+			if rateAvailable && !hasFixedImagePrices(quote) {
 				quote.UserRate = rate
 			}
 			quotes.Models = append(quotes.Models, quote)
@@ -141,6 +168,47 @@ func (s *Service) APIKeyPricing(ctx context.Context, userID, apiKeyID int) (Resu
 		}
 	}
 	return result, nil
+}
+
+// resolveFixedImagePrices 按真实计费优先级解析纯图片模型的各尺寸固定价：
+// 用户分组覆盖 > 分组默认。0 是合法免费价，因此用指针区分「未配置」。
+func resolveFixedImagePrices(modelID string, userSettings, groupSettings map[string]map[string]string) ModelQuote {
+	model := strings.ToLower(strings.TrimSpace(modelID))
+	if !strings.HasPrefix(model, "gpt-image") &&
+		!strings.HasPrefix(model, "dall-e") &&
+		!strings.HasPrefix(model, "dalle") {
+		return ModelQuote{}
+	}
+	prices := ModelQuote{}
+	for tier, target := range map[string]**float64{
+		"1k": &prices.ImagePrice1K,
+		"2k": &prices.ImagePrice2K,
+		"4k": &prices.ImagePrice4K,
+	} {
+		if price, _, ok := billing.ResolveImageTierPrice(tier, userSettings, groupSettings); ok {
+			value := price
+			*target = &value
+		}
+	}
+	return prices
+}
+
+func hasFixedImagePrices(quote ModelQuote) bool {
+	return quote.ImagePrice1K != nil || quote.ImagePrice2K != nil || quote.ImagePrice4K != nil
+}
+
+func mergeLowestImagePrices(target *ModelQuote, candidate ModelQuote) {
+	mergeLowestPrice(&target.ImagePrice1K, candidate.ImagePrice1K)
+	mergeLowestPrice(&target.ImagePrice2K, candidate.ImagePrice2K)
+	mergeLowestPrice(&target.ImagePrice4K, candidate.ImagePrice4K)
+}
+
+func mergeLowestPrice(target **float64, candidate *float64) {
+	if candidate == nil || (*target != nil && **target <= *candidate) {
+		return
+	}
+	value := *candidate
+	*target = &value
 }
 
 // effectiveGroupRate 返回分组对该用户的有效 token 倍率。

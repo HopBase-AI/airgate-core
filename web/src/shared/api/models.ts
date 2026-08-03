@@ -58,6 +58,10 @@ export interface MyPricingModel extends PublicPricingModel {
   group_name?: string;
   // 分组名多语言覆盖(键=语言码 en / zh-HK / ja;zh 基准即 group_name)
   group_name_i18n?: Record<string, string>;
+  // 纯图片接口命中用户/分组覆盖后的最终固定价（余额单位 / 张）。
+  image_price_1k?: number;
+  image_price_2k?: number;
+  image_price_4k?: number;
 }
 
 export interface MyPlatformPricing {

@@ -468,8 +468,8 @@ func (s *Service) GetAPIKeyName(ctx context.Context, keyID int) (string, error) 
 }
 
 // GetAPIKeyInfo 获取 API Key 概要信息。
-func (s *Service) GetAPIKeyInfo(ctx context.Context, keyID int) (APIKeyBrief, error) {
-	return s.repo.GetAPIKeyInfo(ctx, keyID)
+func (s *Service) GetAPIKeyInfo(ctx context.Context, userID, keyID int) (APIKeyBrief, error) {
+	return s.repo.GetAPIKeyInfo(ctx, userID, keyID)
 }
 
 // ListAPIKeys 查询指定用户的 API Key 列表。

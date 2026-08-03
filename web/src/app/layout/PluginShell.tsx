@@ -55,7 +55,7 @@ export function PluginShell({
     { labelKey: titleKey, labelFallback: title },
   ];
   const isAdmin = !isAPIKeySession && (getTokenRole() === 'admin' || user?.role === 'admin');
-  const displayName = user?.username || user?.email?.split('@')[0] || 'User';
+  const displayName = user?.api_key_name || user?.username || user?.email?.split('@')[0] || 'User';
 
   const LANG_CYCLE = ['en', 'zh', 'zh-HK', 'ja'] as const;
   const LANG_SHORT: Record<string, string> = { en: 'EN', zh: '简', 'zh-HK': '繁', ja: '日' };

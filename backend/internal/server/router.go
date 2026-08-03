@@ -96,7 +96,7 @@ func (s *Server) registerRoutes() {
 
 	// === 用户路由（需要 JWT 认证） ===
 	userGroup := v1.Group("")
-	userGroup.Use(middleware.JWTAuth(s.jwtMgr))
+	userGroup.Use(middleware.JWTUserAuth(s.jwtMgr, s.db))
 	{
 		// 模型广场同时支持普通账号和受限 API Key 登录；API Key 报价由 handler
 		// 按 JWT 中的 api_key_id 限定到当前 Key 的分组和模型。

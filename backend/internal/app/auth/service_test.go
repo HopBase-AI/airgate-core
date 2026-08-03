@@ -294,7 +294,7 @@ func TestRefreshTokenPreservesAPIKeyIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("解析刷新 token 失败: %v", err)
 	}
-	if claims.UserID != 5 || claims.APIKeyID != 13 || claims.Role != corauth.APIKeySessionRole {
+	if claims.UserID != 0 || claims.Email != "" || claims.APIKeyID != 13 || claims.Role != corauth.APIKeySessionRole {
 		t.Fatalf("刷新 claims 异常: %+v", claims)
 	}
 }
@@ -302,7 +302,7 @@ func TestRefreshTokenPreservesAPIKeyIdentity(t *testing.T) {
 func TestRefreshTokenRejectsInvalidAPIKeySession(t *testing.T) {
 	jwtMgr := corauth.NewJWTManager("secret", 24)
 	service := NewService(authStubRepository{
-		validateAPIKeySession: func(_ int, _ int) (User, error) {
+		validateAPIKeySession: func(_ int) (User, error) {
 			return User{}, ErrInvalidAPIKeySession
 		},
 	}, jwtMgr)
@@ -344,7 +344,7 @@ type authStubRepository struct {
 	emailExists            func() (bool, error)
 	create                 func(CreateUserInput) (User, error)
 	findByID               func() (User, error)
-	validateAPIKeySession  func(userID, keyID int) (User, error)
+	validateAPIKeySession  func(keyID int) (User, error)
 	validateAPIKeyForLogin func(key string) (APIKeyLoginInfo, error)
 	getAPIKeyBrief         func(keyID int) (APIKeyBrief, error)
 	findUserByIdentity     func(provider, providerUserID string) (User, error)
@@ -410,14 +410,14 @@ func (s authStubRepository) FindByID(_ context.Context, _ int, _ bool) (User, er
 	return s.findByID()
 }
 
-func (s authStubRepository) ValidateAPIKeySession(_ context.Context, userID, keyID int) (User, error) {
+func (s authStubRepository) ValidateAPIKeySession(_ context.Context, keyID int) (User, error) {
 	if s.validateAPIKeySession != nil {
-		return s.validateAPIKeySession(userID, keyID)
+		return s.validateAPIKeySession(keyID)
 	}
-	if userID <= 0 || keyID <= 0 {
+	if keyID <= 0 {
 		return User{}, ErrInvalidAPIKeySession
 	}
-	return User{ID: userID, Email: "u@test.com", Role: "admin", Status: "active"}, nil
+	return User{ID: 7, Email: "u@test.com", Role: "admin", Status: "active"}, nil
 }
 
 func (s authStubRepository) ValidateAPIKeyForLogin(_ context.Context, key string) (APIKeyLoginInfo, error) {

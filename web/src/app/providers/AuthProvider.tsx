@@ -52,6 +52,12 @@ function clearSettledInviteAttribution(token: string) {
   if (getTokenRole(token) !== 'api_key') clearInviteCode();
 }
 
+function syncAccountOnlySessionState(user: UserResp, token: string) {
+  if (getTokenRole(token) === 'api_key') return;
+  clearOtherOnboardingSessions(user.id);
+  syncBlogSession(user, token);
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserResp | null>(null);
   const [loading, setLoading] = useState(true);
@@ -74,8 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (!cancelled && authRevisionRef.current === revision && currentToken) {
             clearSettledInviteAttribution(currentToken);
             const sessionUser = normalizeSessionUser(userData, currentToken);
-            clearOtherOnboardingSessions(sessionUser.id);
-            syncBlogSession(sessionUser, currentToken);
+            syncAccountOnlySessionState(sessionUser, currentToken);
             setUser(sessionUser);
           }
         })
@@ -106,8 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(token);
     clearSettledInviteAttribution(token);
     const sessionUser = normalizeSessionUser(userData, token);
-    clearOtherOnboardingSessions(sessionUser.id);
-    syncBlogSession(sessionUser, token);
+    syncAccountOnlySessionState(sessionUser, token);
     setUser(sessionUser);
     // 登录响应可能不包含全部用户字段（例如 API Key 登录时缺少 quota / expires_at），
     // 异步用 /me 拉一次完整数据补齐，避免首屏额度等信息显示不准。
@@ -116,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const currentToken = getToken();
         if (authRevisionRef.current === revision && currentToken) {
           const freshSessionUser = normalizeSessionUser(freshUser, currentToken);
-          syncBlogSession(freshSessionUser, currentToken);
+          syncAccountOnlySessionState(freshSessionUser, currentToken);
           setUser(freshSessionUser);
         }
       })

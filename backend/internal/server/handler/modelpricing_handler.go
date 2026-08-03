@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	appapikey "github.com/DouDOU-start/airgate-core/internal/app/apikey"
+	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 	appmodelpricing "github.com/DouDOU-start/airgate-core/internal/app/modelpricing"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
@@ -24,6 +25,8 @@ func (h *ModelPricingHandler) handleError(logMessage, publicMessage string, err 
 	switch {
 	case errors.Is(err, appuser.ErrUserNotFound):
 		return 404, err.Error()
+	case errors.Is(err, appauth.ErrInvalidAPIKeySession):
+		return 401, err.Error()
 	case errors.Is(err, appapikey.ErrKeyNotFound), errors.Is(err, appgroup.ErrGroupNotFound):
 		return 404, err.Error()
 	default:
