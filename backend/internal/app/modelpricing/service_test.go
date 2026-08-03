@@ -2,8 +2,10 @@ package modelpricing
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	appapikey "github.com/DouDOU-start/airgate-core/internal/app/apikey"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 	apppluginadmin "github.com/DouDOU-start/airgate-core/internal/app/pluginadmin"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
@@ -23,9 +25,33 @@ func (f *fakeGroups) ListAvailable(context.Context, appgroup.AvailableFilter) ([
 	return f.groups, int64(len(f.groups)), nil
 }
 
+func (f *fakeGroups) FindByID(_ context.Context, id int) (appgroup.Group, error) {
+	for _, group := range f.groups {
+		if group.ID == id {
+			return group, nil
+		}
+	}
+	return appgroup.Group{}, appgroup.ErrGroupNotFound
+}
+
 type fakeUsers struct{ user appuser.User }
 
 func (f *fakeUsers) Get(context.Context, int) (appuser.User, error) { return f.user, nil }
+
+type fakeAPIKeys struct {
+	key appapikey.Key
+	err error
+}
+
+func (f *fakeAPIKeys) FindOwned(_ context.Context, userID, id int) (appapikey.Key, error) {
+	if f.err != nil {
+		return appapikey.Key{}, f.err
+	}
+	if f.key.ID != id || f.key.UserID != userID {
+		return appapikey.Key{}, appapikey.ErrKeyNotFound
+	}
+	return f.key, nil
+}
 
 // 仿生产形态的目录/分组：Codex 双档显式路由 gpt 模型、GLM 分组只路由 glm-5.2（CNY 基准 + 官方美元参考价）、
 // Claude 分组空路由（不限制）。
@@ -58,7 +84,7 @@ func testService(userRates map[int64]float64) *Service {
 		// 固定图价哨兵组：倍率 0 + 空路由（匹配所有 openai 模型），不得污染 token 报价
 		{ID: 7, Name: "Image 4k", Platform: "openai", RateMultiplier: 0, ModelRouting: map[string][]int64{}},
 	}}
-	return NewService(catalog, groups, &fakeUsers{user: appuser.User{GroupRates: userRates}})
+	return NewService(catalog, groups, &fakeUsers{user: appuser.User{GroupRates: userRates}}, &fakeAPIKeys{})
 }
 
 func TestUserPricingPicksBestEligibleGroup(t *testing.T) {
@@ -149,7 +175,7 @@ func TestUserPricingExcludesFixedPriceSentinel(t *testing.T) {
 			ModelRouting: map[string][]int64{"gemini-3.5-flash": {29}}},
 		{ID: 7, Name: "Image 4k", Platform: "openai", RateMultiplier: 0, ModelRouting: map[string][]int64{}},
 	}}
-	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{}})
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{}}, &fakeAPIKeys{})
 
 	result, err := svc.UserPricing(context.Background(), 1)
 	if err != nil {
@@ -174,6 +200,70 @@ func TestUserPricingExcludesFixedPriceSentinel(t *testing.T) {
 		if g.ID == 7 && g.USDMultiplier != 0 {
 			t.Fatalf("哨兵组 usd_multiplier 应为 0: %+v", g)
 		}
+	}
+}
+
+func TestAPIKeyPricingScopesAzureGeminiAndUsesEffectiveRate(t *testing.T) {
+	groupID := 18
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{
+		{Platform: "openai", Models: []apppluginadmin.PublicPricingModel{
+			{ID: "gemini-3.1-flash-image", Vendor: "google", Input: 0.5, Output: 3},
+			{ID: "gpt-5.5", Vendor: "openai", Input: 5, Output: 30},
+		}},
+		{Platform: "claude", Models: []apppluginadmin.PublicPricingModel{
+			{ID: "claude-sonnet-5", Input: 3, Output: 15},
+		}},
+	}}
+	groups := &fakeGroups{groups: []appgroup.Group{{
+		ID:             groupID,
+		Name:           "Azure Gemini internal",
+		Platform:       "openai",
+		RateMultiplier: 3.1,
+		ModelRouting:   map[string][]int64{"gemini-*": {29}},
+	}}}
+	keys := &fakeAPIKeys{key: appapikey.Key{ID: 9, UserID: 7, GroupID: &groupID}}
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{}}, keys)
+
+	result, err := svc.APIKeyPricing(context.Background(), 7, 9)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if len(result.Platforms) != 1 || result.Platforms[0].Platform != "openai" {
+		t.Fatalf("platforms = %+v", result.Platforms)
+	}
+	if len(result.Platforms[0].Models) != 1 {
+		t.Fatalf("models = %+v", result.Platforms[0].Models)
+	}
+	quote := result.Platforms[0].Models[0]
+	if quote.ID != "gemini-3.1-flash-image" || quote.UserRate != 3.1 {
+		t.Fatalf("Azure Gemini quote = %+v", quote)
+	}
+	if quote.GroupID != 0 || quote.GroupName != "" || len(result.Groups) != 0 {
+		t.Fatalf("API Key response leaked group internals: quote=%+v groups=%+v", quote, result.Groups)
+	}
+}
+
+func TestAPIKeyPricingPrefersSellRateAndChecksOwnership(t *testing.T) {
+	groupID := 18
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
+		Platform: "openai",
+		Models:   []apppluginadmin.PublicPricingModel{{ID: "gemini-2.5-flash-image", Input: 0.3, Output: 30}},
+	}}}
+	groups := &fakeGroups{groups: []appgroup.Group{{
+		ID: groupID, Platform: "openai", RateMultiplier: 3.1,
+	}}}
+	keys := &fakeAPIKeys{key: appapikey.Key{ID: 9, UserID: 7, GroupID: &groupID, SellRate: 2.8}}
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{GroupRates: map[int64]float64{18: 2.5}}}, keys)
+
+	result, err := svc.APIKeyPricing(context.Background(), 7, 9)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got := result.Platforms[0].Models[0].UserRate; got != 2.8 {
+		t.Fatalf("user rate = %v, want sell_rate 2.8", got)
+	}
+	if _, err := svc.APIKeyPricing(context.Background(), 8, 9); !errors.Is(err, appapikey.ErrKeyNotFound) {
+		t.Fatalf("ownership error = %v, want ErrKeyNotFound", err)
 	}
 }
 

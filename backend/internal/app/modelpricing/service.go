@@ -18,11 +18,12 @@ type Service struct {
 	catalog CatalogReader
 	groups  GroupReader
 	users   UserReader
+	apiKeys APIKeyReader
 }
 
 // NewService 构造服务。
-func NewService(catalog CatalogReader, groups GroupReader, users UserReader) *Service {
-	return &Service{catalog: catalog, groups: groups, users: users}
+func NewService(catalog CatalogReader, groups GroupReader, users UserReader, apiKeys APIKeyReader) *Service {
+	return &Service{catalog: catalog, groups: groups, users: users, apiKeys: apiKeys}
 }
 
 // UserPricing 计算用户视角的模型报价：
@@ -82,6 +83,62 @@ func (s *Service) UserPricing(ctx context.Context, userID int) (Result, error) {
 			EffectiveRate: effective,
 			USDMultiplier: groupUSDMultiplier(catalog, g, u.GroupRates),
 		})
+	}
+	return result, nil
+}
+
+// APIKeyPricing 计算 API Key 登录会话的实付价视图。
+//
+// API Key 会话只能看到当前 Key 绑定分组可路由的模型。报价优先使用 Key 的
+// sell_rate；未配置时沿用真实计费链（用户分组专属倍率 > 分组倍率）。响应不带
+// 分组 ID/名称和分组摘要，避免向下游 Key 持有者暴露 reseller 的内部供价结构。
+func (s *Service) APIKeyPricing(ctx context.Context, userID, apiKeyID int) (Result, error) {
+	key, err := s.apiKeys.FindOwned(ctx, userID, apiKeyID)
+	if err != nil {
+		return Result{}, err
+	}
+	if key.GroupID == nil {
+		return Result{}, appgroup.ErrGroupNotFound
+	}
+
+	group, err := s.groups.FindByID(ctx, *key.GroupID)
+	if err != nil {
+		return Result{}, err
+	}
+	u, err := s.users.Get(ctx, userID)
+	if err != nil {
+		return Result{}, err
+	}
+
+	rate := key.SellRate
+	rateAvailable := rate > 0
+	if !rateAvailable {
+		rate, rateAvailable = effectiveGroupRate(u.GroupRates, group)
+	}
+
+	catalog := s.catalog.PublicModelPricing(ctx)
+	result := Result{Platforms: make([]PlatformQuotes, 0, 1)}
+	for _, platform := range catalog {
+		if platform.Platform != group.Platform {
+			continue
+		}
+		quotes := PlatformQuotes{
+			Platform: platform.Platform,
+			Models:   make([]ModelQuote, 0, len(platform.Models)),
+		}
+		for _, model := range platform.Models {
+			if !groupServesModel(group.ModelRouting, model.ID) {
+				continue
+			}
+			quote := ModelQuote{PublicPricingModel: model}
+			if rateAvailable {
+				quote.UserRate = rate
+			}
+			quotes.Models = append(quotes.Models, quote)
+		}
+		if len(quotes.Models) > 0 {
+			result.Platforms = append(result.Platforms, quotes)
+		}
 	}
 	return result, nil
 }

@@ -49,7 +49,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	})
 }
 
-// LoginByAPIKey 使用 API Key 登录（仅能查看该 Key 的使用记录）。
+// LoginByAPIKey 使用 API Key 登录（仅能查看该 Key 的使用记录与可用模型价格）。
 func (h *AuthHandler) LoginByAPIKey(c *gin.Context) {
 	var req dto.APIKeyLoginReq
 	if err := c.ShouldBindJSON(&req); err != nil {

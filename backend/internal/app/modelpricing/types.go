@@ -3,6 +3,7 @@ package modelpricing
 import (
 	"context"
 
+	appapikey "github.com/DouDOU-start/airgate-core/internal/app/apikey"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 	apppluginadmin "github.com/DouDOU-start/airgate-core/internal/app/pluginadmin"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
@@ -16,6 +17,12 @@ type CatalogReader interface {
 // GroupReader 读取用户可用分组（含专属分组授权过滤，复用 group Repository 子集）。
 type GroupReader interface {
 	ListAvailable(ctx context.Context, filter appgroup.AvailableFilter) ([]appgroup.Group, int64, error)
+	FindByID(ctx context.Context, id int) (appgroup.Group, error)
+}
+
+// APIKeyReader 读取当前会话 API Key 的归属、分组和最终客户销售倍率。
+type APIKeyReader interface {
+	FindOwned(ctx context.Context, userID, id int) (appapikey.Key, error)
 }
 
 // UserReader 读取用户（取 group_rates 专属调价）。

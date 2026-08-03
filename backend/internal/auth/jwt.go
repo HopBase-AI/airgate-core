@@ -20,7 +20,7 @@ type Claims struct {
 	UserID   int    `json:"user_id"`
 	Role     string `json:"role"`
 	Email    string `json:"email"`
-	APIKeyID int    `json:"api_key_id,omitempty"` // >0 表示 API Key 登录，仅可查看该 Key 的使用记录
+	APIKeyID int    `json:"api_key_id,omitempty"` // >0 表示 API Key 登录，仅可查看该 Key 的使用记录与可用模型价格
 	jwt.RegisteredClaims
 }
 

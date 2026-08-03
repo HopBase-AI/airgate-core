@@ -3,6 +3,7 @@ package handler
 import (
 	"github.com/gin-gonic/gin"
 
+	appmodelpricing "github.com/DouDOU-start/airgate-core/internal/app/modelpricing"
 	"github.com/DouDOU-start/airgate-core/internal/server/response"
 )
 
@@ -16,7 +17,15 @@ func (h *ModelPricingHandler) MyModelPricing(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.UserPricing(c.Request.Context(), userID)
+	var (
+		result appmodelpricing.Result
+		err    error
+	)
+	if apiKeyID := scopedAPIKeyID(c); apiKeyID > 0 {
+		result, err = h.service.APIKeyPricing(c.Request.Context(), userID, int(apiKeyID))
+	} else {
+		result, err = h.service.UserPricing(c.Request.Context(), userID)
+	}
 	if err != nil {
 		httpCode, message := h.handleError("查询用户模型报价失败", "查询失败", err)
 		response.Error(c, httpCode, httpCode, message)

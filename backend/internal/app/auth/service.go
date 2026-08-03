@@ -108,7 +108,7 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (LoginResult, err
 	}, nil
 }
 
-// LoginByAPIKey 使用 API Key 登录（仅能查看该 Key 的使用记录）。
+// LoginByAPIKey 使用 API Key 登录（仅能查看该 Key 的使用记录与可用模型价格）。
 func (s *Service) LoginByAPIKey(ctx context.Context, input LoginByAPIKeyInput) (LoginByAPIKeyResult, error) {
 	logger := sdk.LoggerFromContext(ctx)
 

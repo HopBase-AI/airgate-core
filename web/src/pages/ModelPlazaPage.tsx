@@ -366,7 +366,7 @@ function ModelTableSkeleton() {
 export default function ModelPlazaPage() {
   const { t } = useTranslation();
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, isAPIKeySession } = useAuth();
   const [search, setSearch] = useState('');
   const [platformFilter, setPlatformFilter] = useState('all');
   const [capabilityFilter, setCapabilityFilter] = useState('all');
@@ -404,7 +404,7 @@ export default function ModelPlazaPage() {
     queryFn: () => groupsApi.listAvailable(FETCH_ALL_PARAMS),
     staleTime: 60_000,
     retry: 1,
-    enabled: userMode,
+    enabled: userMode && !isAPIKeySession,
   });
 
   const models = useMemo(
@@ -431,6 +431,7 @@ export default function ModelPlazaPage() {
   // 实付价展示货币：ToB 主站配 CNY（¥，余额平价）；缺省 USD 等值（ToC 美元余额站群安全缺省）
   const plazaCurrency: 'CNY' | 'USD' = pricingConfig?.plaza_currency === 'CNY' ? 'CNY' : 'USD';
   const pricingFallback = !userMode && (settingsQuery.isLoading || settingsQuery.isError || !pricingConfig);
+  const personalPricingFallback = useFallback && !catalogQuery.isError;
   const brands = useMemo(
     () => {
       const priority = ['gemini_official', 'azure_google', 'byteplus', 'openai', 'claude', 'zhipu'];
@@ -485,7 +486,9 @@ export default function ModelPlazaPage() {
       <header className="ag-model-plaza-header">
         <div>
           <h1>{t('model_plaza.title')}</h1>
-          <p>{userMode ? t('model_plaza.subtitle_user') : t('model_plaza.subtitle')}</p>
+          <p>{userMode
+            ? t(isAPIKeySession ? 'model_plaza.subtitle_api_key' : 'model_plaza.subtitle_user')
+            : t('model_plaza.subtitle')}</p>
         </div>
         {!isLoading ? (
           <div className="ag-model-plaza-count" aria-label={t('model_plaza.total_count', { count: models.length })}>
@@ -538,7 +541,11 @@ export default function ModelPlazaPage() {
           <span>{t('model_plaza.stat_all')} <strong>{models.length}</strong></span>
           <span>{t('model_plaza.stat_results')} <strong>{filteredModels.length}</strong></span>
           <span>{t('model_plaza.stat_platforms')} <strong>{brands.length}</strong></span>
-          {pricingFallback ? <span className="ag-model-price-fallback">{t('model_plaza.official_price_notice')}</span> : null}
+          {personalPricingFallback ? (
+            <span className="ag-model-price-fallback">{t('model_plaza.personal_price_notice')}</span>
+          ) : pricingFallback ? (
+            <span className="ag-model-price-fallback">{t('model_plaza.official_price_notice')}</span>
+          ) : null}
         </div>
       ) : null}
 

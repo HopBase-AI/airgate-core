@@ -4,6 +4,8 @@ import (
 	"errors"
 	"log/slog"
 
+	appapikey "github.com/DouDOU-start/airgate-core/internal/app/apikey"
+	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 	appmodelpricing "github.com/DouDOU-start/airgate-core/internal/app/modelpricing"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
 )
@@ -21,6 +23,8 @@ func NewModelPricingHandler(service *appmodelpricing.Service) *ModelPricingHandl
 func (h *ModelPricingHandler) handleError(logMessage, publicMessage string, err error) (int, string) {
 	switch {
 	case errors.Is(err, appuser.ErrUserNotFound):
+		return 404, err.Error()
+	case errors.Is(err, appapikey.ErrKeyNotFound), errors.Is(err, appgroup.ErrGroupNotFound):
 		return 404, err.Error()
 	default:
 		slog.Error(logMessage, "error", err)
