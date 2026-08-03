@@ -41,8 +41,57 @@ func TestImageOutputBillingOverride_UsesConfiguredTier(t *testing.T) {
 }
 
 func TestImageOutputBillingOverride_ImageModelReplacesTotal(t *testing.T) {
+	settings := map[string]map[string]string{
+		"openai": {
+			"image_price_1k": "0.10",
+		},
+	}
+	models := []string{
+		"gpt-image-2",
+		"gemini-3.1-flash-image",
+		"gemini-3.1-flash-image-preview",
+		"gemini-3-pro-image",
+		"gemini-3-pro-image-preview",
+	}
+
+	for _, model := range models {
+		t.Run(model, func(t *testing.T) {
+			usage := &sdk.Usage{
+				Model: model,
+				Attributes: []sdk.UsageAttribute{
+					{Key: "image_size", Value: "1024x1024"},
+				},
+				Metrics: []sdk.UsageMetric{
+					{Key: "images", Kind: "image", Value: 1},
+				},
+				CostDetails: []sdk.UsageCostDetail{
+					{Key: "images", AccountCost: 0.40},
+				},
+			}
+
+			got, ok := imageOutputBillingOverride(usage, nil, settings)
+			if !ok {
+				t.Fatal("expected override")
+			}
+			if math.Abs(got.cost-0.10) > 1e-9 {
+				t.Fatalf("override = %v, want 0.10", got.cost)
+			}
+			if !got.replacesTotal {
+				t.Fatal("image model fixed image price should replace the whole request")
+			}
+		})
+	}
+}
+
+func TestFixedImagePriceReplacesTotal_DoesNotTreatGeminiTextModelAsImageOnly(t *testing.T) {
+	if fixedImagePriceReplacesTotal(&sdk.Usage{Model: "gemini-3.1-pro-preview"}) {
+		t.Fatal("Gemini text model should keep token costs alongside fixed image output pricing")
+	}
+}
+
+func TestApplyImageBillingOverride_GeminiImageFixedPriceReplacesTokenCosts(t *testing.T) {
 	usage := &sdk.Usage{
-		Model: "gpt-image-2",
+		Model: "gemini-3.1-flash-image",
 		Attributes: []sdk.UsageAttribute{
 			{Key: "image_size", Value: "1024x1024"},
 		},
@@ -50,24 +99,35 @@ func TestImageOutputBillingOverride_ImageModelReplacesTotal(t *testing.T) {
 			{Key: "images", Kind: "image", Value: 1},
 		},
 		CostDetails: []sdk.UsageCostDetail{
-			{Key: "images", AccountCost: 0.40},
+			{Key: "input", AccountCost: 0.01},
+			{Key: "images", AccountCost: 0.04},
 		},
 	}
 	settings := map[string]map[string]string{
 		"openai": {
-			"image_price_1k": "0.10",
+			"image_price_1k": "0.25",
 		},
 	}
+	snap := usageSnapshotFromSDK(usage)
+	input := billing.CalculateInput{
+		InputCost:   snap.InputCost,
+		ImageCost:   snap.ImageCost,
+		BillingRate: 1,
+		AccountRate: 1.5,
+	}
 
-	got, ok := imageOutputBillingOverride(usage, nil, settings)
-	if !ok {
-		t.Fatal("expected override")
+	applied, replacesTotal := applyImageBillingOverride(&input, usage, nil, settings)
+	if !applied || !replacesTotal {
+		t.Fatalf("override applied=%v replacesTotal=%v, want true/true", applied, replacesTotal)
 	}
-	if math.Abs(got.cost-0.10) > 1e-9 {
-		t.Fatalf("override = %v, want 0.10", got.cost)
+
+	got := billing.NewCalculator().Calculate(input)
+	if math.Abs(got.ActualCost-0.25) > 1e-9 || math.Abs(got.BilledCost-0.25) > 1e-9 {
+		t.Fatalf("ActualCost/BilledCost = %v/%v, want 0.25/0.25", got.ActualCost, got.BilledCost)
 	}
-	if !got.replacesTotal {
-		t.Fatal("image model fixed image price should replace the whole request")
+	wantAccountCost := (0.01 + 0.04) * 1.5
+	if math.Abs(got.AccountCost-wantAccountCost) > 1e-9 {
+		t.Fatalf("AccountCost = %v, want %v", got.AccountCost, wantAccountCost)
 	}
 }
 

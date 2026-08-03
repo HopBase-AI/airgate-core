@@ -101,7 +101,8 @@ func fixedImagePriceReplacesTotal(usage *sdk.Usage) bool {
 	model := strings.ToLower(strings.TrimSpace(usage.Model))
 	return strings.HasPrefix(model, "gpt-image") ||
 		strings.HasPrefix(model, "dall-e") ||
-		strings.HasPrefix(model, "dalle")
+		strings.HasPrefix(model, "dalle") ||
+		(strings.HasPrefix(model, "gemini-") && strings.Contains(model, "-image"))
 }
 
 func shouldForwardPluginSetting(plugin, key string) bool {
