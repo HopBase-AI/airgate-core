@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { formatModelPrice, resolveFixedImageTierPrices } from './modelPlazaPricing';
+import {
+  fixedImageTierCount,
+  formatModelPrice,
+  hasFixedImageTierPrices,
+  resolveFixedImageTierPrices,
+} from './modelPlazaPricing';
 
 describe('model plaza price formatting', () => {
   it('preserves sub-cent image prices and their discounts', () => {
@@ -17,6 +22,10 @@ describe('model plaza price formatting', () => {
   it('does not present invalid or zero values as prices', () => {
     expect(formatModelPrice(0)).toBe('—');
     expect(formatModelPrice(Number.NaN)).toBe('—');
+  });
+
+  it('can display an explicitly configured free fixed-price tier', () => {
+    expect(formatModelPrice(0, '¥', true)).toBe('¥0');
   });
 });
 
@@ -39,5 +48,15 @@ describe('fixed image prices', () => {
       image_price_2k: Number.NaN,
     }, 6.8, 'USD');
     expect(prices).toEqual([{ tier: '1k', sale: 0.01 }]);
+  });
+
+  it('distinguishes partial and complete fixed-price coverage', () => {
+    expect(hasFixedImageTierPrices({ image_price_1k: 0 })).toBe(true);
+    expect(fixedImageTierCount({ image_price_1k: 0.08 })).toBe(1);
+    expect(fixedImageTierCount({
+      image_price_1k: 0.08,
+      image_price_2k: 0.12,
+      image_price_4k: 0.15,
+    })).toBe(3);
   });
 });

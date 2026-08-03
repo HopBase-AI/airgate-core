@@ -14,7 +14,7 @@ import { useToast } from '../shared/ui';
 import { FETCH_ALL_PARAMS } from '../shared/constants';
 import { useAuth } from '../app/providers/AuthProvider';
 import { mergeCatalog, type ModelLedgerItem } from './modelPlazaCatalog';
-import { formatModelPrice, resolveFixedImageTierPrices } from './modelPlazaPricing';
+import { formatModelPrice, hasFixedImageTierPrices, resolveFixedImageTierPrices } from './modelPlazaPricing';
 
 interface TocPricingConfig {
   fx?: number;
@@ -139,6 +139,7 @@ interface BucketPrice {
   sale: number;
   official: number;
   officialOnly: boolean;
+  allowZero?: boolean;
 }
 
 // 分辨率展示序：低→高，4k 垫底；no_ref 在前、with_ref 在后。
@@ -245,7 +246,7 @@ function formatZhe(zhe: number): string {
   return value < 1 ? value.toFixed(2) : value.toFixed(1);
 }
 
-function PriceCell({ label, sale, official, officialOnly, officialTitle, saleSymbol, officialSymbol }: {
+function PriceCell({ label, sale, official, officialOnly, officialTitle, saleSymbol, officialSymbol, allowZero = false }: {
   label: string;
   sale: number;
   official: number;
@@ -253,6 +254,7 @@ function PriceCell({ label, sale, official, officialOnly, officialTitle, saleSym
   officialTitle: string;
   saleSymbol: '$' | '¥';
   officialSymbol: '$' | '¥';
+  allowZero?: boolean;
 }) {
   // 有售价换算时同格展示划线官方原价，折扣一眼可比
   const showStrike = !officialOnly && official > 0 && !(officialSymbol === saleSymbol && official === sale);
@@ -260,7 +262,7 @@ function PriceCell({ label, sale, official, officialOnly, officialTitle, saleSym
     <div>
       <dt>{label}</dt>
       <dd>
-        {formatModelPrice(sale, officialOnly ? officialSymbol : saleSymbol)}
+        {formatModelPrice(sale, officialOnly ? officialSymbol : saleSymbol, allowZero)}
         {showStrike ? <del title={officialTitle}>{formatModelPrice(official, officialSymbol)}</del> : null}
       </dd>
     </div>
@@ -300,7 +302,7 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode }
   // 视频生成按 video token 桶铺价；图片生成按像素档位的单张价铺价。
   const buckets = video ?? image;
   if (buckets) {
-    const bucketDiscount = userMode && (model.user_rate ?? 0) > 0 ? (model.user_rate ?? 0) / fx : null;
+    const bucketDiscount = video && userMode && (model.user_rate ?? 0) > 0 ? (model.user_rate ?? 0) / fx : null;
     return (
       <div className="ag-model-price-wrap">
         {video ? <p className="ag-model-video-price-unit">{t('model_plaza.video_price_unit')}</p> : null}
@@ -316,9 +318,20 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode }
               officialSymbol="$"
               sale={b.sale}
               saleSymbol={videoSaleSymbol}
+              allowZero={b.allowZero}
             />
           ))}
         </dl>
+        {image && price ? (
+          <>
+            <dl className="ag-model-price-grid mt-2 border-t border-border pt-2">
+              <PriceCell label={t('model_plaza.input')} sale={price.input} official={price.official.input} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
+              <PriceCell label={t('model_plaza.cached_input')} sale={price.cachedInput} official={price.official.cachedInput} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
+              <PriceCell label={t('model_plaza.output')} sale={price.output} official={price.official.output} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
+            </dl>
+            {discountMeta(price.zhe, price.groupName, price.groupNameI18n)}
+          </>
+        ) : null}
         {video ? <p className="ag-model-video-price-note">{t('model_plaza.video_price_note')}</p> : null}
         {buckets[0]?.officialOnly ? <p className="ag-model-official-label">{officialTitle}</p> : null}
       </div>
@@ -411,7 +424,7 @@ export default function ModelPlazaPage() {
 
   const models = useMemo(
     () => mergeCatalog(myPricingQuery.data?.platforms ?? catalogQuery.data ?? []).map((model) => {
-      if (!userMode || (model.user_rate ?? 0) > 0) return model;
+      if (!userMode || (model.user_rate ?? 0) > 0 || hasFixedImageTierPrices(model)) return model;
       const best = bestGroupForModel(model, model.platforms, groupsQuery.data?.list ?? [], user?.group_rates);
       if (!best) return model;
       return {
@@ -601,13 +614,17 @@ export default function ModelPlazaPage() {
                       sale,
                       official: 0,
                       officialOnly: false,
+                      allowZero: true,
                     }))
                   : [];
                 const image = fixedImage.length > 0
                   ? fixedImage
                   : isImageModel(model) ? resolveImagePrices(model, pricingConfig, userMode, plazaCurrency, t) : null;
                 const bucketPrices = video ?? image;
-                const price = bucketPrices ? null : (userMode ? resolveUserPrice(model, fx, plazaCurrency) : resolveStandardPrice(model, pricingConfig));
+                const hasTokenFallback = fixedImage.length > 0 && fixedImage.length < 3 && (model.user_rate ?? 0) > 0;
+                const price = bucketPrices && !hasTokenFallback
+                  ? null
+                  : (userMode ? resolveUserPrice(model, fx, plazaCurrency) : resolveStandardPrice(model, pricingConfig));
                 const officialOnly = bucketPrices ? (bucketPrices[0]?.officialOnly ?? true) : price!.officialOnly;
                 return (
                   <tr key={`${model.platform}:${model.id}`}>

@@ -1,5 +1,5 @@
-export function formatModelPrice(value: number, symbol: '$' | '¥' = '$'): string {
-  if (!Number.isFinite(value) || value <= 0) return '—';
+export function formatModelPrice(value: number, symbol: '$' | '¥' = '$', allowZero = false): string {
+  if (!Number.isFinite(value) || value < 0 || (!allowZero && value === 0)) return '—';
 
   const rounded = Math.round((value + Number.EPSILON) * 1_000_000) / 1_000_000;
   return `${symbol}${rounded.toLocaleString(undefined, { maximumFractionDigits: 6 })}`;
@@ -16,6 +16,19 @@ export interface FixedImageTierPrice {
   sale: number;
 }
 
+function isFixedImageTierPrice(value: number | undefined): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+export function fixedImageTierCount(model: FixedImagePriceModel): number {
+  return [model.image_price_1k, model.image_price_2k, model.image_price_4k]
+    .filter(isFixedImageTierPrice).length;
+}
+
+export function hasFixedImageTierPrices(model: FixedImagePriceModel): boolean {
+  return fixedImageTierCount(model) > 0;
+}
+
 // API 返回的固定图价是余额单位；ToC 美元视图按站点汇率换算，ToB 人民币视图直接展示。
 export function resolveFixedImageTierPrices(
   model: FixedImagePriceModel,
@@ -29,7 +42,7 @@ export function resolveFixedImageTierPrices(
     ['4k', model.image_price_4k],
   ];
   return tiers.flatMap(([tier, price]) => {
-    if (typeof price !== 'number' || !Number.isFinite(price) || price < 0) return [];
+    if (!isFixedImageTierPrice(price)) return [];
     return [{ tier, sale: saleCurrency === 'CNY' ? price : price / safeFX }];
   });
 }

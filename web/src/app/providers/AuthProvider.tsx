@@ -16,6 +16,7 @@ import {
   clearAllOnboardingSessions,
   clearOtherOnboardingSessions,
 } from '../../shared/onboarding/storage';
+import { shouldInvalidateStoredSession } from './sessionBootstrap';
 
 interface AuthContextType {
   user: UserResp | null;
@@ -84,10 +85,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(sessionUser);
           }
         })
-        .catch(() => {
-          if (!cancelled && authRevisionRef.current === revision && getToken() === token) {
+        .catch((error: unknown) => {
+          if (!cancelled && authRevisionRef.current === revision && shouldInvalidateStoredSession(error)) {
             resetAdminCache();
-            setToken(null);
+            if (getToken() === token) setToken(null);
             clearAllOnboardingSessions();
             setUser(null);
           }

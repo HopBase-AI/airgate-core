@@ -303,6 +303,9 @@ func TestEnrichUsageCostDetails_ResponseFixedImagePriceKeepsTokenUserCost(t *tes
 	if got := items[2].Metadata["fixed_unit_price"]; got != "0.1" {
 		t.Fatalf("fixed_unit_price = %q, want 0.1", got)
 	}
+	if got := items[2].Metadata["fixed_unit"]; got != "CNY/image" {
+		t.Fatalf("fixed_unit = %q, want CNY/image", got)
+	}
 }
 
 func TestEnrichUsageCostDetails_ResponseImageTokenBillingMergesIntoInputAndOutput(t *testing.T) {
