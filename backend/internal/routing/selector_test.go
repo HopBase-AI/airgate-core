@@ -76,6 +76,27 @@ func TestListEligibleGroups(t *testing.T) {
 	}
 }
 
+func TestCandidatePrecedesUsesCanonicalRoutingOrder(t *testing.T) {
+	if !CandidatePrecedes(
+		Candidate{GroupID: 9, EffectiveRate: 0.4, SortWeight: 1},
+		Candidate{GroupID: 1, EffectiveRate: 0.5, SortWeight: 100},
+	) {
+		t.Fatal("lower effective rate must win")
+	}
+	if !CandidatePrecedes(
+		Candidate{GroupID: 9, EffectiveRate: 0.5, SortWeight: 20},
+		Candidate{GroupID: 1, EffectiveRate: 0.5, SortWeight: 10},
+	) {
+		t.Fatal("higher sort weight must break an equal-rate tie")
+	}
+	if !CandidatePrecedes(
+		Candidate{GroupID: 1, EffectiveRate: 0.5, SortWeight: 10},
+		Candidate{GroupID: 9, EffectiveRate: 0.5, SortWeight: 10},
+	) {
+		t.Fatal("lower group ID must break a remaining tie")
+	}
+}
+
 func TestListEligibleGroupsFiltersImageDisabledOpenAIGroups(t *testing.T) {
 	ctx := context.Background()
 	db := enttest.Open(t, "sqlite3", "file:route_selector_image?mode=memory&cache=shared&_fk=1", enttest.WithMigrateOptions(migrate.WithGlobalUniqueID(false)))

@@ -21,6 +21,10 @@ export interface FixedImageTierPrice {
   billingMode: 'fixed' | 'token';
 }
 
+export interface ImageBillingBucket {
+  imageBillingMode?: 'fixed' | 'token';
+}
+
 function validFixedImagePrice(price: number | undefined): price is number {
   return typeof price === 'number' && Number.isFinite(price) && price >= 0;
 }
@@ -62,4 +66,8 @@ export function resolveBucketDiscount(
     return null;
   }
   return userRate / fx;
+}
+
+export function hasFixedImagePricingBuckets(buckets: ImageBillingBucket[] | null): boolean {
+  return !!buckets?.some((bucket) => bucket.imageBillingMode != null);
 }

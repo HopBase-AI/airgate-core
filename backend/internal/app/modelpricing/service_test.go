@@ -205,7 +205,7 @@ func TestUserPricingExcludesFixedPriceSentinel(t *testing.T) {
 	}
 }
 
-func TestAPIKeyPricingScopesAzureGeminiAndUsesEffectiveRate(t *testing.T) {
+func TestAPIKeyPricingScopesAzureGeminiAndUsesFixedImagePrices(t *testing.T) {
 	groupID := 18
 	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{
 		{Platform: "openai", Models: []apppluginadmin.PublicPricingModel{
@@ -222,6 +222,10 @@ func TestAPIKeyPricingScopesAzureGeminiAndUsesEffectiveRate(t *testing.T) {
 		Platform:       "openai",
 		RateMultiplier: 3.1,
 		ModelRouting:   map[string][]int64{"gemini-*": {29}},
+		PluginSettings: map[string]map[string]string{"openai": {
+			"image_enabled":  "true",
+			"image_price_1k": "0.08", "image_price_2k": "0.12", "image_price_4k": "0.15",
+		}},
 	}}}
 	keys := &fakeAPIKeys{key: appapikey.Key{ID: 9, UserID: 7, GroupID: &groupID, Status: "active"}}
 	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{Status: "active"}}, keys)
@@ -237,8 +241,13 @@ func TestAPIKeyPricingScopesAzureGeminiAndUsesEffectiveRate(t *testing.T) {
 		t.Fatalf("models = %+v", result.Platforms[0].Models)
 	}
 	quote := result.Platforms[0].Models[0]
-	if quote.ID != "gemini-3.1-flash-image" || quote.UserRate != 3.1 {
+	if quote.ID != "gemini-3.1-flash-image" || quote.UserRate != 0 {
 		t.Fatalf("Azure Gemini quote = %+v", quote)
+	}
+	if quote.ImagePrice1K == nil || *quote.ImagePrice1K != 0.08 ||
+		quote.ImagePrice2K == nil || *quote.ImagePrice2K != 0.12 ||
+		quote.ImagePrice4K == nil || *quote.ImagePrice4K != 0.15 {
+		t.Fatalf("Azure Gemini fixed prices = %+v", quote)
 	}
 	if quote.GroupID != 0 || quote.GroupName != "" || len(result.Groups) != 0 {
 		t.Fatalf("API Key response leaked group internals: quote=%+v groups=%+v", quote, result.Groups)
@@ -253,6 +262,7 @@ func TestAPIKeyPricingPrefersSellRateAndChecksOwnership(t *testing.T) {
 	}}}
 	groups := &fakeGroups{groups: []appgroup.Group{{
 		ID: groupID, Platform: "openai", RateMultiplier: 3.1,
+		PluginSettings: map[string]map[string]string{"openai": {"image_enabled": "true"}},
 	}}}
 	keys := &fakeAPIKeys{key: appapikey.Key{ID: 9, UserID: 7, GroupID: &groupID, SellRate: 2.8, Status: "active"}}
 	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{GroupRates: map[int64]float64{18: 2.5}, Status: "active"}}, keys)
@@ -283,6 +293,7 @@ func TestAPIKeyPricingSuppressesRateForFixedPriceImageModels(t *testing.T) {
 		Platform:       "openai",
 		RateMultiplier: 0.6,
 		PluginSettings: map[string]map[string]string{"openai": {
+			"image_enabled":  "true",
 			"image_price_1k": "0.08",
 			"image_price_2k": "0.12",
 			"image_price_4k": "0.15",
@@ -330,6 +341,7 @@ func TestAPIKeyPricingKeepsTokenFallbackRateForPartialFixedPriceImageModels(t *t
 	groups := &fakeGroups{groups: []appgroup.Group{{
 		ID: groupID, Platform: "openai", RateMultiplier: 0.6,
 		PluginSettings: map[string]map[string]string{"openai": {
+			"image_enabled":  "true",
 			"image_price_1k": "0.08",
 		}},
 	}}}
@@ -352,7 +364,7 @@ func TestAPIKeyPricingKeepsTokenFallbackRateForPartialFixedPriceImageModels(t *t
 	}
 }
 
-func TestUserPricingReturnsLowestEffectiveFixedImagePrices(t *testing.T) {
+func TestUserPricingUsesOneSelectedGroupForAllFixedImagePrices(t *testing.T) {
 	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
 		Platform: "openai",
 		Models: []apppluginadmin.PublicPricingModel{
@@ -364,12 +376,14 @@ func TestUserPricingReturnsLowestEffectiveFixedImagePrices(t *testing.T) {
 		{
 			ID: 7, Name: "Image A", Platform: "openai", RateMultiplier: 0.6,
 			PluginSettings: map[string]map[string]string{"openai": {
+				"image_enabled":  "true",
 				"image_price_1k": "0.09", "image_price_2k": "0.12", "image_price_4k": "0.16",
 			}},
 		},
 		{
 			ID: 8, Name: "Image B", Platform: "openai", RateMultiplier: 0.7,
 			PluginSettings: map[string]map[string]string{"openai": {
+				"image_enabled":  "true",
 				"image_price_1k": "0.08", "image_price_2k": "0.13", "image_price_4k": "0.15",
 			}},
 		},
@@ -388,16 +402,50 @@ func TestUserPricingReturnsLowestEffectiveFixedImagePrices(t *testing.T) {
 		quotes[model.ID] = model
 	}
 	image := quotes["gpt-image-2"]
-	if image.ImagePrice1K == nil || *image.ImagePrice1K != 0.08 ||
+	if image.ImagePrice1K == nil || *image.ImagePrice1K != 0.09 ||
 		image.ImagePrice2K == nil || *image.ImagePrice2K != 0.10 ||
-		image.ImagePrice4K == nil || *image.ImagePrice4K != 0.15 {
-		t.Fatalf("effective fixed prices = %+v, want 0.08/0.10/0.15", image)
+		image.ImagePrice4K == nil || *image.ImagePrice4K != 0.16 {
+		t.Fatalf("selected-group fixed prices = %+v, want Image A 0.09/0.10/0.16", image)
 	}
-	if image.UserRate != 0 || image.GroupID != 0 || image.GroupName != "" {
-		t.Fatalf("fixed image quote must not expose a fake token quote: %+v", image)
+	if image.UserRate != 0 || image.GroupID != 7 || image.GroupName != "Image A" {
+		t.Fatalf("fixed image quote must identify its selected group: %+v", image)
 	}
 	if token := quotes["gpt-5.5"]; token.UserRate != 0.6 || hasFixedImagePrices(token) {
 		t.Fatalf("token quote = %+v, want rate 0.6 without image prices", token)
+	}
+}
+
+func TestUserPricingExcludesImageDisabledGroupFromFixedPricing(t *testing.T) {
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
+		Platform: "openai",
+		Models:   []apppluginadmin.PublicPricingModel{{ID: "gpt-image-2", Input: 5, Output: 30}},
+	}}}
+	groups := &fakeGroups{groups: []appgroup.Group{
+		{
+			ID: 7, Name: "Disabled Image", Platform: "openai", RateMultiplier: 0.1,
+			PluginSettings: map[string]map[string]string{"openai": {
+				"image_enabled": "false", "image_price_1k": "0.01",
+				"image_price_2k": "0.02", "image_price_4k": "0.03",
+			}},
+		},
+		{
+			ID: 8, Name: "Enabled Image", Platform: "openai", RateMultiplier: 0.6,
+			PluginSettings: map[string]map[string]string{"openai": {
+				"image_enabled": "true", "image_price_1k": "0.08",
+				"image_price_2k": "0.12", "image_price_4k": "0.15",
+			}},
+		},
+	}}
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{}}, &fakeAPIKeys{})
+
+	result, err := svc.UserPricing(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	quote := result.Platforms[0].Models[0]
+	if quote.GroupID != 8 || quote.GroupName != "Enabled Image" ||
+		quote.ImagePrice1K == nil || *quote.ImagePrice1K != 0.08 {
+		t.Fatalf("fixed image quote selected an unroutable group: %+v", quote)
 	}
 }
 
@@ -409,9 +457,45 @@ func TestUserPricingKeepsTokenFallbackQuoteForPartialFixedPriceImageModels(t *te
 	groups := &fakeGroups{groups: []appgroup.Group{
 		{
 			ID: 7, Name: "Image Fixed", Platform: "openai", RateMultiplier: 0.7,
-			PluginSettings: map[string]map[string]string{"openai": {"image_price_1k": "0.08"}},
+			PluginSettings: map[string]map[string]string{"openai": {
+				"image_enabled": "true", "image_price_1k": "0.08",
+			}},
 		},
-		{ID: 8, Name: "Image Token", Platform: "openai", RateMultiplier: 0.6},
+		{ID: 8, Name: "Image Token", Platform: "openai", RateMultiplier: 0.6,
+			PluginSettings: map[string]map[string]string{"openai": {"image_enabled": "true"}}},
+	}}
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{}}, &fakeAPIKeys{})
+
+	result, err := svc.UserPricing(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	quote := result.Platforms[0].Models[0]
+	if hasFixedImagePrices(quote) {
+		t.Fatalf("fixed prices must not be copied from the unselected group: %+v", quote)
+	}
+	if quote.UserRate != 0.6 || quote.GroupID != 8 || quote.GroupName != "Image Token" {
+		t.Fatalf("token fallback quote = %+v, want Image Token at 0.6", quote)
+	}
+}
+
+func TestUserPricingPartialFixedZeroRateUsesSameGroupBillingFallback(t *testing.T) {
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
+		Platform: "openai",
+		Models:   []apppluginadmin.PublicPricingModel{{ID: "gemini-3.1-flash-image", Input: 0.5, Output: 3}},
+	}}}
+	groups := &fakeGroups{groups: []appgroup.Group{
+		{
+			ID: 7, Name: "Azure Image", Platform: "openai", RateMultiplier: 0,
+			ModelRouting: map[string][]int64{"gemini-3.1-flash-image": {50}},
+			PluginSettings: map[string]map[string]string{"openai": {
+				"image_enabled":  "true",
+				"image_price_1k": "0.08",
+			}},
+		},
+		{ID: 8, Name: "Token Backup", Platform: "openai", RateMultiplier: 1.2,
+			ModelRouting:   map[string][]int64{"gemini-3.1-flash-image": {51}},
+			PluginSettings: map[string]map[string]string{"openai": {"image_enabled": "true"}}},
 	}}
 	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{}}, &fakeAPIKeys{})
 
@@ -424,8 +508,33 @@ func TestUserPricingKeepsTokenFallbackQuoteForPartialFixedPriceImageModels(t *te
 		quote.ImagePrice2K != nil || quote.ImagePrice4K != nil {
 		t.Fatalf("partial fixed image prices = %+v", quote)
 	}
-	if quote.UserRate != 0.6 || quote.GroupID != 8 || quote.GroupName != "Image Token" {
-		t.Fatalf("token fallback quote = %+v, want Image Token at 0.6", quote)
+	if quote.UserRate != 1 || quote.GroupID != 7 || quote.GroupName != "Azure Image" {
+		t.Fatalf("same-group token fallback = %+v, want Azure Image at billing fallback 1.0", quote)
+	}
+}
+
+func TestAPIKeyPricingPartialFixedZeroRateUsesBillingFallback(t *testing.T) {
+	groupID := 7
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
+		Platform: "openai",
+		Models:   []apppluginadmin.PublicPricingModel{{ID: "gemini-3-pro-image", Input: 0.5, Output: 3}},
+	}}}
+	groups := &fakeGroups{groups: []appgroup.Group{{
+		ID: groupID, Platform: "openai", RateMultiplier: 0,
+		PluginSettings: map[string]map[string]string{"openai": {
+			"image_enabled": "true", "image_price_1k": "0.08",
+		}},
+	}}}
+	keys := &fakeAPIKeys{key: appapikey.Key{ID: 9, UserID: 7, GroupID: &groupID, Status: "active"}}
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{Status: "active"}}, keys)
+
+	result, err := svc.APIKeyPricing(context.Background(), 7, 9)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	quote := result.Platforms[0].Models[0]
+	if quote.ImagePrice1K == nil || *quote.ImagePrice1K != 0.08 || quote.UserRate != 1 {
+		t.Fatalf("API Key partial fixed fallback = %+v, want fixed 1K and token rate 1.0", quote)
 	}
 }
 

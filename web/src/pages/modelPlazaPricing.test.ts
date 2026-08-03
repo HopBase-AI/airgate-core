@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatModelPrice,
+  hasFixedImagePricingBuckets,
   hasFixedImageTierPrices,
   resolveBucketDiscount,
   resolveFixedImageTierPrices,
@@ -69,6 +70,15 @@ describe('fixed image prices', () => {
   it('never derives a token discount for fixed image pricing', () => {
     expect(resolveBucketDiscount(0.6, 6.8, true)).toBeNull();
     expect(resolveBucketDiscount(0.6, 6.8, false)).toBeCloseTo(0.6 / 6.8);
+  });
+
+  it('keeps the discount path for ordinary per-image pricing buckets', () => {
+    expect(hasFixedImagePricingBuckets([
+      { imageBillingMode: undefined },
+      { imageBillingMode: undefined },
+    ])).toBe(false);
+    expect(resolveBucketDiscount(0.6, 6.8, false)).toBeCloseTo(0.6 / 6.8);
+    expect(hasFixedImagePricingBuckets([{ imageBillingMode: 'fixed' }])).toBe(true);
   });
 
   it('does not backfill token rate or group attribution when the backend returned a fixed tier', () => {

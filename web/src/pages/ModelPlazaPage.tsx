@@ -16,6 +16,7 @@ import { useAuth } from '../app/providers/AuthProvider';
 import { mergeCatalog, type ModelLedgerItem } from './modelPlazaCatalog';
 import {
   formatModelPrice,
+  hasFixedImagePricingBuckets,
   resolveBucketDiscount,
   resolveFixedImageTierPrices,
   shouldBackfillTokenPricing,
@@ -308,7 +309,7 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode }
   // 视频生成按 video token 桶铺价；图片生成按像素档位的单张价铺价。
   const buckets = video ?? image;
   if (buckets) {
-    const hasFixedImagePricing = !!image?.some((bucket) => bucket.imageBillingMode != null);
+    const hasFixedImagePricing = hasFixedImagePricingBuckets(image);
     const bucketDiscount = userMode
       ? resolveBucketDiscount(model.user_rate, fx, hasFixedImagePricing)
       : null;

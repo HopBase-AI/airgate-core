@@ -37,8 +37,8 @@ type ModelQuote struct {
 	// 部分图片尺寸有固定价时，它表示未配置尺寸的 token 回退倍率。0 表示没有可用
 	// token 报价，或所有图片尺寸均使用固定价。
 	UserRate float64
-	// GroupID/GroupName/GroupNameI18n 仅标识 UserRate 的 token 报价来源；固定价
-	// 可能按档位来自其他可用分组，不能据此归属固定价。
+	// GroupID/GroupName/GroupNameI18n 标识该模型整份报价的真实分组来源；固定档位
+	// 与缺失档位的 token 回退始终来自同一分组。
 	GroupID   int
 	GroupName string
 	// GroupNameI18n 分组名多语言覆盖（键=语言码 en / zh-HK / ja；zh 基准即 GroupName）。

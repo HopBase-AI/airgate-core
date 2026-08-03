@@ -76,13 +76,7 @@ func ListEligibleGroups(ctx context.Context, db *ent.Client, userID int, platfor
 	}
 
 	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i].EffectiveRate != candidates[j].EffectiveRate {
-			return candidates[i].EffectiveRate < candidates[j].EffectiveRate
-		}
-		if candidates[i].SortWeight != candidates[j].SortWeight {
-			return candidates[i].SortWeight > candidates[j].SortWeight
-		}
-		return candidates[i].GroupID < candidates[j].GroupID
+		return CandidatePrecedes(candidates[i], candidates[j])
 	})
 
 	if len(candidates) == 0 {
@@ -100,6 +94,18 @@ func ListEligibleGroups(ctx context.Context, db *ent.Client, userID int, platfor
 			"top_rate", candidates[0].EffectiveRate)
 	}
 	return candidates, nil
+}
+
+// CandidatePrecedes defines the canonical automatic group-routing order.
+// Pricing and routing must use the same order so displayed prices remain reachable.
+func CandidatePrecedes(left, right Candidate) bool {
+	if left.EffectiveRate != right.EffectiveRate {
+		return left.EffectiveRate < right.EffectiveRate
+	}
+	if left.SortWeight != right.SortWeight {
+		return left.SortWeight > right.SortWeight
+	}
+	return left.GroupID < right.GroupID
 }
 
 func GroupMatchesRequirements(g *ent.Group, requirements Requirements) bool {
