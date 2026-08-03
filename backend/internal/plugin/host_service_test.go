@@ -525,7 +525,7 @@ func TestListGroupsEligibleOnly(t *testing.T) {
 		t.Fatalf("effective_rate = %v,%v", items[0]["effective_rate"], items[1]["effective_rate"])
 	}
 	fixed, ok := items[0]["fixed_image_prices"].(map[string]interface{})
-	if !ok || fixed["1k"] != 0.08 || fixed["2k"] != 0.11 || fixed["currency"] != "USD" {
+	if !ok || fixed["1k"] != 0.08 || fixed["2k"] != 0.11 || fixed["currency"] != "CNY" {
 		t.Fatalf("fixed_image_prices = %#v", items[0]["fixed_image_prices"])
 	}
 	if _, leaked := items[0]["plugin_settings"]; leaked {

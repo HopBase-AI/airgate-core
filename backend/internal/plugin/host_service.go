@@ -890,8 +890,8 @@ func resolvedFixedImagePrices(userSettings, groupSettings map[string]map[string]
 	if len(prices) == 0 {
 		return nil
 	}
-	// 与 recorder 的 fixed_unit=USD/image 计费元数据保持一致。
-	prices["currency"] = "USD"
+	// 固定图价沿用站内余额计价口径（人民币）；ToC 美元视图由展示端按站点汇率换算。
+	prices["currency"] = "CNY"
 	return prices
 }
 
