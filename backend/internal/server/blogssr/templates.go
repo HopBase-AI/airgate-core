@@ -101,16 +101,23 @@ const listHeadStr = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{.PageTitle}}</title>
-<meta name="description" content="{{.SiteName}} 博客:AI 使用方法、模型技巧与实践分享。">
-<meta name="robots" content="index, follow, max-image-preview:large">
-<link rel="canonical" href="{{.OriginBase}}/blog">
+<meta name="description" content="{{.MetaDescription}}">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<link rel="canonical" href="{{.Canonical}}">
+{{range .Hreflang}}<link rel="alternate" hreflang="{{.Lang}}" href="{{.Href}}">
+{{end}}<meta property="og:site_name" content="{{.SiteName}}">
 <meta property="og:type" content="website">
 <meta property="og:title" content="{{.PageTitle}}">
-<meta property="og:description" content="{{.SiteName}} 博客:AI 使用方法、模型技巧与实践分享。">
-<meta property="og:url" content="{{.OriginBase}}/blog">
-<meta name="twitter:card" content="summary">
+<meta property="og:description" content="{{.MetaDescription}}">
+<meta property="og:url" content="{{.Canonical}}">
+{{if .OGImage}}<meta property="og:image" content="{{.OGImage}}">
+<meta property="og:image:alt" content="{{.PageTitle}}">{{end}}
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{{.PageTitle}}">
-<meta name="twitter:description" content="{{.SiteName}} 博客:AI 使用方法、模型技巧与实践分享。">
+<meta name="twitter:description" content="{{.MetaDescription}}">
+{{if .OGImage}}<meta name="twitter:image" content="{{.OGImage}}">
+<meta name="twitter:image:alt" content="{{.PageTitle}}">{{end}}
+<script type="application/ld+json">{{.JSONLD}}</script>
 `
 
 const detailHeadStr = `<!doctype html>
@@ -128,13 +135,15 @@ const detailHeadStr = `<!doctype html>
 <meta property="og:title" content="{{.Title}}">
 <meta property="og:description" content="{{.MetaDescription}}">
 <meta property="og:url" content="{{.Canonical}}">
-{{if .OGImage}}<meta property="og:image" content="{{.OGImage}}">{{end}}
+{{if .OGImage}}<meta property="og:image" content="{{.OGImage}}">
+<meta property="og:image:alt" content="{{.Title}}">{{end}}
 {{if .PublishedISO}}<meta property="article:published_time" content="{{.PublishedISO}}">{{end}}
 {{if .ModifiedISO}}<meta property="article:modified_time" content="{{.ModifiedISO}}">{{end}}
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{{.Title}}">
 <meta name="twitter:description" content="{{.MetaDescription}}">
-{{if .OGImage}}<meta name="twitter:image" content="{{.OGImage}}">{{end}}
+{{if .OGImage}}<meta name="twitter:image" content="{{.OGImage}}">
+<meta name="twitter:image:alt" content="{{.Title}}">{{end}}
 <script type="application/ld+json">{{.JSONLD}}</script>
 <script type="application/ld+json">{{.BreadcrumbLD}}</script>
 `
@@ -168,7 +177,7 @@ const emptyStateStr = `<div class="blog-empty">
 </div>
 `
 
-const defaultListBodyStr = `<main class="blog-wrap">
+const defaultListBodyStr = `<main class="blog-wrap" id="main-content">
 <div class="blog-intro">
 <h1 class="blog-intro-title">{{.Heading}}</h1>
 <p class="blog-intro-sub">{{.Subtitle}}</p>
@@ -192,7 +201,7 @@ const defaultListBodyStr = `<main class="blog-wrap">
 `
 
 // detailBodyStr 详情主体:全部皮肤共享同一结构,视觉差异全部由皮肤 CSS 承担。
-const detailBodyStr = `<main class="blog-wrap">
+const detailBodyStr = `<main class="blog-wrap" id="main-content">
 <a href="{{.HomeURL}}" class="blog-back">{{.UI.Back}}</a>
 <article>
 <h1 class="article-title">{{.Title}}</h1>
@@ -509,7 +518,7 @@ probe();
 </script>
 `
 
-const notFoundBodyStr = `<main class="blog-wrap">
+const notFoundBodyStr = `<main class="blog-wrap" id="main-content">
 <h1 class="article-title">{{.UI.NotFoundTitle}}</h1>
 <p class="blog-empty">{{.UI.NotFoundSub}}</p>
 <a href="{{.HomeURL}}" class="blog-back">{{.UI.Back}}</a>

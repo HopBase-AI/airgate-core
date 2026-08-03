@@ -216,7 +216,19 @@ func TestSSR_List(t *testing.T) {
 	}
 	body := w.Body.String()
 	// 仅展示已发布,草稿不出现
-	for _, want := range []string{"Published Post", "/blog/published-post", "HopBase"} {
+	for _, want := range []string{
+		"Published Post",
+		"/blog/published-post",
+		"HopBase",
+		`<link rel="canonical" href="https://hop-base.com/blog">`,
+		`property="og:site_name" content="HopBase"`,
+		`property="og:image" content="https://hop-base.com/assets-runtime/cover.png"`,
+		`property="og:image:alt" content="HopBase 博客"`,
+		`name="twitter:card" content="summary_large_image"`,
+		`name="twitter:image:alt" content="HopBase 博客"`,
+		`"@type":"Blog"`,
+		`"@type":"ItemList"`,
+	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("list body missing %q", want)
 		}
@@ -392,6 +404,7 @@ func TestSSR_HostileTitleEscaped(t *testing.T) {
 	}}
 	r := gin.New()
 	rend := NewRenderer(appblog.NewService(repo), fakeSettings{})
+	r.GET("/blog", rend.RenderList)
 	r.GET("/blog/:slug", rend.RenderDetail)
 	w := doGet(t, r, "/blog/h")
 	body := w.Body.String()
@@ -400,6 +413,18 @@ func TestSSR_HostileTitleEscaped(t *testing.T) {
 	for _, bad := range []string{"<script>alert(1)", "<img src=x onerror", "</title></script>"} {
 		if strings.Contains(body, bad) {
 			t.Errorf("hostile field broke out of escaping: leaked %q\n---\n%s", bad, body)
+		}
+	}
+
+	listBody := doGet(t, r, "/blog").Body.String()
+	for _, bad := range []string{"<script>alert(1)", "<img src=x onerror", "</script><script>"} {
+		if strings.Contains(listBody, bad) {
+			t.Errorf("hostile list field broke out of escaping: leaked %q\n---\n%s", bad, listBody)
+		}
+	}
+	for _, want := range []string{`"@type":"Blog"`, `"@type":"ItemList"`, `\u003c/script\u003e`} {
+		if !strings.Contains(listBody, want) {
+			t.Errorf("hostile list JSON-LD missing safe value %q\n---\n%s", want, listBody)
 		}
 	}
 }
