@@ -68,6 +68,22 @@ export function getToken(): string | null {
   return accessToken;
 }
 
+export type SessionIdentity = symbol;
+
+export function getSessionIdentity(): SessionIdentity {
+  return sessionEpoch;
+}
+
+export function isSessionIdentityCurrent(identity: SessionIdentity): boolean {
+  return sessionEpoch === identity;
+}
+
+export function clearTokenIfSessionCurrent(identity: SessionIdentity): boolean {
+  if (!isSessionIdentityCurrent(identity)) return false;
+  setToken(null);
+  return true;
+}
+
 export function getTokenClaims(token = accessToken): TokenClaims | null {
   if (!token) return null;
 
@@ -332,8 +348,8 @@ function invalidateSession(expectedToken: string | null, expectedEpoch: symbol):
   return true;
 }
 
-function assertRequestSession(requestToken: string | null, requestEpoch: symbol) {
-  if (requestToken && sessionEpoch !== requestEpoch) throw sessionSupersededError();
+function assertRequestSession(requestEpoch: SessionIdentity) {
+  if (sessionEpoch !== requestEpoch) throw sessionSupersededError();
 }
 
 // 统一响应处理
@@ -342,15 +358,16 @@ async function handleResponse<T>(
   requestToken: string | null,
   requestEpoch: symbol,
 ): Promise<T> {
-  assertRequestSession(requestToken, requestEpoch);
+  assertRequestSession(requestEpoch);
   let json: ApiResponse<T>;
   try {
     json = await res.json();
-  } catch {
-    assertRequestSession(requestToken, requestEpoch);
+  } catch (err) {
+    assertRequestSession(requestEpoch);
+    if (isAbortError(err)) throw err;
     throw new ApiError(-1, i18n.t('common.server_error', { status: res.status }), res.status);
   }
-  assertRequestSession(requestToken, requestEpoch);
+  assertRequestSession(requestEpoch);
 
   if (json.code !== 0) {
     if (res.status === 401) {
@@ -370,15 +387,23 @@ function isAbortError(err: unknown): boolean {
     && (err as { name?: unknown }).name === 'AbortError';
 }
 
-async function doFetch(url: string, init: RequestInit): Promise<Response> {
+async function doFetch(
+  url: string,
+  init: RequestInit,
+  requestEpoch: SessionIdentity,
+): Promise<Response> {
+  let response: Response;
   try {
-    return await fetch(url, init);
+    response = await fetch(url, init);
   } catch (err) {
+    assertRequestSession(requestEpoch);
     if (isAbortError(err)) {
       throw err;
     }
     throw new ApiError(-1, i18n.t('common.network_error'), 0);
   }
+  assertRequestSession(requestEpoch);
+  return response;
 }
 
 // 统一请求方法
@@ -405,7 +430,7 @@ async function request<T>(
   const requestToken = proactiveRefresh?.kind === 'refreshed'
     ? proactiveRefresh.token
     : initialToken;
-  assertRequestSession(initialToken, requestEpoch);
+  assertRequestSession(requestEpoch);
 
   const url = new URL(`${BASE_URL}${path}`, window.location.origin);
 
@@ -431,8 +456,7 @@ async function request<T>(
     headers: buildHeaders(true, requestToken),
     body: body ? JSON.stringify(body) : undefined,
     signal: options?.signal,
-  });
-  assertRequestSession(requestToken, requestEpoch);
+  }, requestEpoch);
 
   // 401 时尝试刷新 token 并重试一次
   if (res.status === 401 && requestToken) {
@@ -445,7 +469,7 @@ async function request<T>(
         headers: buildHeaders(true, retryToken),
         body: body ? JSON.stringify(body) : undefined,
         signal: options?.signal,
-      });
+      }, requestEpoch);
       return handleResponse<T>(retryRes, retryToken, requestEpoch);
     }
     // 新 Token 已经被服务端拒绝时无需再次刷新，按明确 401 结束会话。
@@ -462,7 +486,7 @@ async function request<T>(
         headers: buildHeaders(true, retryToken),
         body: body ? JSON.stringify(body) : undefined,
         signal: options?.signal,
-      });
+      }, requestEpoch);
       return handleResponse<T>(retryRes, retryToken, requestEpoch);
     }
     if (refreshResult.kind === 'rejected') invalidateSession(requestToken, requestEpoch);
@@ -526,10 +550,9 @@ export async function upload<T>(
     headers: buildHeaders(false, token),
     body: formData,
     signal: options?.signal,
-  });
+  }, requestEpoch);
 
   let res = await send(requestToken);
-  assertRequestSession(requestToken, requestEpoch);
   if (res.status === 401 && requestToken) {
     if (accessToken !== requestToken) {
       requestToken = accessToken;

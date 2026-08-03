@@ -13,7 +13,13 @@ import { useTheme } from '../app/providers/ThemeProvider';
 import { useStatusPageEnabled } from '../shared/hooks/useStatusPageEnabled';
 import { getOriginSite } from '../shared/originSite';
 import { clearInviteCode, getInviteCode, getInviteCodeFromURL } from '../shared/inviteCode';
-import { ApiError, setToken } from '../shared/api/client';
+import {
+  ApiError,
+  clearTokenIfSessionCurrent,
+  getSessionIdentity,
+  isSessionIdentityCurrent,
+  setToken,
+} from '../shared/api/client';
 import { consumeAuthReturnTo } from '../shared/authReturnTo';
 import { SiteBrand } from '../shared/components/SiteBrand';
 import { markNewRegistration } from '../shared/onboarding/storage';
@@ -582,7 +588,23 @@ export default function LoginPage() {
   // 展示身份只认「本次登录页地址明确携带的 ?inv=」，不能用 localStorage 中的历史归因，
   // 否则访客日后直接打开普通 /login 也会误见上次推广人的认证条。
   const [inviteCode] = useState(getInviteCodeFromURL);
-  const [isOAuthReturn] = useState(() => window.location.hash.includes('oauth_token=')
+  // 挂载时保存回调数据。React StrictMode 会重放 effect，而首轮 effect 已从地址栏移除 hash。
+  const [oauthCallback] = useState(() => {
+    const tokenMatch = /(?:^|[#&])oauth_token=([^&]+)/.exec(window.location.hash);
+    const token = (() => {
+      if (!tokenMatch?.[1]) return '';
+      try {
+        return decodeURIComponent(tokenMatch[1]);
+      } catch {
+        return '';
+      }
+    })();
+    return {
+      token,
+      isNewUser: /(?:^|[#&])oauth_new_user=1(?:&|$)/.test(window.location.hash),
+    };
+  });
+  const [isOAuthReturn] = useState(() => !!oauthCallback.token
     || new URLSearchParams(window.location.search).has('oauth_error'));
 
   // 普通登录页代表一次无邀请的新入口：清掉未消费的旧归因，避免它不显示却仍被注册请求静默使用。
@@ -611,28 +633,33 @@ export default function LoginPage() {
       window.history.replaceState(null, '', window.location.pathname + (query ? `?${query}` : ''));
     }
 
-    const tokenMatch = /(?:^|[#&])oauth_token=([^&]+)/.exec(window.location.hash);
-    const token = tokenMatch?.[1] ? decodeURIComponent(tokenMatch[1]) : '';
-    const isNewOAuthUser = /(?:^|[#&])oauth_new_user=1(?:&|$)/.test(window.location.hash);
+    const { token, isNewUser } = oauthCallback;
     if (!token) return;
     window.history.replaceState(null, '', window.location.pathname + window.location.search);
 
+    const controller = new AbortController();
     setOauthLoading(true);
     setToken(token);
-    usersApi.me()
+    const oauthSession = getSessionIdentity();
+    void usersApi.me(controller.signal)
       .then((userData) => {
-        if (isNewOAuthUser) markNewRegistration(userData.id);
+        if (controller.signal.aborted || !isSessionIdentityCurrent(oauthSession)) return;
+        if (isNewUser) markNewRegistration(userData.id);
         login(token, userData);
         const returnTo = consumeAuthReturnTo();
         if (returnTo) window.location.assign(returnTo);
-        else navigate({ to: '/' });
+        else void navigate({ to: '/' });
       })
       .catch(() => {
-        setToken(null);
+        if (controller.signal.aborted || !clearTokenIfSessionCurrent(oauthSession)) return;
         setOauthError(t('auth.oauth_failed', { defaultValue: '第三方登录失败，请重试' }));
         setOauthLoading(false);
       });
     // 仅在挂载时消费一次回调参数
+    return () => {
+      controller.abort();
+      clearTokenIfSessionCurrent(oauthSession);
+    };
   }, []);
 
   return (

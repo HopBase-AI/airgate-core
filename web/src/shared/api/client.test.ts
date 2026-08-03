@@ -39,10 +39,12 @@ function apiResponse(status: number, code: number, message: string, data?: unkno
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, reject, resolve };
 }
 
 function responseWithDeferredBody(status: number, body: Promise<unknown>) {
@@ -168,6 +170,76 @@ describe('API client refresh availability', () => {
     expect(client.isSameTokenSession(oldToken, refreshedToken)).toBe(true);
   });
 
+  it('does not let an old OAuth flow clear a replacement session', async () => {
+    const oauthToken = tokenWithClaims({ role: 'user', user_id: 7, jti: 'oauth' });
+    const replacementToken = tokenWithClaims({ role: 'user', user_id: 7, jti: 'password' });
+    const client = await import('./client');
+
+    client.setToken(oauthToken);
+    const oauthSession = client.getSessionIdentity();
+    client.setToken(replacementToken);
+
+    expect(client.isSessionIdentityCurrent(oauthSession)).toBe(false);
+    expect(client.clearTokenIfSessionCurrent(oauthSession)).toBe(false);
+    expect(client.getToken()).toBe(replacementToken);
+    expect(localStorage.getItem('token')).toBe(replacementToken);
+  });
+
+  it('discards a delayed anonymous login response after another session is established', async () => {
+    const replacementToken = tokenWithClaims({ role: 'user', user_id: 9, jti: 'replacement' });
+    const delayed = deferred<Response>();
+    const fetchMock = vi.fn(() => delayed.promise);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = await import('./client');
+    const request = client.post('/api/v1/auth/login', { email: 'old@example.com' });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    client.setToken(replacementToken);
+    delayed.resolve(apiResponse(200, 0, 'ok', {
+      token: tokenWithClaims({ role: 'user', user_id: 7, jti: 'old' }),
+    }));
+
+    await expect(request).rejects.toBeInstanceOf(client.SessionSupersededError);
+    expect(client.getToken()).toBe(replacementToken);
+    expect(localStorage.getItem('token')).toBe(replacementToken);
+  });
+
+  it('discards an anonymous response body parsed after another session is established', async () => {
+    const replacementToken = tokenWithClaims({ role: 'user', user_id: 9, jti: 'replacement' });
+    const body = deferred<unknown>();
+    const response = responseWithDeferredBody(200, body.promise);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response));
+
+    const client = await import('./client');
+    const request = client.post('/api/v1/auth/login', { email: 'old@example.com' });
+    await vi.waitFor(() => expect(response.json).toHaveBeenCalledOnce());
+    client.setToken(replacementToken);
+    body.resolve({
+      code: 0,
+      message: 'ok',
+      data: { token: tokenWithClaims({ role: 'user', user_id: 7, jti: 'old' }) },
+    });
+
+    await expect(request).rejects.toBeInstanceOf(client.SessionSupersededError);
+    expect(client.getToken()).toBe(replacementToken);
+  });
+
+  it('reports a superseded session when an old anonymous request later loses the network', async () => {
+    const replacementToken = tokenWithClaims({ role: 'user', user_id: 9, jti: 'replacement' });
+    const delayed = deferred<Response>();
+    const fetchMock = vi.fn(() => delayed.promise);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = await import('./client');
+    const request = client.post('/api/v1/auth/register', { email: 'old@example.com' });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    client.setToken(replacementToken);
+    delayed.reject(new TypeError('network unavailable'));
+
+    await expect(request).rejects.toBeInstanceOf(client.SessionSupersededError);
+    expect(client.getToken()).toBe(replacementToken);
+  });
+
   it('does not replay a delayed POST after the same user logs in again', async () => {
     const oldToken = tokenWithClaims({ role: 'user', user_id: 7, jti: 'old', exp: Date.now() / 1000 + 7200 });
     const newToken = tokenWithClaims({ role: 'user', user_id: 7, jti: 'new', exp: Date.now() / 1000 + 7200 });
@@ -281,6 +353,21 @@ describe('API client refresh availability', () => {
 
     await expect(request).rejects.toBeInstanceOf(client.SessionSupersededError);
     expect(client.getToken()).toBe(newToken);
+  });
+
+  it('preserves AbortError when response body parsing is cancelled', async () => {
+    const body = deferred<unknown>();
+    const response = responseWithDeferredBody(200, body.promise);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response));
+
+    const client = await import('./client');
+    const request = client.get('/api/v1/public/settings');
+    await vi.waitFor(() => expect(response.json).toHaveBeenCalledOnce());
+    const error = new Error('request cancelled');
+    error.name = 'AbortError';
+    body.reject(error);
+
+    await expect(request).rejects.toBe(error);
   });
 
   it('times out a black-holed refresh and continues with the still-valid token', async () => {

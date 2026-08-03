@@ -442,6 +442,55 @@ func TestUserPricingUsesOneSelectedGroupForAllFixedImagePrices(t *testing.T) {
 	}
 }
 
+func TestUserPricingGroupSummarySkipsCompleteFixedImagePricing(t *testing.T) {
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
+		Platform: "openai",
+		Models:   []apppluginadmin.PublicPricingModel{{ID: "gpt-image-2", Input: 5, Output: 30}},
+	}}}
+	groups := &fakeGroups{groups: []appgroup.Group{
+		{
+			ID: 7, Name: "Adobe Image", Platform: "openai", RateMultiplier: 0.6,
+			ModelRouting: map[string][]int64{"gpt-image-2": {50}},
+			PluginSettings: map[string]map[string]string{"openai": {
+				"image_enabled":  "true",
+				"image_price_1k": "0.08",
+				"image_price_2k": "0.12",
+			}},
+		},
+		{
+			ID: 8, Name: "Partial Image", Platform: "openai", RateMultiplier: 0.7,
+			ModelRouting: map[string][]int64{"gpt-image-2": {51}},
+			PluginSettings: map[string]map[string]string{"openai": {
+				"image_enabled":  "true",
+				"image_price_1k": "0.09",
+			}},
+		},
+	}}
+	users := &fakeUsers{user: appuser.User{GroupPluginSettings: map[int64]map[string]map[string]string{
+		7: {"openai": {"image_price_4k": "0.15"}},
+	}}}
+	svc := NewService(catalog, groups, users, &fakeAPIKeys{})
+
+	result, err := svc.UserPricing(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	groupQuotes := make(map[int]GroupQuote, len(result.Groups))
+	for _, group := range result.Groups {
+		groupQuotes[group.ID] = group
+	}
+	if got := groupQuotes[7]; got.USDMultiplier != 0 || got.EffectiveRate != 0.6 {
+		t.Fatalf("complete fixed-price group quote = %+v, want no token discount", got)
+	}
+	if got := groupQuotes[8]; got.USDMultiplier != 0.7 {
+		t.Fatalf("partial fixed-price group quote = %+v, want token fallback 0.7", got)
+	}
+	quote := result.Platforms[0].Models[0]
+	if !hasCompleteFixedImagePrices(quote) || quote.UserRate != 0 || quote.GroupID != 7 {
+		t.Fatalf("selected complete fixed-price quote = %+v", quote)
+	}
+}
+
 func TestUserPricingExcludesImageDisabledGroupFromFixedPricing(t *testing.T) {
 	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
 		Platform: "openai",
