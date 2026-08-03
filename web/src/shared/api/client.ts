@@ -5,6 +5,7 @@ import { clearBlogSession, refreshBlogSessionExpiry } from '../blogSession';
 import { isExplicitRefreshRejection } from '../authSessionPolicy';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+const API_KEY_SECRET_STORAGE = 'apikey_session_secret';
 
 // Token 管理
 function readBrowserStorage(kind: 'localStorage' | 'sessionStorage', key: string): string | null {
@@ -29,17 +30,30 @@ function writeBrowserStorage(kind: 'localStorage' | 'sessionStorage', key: strin
 let accessToken: string | null = readBrowserStorage('localStorage', 'token');
 
 interface TokenClaims {
+  user_id?: number;
   role?: string;
   api_key_id?: number;
   exp?: number;
 }
 
 export function setToken(token: string | null) {
+  const previousAPIKeyID = getTokenRole(accessToken) === 'api_key'
+    ? getTokenAPIKeyID(accessToken)
+    : null;
+  const nextAPIKeyID = getTokenRole(token) === 'api_key'
+    ? getTokenAPIKeyID(token)
+    : null;
+  if (previousAPIKeyID === null || previousAPIKeyID !== nextAPIKeyID) {
+    setSessionAPIKey(null);
+  }
   accessToken = token;
   writeBrowserStorage('localStorage', 'token', token);
   syncBlogReaderSession(!!token, getTokenClaims(token)?.exp);
   if (token) refreshBlogSessionExpiry(token);
-  else clearBlogSession();
+  else {
+    clearBlogSession();
+    setSessionAPIKey(null);
+  }
 }
 
 export function getToken(): string | null {
@@ -74,14 +88,32 @@ export function getTokenAPIKeyID(token = accessToken): number | null {
   return typeof id === 'number' && id > 0 ? id : null;
 }
 
+// Token refresh changes the JWT string but preserves this stable session identity.
+export function isSameTokenSession(left: string | null, right: string | null): boolean {
+  if (!left || !right) return false;
+  if (left === right) return true;
+  const leftClaims = getTokenClaims(left);
+  const rightClaims = getTokenClaims(right);
+  if (!leftClaims || !rightClaims || leftClaims.role !== rightClaims.role) return false;
+  if (leftClaims.role === 'api_key') {
+    return typeof leftClaims.api_key_id === 'number'
+      && leftClaims.api_key_id > 0
+      && leftClaims.api_key_id === rightClaims.api_key_id;
+  }
+  return typeof leftClaims.user_id === 'number'
+    && leftClaims.user_id > 0
+    && leftClaims.user_id === rightClaims.user_id;
+}
+
 // 兼容升级前已登录的浏览器：新 bundle 首次启动时即可补写跨子域阅读标记。
 syncBlogReaderSession(!!accessToken, getTokenClaims(accessToken)?.exp);
-if (!accessToken) clearBlogSession();
+if (!accessToken) {
+  clearBlogSession();
+  setSessionAPIKey(null);
+}
 
 // API Key 登录场景下用户输入的原文 Key，仅保留在 sessionStorage 内，
 // 退出登录或关闭浏览器即清除。供 CCS 导入等需要原文 Key 的客户端功能使用。
-const API_KEY_SECRET_STORAGE = 'apikey_session_secret';
-
 export function setSessionAPIKey(key: string | null) {
   writeBrowserStorage('sessionStorage', API_KEY_SECRET_STORAGE, key);
 }

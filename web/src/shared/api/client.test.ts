@@ -18,12 +18,16 @@ function memoryStorage(): Storage {
   };
 }
 
-function tokenWithExpiry(exp: number): string {
-  const payload = btoa(JSON.stringify({ role: 'user', exp }))
+function tokenWithClaims(claims: Record<string, unknown>): string {
+  const payload = btoa(JSON.stringify(claims))
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/g, '');
   return `e30.${payload}.signature`;
+}
+
+function tokenWithExpiry(exp: number): string {
+  return tokenWithClaims({ user_id: 7, role: 'user', exp });
 }
 
 function apiResponse(status: number, code: number, message: string, data?: unknown): Response {
@@ -35,13 +39,15 @@ function apiResponse(status: number, code: number, message: string, data?: unkno
 
 describe('API client refresh availability', () => {
   let localStorage: Storage;
+  let sessionStorage: Storage;
 
   beforeEach(() => {
     vi.resetModules();
     localStorage = memoryStorage();
+    sessionStorage = memoryStorage();
     vi.stubGlobal('window', {
       localStorage,
-      sessionStorage: memoryStorage(),
+      sessionStorage,
       location: {
         origin: 'https://console.example.com',
         hostname: 'console.example.com',
@@ -77,6 +83,7 @@ describe('API client refresh availability', () => {
   it('clears the token only when refresh explicitly rejects the session', async () => {
     const token = tokenWithExpiry(Math.floor(Date.now() / 1000) - 60);
     localStorage.setItem('token', token);
+    sessionStorage.setItem('apikey_session_secret', 'sensitive-api-key');
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(apiResponse(401, 401, '会话已失效'));
     vi.stubGlobal('fetch', fetchMock);
@@ -86,6 +93,7 @@ describe('API client refresh availability', () => {
 
     expect(client.getToken()).toBeNull();
     expect(localStorage.getItem('token')).toBeNull();
+    expect(sessionStorage.getItem('apikey_session_secret')).toBeNull();
     expect(window.location.href).toBe('/login');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -101,5 +109,31 @@ describe('API client refresh availability', () => {
     const client = await import('./client');
     await expect(client.get<{ id: number }>('/api/v1/users/me')).resolves.toEqual({ id: 7 });
     expect(client.getToken()).toBe(token);
+  });
+
+  it('clears an API Key secret when the token changes to another session', async () => {
+    const client = await import('./client');
+    const apiKeyToken = tokenWithClaims({ role: 'api_key', api_key_id: 12, exp: 100 });
+    const userToken = tokenWithClaims({ role: 'user', user_id: 7, exp: 100 });
+
+    client.setToken(apiKeyToken);
+    client.setSessionAPIKey('sensitive-api-key');
+    client.setToken(userToken);
+
+    expect(sessionStorage.getItem('apikey_session_secret')).toBeNull();
+    expect(client.isSameTokenSession(apiKeyToken, userToken)).toBe(false);
+  });
+
+  it('preserves an API Key secret across a refresh of the same key session', async () => {
+    const client = await import('./client');
+    const oldToken = tokenWithClaims({ role: 'api_key', api_key_id: 12, exp: 100 });
+    const refreshedToken = tokenWithClaims({ role: 'api_key', api_key_id: 12, exp: 200 });
+
+    client.setToken(oldToken);
+    client.setSessionAPIKey('sensitive-api-key');
+    client.setToken(refreshedToken);
+
+    expect(sessionStorage.getItem('apikey_session_secret')).toBe('sensitive-api-key');
+    expect(client.isSameTokenSession(oldToken, refreshedToken)).toBe(true);
   });
 });
