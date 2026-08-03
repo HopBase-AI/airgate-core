@@ -41,7 +41,7 @@ export interface PublicPricingModel {
   // 视频生成模型的桶价：bucket（<分辨率>_{no,with}_ref）→ $/1M video_tokens。
   // 有值时按桶铺价，无 input/output。
   video_tokens?: Record<string, number>;
-  // 图片生成模型的按张价：像素档位（le_236w / gt_236w）→ $/张。
+  // 图片生成模型的按张价：像素档位及参考图（如 le_261w / gt_261w / input_reference）→ $/张。
   image?: Record<string, number>;
 }
 
