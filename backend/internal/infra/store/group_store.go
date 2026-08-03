@@ -67,6 +67,9 @@ func (s *GroupStore) ListAvailable(ctx context.Context, filter appgroup.Availabl
 	}
 
 	list, err := query.
+		WithAccounts(func(q *ent.AccountQuery) {
+			q.Select(entaccount.FieldID, entaccount.FieldPlatform, entaccount.FieldState)
+		}).
 		Offset((filter.Page-1)*filter.PageSize).
 		Limit(filter.PageSize).
 		Order(ent.Desc(entgroup.FieldSortWeight), ent.Desc(entgroup.FieldCreatedAt)).
@@ -82,6 +85,9 @@ func (s *GroupStore) ListAvailable(ctx context.Context, filter appgroup.Availabl
 func (s *GroupStore) FindByID(ctx context.Context, id int) (appgroup.Group, error) {
 	item, err := s.db.Group.Query().
 		Where(entgroup.IDEQ(id)).
+		WithAccounts(func(q *ent.AccountQuery) {
+			q.Select(entaccount.FieldID, entaccount.FieldPlatform, entaccount.FieldState)
+		}).
 		WithAllowedUsers().
 		Only(ctx)
 	if err != nil {
@@ -701,27 +707,45 @@ func mapGroups(items []*ent.Group) []appgroup.Group {
 }
 
 func mapGroup(item *ent.Group) appgroup.Group {
+	routableAccountIDs, accountAvailabilityKnown := mapRoutableAccountIDs(item)
 	return appgroup.Group{
-		ID:                item.ID,
-		Name:              item.Name,
-		NameI18n:          maps.Clone(item.NameI18n),
-		Platform:          item.Platform,
-		RateMultiplier:    item.RateMultiplier,
-		IsExclusive:       item.IsExclusive,
-		StatusVisible:     item.StatusVisible,
-		AllowedUsers:      mapAllowedUsers(item.Edges.AllowedUsers),
-		SubscriptionType:  string(item.SubscriptionType),
-		Quotas:            appgroupCloneQuotas(item.Quotas),
-		ModelRouting:      appgroupCloneModelRouting(item.ModelRouting),
-		PluginSettings:    appgroupClonePluginSettings(item.PluginSettings),
-		ServiceTier:       item.ServiceTier,
-		ForceInstructions: item.ForceInstructions,
-		Note:              item.Note,
-		NoteI18n:          maps.Clone(item.NoteI18n),
-		SortWeight:        item.SortWeight,
-		CreatedAt:         item.CreatedAt,
-		UpdatedAt:         item.UpdatedAt,
+		ID:                       item.ID,
+		Name:                     item.Name,
+		NameI18n:                 maps.Clone(item.NameI18n),
+		Platform:                 item.Platform,
+		RateMultiplier:           item.RateMultiplier,
+		IsExclusive:              item.IsExclusive,
+		StatusVisible:            item.StatusVisible,
+		AllowedUsers:             mapAllowedUsers(item.Edges.AllowedUsers),
+		SubscriptionType:         string(item.SubscriptionType),
+		Quotas:                   appgroupCloneQuotas(item.Quotas),
+		ModelRouting:             appgroupCloneModelRouting(item.ModelRouting),
+		PluginSettings:           appgroupClonePluginSettings(item.PluginSettings),
+		AccountAvailabilityKnown: accountAvailabilityKnown,
+		RoutableAccountIDs:       routableAccountIDs,
+		ServiceTier:              item.ServiceTier,
+		ForceInstructions:        item.ForceInstructions,
+		Note:                     item.Note,
+		NoteI18n:                 maps.Clone(item.NoteI18n),
+		SortWeight:               item.SortWeight,
+		CreatedAt:                item.CreatedAt,
+		UpdatedAt:                item.UpdatedAt,
 	}
+}
+
+func mapRoutableAccountIDs(item *ent.Group) ([]int64, bool) {
+	accounts, err := item.Edges.AccountsOrErr()
+	if err != nil {
+		return nil, false
+	}
+	ids := make([]int64, 0, len(accounts))
+	for _, account := range accounts {
+		if account.Platform == item.Platform && account.State != entaccount.StateDisabled {
+			ids = append(ids, int64(account.ID))
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids, true
 }
 
 // mapAllowedUsers 将已加载的 allowed_users 边映射为领域摘要；未加载时 edges 为 nil，返回 nil。

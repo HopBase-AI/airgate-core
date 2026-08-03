@@ -281,7 +281,7 @@ func groupUSDMultiplier(catalog []apppluginadmin.PublicPlatformPricing, g appgro
 			continue
 		}
 		for _, model := range platform.Models {
-			if !groupServesModel(g.ModelRouting, model.ID) {
+			if !groupServesPricingModel(g, model.ID) {
 				continue
 			}
 			var ratio float64
@@ -314,7 +314,11 @@ func groupUSDMultiplier(catalog []apppluginadmin.PublicPlatformPricing, g appgro
 // groupServesPricingModel applies the same model and image-capability gates as a
 // real request before a group may contribute user-visible pricing.
 func groupServesPricingModel(g appgroup.Group, model string) bool {
-	if !groupServesModel(g.ModelRouting, model) {
+	if !g.AccountAvailabilityKnown || !scheduler.ModelRoutingServesAccounts(
+		g.ModelRouting,
+		model,
+		g.RoutableAccountIDs,
+	) {
 		return false
 	}
 	if !billing.IsFixedImageTierPricingModel(model) {

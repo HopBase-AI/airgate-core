@@ -37,6 +37,14 @@ function apiResponse(status: number, code: number, message: string, data?: unkno
   });
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 describe('API client refresh availability', () => {
   let localStorage: Storage;
   let sessionStorage: Storage;
@@ -135,5 +143,73 @@ describe('API client refresh availability', () => {
 
     expect(sessionStorage.getItem('apikey_session_secret')).toBe('sensitive-api-key');
     expect(client.isSameTokenSession(oldToken, refreshedToken)).toBe(true);
+  });
+
+  it('does not let a delayed 401 clear a newly selected user session', async () => {
+    const oldToken = tokenWithClaims({ role: 'user', user_id: 7, exp: Date.now() / 1000 + 7200 });
+    const newToken = tokenWithClaims({ role: 'user', user_id: 8, exp: Date.now() / 1000 + 7200 });
+    localStorage.setItem('token', oldToken);
+    const delayed = deferred<Response>();
+    const fetchMock = vi.fn(() => delayed.promise);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = await import('./client');
+    const request = client.get('/api/v1/users/me');
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    client.setToken(newToken);
+    delayed.resolve(apiResponse(401, 401, '旧会话已失效'));
+
+    await expect(request).rejects.toMatchObject({ httpStatus: 401 });
+    expect(client.getToken()).toBe(newToken);
+    expect(localStorage.getItem('token')).toBe(newToken);
+    expect(window.location.href).toBe('https://console.example.com/models');
+  });
+
+  it('retries a delayed old-token 401 with a concurrently refreshed same session', async () => {
+    const oldToken = tokenWithClaims({ role: 'user', user_id: 7, exp: Date.now() / 1000 + 7200 });
+    const refreshedToken = tokenWithClaims({ role: 'user', user_id: 7, exp: Date.now() / 1000 + 10_800 });
+    localStorage.setItem('token', oldToken);
+    const delayed = deferred<Response>();
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(() => delayed.promise)
+      .mockResolvedValueOnce(apiResponse(200, 0, 'ok', { id: 7 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = await import('./client');
+    const request = client.get<{ id: number }>('/api/v1/users/me');
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    client.setToken(refreshedToken);
+    delayed.resolve(apiResponse(401, 401, '旧 Token 已过期'));
+
+    await expect(request).resolves.toEqual({ id: 7 });
+    expect(client.getToken()).toBe(refreshedToken);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      headers: expect.objectContaining({ Authorization: `Bearer ${refreshedToken}` }),
+    });
+  });
+
+  it.each([
+    ['success', apiResponse(200, 0, 'ok', { token: 'old-session-refresh' })],
+    ['rejection', apiResponse(401, 401, '旧会话已失效')],
+  ])('does not let a delayed refresh %s overwrite or clear a new session', async (_name, response) => {
+    const oldToken = tokenWithClaims({ role: 'user', user_id: 7, exp: Date.now() / 1000 + 60 });
+    const newToken = tokenWithClaims({ role: 'user', user_id: 8, exp: Date.now() / 1000 + 7200 });
+    localStorage.setItem('token', oldToken);
+    const delayed = deferred<Response>();
+    const fetchMock = vi.fn(() => delayed.promise);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = await import('./client');
+    const request = client.get('/api/v1/users/me');
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    client.setToken(newToken);
+    delayed.resolve(response);
+
+    await expect(request).rejects.toMatchObject({ httpStatus: 401 });
+    expect(client.getToken()).toBe(newToken);
+    expect(localStorage.getItem('token')).toBe(newToken);
+    expect(window.location.href).toBe('https://console.example.com/models');
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 });

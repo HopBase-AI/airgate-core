@@ -275,6 +275,32 @@ func ModelRoutingServes(routing map[string][]int64, model string) bool {
 	return len(matchModelRouting(routing, model)) > 0
 }
 
+// ModelRoutingServesAccounts verifies that a model route reaches at least one
+// currently usable account that is actually bound to the group. The caller
+// supplies the non-disabled, same-platform account snapshot from the store.
+func ModelRoutingServesAccounts(routing map[string][]int64, model string, accountIDs []int64) bool {
+	if len(accountIDs) == 0 {
+		return false
+	}
+	if len(routing) == 0 {
+		return true
+	}
+	allowed := matchModelRouting(routing, model)
+	if len(allowed) == 0 {
+		return false
+	}
+	available := make(map[int64]struct{}, len(accountIDs))
+	for _, id := range accountIDs {
+		available[id] = struct{}{}
+	}
+	for _, id := range allowed {
+		if _, ok := available[id]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 // matchModelRouting 匹配模型路由规则，返回允许的账号 ID 列表。nil 或空表示不限制。
 func matchModelRouting(routing map[string][]int64, model string) []int64 {
 	if ids, ok := routing[model]; ok {

@@ -158,6 +158,71 @@ func TestModelRoutingServes_EmptyAccountList(t *testing.T) {
 	}
 }
 
+func TestModelRoutingServesAccounts(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		routing    map[string][]int64
+		model      string
+		accountIDs []int64
+		want       bool
+	}{
+		{
+			name:       "unrestricted routing with a live account",
+			model:      "gpt-image-2",
+			accountIDs: []int64{11},
+			want:       true,
+		},
+		{
+			name:  "unrestricted routing without a live account",
+			model: "gpt-image-2",
+		},
+		{
+			name:       "exact route intersects live accounts",
+			routing:    map[string][]int64{"gpt-image-2": {11, 12}},
+			model:      "gpt-image-2",
+			accountIDs: []int64{12, 13},
+			want:       true,
+		},
+		{
+			name:       "exact route only references offline accounts",
+			routing:    map[string][]int64{"gpt-image-2": {11}},
+			model:      "gpt-image-2",
+			accountIDs: []int64{12},
+		},
+		{
+			name:       "explicit empty route disables the model",
+			routing:    map[string][]int64{"gpt-image-2": {}},
+			model:      "gpt-image-2",
+			accountIDs: []int64{11},
+		},
+		{
+			name:       "glob route intersects live accounts",
+			routing:    map[string][]int64{"gemini-*-image": {21}},
+			model:      "gemini-3-pro-image",
+			accountIDs: []int64{21},
+			want:       true,
+		},
+		{
+			name:       "unmatched model is not served",
+			routing:    map[string][]int64{"gpt-*": {11}},
+			model:      "gemini-3-pro-image",
+			accountIDs: []int64{11},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := ModelRoutingServesAccounts(tt.routing, tt.model, tt.accountIDs); got != tt.want {
+				t.Fatalf("ModelRoutingServesAccounts() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestApplyModelRouting_NoMutation 过滤时不能修改原 slice（缓存共享底层数组）。
 func TestApplyModelRouting_NoMutation(t *testing.T) {
 	accounts := []*ent.Account{{ID: 1}, {ID: 2}, {ID: 3}}

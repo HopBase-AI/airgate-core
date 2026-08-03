@@ -161,6 +161,99 @@ func TestGroupStoreUpdateAllowedUsers(t *testing.T) {
 	}
 }
 
+func TestGroupStoreLoadsRoutableAccountSnapshot(t *testing.T) {
+	db := enttestOpen(t)
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close db: %v", err)
+		}
+	}()
+	ctx := context.Background()
+	store := NewGroupStore(db)
+
+	viewer := createTestUser(t, db, "pricing-snapshot@example.com")
+	group := mustCreateGroup(t, store, appgroup.CreateInput{
+		Name: "image-provider", Platform: "openai", RateMultiplier: 1,
+		StatusVisible: true, SubscriptionType: "standard",
+	})
+	active, err := db.Account.Create().
+		SetName("active").
+		SetPlatform("openai").
+		SetType("apikey").
+		SetCredentials(map[string]string{}).
+		AddGroupIDs(group.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create active account: %v", err)
+	}
+	degraded, err := db.Account.Create().
+		SetName("degraded").
+		SetPlatform("openai").
+		SetType("apikey").
+		SetState(entaccount.StateDegraded).
+		SetCredentials(map[string]string{}).
+		AddGroupIDs(group.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create degraded account: %v", err)
+	}
+	if _, err := db.Account.Create().
+		SetName("disabled").
+		SetPlatform("openai").
+		SetType("apikey").
+		SetState(entaccount.StateDisabled).
+		SetCredentials(map[string]string{}).
+		AddGroupIDs(group.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create disabled account: %v", err)
+	}
+	if _, err := db.Account.Create().
+		SetName("cross-platform").
+		SetPlatform("claude").
+		SetType("apikey").
+		SetCredentials(map[string]string{}).
+		AddGroupIDs(group.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create cross-platform account: %v", err)
+	}
+
+	assertSnapshot := func(label string, got appgroup.Group) {
+		t.Helper()
+		if !got.AccountAvailabilityKnown {
+			t.Fatalf("%s account availability is unknown", label)
+		}
+		want := []int64{int64(active.ID), int64(degraded.ID)}
+		if len(got.RoutableAccountIDs) != len(want) {
+			t.Fatalf("%s routable account IDs = %v, want %v", label, got.RoutableAccountIDs, want)
+		}
+		for i := range want {
+			if got.RoutableAccountIDs[i] != want[i] {
+				t.Fatalf("%s routable account IDs = %v, want %v", label, got.RoutableAccountIDs, want)
+			}
+		}
+	}
+
+	found, err := store.FindByID(ctx, group.ID)
+	if err != nil {
+		t.Fatalf("find group: %v", err)
+	}
+	assertSnapshot("FindByID", found)
+
+	available, _, err := store.ListAvailable(ctx, appgroup.AvailableFilter{
+		UserID: viewer.ID, Page: 1, PageSize: 50,
+	})
+	if err != nil {
+		t.Fatalf("list available groups: %v", err)
+	}
+	for _, item := range available {
+		if item.ID == group.ID {
+			assertSnapshot("ListAvailable", item)
+			return
+		}
+	}
+	t.Fatalf("ListAvailable did not return group %d", group.ID)
+}
+
 func TestGroupStoreUpdateSanitizesModelRoutingToBoundPlatformAccounts(t *testing.T) {
 	db := enttestOpen(t)
 	defer func() {

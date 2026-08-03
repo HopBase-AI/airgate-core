@@ -23,14 +23,39 @@ func (f *fakeCatalog) PublicModelPricing(context.Context) []apppluginadmin.Publi
 
 type fakeGroups struct{ groups []appgroup.Group }
 
+func fakeGroupWithAvailability(group appgroup.Group) appgroup.Group {
+	if group.AccountAvailabilityKnown {
+		return group
+	}
+	seen := make(map[int64]struct{})
+	for _, ids := range group.ModelRouting {
+		for _, id := range ids {
+			seen[id] = struct{}{}
+		}
+	}
+	if len(seen) == 0 {
+		seen[int64(group.ID)] = struct{}{}
+	}
+	group.AccountAvailabilityKnown = true
+	group.RoutableAccountIDs = make([]int64, 0, len(seen))
+	for id := range seen {
+		group.RoutableAccountIDs = append(group.RoutableAccountIDs, id)
+	}
+	return group
+}
+
 func (f *fakeGroups) ListAvailable(context.Context, appgroup.AvailableFilter) ([]appgroup.Group, int64, error) {
-	return f.groups, int64(len(f.groups)), nil
+	groups := make([]appgroup.Group, 0, len(f.groups))
+	for _, group := range f.groups {
+		groups = append(groups, fakeGroupWithAvailability(group))
+	}
+	return groups, int64(len(groups)), nil
 }
 
 func (f *fakeGroups) FindByID(_ context.Context, id int) (appgroup.Group, error) {
 	for _, group := range f.groups {
 		if group.ID == id {
-			return group, nil
+			return fakeGroupWithAvailability(group), nil
 		}
 	}
 	return appgroup.Group{}, appgroup.ErrGroupNotFound
@@ -446,6 +471,92 @@ func TestUserPricingExcludesImageDisabledGroupFromFixedPricing(t *testing.T) {
 	if quote.GroupID != 8 || quote.GroupName != "Enabled Image" ||
 		quote.ImagePrice1K == nil || *quote.ImagePrice1K != 0.08 {
 		t.Fatalf("fixed image quote selected an unroutable group: %+v", quote)
+	}
+}
+
+func TestUserPricingExcludesOfflineGroupFromFixedPricing(t *testing.T) {
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
+		Platform: "openai",
+		Models:   []apppluginadmin.PublicPricingModel{{ID: "gpt-image-2", Input: 5, Output: 30}},
+	}}}
+	groups := &fakeGroups{groups: []appgroup.Group{
+		{
+			ID: 7, Name: "Offline Image", Platform: "openai", RateMultiplier: 0.1,
+			ModelRouting:             map[string][]int64{"gpt-image-2": {50}},
+			AccountAvailabilityKnown: true,
+			RoutableAccountIDs:       nil,
+			PluginSettings: map[string]map[string]string{"openai": {
+				"image_enabled": "true", "image_price_1k": "0.01",
+				"image_price_2k": "0.02", "image_price_4k": "0.03",
+			}},
+		},
+		{
+			ID: 8, Name: "Online Image", Platform: "openai", RateMultiplier: 0.6,
+			ModelRouting:             map[string][]int64{"gpt-image-2": {51}},
+			AccountAvailabilityKnown: true,
+			RoutableAccountIDs:       []int64{51},
+			PluginSettings: map[string]map[string]string{"openai": {
+				"image_enabled": "true", "image_price_1k": "0.08",
+				"image_price_2k": "0.12", "image_price_4k": "0.15",
+			}},
+		},
+	}}
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{}}, &fakeAPIKeys{})
+
+	result, err := svc.UserPricing(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	quote := result.Platforms[0].Models[0]
+	if quote.GroupID != 8 || quote.GroupName != "Online Image" ||
+		quote.ImagePrice1K == nil || *quote.ImagePrice1K != 0.08 {
+		t.Fatalf("fixed image quote selected an offline group: %+v", quote)
+	}
+	for _, group := range result.Groups {
+		if group.ID == 7 && group.USDMultiplier != 0 {
+			t.Fatalf("offline group advertised a discount: %+v", group)
+		}
+	}
+}
+
+func TestAPIKeyPricingExcludesModelsWhenBoundGroupIsOffline(t *testing.T) {
+	groupID := 7
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
+		Platform: "openai",
+		Models:   []apppluginadmin.PublicPricingModel{{ID: "gpt-image-2", Input: 5, Output: 30}},
+	}}}
+	groups := &fakeGroups{groups: []appgroup.Group{{
+		ID: groupID, Platform: "openai", RateMultiplier: 0.6,
+		ModelRouting:             map[string][]int64{"gpt-image-2": {50}},
+		AccountAvailabilityKnown: true,
+		RoutableAccountIDs:       nil,
+		PluginSettings: map[string]map[string]string{"openai": {
+			"image_enabled": "true", "image_price_1k": "0.08",
+			"image_price_2k": "0.12", "image_price_4k": "0.15",
+		}},
+	}}}
+	keys := &fakeAPIKeys{key: appapikey.Key{ID: 9, UserID: 7, GroupID: &groupID, Status: "active"}}
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{Status: "active"}}, keys)
+
+	result, err := svc.APIKeyPricing(context.Background(), 7, 9)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if len(result.Platforms) != 0 {
+		t.Fatalf("offline API Key group exposed models: %+v", result.Platforms)
+	}
+}
+
+func TestGroupServesPricingModelFailsClosedWithoutAccountSnapshot(t *testing.T) {
+	group := appgroup.Group{
+		ModelRouting:       map[string][]int64{"gpt-image-2": {50}},
+		RoutableAccountIDs: []int64{50},
+		PluginSettings: map[string]map[string]string{"openai": {
+			"image_enabled": "true", "image_price_1k": "0.08",
+		}},
+	}
+	if groupServesPricingModel(group, "gpt-image-2") {
+		t.Fatal("group without a loaded account snapshot must not contribute pricing")
 	}
 }
 
