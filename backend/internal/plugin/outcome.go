@@ -294,11 +294,9 @@ func (f *Forwarder) recordUsage(c *gin.Context, state *forwardState, execution f
 	}
 	var imageFixedPriceApplied bool
 	var imageFixedPriceReplacesTotal bool
-	if override, ok := imageOutputBillingOverride(usage, userPluginSettings, state.keyInfo.GroupPluginSettings); ok {
-		calcInput.ImageBillingCostOverride = &override.cost
-		calcInput.ImageBillingCostOverrideReplacesTotal = override.replacesTotal
+	if applied, replacesTotal := applyImageBillingOverride(&calcInput, usage, userPluginSettings, state.keyInfo.GroupPluginSettings); applied {
 		imageFixedPriceApplied = true
-		imageFixedPriceReplacesTotal = override.replacesTotal
+		imageFixedPriceReplacesTotal = replacesTotal
 	}
 	calc := f.calculator.Calculate(calcInput)
 

@@ -1672,11 +1672,9 @@ func (h *HostService) recordHostForwardUsage(
 	}
 	var imageFixedPriceApplied bool
 	var imageFixedPriceReplacesTotal bool
-	if override, ok := imageOutputBillingOverride(usage, route.UserPluginSettings, route.GroupPluginSettings); ok {
-		calcInput.ImageBillingCostOverride = &override.cost
-		calcInput.ImageBillingCostOverrideReplacesTotal = override.replacesTotal
+	if applied, replacesTotal := applyImageBillingOverride(&calcInput, usage, route.UserPluginSettings, route.GroupPluginSettings); applied {
 		imageFixedPriceApplied = true
-		imageFixedPriceReplacesTotal = override.replacesTotal
+		imageFixedPriceReplacesTotal = replacesTotal
 	}
 	calc := h.calculator.Calculate(calcInput)
 	applyHostForwardBilling(usage, calc)
