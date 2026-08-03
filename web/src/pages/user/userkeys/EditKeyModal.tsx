@@ -78,7 +78,12 @@ export function EditKeyModal({
           <Button variant="secondary" onPress={onClose}>
             {t('common.cancel')}
           </Button>
-          <Button variant="primary" isDisabled={loading} onPress={onSubmit}>
+          <Button
+            data-onboarding-target={!isEdit ? 'key-create-submit' : undefined}
+            variant="primary"
+            isDisabled={loading}
+            onPress={onSubmit}
+          >
             {loading ? <Spinner size="sm" /> : null}
             {isEdit ? t('common.save') : t('common.create')}
           </Button>
@@ -104,7 +109,7 @@ export function EditKeyModal({
           onSelectionChange={(key) => setForm({ ...form, group_id: key == null ? '' : String(key) })}
         >
           <Label>{t('user_keys.group')}</Label>
-          <Select.Trigger>
+          <Select.Trigger data-onboarding-target={!isEdit ? 'key-create-group' : undefined}>
             <Select.Value>{selectedGroupLabel}</Select.Value>
             <Select.Indicator />
           </Select.Trigger>

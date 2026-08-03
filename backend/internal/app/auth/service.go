@@ -277,8 +277,9 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (LoginResul
 	)
 
 	return LoginResult{
-		Token: token,
-		User:  user,
+		Token:     token,
+		User:      user,
+		IsNewUser: true,
 	}, nil
 }
 

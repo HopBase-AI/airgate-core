@@ -84,7 +84,7 @@ export default function UserKeysPage() {
   });
 
   // 分组列表（用于选择）
-  const { data: groupsData } = useQuery({
+  const { data: groupsData, isLoading: groupsLoading } = useQuery({
     queryKey: queryKeys.groupsForKeys(),
     queryFn: () => groupsApi.listAvailable(FETCH_ALL_PARAMS),
   });
@@ -374,6 +374,8 @@ export default function UserKeysPage() {
             <RefreshCw className="w-4 h-4" />
           </Button>
           <Button
+            data-onboarding-target="keys-create"
+            data-onboarding-available={groupsLoading ? 'loading' : String(hasAvailableGroups)}
             isDisabled={!hasAvailableGroups}
             variant="primary"
             onPress={openCreate}
@@ -591,6 +593,7 @@ export default function UserKeysPage() {
                       </Button>
                       <Dropdown>
                         <Dropdown.Trigger
+                          data-onboarding-target="key-actions"
                           aria-label={t('common.more')}
                           className="ag-table-row-more-trigger button button--icon-only button--sm button--secondary"
                         >
@@ -629,7 +632,7 @@ export default function UserKeysPage() {
                               </span>
                             </Dropdown.Item>
                             <Dropdown.Item id="import_ccs" textValue={t('user_keys.import_ccs')}>
-                              <span className="flex items-center gap-2">
+                              <span data-onboarding-target="ccs-import" className="flex items-center gap-2">
                                 <Upload className="w-3.5 h-3.5" style={{ color: 'var(--ag-text-tertiary)' }} />
                                 {t('user_keys.import_ccs')}
                               </span>

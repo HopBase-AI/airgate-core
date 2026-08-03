@@ -16,6 +16,7 @@ import { clearInviteCode, getInviteCode, getInviteCodeFromURL } from '../shared/
 import { ApiError, setToken } from '../shared/api/client';
 import { consumeAuthReturnTo } from '../shared/authReturnTo';
 import { SiteBrand } from '../shared/components/SiteBrand';
+import { markNewRegistration } from '../shared/onboarding/storage';
 import { Mail, Lock, User, ArrowRight, Sun, Moon, ShieldCheck, Activity, Layers, Gauge, BarChart3, BadgeCheck } from 'lucide-react';
 
 /* ==================== 第三方登录 ==================== */
@@ -382,6 +383,7 @@ function RegisterForm() {
         source_site: getOriginSite() || undefined,
         invite_code: getInviteCode() || undefined,
       });
+      markNewRegistration(resp.user.id);
       login(resp.token, resp.user);
       const returnTo = consumeAuthReturnTo();
       if (returnTo) window.location.assign(returnTo);
@@ -611,6 +613,7 @@ export default function LoginPage() {
 
     const tokenMatch = /(?:^|[#&])oauth_token=([^&]+)/.exec(window.location.hash);
     const token = tokenMatch?.[1] ? decodeURIComponent(tokenMatch[1]) : '';
+    const isNewOAuthUser = /(?:^|[#&])oauth_new_user=1(?:&|$)/.test(window.location.hash);
     if (!token) return;
     window.history.replaceState(null, '', window.location.pathname + window.location.search);
 
@@ -618,6 +621,7 @@ export default function LoginPage() {
     setToken(token);
     usersApi.me()
       .then((userData) => {
+        if (isNewOAuthUser) markNewRegistration(userData.id);
         login(token, userData);
         const returnTo = consumeAuthReturnTo();
         if (returnTo) window.location.assign(returnTo);

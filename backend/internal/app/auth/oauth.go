@@ -381,7 +381,7 @@ func (s *Service) OAuthLogin(ctx context.Context, provider, code, state string) 
 		return LoginResult{}, ErrOAuthExchangeFailed
 	}
 
-	user, err := s.resolveOAuthUser(ctx, provider, info, attrs)
+	user, isNewUser, err := s.resolveOAuthUser(ctx, provider, info, attrs)
 	if err != nil {
 		return LoginResult{}, err
 	}
@@ -396,25 +396,25 @@ func (s *Service) OAuthLogin(ctx context.Context, provider, code, state string) 
 		return LoginResult{}, err
 	}
 	logger.Info("oauth_login_succeeded", "provider", provider, sdk.LogFieldUserID, user.ID)
-	return LoginResult{Token: token, User: user}, nil
+	return LoginResult{Token: token, User: user, IsNewUser: isNewUser}, nil
 }
 
 // resolveOAuthUser 三段式匹配：已绑定身份 → 已验证同邮箱老用户自动绑定 → 新建用户。
 // attrs 为 state 携带的注册归因，仅在新建用户时生效（老用户归因早已定格）。
-func (s *Service) resolveOAuthUser(ctx context.Context, provider string, info oauthUserInfo, attrs oauthStateAttrs) (User, error) {
+func (s *Service) resolveOAuthUser(ctx context.Context, provider string, info oauthUserInfo, attrs oauthStateAttrs) (User, bool, error) {
 	logger := sdk.LoggerFromContext(ctx)
 
 	user, err := s.repo.FindUserByIdentity(ctx, provider, info.ProviderUserID)
 	if err == nil {
-		return user, nil
+		return user, false, nil
 	}
 	if !IsUserMissing(err) {
-		return User{}, err
+		return User{}, false, err
 	}
 
 	// 第三方必须给出已验证邮箱，否则无法安全归属账号
 	if info.Email == "" {
-		return User{}, ErrOAuthEmailRequired
+		return User{}, false, ErrOAuthEmailRequired
 	}
 
 	identity := IdentityInput{Provider: provider, ProviderUserID: info.ProviderUserID, Email: info.Email}
@@ -423,26 +423,26 @@ func (s *Service) resolveOAuthUser(ctx context.Context, provider string, info oa
 	if err == nil {
 		if linkErr := s.repo.LinkIdentity(ctx, existing.ID, identity); linkErr != nil {
 			logger.Error("oauth_identity_link_failed", sdk.LogFieldUserID, existing.ID, sdk.LogFieldError, linkErr)
-			return User{}, linkErr
+			return User{}, false, linkErr
 		}
 		logger.Info("oauth_identity_linked", "provider", provider, sdk.LogFieldUserID, existing.ID)
-		return existing, nil
+		return existing, false, nil
 	}
 	if !IsUserMissing(err) {
-		return User{}, err
+		return User{}, false, err
 	}
 
 	// 新用户：遵循注册开关；密码置为随机值（仅第三方登录，可后续重置）
 	if !s.isRegistrationEnabled(ctx) {
-		return User{}, ErrRegistrationDisabled
+		return User{}, false, ErrRegistrationDisabled
 	}
 	randomPassword := make([]byte, 32)
 	if _, err := rand.Read(randomPassword); err != nil {
-		return User{}, err
+		return User{}, false, err
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(hex.EncodeToString(randomPassword)), bcrypt.DefaultCost)
 	if err != nil {
-		return User{}, err
+		return User{}, false, err
 	}
 	defaultBalance, defaultConcurrency := s.getNewUserDefaults(ctx)
 	created, err := s.repo.Create(ctx, CreateUserInput{
@@ -458,14 +458,14 @@ func (s *Service) resolveOAuthUser(ctx context.Context, provider string, info oa
 	})
 	if err != nil {
 		logger.Error("oauth_user_create_failed", "provider", provider, sdk.LogFieldError, err)
-		return User{}, err
+		return User{}, false, err
 	}
 	if err := s.repo.LinkIdentity(ctx, created.ID, identity); err != nil {
 		logger.Error("oauth_identity_link_failed", sdk.LogFieldUserID, created.ID, sdk.LogFieldError, err)
-		return User{}, err
+		return User{}, false, err
 	}
 	logger.Info("oauth_user_registered", "provider", provider, sdk.LogFieldUserID, created.ID)
-	return created, nil
+	return created, true, nil
 }
 
 // oauthExchangeCode 授权码换 access token。
