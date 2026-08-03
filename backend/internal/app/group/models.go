@@ -64,10 +64,11 @@ type Group struct {
 	Quotas           map[string]any
 	ModelRouting     map[string][]int64
 	PluginSettings   map[string]map[string]string
-	// AccountAvailabilityKnown 表示仓储已加载分组账号快照；RoutableAccountIDs
-	// 只包含同平台且未被 disabled 的绑定账号，用于报价等只读资格判断。
+	// AccountAvailabilityKnown 表示仓储已加载分组账号快照；两组 ID 只包含
+	// 同平台、未 disabled 且满足真实调度 workload/protocol 要求的绑定账号。
 	AccountAvailabilityKnown bool
-	RoutableAccountIDs       []int64
+	RoutableChatAccountIDs   []int64
+	RoutableImageAccountIDs  []int64
 	ServiceTier              string
 	ForceInstructions        string
 	Note                     string

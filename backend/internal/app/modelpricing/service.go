@@ -2,6 +2,7 @@ package modelpricing
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
@@ -62,7 +63,7 @@ func (s *Service) UserPricing(ctx context.Context, userID int) (Result, error) {
 		for _, model := range platform.Models {
 			quote := ModelQuote{PublicPricingModel: model}
 			if candidate, ok := selectModelGroupCandidate(
-				model.ID,
+				model,
 				platform.Platform,
 				groups,
 				u.GroupRates,
@@ -139,7 +140,7 @@ func (s *Service) APIKeyPricing(ctx context.Context, userID, apiKeyID int) (Resu
 			Models:   make([]ModelQuote, 0, len(platform.Models)),
 		}
 		for _, model := range platform.Models {
-			if !groupServesPricingModel(group, model.ID) {
+			if !groupServesPricingModel(group, model) {
 				continue
 			}
 			quote := ModelQuote{PublicPricingModel: model}
@@ -195,7 +196,8 @@ func hasCompleteFixedImagePrices(quote ModelQuote) bool {
 // selectModelGroupCandidate 使用自动路由同口径的有效倍率选择一个真实分组。
 // 固定档位和 token 回退必须全部来自该分组，禁止跨分组拼接最低档位价格。
 func selectModelGroupCandidate(
-	modelID, platform string,
+	model apppluginadmin.PublicPricingModel,
+	platform string,
 	groups []appgroup.Group,
 	userGroupRates map[int64]float64,
 	userPluginSettings map[int64]map[string]map[string]string,
@@ -203,10 +205,10 @@ func selectModelGroupCandidate(
 	var selected modelGroupCandidate
 	found := false
 	for _, g := range groups {
-		if g.Platform != platform || !groupServesPricingModel(g, modelID) {
+		if g.Platform != platform || !groupServesPricingModel(g, model) {
 			continue
 		}
-		fixedPrices := resolveFixedImagePrices(modelID, userPluginSettings[int64(g.ID)], g.PluginSettings)
+		fixedPrices := resolveFixedImagePrices(model.ID, userPluginSettings[int64(g.ID)], g.PluginSettings)
 		effective, ok := pricingGroupRate(userGroupRates, g, fixedPrices)
 		if !ok {
 			continue
@@ -281,7 +283,7 @@ func groupUSDMultiplier(catalog []apppluginadmin.PublicPlatformPricing, g appgro
 			continue
 		}
 		for _, model := range platform.Models {
-			if !groupServesPricingModel(g, model.ID) {
+			if !groupServesPricingModel(g, model) {
 				continue
 			}
 			var ratio float64
@@ -313,15 +315,20 @@ func groupUSDMultiplier(catalog []apppluginadmin.PublicPlatformPricing, g appgro
 
 // groupServesPricingModel applies the same model and image-capability gates as a
 // real request before a group may contribute user-visible pricing.
-func groupServesPricingModel(g appgroup.Group, model string) bool {
+func groupServesPricingModel(g appgroup.Group, model apppluginadmin.PublicPricingModel) bool {
+	needsImage := pricingModelNeedsImage(model)
+	accountIDs := g.RoutableChatAccountIDs
+	if needsImage {
+		accountIDs = g.RoutableImageAccountIDs
+	}
 	if !g.AccountAvailabilityKnown || !scheduler.ModelRoutingServesAccounts(
 		g.ModelRouting,
-		model,
-		g.RoutableAccountIDs,
+		model.ID,
+		accountIDs,
 	) {
 		return false
 	}
-	if !billing.IsFixedImageTierPricingModel(model) {
+	if !needsImage {
 		return true
 	}
 	return routing.GroupSupportsImageRequirement(
@@ -329,6 +336,19 @@ func groupServesPricingModel(g appgroup.Group, model string) bool {
 		g.PluginSettings,
 		routing.Requirements{NeedsImage: true},
 	)
+}
+
+func pricingModelNeedsImage(model apppluginadmin.PublicPricingModel) bool {
+	if billing.IsFixedImageTierPricingModel(model.ID) || len(model.Image) > 0 {
+		return true
+	}
+	for _, capability := range model.Capabilities {
+		switch strings.ToLower(strings.TrimSpace(capability)) {
+		case "image", "image_generation":
+			return true
+		}
+	}
+	return false
 }
 
 // groupServesModel delegates to the scheduler's canonical model-routing matcher.

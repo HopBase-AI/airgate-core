@@ -306,12 +306,26 @@ func matchModelRouting(routing map[string][]int64, model string) []int64 {
 	if ids, ok := routing[model]; ok {
 		return ids
 	}
-	for pattern, ids := range routing {
-		if matched, _ := filepath.Match(pattern, model); matched {
-			return ids
+	bestPattern := ""
+	for pattern := range routing {
+		if matched, _ := filepath.Match(pattern, model); matched &&
+			(bestPattern == "" || modelRoutingPatternPrecedes(pattern, bestPattern)) {
+			bestPattern = pattern
 		}
 	}
+	if bestPattern != "" {
+		return routing[bestPattern]
+	}
 	return nil
+}
+
+// Longer glob patterns are treated as more specific; lexical order breaks ties.
+// Exact model keys always win before this comparison.
+func modelRoutingPatternPrecedes(left, right string) bool {
+	if len(left) != len(right) {
+		return len(left) > len(right)
+	}
+	return left < right
 }
 
 // checkSchedulabilityWithLoad 先看状态（state + state_until），再叠加软约束（并发 / windowCost / RPM / session），取最严格者。

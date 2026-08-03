@@ -5,7 +5,6 @@ import {
   hasFixedImageTierPrices,
   resolveBucketDiscount,
   resolveFixedImageTierPrices,
-  shouldBackfillTokenPricing,
 } from './modelPlazaPricing';
 
 describe('model plaza price formatting', () => {
@@ -79,12 +78,5 @@ describe('fixed image prices', () => {
     ])).toBe(false);
     expect(resolveBucketDiscount(0.6, 6.8, false)).toBeCloseTo(0.6 / 6.8);
     expect(hasFixedImagePricingBuckets([{ imageBillingMode: 'fixed' }])).toBe(true);
-  });
-
-  it('does not backfill token rate or group attribution when the backend returned a fixed tier', () => {
-    expect(shouldBackfillTokenPricing(true, { image_price_1k: 0 })).toBe(false);
-    expect(shouldBackfillTokenPricing(true, { image_price_2k: 0.12 })).toBe(false);
-    expect(shouldBackfillTokenPricing(true, {})).toBe(true);
-    expect(shouldBackfillTokenPricing(true, { user_rate: 0.6 })).toBe(false);
   });
 });

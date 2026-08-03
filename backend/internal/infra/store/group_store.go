@@ -14,6 +14,7 @@ import (
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
 	entusersubscription "github.com/DouDOU-start/airgate-core/ent/usersubscription"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
+	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 )
 
 // GroupStore 使用 Ent 实现分组仓储。
@@ -68,7 +69,13 @@ func (s *GroupStore) ListAvailable(ctx context.Context, filter appgroup.Availabl
 
 	list, err := query.
 		WithAccounts(func(q *ent.AccountQuery) {
-			q.Select(entaccount.FieldID, entaccount.FieldPlatform, entaccount.FieldState)
+			q.Select(
+				entaccount.FieldID,
+				entaccount.FieldPlatform,
+				entaccount.FieldState,
+				entaccount.FieldExtra,
+				entaccount.FieldCredentials,
+			)
 		}).
 		Offset((filter.Page-1)*filter.PageSize).
 		Limit(filter.PageSize).
@@ -86,7 +93,13 @@ func (s *GroupStore) FindByID(ctx context.Context, id int) (appgroup.Group, erro
 	item, err := s.db.Group.Query().
 		Where(entgroup.IDEQ(id)).
 		WithAccounts(func(q *ent.AccountQuery) {
-			q.Select(entaccount.FieldID, entaccount.FieldPlatform, entaccount.FieldState)
+			q.Select(
+				entaccount.FieldID,
+				entaccount.FieldPlatform,
+				entaccount.FieldState,
+				entaccount.FieldExtra,
+				entaccount.FieldCredentials,
+			)
 		}).
 		WithAllowedUsers().
 		Only(ctx)
@@ -707,7 +720,7 @@ func mapGroups(items []*ent.Group) []appgroup.Group {
 }
 
 func mapGroup(item *ent.Group) appgroup.Group {
-	routableAccountIDs, accountAvailabilityKnown := mapRoutableAccountIDs(item)
+	chatAccountIDs, imageAccountIDs, accountAvailabilityKnown := mapRoutableAccountIDs(item)
 	return appgroup.Group{
 		ID:                       item.ID,
 		Name:                     item.Name,
@@ -722,7 +735,8 @@ func mapGroup(item *ent.Group) appgroup.Group {
 		ModelRouting:             appgroupCloneModelRouting(item.ModelRouting),
 		PluginSettings:           appgroupClonePluginSettings(item.PluginSettings),
 		AccountAvailabilityKnown: accountAvailabilityKnown,
-		RoutableAccountIDs:       routableAccountIDs,
+		RoutableChatAccountIDs:   chatAccountIDs,
+		RoutableImageAccountIDs:  imageAccountIDs,
 		ServiceTier:              item.ServiceTier,
 		ForceInstructions:        item.ForceInstructions,
 		Note:                     item.Note,
@@ -733,19 +747,35 @@ func mapGroup(item *ent.Group) appgroup.Group {
 	}
 }
 
-func mapRoutableAccountIDs(item *ent.Group) ([]int64, bool) {
+func mapRoutableAccountIDs(item *ent.Group) ([]int64, []int64, bool) {
 	accounts, err := item.Edges.AccountsOrErr()
 	if err != nil {
-		return nil, false
+		return nil, nil, false
 	}
-	ids := make([]int64, 0, len(accounts))
+	chatIDs := make([]int64, 0, len(accounts))
+	imageIDs := make([]int64, 0, len(accounts))
+	chatRequirements := scheduler.AccountRequirements{Workload: scheduler.WorkloadChat}
+	imageRequirements := scheduler.AccountRequirements{
+		Workload: scheduler.WorkloadImage,
+		ImageProtocols: []scheduler.ImageProtocol{
+			scheduler.ImageProtocolImagesAPI,
+			scheduler.ImageProtocolResponsesTool,
+		},
+	}
 	for _, account := range accounts {
-		if account.Platform == item.Platform && account.State != entaccount.StateDisabled {
-			ids = append(ids, int64(account.ID))
+		if account.Platform != item.Platform || account.State == entaccount.StateDisabled {
+			continue
+		}
+		if scheduler.AccountMatchesRequirements(account, chatRequirements) {
+			chatIDs = append(chatIDs, int64(account.ID))
+		}
+		if scheduler.AccountMatchesRequirements(account, imageRequirements) {
+			imageIDs = append(imageIDs, int64(account.ID))
 		}
 	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	return ids, true
+	sort.Slice(chatIDs, func(i, j int) bool { return chatIDs[i] < chatIDs[j] })
+	sort.Slice(imageIDs, func(i, j int) bool { return imageIDs[i] < imageIDs[j] })
+	return chatIDs, imageIDs, true
 }
 
 // mapAllowedUsers 将已加载的 allowed_users 边映射为领域摘要；未加载时 edges 为 nil，返回 nil。

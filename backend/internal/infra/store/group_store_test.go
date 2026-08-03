@@ -177,21 +177,37 @@ func TestGroupStoreLoadsRoutableAccountSnapshot(t *testing.T) {
 		StatusVisible: true, SubscriptionType: "standard",
 	})
 	active, err := db.Account.Create().
-		SetName("active").
+		SetName("chat-only").
 		SetPlatform("openai").
 		SetType("apikey").
+		SetExtra(map[string]interface{}{"allowed_workloads": []interface{}{"chat"}}).
 		SetCredentials(map[string]string{}).
 		AddGroupIDs(group.ID).
 		Save(ctx)
 	if err != nil {
-		t.Fatalf("create active account: %v", err)
+		t.Fatalf("create chat-only account: %v", err)
+	}
+	imageOnly, err := db.Account.Create().
+		SetName("image-only").
+		SetPlatform("openai").
+		SetType("apikey").
+		SetExtra(map[string]interface{}{
+			"allowed_workloads": []interface{}{"image"},
+			"image_protocols":   []interface{}{"images_api"},
+		}).
+		SetCredentials(map[string]string{"api_key": "test-placeholder"}).
+		AddGroupIDs(group.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create image-only account: %v", err)
 	}
 	degraded, err := db.Account.Create().
-		SetName("degraded").
+		SetName("degraded-both").
 		SetPlatform("openai").
 		SetType("apikey").
 		SetState(entaccount.StateDegraded).
-		SetCredentials(map[string]string{}).
+		SetExtra(map[string]interface{}{"allowed_workloads": []interface{}{"chat", "image"}}).
+		SetCredentials(map[string]string{"access_token": "test-placeholder"}).
 		AddGroupIDs(group.ID).
 		Save(ctx)
 	if err != nil {
@@ -222,13 +238,22 @@ func TestGroupStoreLoadsRoutableAccountSnapshot(t *testing.T) {
 		if !got.AccountAvailabilityKnown {
 			t.Fatalf("%s account availability is unknown", label)
 		}
-		want := []int64{int64(active.ID), int64(degraded.ID)}
-		if len(got.RoutableAccountIDs) != len(want) {
-			t.Fatalf("%s routable account IDs = %v, want %v", label, got.RoutableAccountIDs, want)
+		wantChat := []int64{int64(active.ID), int64(degraded.ID)}
+		if len(got.RoutableChatAccountIDs) != len(wantChat) {
+			t.Fatalf("%s chat account IDs = %v, want %v", label, got.RoutableChatAccountIDs, wantChat)
 		}
-		for i := range want {
-			if got.RoutableAccountIDs[i] != want[i] {
-				t.Fatalf("%s routable account IDs = %v, want %v", label, got.RoutableAccountIDs, want)
+		for i := range wantChat {
+			if got.RoutableChatAccountIDs[i] != wantChat[i] {
+				t.Fatalf("%s chat account IDs = %v, want %v", label, got.RoutableChatAccountIDs, wantChat)
+			}
+		}
+		wantImage := []int64{int64(imageOnly.ID), int64(degraded.ID)}
+		if len(got.RoutableImageAccountIDs) != len(wantImage) {
+			t.Fatalf("%s image account IDs = %v, want %v", label, got.RoutableImageAccountIDs, wantImage)
+		}
+		for i := range wantImage {
+			if got.RoutableImageAccountIDs[i] != wantImage[i] {
+				t.Fatalf("%s image account IDs = %v, want %v", label, got.RoutableImageAccountIDs, wantImage)
 			}
 		}
 	}

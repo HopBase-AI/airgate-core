@@ -6,7 +6,7 @@ import { usePagination } from '../../shared/hooks/usePagination';
 import { groupsApi } from '../../shared/api/groups';
 import { modelsApi } from '../../shared/api/models';
 import { settingsApi } from '../../shared/api/settings';
-import { deriveGroupUSDMultiplier } from '../../shared/modelPricing';
+import { groupUSDMultiplierForDisplay } from '../../shared/modelPricing';
 import { useToast } from '../../shared/ui';
 import { Alert, AlertDialog, Button, Dropdown, EmptyState, Modal, Spinner, useOverlayState } from '@heroui/react';
 import { DialogTriggerShim } from '../../shared/components/DialogTriggerShim';
@@ -259,11 +259,9 @@ export default function UserKeysPage() {
     const hasOverride = override != null && override > 0 && override !== g.rate_multiplier;
     const quote = groupQuotes.get(g.id);
     // usd_multiplier = 每官方 $1 扣多少 ¥（quote 已按用户专属倍率计算）；标准报价按分组标准倍率同比例还原
-    const quotedUsdMult = quote && (quote.usd_multiplier ?? 0) > 0 && quote.effective_rate > 0
-      ? (quote.usd_multiplier ?? 0)
-      : null;
-    // 兼容尚未返回 groups 报价摘要的后端：从该分组可用模型的报价反推。
-    const usdMult = quotedUsdMult ?? deriveGroupUSDMultiplier(myPricing, g, userGroupRates);
+    // 新后端的 groups 摘要是权威结果，0 表示没有可用 token 报价。只有旧后端
+    // 完全缺少 groups 字段时，才从模型报价兼容推导。
+    const usdMult = groupUSDMultiplierForDisplay(myPricing, g, userGroupRates);
     const effectiveRate = quote?.effective_rate
       ?? (hasOverride ? override : g.rate_multiplier);
     const standardMult = usdMult != null && g.rate_multiplier > 0 && effectiveRate > 0 && effectiveRate !== g.rate_multiplier

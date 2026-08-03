@@ -83,7 +83,9 @@ export interface MyGroupQuote {
 
 export interface MyModelPricing {
   platforms: MyPlatformPricing[];
-  groups: MyGroupQuote[];
+  // Legacy Core versions omitted this field. When present, even an empty list
+  // or usd_multiplier=0 is authoritative and must not be reconstructed client-side.
+  groups?: MyGroupQuote[];
 }
 
 export const modelsApi = {

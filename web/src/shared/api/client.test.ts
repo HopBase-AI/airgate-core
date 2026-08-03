@@ -45,6 +45,14 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function responseWithDeferredBody(status: number, body: Promise<unknown>) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: vi.fn(() => body),
+  } as unknown as Response;
+}
+
 describe('API client refresh availability', () => {
   let localStorage: Storage;
   let sessionStorage: Storage;
@@ -68,6 +76,7 @@ describe('API client refresh availability', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -132,84 +141,190 @@ describe('API client refresh availability', () => {
     expect(client.isSameTokenSession(apiKeyToken, userToken)).toBe(false);
   });
 
-  it('preserves an API Key secret across a refresh of the same key session', async () => {
-    const client = await import('./client');
-    const oldToken = tokenWithClaims({ role: 'api_key', api_key_id: 12, exp: 100 });
-    const refreshedToken = tokenWithClaims({ role: 'api_key', api_key_id: 12, exp: 200 });
+  it('clears a legacy API Key secret when booting into a user session', async () => {
+    localStorage.setItem('token', tokenWithClaims({ role: 'user', user_id: 7, exp: 100 }));
+    sessionStorage.setItem('apikey_session_secret', 'legacy-sensitive-api-key');
 
+    await import('./client');
+
+    expect(sessionStorage.getItem('apikey_session_secret')).toBeNull();
+  });
+
+  it('preserves an API Key secret across an internal refresh of the same key session', async () => {
+    const oldToken = tokenWithClaims({ role: 'api_key', api_key_id: 12, exp: Date.now() / 1000 + 60 });
+    const refreshedToken = tokenWithClaims({ role: 'api_key', api_key_id: 12, exp: Date.now() / 1000 + 7200 });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(apiResponse(200, 0, 'ok', { token: refreshedToken }))
+      .mockResolvedValueOnce(apiResponse(200, 0, 'ok', { id: 12 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = await import('./client');
     client.setToken(oldToken);
     client.setSessionAPIKey('sensitive-api-key');
-    client.setToken(refreshedToken);
+    await expect(client.get('/api/v1/users/me')).resolves.toEqual({ id: 12 });
 
     expect(sessionStorage.getItem('apikey_session_secret')).toBe('sensitive-api-key');
+    expect(client.getToken()).toBe(refreshedToken);
     expect(client.isSameTokenSession(oldToken, refreshedToken)).toBe(true);
   });
 
-  it('does not let a delayed 401 clear a newly selected user session', async () => {
-    const oldToken = tokenWithClaims({ role: 'user', user_id: 7, exp: Date.now() / 1000 + 7200 });
-    const newToken = tokenWithClaims({ role: 'user', user_id: 8, exp: Date.now() / 1000 + 7200 });
+  it('does not replay a delayed POST after the same user logs in again', async () => {
+    const oldToken = tokenWithClaims({ role: 'user', user_id: 7, jti: 'old', exp: Date.now() / 1000 + 7200 });
+    const newToken = tokenWithClaims({ role: 'user', user_id: 7, jti: 'new', exp: Date.now() / 1000 + 7200 });
     localStorage.setItem('token', oldToken);
     const delayed = deferred<Response>();
     const fetchMock = vi.fn(() => delayed.promise);
     vi.stubGlobal('fetch', fetchMock);
 
     const client = await import('./client');
-    const request = client.get('/api/v1/users/me');
+    const request = client.post('/api/v1/orders', { amount: 1 });
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     client.setToken(newToken);
     delayed.resolve(apiResponse(401, 401, '旧会话已失效'));
 
-    await expect(request).rejects.toMatchObject({ httpStatus: 401 });
+    await expect(request).rejects.toBeInstanceOf(client.SessionSupersededError);
     expect(client.getToken()).toBe(newToken);
     expect(localStorage.getItem('token')).toBe(newToken);
     expect(window.location.href).toBe('https://console.example.com/models');
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
-  it('retries a delayed old-token 401 with a concurrently refreshed same session', async () => {
-    const oldToken = tokenWithClaims({ role: 'user', user_id: 7, exp: Date.now() / 1000 + 7200 });
-    const refreshedToken = tokenWithClaims({ role: 'user', user_id: 7, exp: Date.now() / 1000 + 10_800 });
+  it('does not replay a delayed API Key upload after the same key logs in again', async () => {
+    const oldToken = tokenWithClaims({ role: 'api_key', api_key_id: 12, jti: 'old', exp: Date.now() / 1000 + 7200 });
+    const newToken = tokenWithClaims({ role: 'api_key', api_key_id: 12, jti: 'new', exp: Date.now() / 1000 + 7200 });
+    localStorage.setItem('token', oldToken);
+    const delayed = deferred<Response>();
+    const fetchMock = vi.fn(() => delayed.promise);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = await import('./client');
+    const form = new FormData();
+    form.set('file', 'payload');
+    const request = client.upload('/api/v1/import', form);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    client.setToken(newToken);
+    delayed.resolve(apiResponse(401, 401, '旧会话已失效'));
+
+    await expect(request).rejects.toBeInstanceOf(client.SessionSupersededError);
+    expect(client.getToken()).toBe(newToken);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('retries a delayed old-token 401 only after a real concurrent internal refresh', async () => {
+    let now = Date.now();
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const oldToken = tokenWithClaims({ role: 'user', user_id: 7, jti: 'old', exp: now / 1000 + 7200 });
+    const refreshedToken = tokenWithClaims({ role: 'user', user_id: 7, jti: 'refresh', exp: now / 1000 + 14_400 });
     localStorage.setItem('token', oldToken);
     const delayed = deferred<Response>();
     const fetchMock = vi.fn()
       .mockImplementationOnce(() => delayed.promise)
-      .mockResolvedValueOnce(apiResponse(200, 0, 'ok', { id: 7 }));
+      .mockResolvedValueOnce(apiResponse(200, 0, 'ok', { token: refreshedToken }))
+      .mockResolvedValueOnce(apiResponse(200, 0, 'ok', { request: 'second' }))
+      .mockResolvedValueOnce(apiResponse(200, 0, 'ok', { request: 'first' }));
     vi.stubGlobal('fetch', fetchMock);
 
     const client = await import('./client');
-    const request = client.get<{ id: number }>('/api/v1/users/me');
+    const first = client.get<{ request: string }>('/api/v1/first');
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
-    client.setToken(refreshedToken);
+    now += 7000 * 1000;
+    const second = client.get<{ request: string }>('/api/v1/second');
+    await expect(second).resolves.toEqual({ request: 'second' });
     delayed.resolve(apiResponse(401, 401, '旧 Token 已过期'));
 
-    await expect(request).resolves.toEqual({ id: 7 });
+    await expect(first).resolves.toEqual({ request: 'first' });
     expect(client.getToken()).toBe(refreshedToken);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({
       headers: expect.objectContaining({ Authorization: `Bearer ${refreshedToken}` }),
     });
   });
 
   it.each([
-    ['success', apiResponse(200, 0, 'ok', { token: 'old-session-refresh' })],
-    ['rejection', apiResponse(401, 401, '旧会话已失效')],
-  ])('does not let a delayed refresh %s overwrite or clear a new session', async (_name, response) => {
-    const oldToken = tokenWithClaims({ role: 'user', user_id: 7, exp: Date.now() / 1000 + 60 });
-    const newToken = tokenWithClaims({ role: 'user', user_id: 8, exp: Date.now() / 1000 + 7200 });
+    { name: 'success', status: 200, payload: { code: 0, message: 'ok', data: { token: 'old-refresh' } } },
+    { name: 'failure', status: 503, payload: { code: 503, message: '暂不可用' } },
+  ])('does not let a delayed refresh body $name affect a same-user relogin', async ({ status, payload }) => {
+    const oldToken = tokenWithClaims({ role: 'user', user_id: 7, jti: 'old', exp: Date.now() / 1000 + 60 });
+    const newToken = tokenWithClaims({ role: 'user', user_id: 7, jti: 'new', exp: Date.now() / 1000 + 7200 });
     localStorage.setItem('token', oldToken);
-    const delayed = deferred<Response>();
-    const fetchMock = vi.fn(() => delayed.promise);
+    const body = deferred<unknown>();
+    const response = responseWithDeferredBody(status, body.promise);
+    const fetchMock = vi.fn().mockResolvedValue(response);
     vi.stubGlobal('fetch', fetchMock);
 
     const client = await import('./client');
     const request = client.get('/api/v1/users/me');
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(response.json).toHaveBeenCalledOnce());
     client.setToken(newToken);
-    delayed.resolve(response);
+    body.resolve(payload);
 
-    await expect(request).rejects.toMatchObject({ httpStatus: 401 });
+    await expect(request).rejects.toBeInstanceOf(client.SessionSupersededError);
     expect(client.getToken()).toBe(newToken);
     expect(localStorage.getItem('token')).toBe(newToken);
     expect(window.location.href).toBe('https://console.example.com/models');
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('discards a successful response body parsed after a same-user relogin', async () => {
+    const oldToken = tokenWithClaims({ role: 'user', user_id: 7, jti: 'old', exp: Date.now() / 1000 + 7200 });
+    const newToken = tokenWithClaims({ role: 'user', user_id: 7, jti: 'new', exp: Date.now() / 1000 + 7200 });
+    localStorage.setItem('token', oldToken);
+    const body = deferred<unknown>();
+    const response = responseWithDeferredBody(200, body.promise);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response));
+
+    const client = await import('./client');
+    const request = client.get('/api/v1/users/me');
+    await vi.waitFor(() => expect(response.json).toHaveBeenCalledOnce());
+    client.setToken(newToken);
+    body.resolve({ code: 0, message: 'ok', data: { id: 7, source: 'old-session' } });
+
+    await expect(request).rejects.toBeInstanceOf(client.SessionSupersededError);
+    expect(client.getToken()).toBe(newToken);
+  });
+
+  it('times out a black-holed refresh and continues with the still-valid token', async () => {
+    const token = tokenWithExpiry(Math.floor(Date.now() / 1000) + 60);
+    localStorage.setItem('token', token);
+    const fetchMock = vi.fn()
+      .mockImplementationOnce((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          const error = new Error('aborted');
+          error.name = 'AbortError';
+          reject(error);
+        }, { once: true });
+      }))
+      .mockResolvedValueOnce(apiResponse(200, 0, 'ok', { id: 7 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = await import('./client');
+    vi.useFakeTimers();
+
+    const request = client.get('/api/v1/users/me');
+    expect(fetchMock).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    await expect(request).resolves.toEqual({ id: 7 });
+    expect(client.getToken()).toBe(token);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('lets one caller cancel while a shared refresh continues for the session', async () => {
+    const token = tokenWithExpiry(Math.floor(Date.now() / 1000) + 60);
+    const refreshedToken = tokenWithExpiry(Math.floor(Date.now() / 1000) + 7200);
+    localStorage.setItem('token', token);
+    const delayed = deferred<Response>();
+    const fetchMock = vi.fn(() => delayed.promise);
+    vi.stubGlobal('fetch', fetchMock);
+    const client = await import('./client');
+    const controller = new AbortController();
+
+    const request = client.get('/api/v1/users/me', undefined, { signal: controller.signal });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    controller.abort();
+
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' });
+    delayed.resolve(apiResponse(200, 0, 'ok', { token: refreshedToken }));
+    await vi.waitFor(() => expect(client.getToken()).toBe(refreshedToken));
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 });

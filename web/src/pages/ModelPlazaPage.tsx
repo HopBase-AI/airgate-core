@@ -5,13 +5,10 @@ import { Check, Copy, Database, RefreshCw, Search, WifiOff } from 'lucide-react'
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../shared/api/models';
 import { settingsApi } from '../shared/api/settings';
-import { groupsApi } from '../shared/api/groups';
 import { ApiError } from '../shared/api/client';
 import { queryKeys } from '../shared/queryKeys';
 import { localizedGroupText } from '../shared/groupText';
-import { bestGroupForModel } from '../shared/modelPricing';
 import { useToast } from '../shared/ui';
-import { FETCH_ALL_PARAMS } from '../shared/constants';
 import { useAuth } from '../app/providers/AuthProvider';
 import { mergeCatalog, type ModelLedgerItem } from './modelPlazaCatalog';
 import {
@@ -19,7 +16,6 @@ import {
   hasFixedImagePricingBuckets,
   resolveBucketDiscount,
   resolveFixedImageTierPrices,
-  shouldBackfillTokenPricing,
 } from './modelPlazaPricing';
 
 interface TocPricingConfig {
@@ -380,7 +376,7 @@ function ModelTableSkeleton() {
 export default function ModelPlazaPage() {
   const { t } = useTranslation();
   const { toast } = useToast();
-  const { user, isAPIKeySession } = useAuth();
+  const { isAPIKeySession } = useAuth();
   const [search, setSearch] = useState('');
   const [platformFilter, setPlatformFilter] = useState('all');
   const [capabilityFilter, setCapabilityFilter] = useState('all');
@@ -415,28 +411,9 @@ export default function ModelPlazaPage() {
   const isError = apiKeyPricingError || (useFallback && catalogQuery.isError);
   const loadError = apiKeyPricingError ? myPricingQuery.error : (catalogQuery.error ?? myPricingQuery.error);
 
-  const groupsQuery = useQuery({
-    queryKey: queryKeys.groupsForKeys(),
-    queryFn: () => groupsApi.listAvailable(FETCH_ALL_PARAMS),
-    staleTime: 60_000,
-    retry: 1,
-    enabled: userMode && !isAPIKeySession,
-  });
-
   const models = useMemo(
-    () => mergeCatalog(myPricingQuery.data?.platforms ?? catalogQuery.data ?? []).map((model) => {
-      if (!shouldBackfillTokenPricing(userMode, model)) return model;
-      const best = bestGroupForModel(model, model.platforms, groupsQuery.data?.list ?? [], user?.group_rates);
-      if (!best) return model;
-      return {
-        ...model,
-        user_rate: best.rate,
-        group_id: best.group.id,
-        group_name: best.group.name,
-        group_name_i18n: best.group.name_i18n,
-      };
-    }),
-    [catalogQuery.data, groupsQuery.data?.list, myPricingQuery.data?.platforms, user?.group_rates, userMode],
+    () => mergeCatalog(myPricingQuery.data?.platforms ?? catalogQuery.data ?? []),
+    [catalogQuery.data, myPricingQuery.data?.platforms],
   );
   const pricingConfig = useMemo(
     () => parsePricingConfig(settingsQuery.data?.toc_landing_pricing),

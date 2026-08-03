@@ -37,9 +37,11 @@ func fakeGroupWithAvailability(group appgroup.Group) appgroup.Group {
 		seen[int64(group.ID)] = struct{}{}
 	}
 	group.AccountAvailabilityKnown = true
-	group.RoutableAccountIDs = make([]int64, 0, len(seen))
+	group.RoutableChatAccountIDs = make([]int64, 0, len(seen))
+	group.RoutableImageAccountIDs = make([]int64, 0, len(seen))
 	for id := range seen {
-		group.RoutableAccountIDs = append(group.RoutableAccountIDs, id)
+		group.RoutableChatAccountIDs = append(group.RoutableChatAccountIDs, id)
+		group.RoutableImageAccountIDs = append(group.RoutableImageAccountIDs, id)
 	}
 	return group
 }
@@ -484,7 +486,7 @@ func TestUserPricingExcludesOfflineGroupFromFixedPricing(t *testing.T) {
 			ID: 7, Name: "Offline Image", Platform: "openai", RateMultiplier: 0.1,
 			ModelRouting:             map[string][]int64{"gpt-image-2": {50}},
 			AccountAvailabilityKnown: true,
-			RoutableAccountIDs:       nil,
+			RoutableImageAccountIDs:  nil,
 			PluginSettings: map[string]map[string]string{"openai": {
 				"image_enabled": "true", "image_price_1k": "0.01",
 				"image_price_2k": "0.02", "image_price_4k": "0.03",
@@ -494,7 +496,7 @@ func TestUserPricingExcludesOfflineGroupFromFixedPricing(t *testing.T) {
 			ID: 8, Name: "Online Image", Platform: "openai", RateMultiplier: 0.6,
 			ModelRouting:             map[string][]int64{"gpt-image-2": {51}},
 			AccountAvailabilityKnown: true,
-			RoutableAccountIDs:       []int64{51},
+			RoutableImageAccountIDs:  []int64{51},
 			PluginSettings: map[string]map[string]string{"openai": {
 				"image_enabled": "true", "image_price_1k": "0.08",
 				"image_price_2k": "0.12", "image_price_4k": "0.15",
@@ -529,7 +531,7 @@ func TestAPIKeyPricingExcludesModelsWhenBoundGroupIsOffline(t *testing.T) {
 		ID: groupID, Platform: "openai", RateMultiplier: 0.6,
 		ModelRouting:             map[string][]int64{"gpt-image-2": {50}},
 		AccountAvailabilityKnown: true,
-		RoutableAccountIDs:       nil,
+		RoutableImageAccountIDs:  nil,
 		PluginSettings: map[string]map[string]string{"openai": {
 			"image_enabled": "true", "image_price_1k": "0.08",
 			"image_price_2k": "0.12", "image_price_4k": "0.15",
@@ -549,14 +551,41 @@ func TestAPIKeyPricingExcludesModelsWhenBoundGroupIsOffline(t *testing.T) {
 
 func TestGroupServesPricingModelFailsClosedWithoutAccountSnapshot(t *testing.T) {
 	group := appgroup.Group{
-		ModelRouting:       map[string][]int64{"gpt-image-2": {50}},
-		RoutableAccountIDs: []int64{50},
+		ModelRouting:            map[string][]int64{"gpt-image-2": {50}},
+		RoutableImageAccountIDs: []int64{50},
 		PluginSettings: map[string]map[string]string{"openai": {
 			"image_enabled": "true", "image_price_1k": "0.08",
 		}},
 	}
-	if groupServesPricingModel(group, "gpt-image-2") {
+	if groupServesPricingModel(group, apppluginadmin.PublicPricingModel{ID: "gpt-image-2"}) {
 		t.Fatal("group without a loaded account snapshot must not contribute pricing")
+	}
+}
+
+func TestGroupServesPricingModelUsesMatchingWorkloadSnapshot(t *testing.T) {
+	group := appgroup.Group{
+		Platform:                 "openai",
+		AccountAvailabilityKnown: true,
+		RoutableChatAccountIDs:   []int64{11},
+		RoutableImageAccountIDs:  []int64{12},
+		ModelRouting:             map[string][]int64{"chat-model": {11}, "image-model": {12}},
+		PluginSettings:           map[string]map[string]string{"openai": {"image_enabled": "true"}},
+	}
+	chat := apppluginadmin.PublicPricingModel{ID: "chat-model", Capabilities: []string{"chat"}}
+	image := apppluginadmin.PublicPricingModel{ID: "image-model", Capabilities: []string{"image_generation"}}
+	if !groupServesPricingModel(group, chat) {
+		t.Fatal("chat quote should use the chat-capable account snapshot")
+	}
+	if !groupServesPricingModel(group, image) {
+		t.Fatal("image quote should use the image-capable account snapshot")
+	}
+
+	group.ModelRouting = map[string][]int64{"chat-model": {12}, "image-model": {11}}
+	if groupServesPricingModel(group, chat) {
+		t.Fatal("image-only route must not support a chat quote")
+	}
+	if groupServesPricingModel(group, image) {
+		t.Fatal("chat-only route must not support an image quote")
 	}
 }
 

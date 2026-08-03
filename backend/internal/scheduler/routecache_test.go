@@ -158,6 +158,34 @@ func TestModelRoutingServes_EmptyAccountList(t *testing.T) {
 	}
 }
 
+func TestModelRoutingOverlappingGlobsUseDeterministicPrecedence(t *testing.T) {
+	routing := map[string][]int64{
+		"gemini-*":       {1},
+		"gemini-*-image": {},
+	}
+	for i := 0; i < 100; i++ {
+		if ModelRoutingServes(routing, "gemini-3-pro-image") {
+			t.Fatal("the longer matching glob must win over a broader route")
+		}
+	}
+
+	equalLength := map[string][]int64{
+		"g?mini-*": {2},
+		"gemini-?": {},
+	}
+	if !ModelRoutingServes(equalLength, "gemini-x") {
+		t.Fatal("lexically earlier glob must win when matching patterns have equal length")
+	}
+
+	exact := map[string][]int64{
+		"gemini-x": {},
+		"g?mini-*": {2},
+	}
+	if ModelRoutingServes(exact, "gemini-x") {
+		t.Fatal("an exact route must win over every matching glob")
+	}
+}
+
 func TestModelRoutingServesAccounts(t *testing.T) {
 	t.Parallel()
 
