@@ -7,7 +7,7 @@ type UserResp struct {
 	Username              string                                 `json:"username"`
 	DisplayBadge          string                                 `json:"display_badge"`
 	Balance               float64                                `json:"balance"`
-	Role                  string                                 `json:"role"` // admin / user / api_key
+	Role                  string                                 `json:"role"`            // admin / user / api_key
 	CanAuthorBlog         bool                                   `json:"can_author_blog"` // 是否可进入后台写博客(管理员天然可)
 	MaxConcurrency        int                                    `json:"max_concurrency"`
 	GroupRates            map[int64]float64                      `json:"group_rates,omitempty"`           // 用户专属分组倍率

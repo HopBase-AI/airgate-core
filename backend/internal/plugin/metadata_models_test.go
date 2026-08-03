@@ -7,10 +7,11 @@ import (
 	"testing"
 
 	"entgo.io/ent/dialect/sql/schema"
+	_ "github.com/mattn/go-sqlite3"
+
 	"github.com/DouDOU-start/airgate-core/ent/enttest"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestScopeModelListResponseToRoutingSynthesizesUnknownExplicitModel(t *testing.T) {
