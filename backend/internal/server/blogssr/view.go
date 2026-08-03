@@ -27,6 +27,8 @@ var htmlTagRe = regexp.MustCompile(`<[^>]+>`)
 type uiText struct {
 	ReadingSuffix string // 阅读时长后缀
 	Back          string // 返回博客
+	BlogLabel     string // 列表页默认标题
+	BlogSubtitle  string // 列表页默认描述
 	CTAButton     string
 	CTADesc       string // 常驻 CTA 默认描述(chrome i18n 可覆盖)
 	GateTitle     string
@@ -40,7 +42,7 @@ type uiText struct {
 
 var uiTexts = map[string]uiText{
 	"zh": {
-		ReadingSuffix: " 分钟阅读", Back: "← 返回博客", CTAButton: "免费开始 →",
+		ReadingSuffix: " 分钟阅读", Back: "← 返回博客", BlogLabel: "博客", BlogSubtitle: "AI 使用方法、模型技巧与实践分享", CTAButton: "免费开始 →",
 		CTADesc:   "一个 API Key 直连 Claude、Codex、GPT 等主流模型,注册即领体验额度,几分钟接入,余额长期有效。",
 		GateTitle: "注册后继续阅读全文", GateDesc: "免费注册即可读完本文,并获得 API 额度体验。",
 		GateButton: "免费注册 / 登录",
@@ -48,7 +50,7 @@ var uiTexts = map[string]uiText{
 		NotFoundTitle: "文章不存在", NotFoundSub: "该文章可能已下线或链接有误。",
 	},
 	"zh-Hant": {
-		ReadingSuffix: " 分鐘閱讀", Back: "← 返回 Blog", CTAButton: "免費開始 →",
+		ReadingSuffix: " 分鐘閱讀", Back: "← 返回 Blog", BlogLabel: "博客", BlogSubtitle: "AI 使用方法、模型技巧與實踐分享", CTAButton: "免費開始 →",
 		CTADesc:   "一個 API Key 直連 Claude、GPT、Gemini 等主流模型,註冊即領體驗額度,幾分鐘接入,餘額長期有效。",
 		GateTitle: "註冊後繼續閱讀全文", GateDesc: "免費註冊即可讀完本文,並獲得 API 額度體驗。",
 		GateButton: "免費註冊 / 登入",
@@ -56,7 +58,7 @@ var uiTexts = map[string]uiText{
 		NotFoundTitle: "文章不存在", NotFoundSub: "該文章可能已下線或連結有誤。",
 	},
 	"en": {
-		ReadingSuffix: " min read", Back: "← Back to blog", CTAButton: "Start for free →",
+		ReadingSuffix: " min read", Back: "← Back to blog", BlogLabel: "Blog", BlogSubtitle: "AI usage guides, model techniques, and practical insights.", CTAButton: "Start for free →",
 		CTADesc:   "One API key for Claude, GPT, Gemini and more — sign up for trial credits, integrate in minutes, balance never expires.",
 		GateTitle: "Sign up to keep reading", GateDesc: "Create a free account to finish this article and get trial API credits.",
 		GateButton: "Sign up / Log in",
@@ -154,6 +156,80 @@ type ChromeOverride struct {
 	LoginLabel  string       `json:"login_label"`
 	SignupLabel string       `json:"signup_label"`
 	CTADesc     string       `json:"cta_desc"`
+}
+
+type landingAnnouncementConfig struct {
+	Enabled *bool             `json:"enabled"`
+	Href    string            `json:"href"`
+	Text    map[string]string `json:"text"`
+	Link    map[string]string `json:"link"`
+}
+
+var defaultLandingAnnouncementText = map[string]string{
+	"zh":      "gpt-5.6 三规格已上线，价格与阶梯规则已更新",
+	"zh-Hant": "gpt-5.6 三規格已上線，價格與階梯規則已更新",
+	"en":      "All three GPT-5.6 variants are now available, with updated pricing and context-tier rules",
+}
+
+var defaultLandingAnnouncementLink = map[string]string{
+	"zh":      "查看价格",
+	"zh-Hant": "查看價格",
+	"en":      "View pricing",
+}
+
+// resolveLandingAnnouncement mirrors the landing page's progressive defaults,
+// but resolves them during SSR so fixed-header offsets never shift after load.
+func resolveLandingAnnouncement(raw, lang string) (enabled bool, text, link, href string) {
+	enabled = true
+	var cfg landingAnnouncementConfig
+	if value := strings.TrimSpace(raw); value != "" {
+		if err := json.Unmarshal([]byte(value), &cfg); err == nil {
+			if cfg.Enabled != nil {
+				enabled = *cfg.Enabled
+			}
+		} else {
+			cfg = landingAnnouncementConfig{}
+		}
+	}
+
+	lang = canonicalLang(lang)
+	if lang == "" {
+		lang = "zh-Hant"
+	}
+	landingLang := lang
+	if lang == "zh-Hant" {
+		landingLang = "zh-HK"
+	}
+	pick := func(values map[string]string, defaults map[string]string) string {
+		for _, key := range []string{landingLang, lang, "en", "zh"} {
+			if value := strings.TrimSpace(values[key]); value != "" {
+				return value
+			}
+		}
+		return defaults[lang]
+	}
+	text = pick(cfg.Text, defaultLandingAnnouncementText)
+	link = pick(cfg.Link, defaultLandingAnnouncementLink)
+	href = announcementHref(cfg.Href)
+	return enabled, text, link, href
+}
+
+func announcementHref(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "/#pricing"
+	}
+	if strings.HasPrefix(raw, "#") {
+		return "/" + raw
+	}
+	if strings.HasPrefix(raw, "/") && !strings.HasPrefix(raw, "//") {
+		return raw
+	}
+	parsed, err := url.Parse(raw)
+	if err == nil && parsed.Host != "" && (parsed.Scheme == "http" || parsed.Scheme == "https") {
+		return raw
+	}
+	return "/#pricing"
 }
 
 // resolveChrome 把 lang 对应的 i18n 覆盖并入 chrome 顶层字段,返回该语言的有效配置。
@@ -376,10 +452,13 @@ var validThemes = map[string]bool{"": true, "ember": true, "hopbase": true, "ink
 
 // Branding 站点品牌信息(从 site 设置读取)。
 type Branding struct {
-	SiteName   string
-	LogoURL    string
-	ConsoleURL string // 控制台/登录基址,如 https://api.hop-base.com
-	OriginBase string // 当前博客站点基址 scheme://host,用于 canonical/OG 绝对化
+	SiteName string
+	LogoURL  string
+	// SocialImage is the first configured public social image setting. It is
+	// validated and absolutized at render time; data URIs are never emitted.
+	SocialImage string
+	ConsoleURL  string // 控制台/登录基址,如 https://api.hop-base.com
+	OriginBase  string // 当前博客站点基址 scheme://host,用于 canonical/OG 绝对化
 	// LogoSrc 是给 <img src> 用的 logo 地址,类型 template.URL 以绕过 html/template 的
 	// URL 过滤——否则 site_logo 常见的 data:image/svg+xml URI 会被替换成 #ZgotmplZ(logo 裂图)。
 	// 值来自可信的后台设置,且以 <img> 呈现(非脚本上下文),安全。
@@ -395,6 +474,8 @@ type Branding struct {
 	Theme string
 	// Chrome 皮肤导航/文案配置(设置 blog_chrome)。
 	Chrome Chrome
+	// LandingAnnouncementJSON shares the landing_announcement_json contract.
+	LandingAnnouncementJSON string
 
 	// ―― 以下为渲染期按 Chrome+邀请码 推导的字段(applyChrome 填充) ――
 	BrandLabel   string    // 顶栏品牌字标
@@ -420,6 +501,12 @@ type Branding struct {
 	UI uiText
 	// HTMLLang <html lang> 值(zh-CN/zh-Hant/en)。
 	HTMLLang string
+	// Announcement* are localized by applyChrome so the rail is complete in
+	// SSR HTML and fixed-header offsets do not depend on client JavaScript.
+	AnnouncementEnabled bool
+	AnnouncementText    string
+	AnnouncementLink    string
+	AnnouncementHref    string
 }
 
 // withInv 给站内相对链接追加读者邀请码查询串(navQuery 结果,可能为空)。
@@ -451,14 +538,8 @@ func applyChrome(b *Branding, reqInvite, registerURL, lang string) {
 		}
 	}
 	b.UI = textFor(b.Lang)
-	switch b.Lang {
-	case "", "zh-Hant":
-		b.HTMLLang = "zh-Hant"
-	case "en":
-		b.HTMLLang = "en"
-	default:
-		b.HTMLLang = "zh-CN"
-	}
+	b.HTMLLang = htmlLanguage(b.Lang)
+	b.AnnouncementEnabled, b.AnnouncementText, b.AnnouncementLink, b.AnnouncementHref = resolveLandingAnnouncement(b.LandingAnnouncementJSON, b.Lang)
 
 	b.BrandLabel = firstNonEmpty(c.BrandLabel, b.SiteName)
 	if b.SiteKey == "open-late" {
@@ -489,6 +570,17 @@ func applyChrome(b *Branding, reqInvite, registerURL, lang string) {
 	b.LoginLabel = firstNonEmpty(c.LoginLabel, "登录")
 	b.SignupLabel = c.SignupLabel
 	b.RegisterURL = registerURL
+}
+
+func htmlLanguage(lang string) string {
+	switch canonicalLang(lang) {
+	case "en":
+		return "en"
+	case "zh":
+		return "zh-CN"
+	default:
+		return "zh-Hant"
+	}
 }
 
 // hopBaseHeaderLinks mirrors the current ToB landing navigation. Keeping this
@@ -664,27 +756,36 @@ func filterPostsBySite(posts []appblog.Post, siteKey string) []appblog.Post {
 
 // listItem 列表项视图。
 type listItem struct {
-	Title       string
-	Slug        string
-	Summary     string
-	CoverImage  template.URL // 用 template.URL 让 data: 封面也能渲染(同 LogoSrc);<img src> 上下文安全
-	PublishedAt string
-	URL         string
-	Tag         string // 首个非空标签(皮肤列表的分类胶囊)
-	ReadingTime string // 预估阅读时长
-	CoverClass  string // 无封面时的渐变兜底样式类(cv1..cv6 轮转)
+	Title        string
+	Slug         string
+	Summary      string
+	CoverImage   template.URL // 用 template.URL 让 data: 封面也能渲染(同 LogoSrc);<img src> 上下文安全
+	SocialImage  string       // 绝对 http(s) URL;用于结构化数据,永不含 data URI
+	PublishedAt  string
+	PublishedISO string
+	URL          string
+	Canonical    string
+	Language     string
+	Tag          string // 首个非空标签(皮肤列表的分类胶囊)
+	ReadingTime  string // 预估阅读时长
+	CoverClass   string // 无封面时的渐变兜底样式类(cv1..cv6 轮转)
 }
 
 // ListView 列表页视图。
 type ListView struct {
 	Branding
-	PageTitle string
-	Subtitle  string // 列表页副标题(Chrome 可配)
-	Eyebrow   string // 列表页小标(皮肤模板用)
-	Heading   string // 列表页 H1(Chrome 可配,默认「{site_name} 博客」)
-	Posts     []listItem
-	Featured  *listItem  // 皮肤模板的头条(首篇)
-	Rest      []listItem // 皮肤模板头条之后的文章流
+	PageTitle       string
+	MetaDescription string
+	Canonical       string
+	OGImage         string
+	Hreflang        []HreflangLink
+	JSONLD          template.JS
+	Subtitle        string // 列表页副标题(Chrome 可配)
+	Eyebrow         string // 列表页小标(皮肤模板用)
+	Heading         string // 列表页 H1(Chrome 可配,默认「{site_name} 博客」)
+	Posts           []listItem
+	Featured        *listItem  // 皮肤模板的头条(首篇)
+	Rest            []listItem // 皮肤模板头条之后的文章流
 }
 
 // DetailView 详情页视图。
@@ -820,6 +921,85 @@ func absURL(originBase, u string) string {
 	return u
 }
 
+// publicImageURL returns only absolute, crawler-usable http(s) images. The UI
+// may render trusted data-URI logos, but social metadata and JSON-LD must not.
+func publicImageURL(originBase, raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.HasPrefix(strings.ToLower(raw), "data:") || strings.HasPrefix(raw, "//") {
+		return ""
+	}
+	if strings.HasPrefix(raw, "/") {
+		return strings.TrimRight(originBase, "/") + raw
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return ""
+	}
+	return raw
+}
+
+func listCanonicalURL(originBase, lang, defaultLang string, multilingual bool) string {
+	base := strings.TrimRight(originBase, "/") + "/blog"
+	if !multilingual {
+		return base
+	}
+	lang = pickLang(lang, defaultLang)
+	if lang == pickLang("", defaultLang) {
+		return base
+	}
+	return base + "?lang=" + url.QueryEscape(lang)
+}
+
+func buildListHreflang(originBase, defaultLang string, multilingual bool) []HreflangLink {
+	if !multilingual {
+		return nil
+	}
+	links := make([]HreflangLink, 0, len(blogLangs)+1)
+	for _, lang := range blogLangs {
+		links = append(links, HreflangLink{
+			Lang: hreflangCode(lang.Code),
+			Href: listCanonicalURL(originBase, lang.Code, defaultLang, true),
+		})
+	}
+	links = append(links, HreflangLink{Lang: "x-default", Href: strings.TrimRight(originBase, "/") + "/blog"})
+	return links
+}
+
+func defaultListHeading(siteName, lang string) string {
+	label := textFor(canonicalLang(lang)).BlogLabel
+	if siteName = strings.TrimSpace(siteName); siteName != "" {
+		return siteName + " " + label
+	}
+	return label
+}
+
+func listPageTitle(heading, siteName string) string {
+	heading = strings.TrimSpace(heading)
+	siteName = strings.TrimSpace(siteName)
+	if heading == "" {
+		return firstNonEmpty(siteName, "Blog")
+	}
+	if siteName == "" || strings.Contains(strings.ToLower(heading), strings.ToLower(siteName)) {
+		return heading
+	}
+	return heading + " · " + siteName
+}
+
+func socialImageForBrand(b Branding, configured string, articleImages ...string) string {
+	if image := publicImageURL(b.OriginBase, configured); image != "" {
+		return image
+	}
+	for _, raw := range articleImages {
+		if image := publicImageURL(b.OriginBase, raw); image != "" {
+			return image
+		}
+	}
+	if b.Theme == themeHopBase {
+		return strings.TrimRight(b.OriginBase, "/") + "/assets/hopbase-og.png"
+	}
+	return publicImageURL(b.OriginBase, b.LogoURL)
+}
+
 // firstNonEmpty 返回首个非空字符串。
 func firstNonEmpty(values ...string) string {
 	for _, v := range values {
@@ -838,34 +1018,6 @@ var coverFallbackClasses = []string{"cv1", "cv2", "cv3", "cv4", "cv5", "cv6"}
 // lang 为当前列表语言(show_langs 关闭时传空)。
 func buildListView(b Branding, posts []appblog.Post, reqInvite, lang string) ListView {
 	nav := navQuery(reqInvite)
-	items := make([]listItem, 0, len(posts))
-	for i, p := range posts {
-		published := ""
-		if p.PublishedAt != nil {
-			published = p.PublishedAt.In(beijingLoc).Format("2006-01-02")
-		}
-		tag := ""
-		if len(p.Tags) > 0 {
-			tag = strings.TrimSpace(p.Tags[0])
-		}
-		items = append(items, listItem{
-			Title:       p.Title,
-			Slug:        p.Slug,
-			Summary:     p.Summary,
-			CoverImage:  template.URL(absURL(b.OriginBase, p.CoverImage)), //nolint:gosec // 可信后台设置,<img> 呈现
-			PublishedAt: published,
-			URL:         blogDetailURL(p.Slug, lang, reqInvite),
-			Tag:         tag,
-			ReadingTime: readingTimeLabel(p.ContentHTML, canonicalLang(p.Lang)),
-			CoverClass:  coverFallbackClasses[i%len(coverFallbackClasses)],
-		})
-	}
-	title := b.SiteName
-	if title == "" {
-		title = "Blog"
-	} else {
-		title = title + " · Blog"
-	}
 	b.LogoURL = absURL(b.OriginBase, b.LogoURL)
 	b.LogoSrc = template.URL(b.LogoURL) //nolint:gosec // 可信后台设置,<img> 呈现
 	b.HomeURL = "/blog" + nav
@@ -876,14 +1028,62 @@ func buildListView(b Branding, posts []appblog.Post, reqInvite, lang string) Lis
 		b.HomeURL = blogListURL(b.Lang, reqInvite)
 	}
 
-	view := ListView{
-		Branding:  b,
-		PageTitle: title,
-		Heading:   firstNonEmpty(b.Chrome.Title, strings.TrimSpace(b.SiteName+" 博客")),
-		Subtitle:  firstNonEmpty(b.Chrome.Subtitle, "AI 使用方法、模型技巧与实践分享"),
-		Eyebrow:   firstNonEmpty(b.Chrome.Eyebrow, title),
-		Posts:     items,
+	items := make([]listItem, 0, len(posts))
+	for i, p := range posts {
+		published := ""
+		publishedISO := ""
+		if p.PublishedAt != nil {
+			published = p.PublishedAt.In(beijingLoc).Format("2006-01-02")
+			publishedISO = p.PublishedAt.UTC().Format(time.RFC3339)
+		}
+		tag := ""
+		if len(p.Tags) > 0 {
+			tag = strings.TrimSpace(p.Tags[0])
+		}
+		postLanguage := b.HTMLLang
+		if postLang := canonicalLang(p.Lang); postLang != "" {
+			postLanguage = htmlLanguage(postLang)
+		}
+		items = append(items, listItem{
+			Title:        p.Title,
+			Slug:         p.Slug,
+			Summary:      p.Summary,
+			CoverImage:   template.URL(absURL(b.OriginBase, p.CoverImage)), //nolint:gosec // 可信后台设置,<img> 呈现
+			SocialImage:  publicImageURL(b.OriginBase, p.CoverImage),
+			PublishedAt:  published,
+			PublishedISO: publishedISO,
+			URL:          blogDetailURL(p.Slug, lang, reqInvite),
+			Canonical:    strings.TrimRight(b.OriginBase, "/") + "/blog/" + strings.TrimSpace(p.Slug),
+			Language:     postLanguage,
+			Tag:          tag,
+			ReadingTime:  readingTimeLabel(p.ContentHTML, canonicalLang(p.Lang)),
+			CoverClass:   coverFallbackClasses[i%len(coverFallbackClasses)],
+		})
 	}
+
+	heading := firstNonEmpty(b.Chrome.Title, defaultListHeading(b.SiteName, b.Lang))
+	subtitle := firstNonEmpty(b.Chrome.Subtitle, textFor(b.Lang).BlogSubtitle)
+	pageTitle := listPageTitle(heading, b.SiteName)
+	canonical := listCanonicalURL(b.OriginBase, b.Lang, b.Chrome.DefaultLang, b.ShowLangs)
+	articleImages := make([]string, 0, len(posts))
+	for _, post := range posts {
+		articleImages = append(articleImages, post.CoverImage)
+	}
+	socialImage := socialImageForBrand(b, b.SocialImage, articleImages...)
+
+	view := ListView{
+		Branding:        b,
+		PageTitle:       pageTitle,
+		MetaDescription: subtitle,
+		Canonical:       canonical,
+		OGImage:         socialImage,
+		Hreflang:        buildListHreflang(b.OriginBase, b.Chrome.DefaultLang, b.ShowLangs),
+		Subtitle:        subtitle,
+		Eyebrow:         firstNonEmpty(b.Chrome.Eyebrow, firstNonEmpty(b.SiteName, "Blog")+" · Blog"),
+		Heading:         heading,
+		Posts:           items,
+	}
+	view.JSONLD = template.JS(buildListJSONLD(view)) //nolint:gosec // json.Marshal HTML-escapes hostile fields before trusted script injection
 	if len(items) > 0 {
 		view.Featured = &items[0]
 		view.Rest = items[1:]
@@ -896,13 +1096,16 @@ func buildDetailView(b Branding, p appblog.Post, reqInvite string) DetailView {
 	metaDesc := firstNonEmpty(p.SEODescription, p.Summary, p.Title)
 	seoTitle := firstNonEmpty(p.SEOTitle, p.Title)
 	canonical := strings.TrimRight(b.OriginBase, "/") + "/blog/" + p.Slug
-	ogImage := absURL(b.OriginBase, firstNonEmpty(p.OGImage, p.CoverImage))
+	ogImage := socialImageForBrand(b, p.OGImage, p.CoverImage, b.SocialImage)
 
 	var publishedISO, publishedHuman string
 	if p.PublishedAt != nil {
 		publishedISO = p.PublishedAt.UTC().Format(time.RFC3339)
 	}
-	modifiedISO := p.UpdatedAt.UTC().Format(time.RFC3339)
+	modifiedISO := ""
+	if !p.UpdatedAt.IsZero() {
+		modifiedISO = p.UpdatedAt.UTC().Format(time.RFC3339)
+	}
 	if modifiedISO == "" && publishedISO != "" {
 		modifiedISO = publishedISO
 	}
@@ -917,11 +1120,11 @@ func buildDetailView(b Branding, p appblog.Post, reqInvite string) DetailView {
 	}
 
 	logoURL := absURL(b.OriginBase, b.LogoURL)
-	jsonLD := buildJSONLD(seoTitle, metaDesc, canonical, ogImage, publishedISO, modifiedISO, b.SiteName, logoURL)
-	breadcrumbLD := buildBreadcrumbLD(b.OriginBase, b.SiteName, seoTitle, canonical)
-
 	nav := navQuery(reqInvite)
-	branding := Branding{SiteName: b.SiteName, LogoURL: logoURL, LogoSrc: template.URL(logoURL), ConsoleURL: b.ConsoleURL, OriginBase: b.OriginBase, HomeURL: "/blog" + nav, SiteKey: b.SiteKey, Theme: b.Theme, Chrome: b.Chrome} //nolint:gosec // 可信后台设置,<img> 呈现
+	branding := b
+	branding.LogoURL = logoURL
+	branding.LogoSrc = template.URL(logoURL) //nolint:gosec // 可信后台设置,<img> 呈现
+	branding.HomeURL = "/blog" + nav
 	returnURL := strings.TrimRight(b.OriginBase, "/") + blogDetailURL(p.Slug, p.Lang, inviteCode)
 	registerURL := buildRegisterURL(b.ConsoleURL, inviteCode, b.SiteKey, returnURL)
 	applyChrome(&branding, reqInvite, registerURL, p.Lang)
@@ -935,9 +1138,13 @@ func buildDetailView(b Branding, p appblog.Post, reqInvite string) DetailView {
 		strLang = canonicalLang(p.Lang)
 	}
 	branding.UI = textFor(strLang)
+	branding.HTMLLang = htmlLanguage(strLang)
+	branding.AnnouncementEnabled, branding.AnnouncementText, branding.AnnouncementLink, branding.AnnouncementHref = resolveLandingAnnouncement(branding.LandingAnnouncementJSON, strLang)
 	if p.PublishedAt != nil {
 		publishedHuman = publishedHumanLabel(*p.PublishedAt, strLang)
 	}
+	jsonLD := buildJSONLD(seoTitle, metaDesc, canonical, ogImage, publishedISO, modifiedISO, b.SiteName, publicImageURL(b.OriginBase, logoURL), branding.HTMLLang)
+	breadcrumbLD := buildBreadcrumbLD(b.OriginBase, b.SiteName, seoTitle, canonical)
 
 	return DetailView{
 		Branding:        branding,
@@ -958,9 +1165,81 @@ func buildDetailView(b Branding, p appblog.Post, reqInvite string) DetailView {
 		CTADesc:         effectiveCTADesc(branding.Chrome, strLang),
 		GateEnabled:     p.GateEnabled && gatePos > 0 && gatePos < 100,
 		GatePosition:    gatePos,
-		JSONLD:          template.JS(jsonLD),
-		BreadcrumbLD:    template.JS(breadcrumbLD),
+		JSONLD:          template.JS(jsonLD),       //nolint:gosec // json.Marshal HTML-escapes hostile fields
+		BreadcrumbLD:    template.JS(breadcrumbLD), //nolint:gosec // json.Marshal HTML-escapes hostile fields
 	}
+}
+
+// buildListJSONLD emits one safely-marshaled graph so search and generative
+// engines can understand both the publication and its ordered article feed.
+func buildListJSONLD(view ListView) string {
+	base := strings.TrimRight(view.OriginBase, "/")
+	publisher := map[string]any{
+		"@type": "Organization",
+		"@id":   base + "/#organization",
+		"name":  firstNonEmpty(view.SiteName, "Blog"),
+		"url":   base + "/",
+	}
+	if logo := publicImageURL(view.OriginBase, view.LogoURL); logo != "" {
+		publisher["logo"] = map[string]any{"@type": "ImageObject", "url": logo}
+	}
+
+	blog := map[string]any{
+		"@type":       "Blog",
+		"@id":         view.Canonical + "#blog",
+		"url":         view.Canonical,
+		"name":        view.PageTitle,
+		"description": view.MetaDescription,
+		"inLanguage":  view.HTMLLang,
+		"publisher":   publisher,
+	}
+	if view.OGImage != "" {
+		blog["image"] = view.OGImage
+	}
+
+	elements := make([]map[string]any, 0, len(view.Posts))
+	for i, post := range view.Posts {
+		article := map[string]any{
+			"@type":    "BlogPosting",
+			"url":      post.Canonical,
+			"headline": post.Title,
+		}
+		if post.Language != "" {
+			article["inLanguage"] = post.Language
+		}
+		if post.Summary != "" {
+			article["description"] = post.Summary
+		}
+		if post.SocialImage != "" {
+			article["image"] = post.SocialImage
+		}
+		if post.PublishedISO != "" {
+			article["datePublished"] = post.PublishedISO
+		}
+		elements = append(elements, map[string]any{
+			"@type":    "ListItem",
+			"position": i + 1,
+			"item":     article,
+		})
+	}
+	itemList := map[string]any{
+		"@type":           "ItemList",
+		"@id":             view.Canonical + "#articles",
+		"url":             view.Canonical,
+		"name":            view.PageTitle,
+		"numberOfItems":   len(elements),
+		"itemListOrder":   "https://schema.org/ItemListOrderDescending",
+		"itemListElement": elements,
+	}
+
+	data, err := json.Marshal(map[string]any{
+		"@context": "https://schema.org",
+		"@graph":   []any{blog, itemList},
+	})
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
 }
 
 // buildBreadcrumbLD 生成 BreadcrumbList 结构化数据(首页 > 博客 > 本文),
@@ -984,7 +1263,7 @@ func buildBreadcrumbLD(originBase, siteName, title, canonical string) string {
 }
 
 // buildJSONLD 生成 BlogPosting 结构化数据(json.Marshal 默认 HTML 转义 <>&,可安全内联 <script>)。
-func buildJSONLD(title, desc, canonical, image, publishedISO, modifiedISO, siteName, logoURL string) string {
+func buildJSONLD(title, desc, canonical, image, publishedISO, modifiedISO, siteName, logoURL, inLanguage string) string {
 	ld := map[string]any{
 		"@context":            "https://schema.org",
 		"@type":               "BlogPosting",
@@ -992,6 +1271,7 @@ func buildJSONLD(title, desc, canonical, image, publishedISO, modifiedISO, siteN
 		"description":         desc,
 		"mainEntityOfPage":    canonical,
 		"isAccessibleForFree": true,
+		"inLanguage":          inLanguage,
 	}
 	if image != "" {
 		ld["image"] = image

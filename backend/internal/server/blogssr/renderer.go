@@ -363,6 +363,9 @@ func (r *Renderer) branding(c *gin.Context) Branding {
 	sitesBrandingRaw := ""
 	consoleURL := ""
 	apiBaseURL := ""
+	socialShareImage := ""
+	ogImage := ""
+	twitterImage := ""
 	items, err := r.settings.List(c.Request.Context(), "site")
 	if err == nil {
 		for _, it := range items {
@@ -371,6 +374,12 @@ func (r *Renderer) branding(c *gin.Context) Branding {
 				b.SiteName = it.Value
 			case "site_logo":
 				b.LogoURL = it.Value
+			case "social_share_image":
+				socialShareImage = strings.TrimSpace(it.Value)
+			case "og_image":
+				ogImage = strings.TrimSpace(it.Value)
+			case "twitter_image":
+				twitterImage = strings.TrimSpace(it.Value)
 			case "api_base_url":
 				apiBaseURL = strings.TrimSpace(it.Value)
 			case "console_url":
@@ -383,11 +392,14 @@ func (r *Renderer) branding(c *gin.Context) Branding {
 				}
 			case "blog_chrome":
 				b.Chrome = parseChrome(it.Value)
+			case "landing_announcement_json":
+				b.LandingAnnouncementJSON = it.Value
 			case "sites_branding":
 				sitesBrandingRaw = it.Value
 			}
 		}
 	}
+	b.SocialImage = firstNonEmpty(socialShareImage, ogImage, twitterImage)
 	// 登录 Token 存在控制台 origin 的 localStorage 中。会话桥必须优先加载
 	// console_url；旧安装没有该设置时才回退 api_base_url，保持向后兼容。
 	b.ConsoleURL = firstNonEmpty(consoleURL, apiBaseURL)
