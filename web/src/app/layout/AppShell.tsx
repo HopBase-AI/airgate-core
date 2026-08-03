@@ -16,6 +16,7 @@ import { usePersistentBoolean } from '../../shared/hooks/usePersistentBoolean';
 import { TopLoadingLine } from '../../shared/components/PageLoading';
 import { AnnouncementBanner } from '../../shared/components/AnnouncementBanner';
 import { SiteBrand } from '../../shared/components/SiteBrand';
+import { useOnboardingReplay } from '../onboarding/OnboardingRoot';
 import {
   LayoutDashboard,
   Users,
@@ -49,6 +50,7 @@ import {
   ChevronDown,
   Boxes,
   Clapperboard,
+  Route,
 } from 'lucide-react';
 
 interface AppShellProps {
@@ -191,6 +193,7 @@ function usePluginMenuItems(isAdmin: boolean, isAPIKeySession: boolean): {
 
 export function AppShell({ children }: AppShellProps) {
   const { user, logout } = useAuth();
+  const { openGuide } = useOnboardingReplay();
   const { t, i18n } = useTranslation();
   const { theme, toggleTheme } = useTheme();
   const site = useSiteSettings();
@@ -367,6 +370,39 @@ export function AppShell({ children }: AppShellProps) {
       </nav>
 
       <div className="space-y-1 border-t border-border p-3">
+        {!isAPIKeySession && !sidebarCollapsed && (
+          <Button
+            data-onboarding-replay="true"
+            className="w-full justify-center"
+            size="sm"
+            variant="ghost"
+            onPress={() => {
+              openGuide();
+              setMobileOpen(false);
+            }}
+          >
+            <Route className="h-4 w-4" />
+            {t('onboarding.sidebar_label')}
+          </Button>
+        )}
+        {!isAPIKeySession && !isMobile && sidebarCollapsed && (
+          <Tooltip>
+            <Tooltip.Trigger className="block w-full">
+              <Button
+                data-onboarding-replay="true"
+                aria-label={t('onboarding.sidebar_label')}
+                className="w-full"
+                isIconOnly
+                size="sm"
+                variant="ghost"
+                onPress={openGuide}
+              >
+                <Route className="h-4 w-4" />
+              </Button>
+            </Tooltip.Trigger>
+            <Tooltip.Content>{t('onboarding.sidebar_label')}</Tooltip.Content>
+          </Tooltip>
+        )}
         {!sidebarCollapsed && (
           <Button
             className="w-full justify-center"

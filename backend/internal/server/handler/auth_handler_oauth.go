@@ -48,7 +48,15 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 		c.Redirect(http.StatusFound, oauthRedirect(returnOrigin, oauthErrorPath(err)))
 		return
 	}
-	c.Redirect(http.StatusFound, oauthRedirect(returnOrigin, "/login#oauth_token="+url.QueryEscape(result.Token)))
+	c.Redirect(http.StatusFound, oauthRedirect(returnOrigin, oauthSuccessPath(result.Token, result.IsNewUser)))
+}
+
+func oauthSuccessPath(token string, isNewUser bool) string {
+	path := "/login#oauth_token=" + url.QueryEscape(token)
+	if isNewUser {
+		path += "&oauth_new_user=1"
+	}
+	return path
 }
 
 // oauthRedirect 拼接回跳地址：origin 非空则跳回该源（跨域控制台场景），否则相对跳转（落回调域）。

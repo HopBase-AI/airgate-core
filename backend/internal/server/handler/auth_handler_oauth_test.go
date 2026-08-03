@@ -102,3 +102,18 @@ func TestOAuthCallbackNoOriginFallsBackRelative(t *testing.T) {
 		t.Fatalf("无回跳源应相对跳转: Location = %q", loc)
 	}
 }
+
+func TestOAuthSuccessPathMarksOnlyNewUsers(t *testing.T) {
+	newUserPath := oauthSuccessPath("header.payload+signature", true)
+	if !strings.Contains(newUserPath, "oauth_new_user=1") {
+		t.Fatalf("新用户回跳缺少 onboarding 标记: %q", newUserPath)
+	}
+	if strings.Contains(newUserPath, "header.payload+signature") {
+		t.Fatalf("OAuth token 必须经过 URL 转义: %q", newUserPath)
+	}
+
+	existingUserPath := oauthSuccessPath("token", false)
+	if strings.Contains(existingUserPath, "oauth_new_user") {
+		t.Fatalf("老用户回跳不应带新用户标记: %q", existingUserPath)
+	}
+}

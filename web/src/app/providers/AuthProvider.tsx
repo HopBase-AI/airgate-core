@@ -12,6 +12,10 @@ import { syncBlogSession } from '../../shared/blogSession';
 import { adoptOriginSite } from '../../shared/originSite';
 import { clearInviteCode } from '../../shared/inviteCode';
 import { resetAdminCache } from '../routeGuards';
+import {
+  clearAllOnboardingSessions,
+  clearOtherOnboardingSessions,
+} from '../../shared/onboarding/storage';
 
 interface AuthContextType {
   user: UserResp | null;
@@ -70,6 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (!cancelled && authRevisionRef.current === revision && currentToken) {
             clearSettledInviteAttribution(currentToken);
             const sessionUser = normalizeSessionUser(userData, currentToken);
+            clearOtherOnboardingSessions(sessionUser.id);
             syncBlogSession(sessionUser, currentToken);
             setUser(sessionUser);
           }
@@ -78,6 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (!cancelled && authRevisionRef.current === revision && getToken() === token) {
             resetAdminCache();
             setToken(null);
+            clearAllOnboardingSessions();
             setUser(null);
           }
         })
@@ -100,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(token);
     clearSettledInviteAttribution(token);
     const sessionUser = normalizeSessionUser(userData, token);
+    clearOtherOnboardingSessions(sessionUser.id);
     syncBlogSession(sessionUser, token);
     setUser(sessionUser);
     // 登录响应可能不包含全部用户字段（例如 API Key 登录时缺少 quota / expires_at），
@@ -120,6 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authRevisionRef.current += 1;
     setToken(null);
     setSessionAPIKey(null);
+    clearAllOnboardingSessions();
     setUser(null);
     resetAdminCache();
     window.location.href = '/login';

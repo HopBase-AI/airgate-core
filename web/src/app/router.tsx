@@ -9,6 +9,7 @@ import { Suspense, useEffect } from 'react';
 import type { ElementType, ReactNode } from 'react';
 import type { PluginBreadcrumbItem } from '../shared/components/PluginBreadcrumbs';
 import { useAuth } from './providers/AuthProvider';
+import { OnboardingRoot } from './onboarding/OnboardingRoot';
 import { ErrorBoundary } from './providers/ErrorBoundary';
 import { getToken, getTokenRole } from '../shared/api/client';
 import { getInviteCodeFromURL } from '../shared/inviteCode';
@@ -123,7 +124,9 @@ function RoutePreloader() {
 const rootRoute = createRootRoute({
   component: () => (
     <ErrorBoundary>
-      <Outlet />
+      <OnboardingRoot>
+        <Outlet />
+      </OnboardingRoot>
     </ErrorBoundary>
   ),
 });

@@ -185,6 +185,9 @@ func TestLoginIssuesTokenForActiveUser(t *testing.T) {
 	if claims.UserID != 7 || result.User.Email != "u@test.com" {
 		t.Fatalf("登录结果异常: user=%+v claims=%+v", result.User, claims)
 	}
+	if result.IsNewUser {
+		t.Fatal("普通登录不应标记为新用户")
+	}
 }
 
 func TestLoginRejectsDisabledUserAndWrongPassword(t *testing.T) {
@@ -268,6 +271,9 @@ func TestRegisterCreatesActiveUserAndToken(t *testing.T) {
 	}
 	if claims.UserID != 9 || result.User.Username != "新用户" {
 		t.Fatalf("注册结果异常: user=%+v claims=%+v", result.User, claims)
+	}
+	if !result.IsNewUser {
+		t.Fatal("注册结果应标记 IsNewUser=true")
 	}
 }
 

@@ -84,8 +84,9 @@ type AuthIdentity struct {
 
 // LoginResult 登录/注册结果。
 type LoginResult struct {
-	Token string
-	User  User
+	Token     string
+	User      User
+	IsNewUser bool
 }
 
 // APIKeyLoginInfo API Key 登录验证后的基本信息。

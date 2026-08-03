@@ -191,11 +191,11 @@ func TestOAuthStateCarriesAttribution(t *testing.T) {
 // resolveReturnOrigin 白名单：同源 / 同父域兄弟子域放行，外域与降级一律拒绝（防 token 经 fragment 泄露到恶意域）。
 func TestResolveReturnOrigin(t *testing.T) {
 	cases := []struct {
-		name     string
-		apiBase  string
-		extra    string // oauth_return_origins 设置
-		raw      string
-		want     string
+		name    string
+		apiBase string
+		extra   string // oauth_return_origins 设置
+		raw     string
+		want    string
 	}{
 		{name: "同源放行", apiBase: "https://api.essevin.com/", raw: "https://api.essevin.com", want: "https://api.essevin.com"},
 		{name: "同父域兄弟子域放行(ToC 主场景)", apiBase: "https://api.essevin.com/", raw: "https://console.essevin.com", want: "https://console.essevin.com"},
@@ -286,6 +286,9 @@ func TestOAuthLoginGoogleCreatesNewUser(t *testing.T) {
 	}
 	if result.Token == "" {
 		t.Fatal("应签发 JWT")
+	}
+	if !result.IsNewUser {
+		t.Fatal("OAuth 新建用户应返回 IsNewUser=true")
 	}
 	if created == nil || created.Email != "new@example.com" {
 		t.Fatalf("新用户邮箱应小写归一化, got %+v", created)
@@ -388,6 +391,9 @@ func TestOAuthLoginExistingIdentitySkipsBinding(t *testing.T) {
 	}
 	if result.User.ID != 9 {
 		t.Fatalf("应登录到绑定用户 9, got %d", result.User.ID)
+	}
+	if result.IsNewUser {
+		t.Fatal("已绑定 OAuth 用户不应标记为新用户")
 	}
 }
 
