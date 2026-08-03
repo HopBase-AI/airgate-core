@@ -361,16 +361,128 @@ func (s *GroupStore) Delete(ctx context.Context, id int) error {
 }
 
 func (s *GroupStore) availableAccountIDsForGroup(ctx context.Context, groupID int) (map[int64]struct{}, error) {
+	group, err := s.db.Group.Get(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
 	accounts, err := s.db.Account.Query().
 		Where(
 			entaccount.HasGroupsWith(entgroup.IDEQ(groupID)),
-			entaccount.StateNEQ(entaccount.StateDisabled),
+			entaccount.PlatformEQ(group.Platform),
 		).
 		IDs(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return accountIDsByAvailability(accounts, nil), nil
+}
+
+// reconcileModelRoutingForAccount 把一个可调度账号补入其已绑定分组的现有模型项。
+// model_routing 的 key 表示管理员已配置的模型；账号新增、重新挂组或恢复后，
+// 应加入这些模型的账号列表，包括修复历史遗留的空列表。
+func (s *GroupStore) reconcileModelRoutingForAccount(ctx context.Context, accountID int, groupIDs ...int) error {
+	query := s.db.Account.Query().
+		Where(entaccount.IDEQ(accountID)).
+		WithGroups(func(query *ent.GroupQuery) {
+			if len(groupIDs) > 0 {
+				query.Where(entgroup.IDIn(groupIDs...))
+			}
+		})
+	item, err := query.Only(ctx)
+	if err != nil {
+		return err
+	}
+	if item.State == entaccount.StateDisabled {
+		return nil
+	}
+
+	for _, group := range item.Edges.Groups {
+		if group.Platform != item.Platform || len(group.ModelRouting) == 0 {
+			continue
+		}
+		reconciled := appendAccountToModelRouting(group.ModelRouting, int64(item.ID))
+		if modelRoutingEqual(group.ModelRouting, reconciled) {
+			continue
+		}
+		if err := s.db.Group.UpdateOneID(group.ID).SetModelRouting(reconciled).Exec(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func appendAccountToModelRouting(input map[string][]int64, accountID int64) map[string][]int64 {
+	result := make(map[string][]int64, len(input))
+	for model, ids := range input {
+		updated := append([]int64(nil), ids...)
+		found := false
+		for _, id := range ids {
+			if id == accountID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			updated = append(updated, accountID)
+		}
+		result[model] = updated
+	}
+	return result
+}
+
+// BackfillEmptyModelRouting 修复历史上因账号禁用清理留下的空模型路由。
+// 只填充已有但为空的模型项，不改动管理员已经配置好的非空账号子集。
+func (s *GroupStore) BackfillEmptyModelRouting(ctx context.Context) (int, int, error) {
+	groups, err := s.db.Group.Query().All(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	updatedGroups := 0
+	updatedRoutes := 0
+	for _, group := range groups {
+		hasEmptyRoute := false
+		for _, ids := range group.ModelRouting {
+			if len(ids) == 0 {
+				hasEmptyRoute = true
+				break
+			}
+		}
+		if !hasEmptyRoute {
+			continue
+		}
+
+		accountIDs, err := s.db.Account.Query().
+			Where(
+				entaccount.HasGroupsWith(entgroup.IDEQ(group.ID)),
+				entaccount.PlatformEQ(group.Platform),
+				entaccount.StateNEQ(entaccount.StateDisabled),
+			).
+			IDs(ctx)
+		if err != nil {
+			return updatedGroups, updatedRoutes, err
+		}
+		fallback := sortedAccountIDs(accountIDsByAvailability(accountIDs, nil))
+		if len(fallback) == 0 {
+			continue
+		}
+
+		reconciled := appgroupCloneModelRouting(group.ModelRouting)
+		groupRoutes := 0
+		for model, ids := range reconciled {
+			if len(ids) != 0 {
+				continue
+			}
+			reconciled[model] = append([]int64(nil), fallback...)
+			groupRoutes++
+		}
+		if err := s.db.Group.UpdateOneID(group.ID).SetModelRouting(reconciled).Exec(ctx); err != nil {
+			return updatedGroups, updatedRoutes, err
+		}
+		updatedGroups++
+		updatedRoutes += groupRoutes
+	}
+	return updatedGroups, updatedRoutes, nil
 }
 
 func (s *GroupStore) sanitizeModelRoutingForGroups(ctx context.Context, groupIDs ...int) error {

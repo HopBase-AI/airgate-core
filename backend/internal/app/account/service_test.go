@@ -484,10 +484,15 @@ func (s stubRepository) SaveCredentials(context.Context, int, map[string]string)
 
 // stubStateWriter 捕获 StateWriter 调用。
 type stubStateWriter struct {
-	rateLimited    map[int]*time.Time
-	cleared        map[int]bool
-	markersCleared map[int]int
-	disabled       map[int]string
+	rateLimited        map[int]*time.Time
+	cleared            map[int]bool
+	markersCleared     map[int]int
+	disabled           map[int]string
+	routeInvalidations []int
+}
+
+func (s *stubStateWriter) InvalidateRouteCache(groupID int) {
+	s.routeInvalidations = append(s.routeInvalidations, groupID)
 }
 
 func newStubStateWriter() *stubStateWriter {
@@ -524,6 +529,35 @@ func (s *stubStateWriter) ManualRecover(_ context.Context, _ int) error {
 func (s *stubStateWriter) ManualDisable(_ context.Context, accountID int, reason string) error {
 	s.disabled[accountID] = reason
 	return nil
+}
+
+func TestAccountMutationsInvalidateRouteCache(t *testing.T) {
+	writer := newStubStateWriter()
+	svc := NewService(stubRepository{}, nil, nil, writer)
+	ctx := context.Background()
+
+	if _, err := svc.Create(ctx, CreateInput{Name: "plus", Platform: "openai"}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := svc.Update(ctx, 18, UpdateInput{}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if err := svc.Delete(ctx, 18); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	result := svc.BulkDelete(ctx, []int{47})
+	if result.Success != 1 {
+		t.Fatalf("BulkDelete result = %+v, want one success", result)
+	}
+
+	if len(writer.routeInvalidations) != 4 {
+		t.Fatalf("route invalidations = %v, want four full invalidations", writer.routeInvalidations)
+	}
+	for _, groupID := range writer.routeInvalidations {
+		if groupID != 0 {
+			t.Fatalf("route invalidations = %v, want only full invalidations", writer.routeInvalidations)
+		}
+	}
 }
 
 type stubPluginCatalog struct {

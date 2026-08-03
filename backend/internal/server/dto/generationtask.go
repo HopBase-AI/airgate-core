@@ -2,26 +2,28 @@ package dto
 
 // GenerationTaskResp 是管理员生成任务监控列表项。
 type GenerationTaskResp struct {
-	ID           int    `json:"id"`
-	PublicTaskID string `json:"public_task_id,omitempty"`
-	PluginID     string `json:"plugin_id"`
-	TaskType     string `json:"task_type"`
-	Kind         string `json:"kind"`
-	Model        string `json:"model,omitempty"`
-	Status       string `json:"status"`
-	Stage        string `json:"stage,omitempty"`
-	UserID       int    `json:"user_id"`
-	UserEmail    string `json:"user_email,omitempty"`
-	Progress     int    `json:"progress"`
-	Attempts     int    `json:"attempts"`
-	MaxAttempts  int    `json:"max_attempts"`
-	ErrorType    string `json:"error_type,omitempty"`
-	ErrorCode    string `json:"error_code,omitempty"`
-	ErrorMessage string `json:"error_message,omitempty"`
-	CreatedAt    string `json:"created_at"`
-	UpdatedAt    string `json:"updated_at"`
-	StartedAt    string `json:"started_at,omitempty"`
-	CompletedAt  string `json:"completed_at,omitempty"`
+	ID                  int    `json:"id"`
+	PublicTaskID        string `json:"public_task_id,omitempty"`
+	PluginID            string `json:"plugin_id"`
+	TaskType            string `json:"task_type"`
+	Kind                string `json:"kind"`
+	Model               string `json:"model,omitempty"`
+	Status              string `json:"status"`
+	Stage               string `json:"stage,omitempty"`
+	UserID              int    `json:"user_id"`
+	UserEmail           string `json:"user_email,omitempty"`
+	Progress            int    `json:"progress"`
+	Attempts            int    `json:"attempts"`
+	MaxAttempts         int    `json:"max_attempts"`
+	ErrorType           string `json:"error_type,omitempty"`
+	ErrorCode           string `json:"error_code,omitempty"`
+	ErrorMessage        string `json:"error_message,omitempty"`
+	CreatedAt           string `json:"created_at"`
+	UpdatedAt           string `json:"updated_at"`
+	StartedAt           string `json:"started_at,omitempty"`
+	CompletedAt         string `json:"completed_at,omitempty"`
+	UpstreamCreatedAt   string `json:"upstream_created_at,omitempty"`
+	UpstreamCompletedAt string `json:"upstream_completed_at,omitempty"`
 }
 
 // GenerationTaskSummaryResp 是生成队列健康摘要。

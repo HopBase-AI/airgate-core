@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -947,11 +948,28 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 			continue
 		}
 
-		for attempt := 0; attempt < maxHostForwardAttempts; attempt++ {
-			acc, err := h.scheduler.SelectAccountWithRequirements(ctx, route.Platform, model, 0, route.GroupID, "", hostAccountRequirements(h.manager, req), hardExclude...)
+		softExclude := make([]int, 0, maxHostForwardAttempts)
+		attempt := 0
+		queueDeadline := time.Now().Add(hostForwardCapacityWaitTimeout)
+		queuePollDelay := hostForwardCapacityPollInterval
+		waitingForLocalCapacity := false
+		for attempt < maxHostForwardAttempts {
+			exclude := make([]int, 0, len(hardExclude)+len(softExclude))
+			exclude = append(exclude, hardExclude...)
+			exclude = append(exclude, softExclude...)
+			acc, err := h.scheduler.SelectAccountWithRequirements(ctx, route.Platform, model, 0, route.GroupID, "", hostAccountRequirements(h.manager, req), exclude...)
 			if err != nil {
 				if cerr := hostContextError(err); cerr != nil {
 					return nil, cerr
+				}
+				if (attempt == 0 || waitingForLocalCapacity) && isTransientHostSelectionError(err) {
+					softExclude = softExclude[:0]
+					if waitForHostCapacity(ctx, queueDeadline, &queuePollDelay) {
+						continue
+					}
+					if cerr := hostContextError(ctx.Err()); cerr != nil {
+						return nil, cerr
+					}
 				}
 				slog.Warn("host_forward_pick_account_failed",
 					sdk.LogFieldPlatform, route.Platform,
@@ -973,6 +991,15 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 				return nil, hostForwardGenericError()
 			}
 
+			releaseAccountSlot, ok := h.acquireHostAccountSlot(ctx, accFull)
+			if !ok {
+				waitingForLocalCapacity = true
+				softExclude = append(softExclude, acc.ID)
+				continue
+			}
+			waitingForLocalCapacity = false
+			queuePollDelay = hostForwardCapacityPollInterval
+
 			headers := hostForwardHeaders(req, route)
 			applyAccountCapabilityHeaders(headers, accFull)
 			fwdReq := &sdk.ForwardRequest{
@@ -985,8 +1012,10 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 
 			start := time.Now()
 			outcome, fwdErr := inst.Gateway.Forward(fwdCtx, fwdReq)
+			attempt++
 			duration := time.Since(start)
-			h.applyHostOutcome(ctx, acc.ID, accFull, model, outcome, duration)
+			releaseAccountSlot()
+			h.applyHostOutcome(finalizeRequestContext(ctx), acc.ID, accFull, model, outcome, duration)
 			if returnableUpstream(outcome.Upstream) {
 				lastUpstream = outcome.Upstream
 				hasLastUpstream = true
@@ -1000,7 +1029,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 					sdk.LogFieldGroupID, route.GroupID,
 					"effective_rate", route.EffectiveRate,
 					sdk.LogFieldAccountID, acc.ID,
-					"attempt", attempt+1,
+					"attempt", attempt,
 					"kind", outcome.Kind,
 					sdk.LogFieldReason, outcome.Reason,
 					sdk.LogFieldError, fwdErr,
@@ -1108,6 +1137,18 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 	fwdCtx, cancel := context.WithTimeout(ctx, hostForwardTimeout(h.manager, req))
 	defer cancel()
 
+	releaseAccountSlot, ok := h.waitForHostAccountSlot(fwdCtx, accFull)
+	if !ok {
+		if cerr := hostContextError(fwdCtx.Err()); cerr != nil {
+			return nil, cerr
+		}
+		slog.Warn("host_forward_pinned_capacity_unavailable",
+			sdk.LogFieldAccountID, accFull.ID,
+			sdk.LogFieldGroupID, route.GroupID,
+		)
+		return nil, hostForwardGenericError()
+	}
+
 	headers := hostForwardHeaders(req, route)
 	applyAccountCapabilityHeaders(headers, accFull)
 	fwdReq := &sdk.ForwardRequest{
@@ -1121,7 +1162,8 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 	start := time.Now()
 	outcome, fwdErr := inst.Gateway.Forward(fwdCtx, fwdReq)
 	duration := time.Since(start)
-	h.applyHostOutcome(ctx, accFull.ID, accFull, model, outcome, duration)
+	releaseAccountSlot()
+	h.applyHostOutcome(finalizeRequestContext(ctx), accFull.ID, accFull, model, outcome, duration)
 	if cerr := hostContextError(fwdErr); cerr != nil {
 		return nil, cerr
 	}
@@ -1207,11 +1249,28 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 			continue
 		}
 
-		for attempt := 0; attempt < maxHostForwardAttempts; attempt++ {
-			acc, err := h.scheduler.SelectAccountWithRequirements(ctx, route.Platform, model, 0, route.GroupID, "", hostAccountRequirements(h.manager, req), hardExclude...)
+		softExclude := make([]int, 0, maxHostForwardAttempts)
+		attempt := 0
+		queueDeadline := time.Now().Add(hostForwardCapacityWaitTimeout)
+		queuePollDelay := hostForwardCapacityPollInterval
+		waitingForLocalCapacity := false
+		for attempt < maxHostForwardAttempts {
+			exclude := make([]int, 0, len(hardExclude)+len(softExclude))
+			exclude = append(exclude, hardExclude...)
+			exclude = append(exclude, softExclude...)
+			acc, err := h.scheduler.SelectAccountWithRequirements(ctx, route.Platform, model, 0, route.GroupID, "", hostAccountRequirements(h.manager, req), exclude...)
 			if err != nil {
 				if cerr := hostContextError(err); cerr != nil {
 					return cerr
+				}
+				if (attempt == 0 || waitingForLocalCapacity) && isTransientHostSelectionError(err) {
+					softExclude = softExclude[:0]
+					if waitForHostCapacity(fwdCtx, queueDeadline, &queuePollDelay) {
+						continue
+					}
+					if cerr := hostContextError(fwdCtx.Err()); cerr != nil {
+						return cerr
+					}
 				}
 				slog.Warn("host_forward_stream_pick_account_failed",
 					sdk.LogFieldPlatform, route.Platform,
@@ -1233,6 +1292,15 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 				return hostForwardGenericError()
 			}
 
+			releaseAccountSlot, ok := h.acquireHostAccountSlot(fwdCtx, accFull)
+			if !ok {
+				waitingForLocalCapacity = true
+				softExclude = append(softExclude, acc.ID)
+				continue
+			}
+			waitingForLocalCapacity = false
+			queuePollDelay = hostForwardCapacityPollInterval
+
 			fw := &failoverStreamWriter{target: sw}
 			headers := hostForwardHeaders(req, route)
 			applyAccountCapabilityHeaders(headers, accFull)
@@ -1247,8 +1315,10 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 
 			start := time.Now()
 			outcome, fwdErr := inst.Gateway.Forward(fwdCtx, fwdReq)
+			attempt++
 			duration := time.Since(start)
-			h.applyHostOutcome(ctx, acc.ID, accFull, model, outcome, duration)
+			releaseAccountSlot()
+			h.applyHostOutcome(finalizeRequestContext(ctx), acc.ID, accFull, model, outcome, duration)
 			if cerr := hostContextError(fwdErr); cerr != nil {
 				return cerr
 			}
@@ -1259,7 +1329,7 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 					sdk.LogFieldGroupID, route.GroupID,
 					"effective_rate", route.EffectiveRate,
 					sdk.LogFieldAccountID, acc.ID,
-					"attempt", attempt+1,
+					"attempt", attempt,
 					"kind", outcome.Kind,
 					sdk.LogFieldReason, outcome.Reason,
 					sdk.LogFieldError, fwdErr,
@@ -1331,10 +1401,109 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 
 // maxHostForwardAttempts 最大 failover 次数，与 Forwarder 保持一致。
 const (
-	maxHostForwardAttempts    = 3
-	defaultHostForwardTimeout = 120 * time.Second
-	imageHostForwardTimeout   = 300 * time.Second
+	maxHostForwardAttempts             = 3
+	defaultHostForwardTimeout          = 120 * time.Second
+	imageHostForwardTimeout            = 300 * time.Second
+	hostForwardCapacityWaitTimeout     = 60 * time.Second
+	hostForwardCapacityPollInterval    = 200 * time.Millisecond
+	hostForwardCapacityMaxPollInterval = 2 * time.Second
 )
+
+// acquireHostAccountSlot mirrors the account-level gate used by the public
+// Forwarder. RPM is reserved before the concurrency slot; a failed slot acquire
+// rolls RPM back because no upstream request was made.
+func (h *HostService) acquireHostAccountSlot(ctx context.Context, acc *ent.Account) (func(), bool) {
+	if h == nil || h.scheduler == nil || acc == nil {
+		return nil, false
+	}
+
+	maxRPM := scheduler.ExtraInt(acc.Extra, "max_rpm")
+	if !h.scheduler.TryIncrementRPM(ctx, acc.ID, maxRPM) {
+		slog.Info("host_forward_account_rpm_full",
+			sdk.LogFieldAccountID, acc.ID,
+			"max_rpm", maxRPM,
+		)
+		return nil, false
+	}
+
+	requestID := uuid.NewString()
+	maxConcurrency := acc.MaxConcurrency
+	if maxConcurrency <= 0 {
+		maxConcurrency = scheduler.DefaultAccountMaxConcurrency
+	}
+	slotTTL := time.Duration(scheduler.ExtraInt(acc.Extra, "slot_ttl_seconds")) * time.Second
+	if h.concurrency != nil {
+		if err := h.concurrency.AcquireSlot(ctx, acc.ID, requestID, maxConcurrency, slotTTL); err != nil {
+			h.scheduler.DecrementRPM(finalizeRequestContext(ctx), acc.ID)
+			slog.Info("host_forward_account_concurrency_full",
+				sdk.LogFieldAccountID, acc.ID,
+				"max_concurrency", maxConcurrency,
+			)
+			return nil, false
+		}
+	}
+
+	return func() {
+		if h.concurrency != nil {
+			h.concurrency.ReleaseSlot(context.Background(), acc.ID, requestID)
+		}
+	}, true
+}
+
+func (h *HostService) waitForHostAccountSlot(ctx context.Context, acc *ent.Account) (func(), bool) {
+	deadline := time.Now().Add(hostForwardCapacityWaitTimeout)
+	pollDelay := hostForwardCapacityPollInterval
+	for {
+		if release, ok := h.acquireHostAccountSlot(ctx, acc); ok {
+			return release, true
+		}
+		if !waitForHostCapacity(ctx, deadline, &pollDelay) {
+			return nil, false
+		}
+	}
+}
+
+func isTransientHostSelectionError(err error) bool {
+	return errors.Is(err, scheduler.ErrNoAvailableAccount) &&
+		!errors.Is(err, scheduler.ErrGroupOffline) &&
+		!errors.Is(err, scheduler.ErrModelNotServed)
+}
+
+func waitForHostCapacity(ctx context.Context, deadline time.Time, pollDelay *time.Duration) bool {
+	if pollDelay == nil || !time.Now().Before(deadline) {
+		return false
+	}
+	wait := *pollDelay
+	if wait <= 0 {
+		wait = hostForwardCapacityPollInterval
+	}
+	if remaining := time.Until(deadline); remaining < wait {
+		wait = remaining
+	}
+	if wait <= 0 {
+		return false
+	}
+
+	timer := time.NewTimer(wait)
+	select {
+	case <-ctx.Done():
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		return false
+	case <-timer.C:
+	}
+
+	next := wait * 2
+	if next > hostForwardCapacityMaxPollInterval {
+		next = hostForwardCapacityMaxPollInterval
+	}
+	*pollDelay = next
+	return true
+}
 
 func hostForwardTimeout(mgr *Manager, req hostForwardRequest) time.Duration {
 	if requestHasImageWorkload(mgr, req.Path, req.Model, hostForwardBody(req.Body)) {

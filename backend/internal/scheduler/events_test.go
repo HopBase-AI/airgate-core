@@ -192,6 +192,70 @@ func TestManualOpsRecordEvents(t *testing.T) {
 	}
 }
 
+func TestManualAccountStateChangesPreserveAndRecoverModelRouting(t *testing.T) {
+	db := enttestOpenEvents(t)
+	ctx := context.Background()
+	group, err := db.Group.Create().
+		SetName("codex-plus").
+		SetPlatform("openai").
+		SetModelRouting(map[string][]int64{"gpt-5.6": {}}).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	acc, err := db.Account.Create().
+		SetName("plus").
+		SetPlatform("openai").
+		SetType("oauth").
+		SetCredentials(map[string]string{}).
+		SetState(entaccount.StateDisabled).
+		AddGroupIDs(group.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	s := &Scheduler{db: db, state: NewStateMachine(db, nil, nil), routeCache: newRouteCache(0)}
+
+	if err := s.ManualRecover(ctx, acc.ID); err != nil {
+		t.Fatalf("ManualRecover: %v", err)
+	}
+	s.state.waitEvents()
+	assertModelRouteAccountIDs(t, ctx, db, group.ID, "gpt-5.6", []int64{int64(acc.ID)})
+
+	if err := s.ManualDisable(ctx, acc.ID, "手动关闭"); err != nil {
+		t.Fatalf("ManualDisable: %v", err)
+	}
+	s.state.waitEvents()
+	assertModelRouteAccountIDs(t, ctx, db, group.ID, "gpt-5.6", []int64{int64(acc.ID)})
+
+	s.MarkDisabled(ctx, acc.ID, "凭证失效")
+	s.state.waitEvents()
+	assertModelRouteAccountIDs(t, ctx, db, group.ID, "gpt-5.6", []int64{int64(acc.ID)})
+
+	if err := s.ManualRecover(ctx, acc.ID); err != nil {
+		t.Fatalf("second ManualRecover: %v", err)
+	}
+	s.state.waitEvents()
+	assertModelRouteAccountIDs(t, ctx, db, group.ID, "gpt-5.6", []int64{int64(acc.ID)})
+}
+
+func assertModelRouteAccountIDs(t *testing.T, ctx context.Context, db *ent.Client, groupID int, model string, want []int64) {
+	t.Helper()
+	group, err := db.Group.Get(ctx, groupID)
+	if err != nil {
+		t.Fatalf("get group: %v", err)
+	}
+	got := group.ModelRouting[model]
+	if len(got) != len(want) {
+		t.Fatalf("%s route = %v, want %v", model, got, want)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("%s route = %v, want %v", model, got, want)
+		}
+	}
+}
+
 // TestAccountDeleteCascadesEvents 删除账号必须级联清掉事件（Required 边不级联会外键冲突）。
 func TestAccountDeleteCascadesEvents(t *testing.T) {
 	db := enttestOpenEvents(t)

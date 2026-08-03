@@ -73,24 +73,26 @@ func (s *GenerationTaskStore) List(ctx context.Context, filter appgenerationtask
 	list := make([]appgenerationtask.Task, 0, len(rows))
 	for _, row := range rows {
 		item := appgenerationtask.Task{
-			ID:           row.ID,
-			PluginID:     row.PluginID,
-			TaskType:     row.TaskType,
-			Kind:         generationKind(row.TaskType),
-			Model:        taskModel(row.Input),
-			Status:       row.Status.String(),
-			Stage:        row.Stage,
-			UserID:       row.UserID,
-			Progress:     row.Progress,
-			Attempts:     row.Attempts,
-			MaxAttempts:  row.MaxAttempts,
-			ErrorType:    row.ErrorType,
-			ErrorCode:    row.ErrorCode,
-			ErrorMessage: row.ErrorMessage,
-			CreatedAt:    row.CreatedAt,
-			UpdatedAt:    row.UpdatedAt,
-			StartedAt:    row.StartedAt,
-			CompletedAt:  row.CompletedAt,
+			ID:                  row.ID,
+			PluginID:            row.PluginID,
+			TaskType:            row.TaskType,
+			Kind:                generationKind(row.TaskType),
+			Model:               taskModel(row.Input),
+			Status:              row.Status.String(),
+			Stage:               row.Stage,
+			UserID:              row.UserID,
+			Progress:            row.Progress,
+			Attempts:            row.Attempts,
+			MaxAttempts:         row.MaxAttempts,
+			ErrorType:           row.ErrorType,
+			ErrorCode:           row.ErrorCode,
+			ErrorMessage:        row.ErrorMessage,
+			CreatedAt:           row.CreatedAt,
+			UpdatedAt:           row.UpdatedAt,
+			StartedAt:           row.StartedAt,
+			CompletedAt:         row.CompletedAt,
+			UpstreamCreatedAt:   taskExecutionTime(row.Execution, "upstream_created_at"),
+			UpstreamCompletedAt: taskExecutionTime(row.Execution, "upstream_completed_at"),
 		}
 		if row.PublicTaskID != nil {
 			item.PublicTaskID = *row.PublicTaskID
@@ -99,6 +101,15 @@ func (s *GenerationTaskStore) List(ctx context.Context, filter appgenerationtask
 	}
 	s.fillUserEmails(ctx, list)
 	return list, int64(total), nil
+}
+
+func taskExecutionTime(execution map[string]interface{}, key string) *time.Time {
+	raw, _ := execution[key].(string)
+	parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(raw))
+	if err != nil {
+		return nil
+	}
+	return &parsed
 }
 
 func taskModel(input map[string]interface{}) string {

@@ -2,12 +2,10 @@ package scheduler
 
 import (
 	"context"
-	"sort"
 	"time"
 
 	"github.com/DouDOU-start/airgate-core/ent/account"
 	"github.com/DouDOU-start/airgate-core/ent/accountevent"
-	entgroup "github.com/DouDOU-start/airgate-core/ent/group"
 )
 
 // 管理员 / 配额巡检的状态写入口。这些调用不经过 Apply —— 它们是"外部已知事实"
@@ -23,7 +21,7 @@ func (s *Scheduler) ManualRecover(ctx context.Context, accountID int) error {
 		SetErrorMsg("").
 		Exec(dbCtx)
 	if err == nil {
-		_ = s.sanitizeModelRoutingForAccount(ctx, accountID)
+		_ = s.reconcileModelRoutingForAccount(ctx, accountID)
 		s.routeCache.InvalidateAll()
 		s.state.recordEvent(accountID, 0, 0, accountevent.EventTypeManualRecovered, "", "", eventSourceManual, 0, nil)
 	}
@@ -40,7 +38,6 @@ func (s *Scheduler) ManualDisable(ctx context.Context, accountID int, reason str
 		SetErrorMsg(truncateReason(reason)).
 		Exec(dbCtx)
 	if err == nil {
-		_ = s.sanitizeModelRoutingForAccount(ctx, accountID)
 		s.routeCache.InvalidateAll()
 		s.state.recordEvent(accountID, 0, 0, accountevent.EventTypeManualDisabled, reason, "", eventSourceManual, 0, nil)
 	}
@@ -87,7 +84,6 @@ func (s *Scheduler) MarkDisabled(ctx context.Context, accountID int, reason stri
 	if !alreadyIn {
 		s.state.recordEvent(accountID, 0, 0, accountevent.EventTypeDisabled, reason, "", eventSourceProbe, 0, nil)
 	}
-	_ = s.sanitizeModelRoutingForAccount(ctx, accountID)
 	s.routeCache.InvalidateAll()
 }
 
@@ -99,81 +95,48 @@ func (s *Scheduler) accountInState(ctx context.Context, accountID int, target ac
 	return err == nil && item.State == target
 }
 
-func (s *Scheduler) sanitizeModelRoutingForAccount(ctx context.Context, accountID int) error {
+func (s *Scheduler) reconcileModelRoutingForAccount(ctx context.Context, accountID int) error {
 	dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
 	defer cancel()
 
-	groups, err := s.db.Group.Query().
-		Where(entgroup.HasAccountsWith(account.IDEQ(accountID))).
-		All(dbCtx)
+	item, err := s.db.Account.Query().
+		Where(account.IDEQ(accountID)).
+		WithGroups().
+		Only(dbCtx)
 	if err != nil {
 		return err
 	}
-	for _, group := range groups {
-		if len(group.ModelRouting) == 0 {
+	for _, group := range item.Edges.Groups {
+		if group.Platform != item.Platform || len(group.ModelRouting) == 0 {
 			continue
 		}
-		accountIDs, err := s.db.Account.Query().
-			Where(
-				account.HasGroupsWith(entgroup.IDEQ(group.ID)),
-				account.StateNEQ(account.StateDisabled),
-			).
-			IDs(dbCtx)
-		if err != nil {
-			return err
-		}
-		available := make(map[int64]struct{}, len(accountIDs))
-		for _, id := range accountIDs {
-			available[int64(id)] = struct{}{}
-		}
-		cleaned := sanitizeModelRouting(group.ModelRouting, available)
-		if modelRoutingEqual(group.ModelRouting, cleaned) {
+		reconciled := appendAccountToModelRouting(group.ModelRouting, int64(item.ID))
+		if modelRoutingEqual(group.ModelRouting, reconciled) {
 			continue
 		}
-		if err := s.db.Group.UpdateOneID(group.ID).SetModelRouting(cleaned).Exec(dbCtx); err != nil {
+		if err := s.db.Group.UpdateOneID(group.ID).SetModelRouting(reconciled).Exec(dbCtx); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func sanitizeModelRouting(input map[string][]int64, availableAccountIDs map[int64]struct{}) map[string][]int64 {
-	if input == nil {
-		return nil
-	}
-	cleaned := make(map[string][]int64, len(input))
-	fallback := sortedAccountIDs(availableAccountIDs)
+func appendAccountToModelRouting(input map[string][]int64, accountID int64) map[string][]int64 {
+	result := make(map[string][]int64, len(input))
 	for model, ids := range input {
-		if len(ids) == 0 {
-			cleaned[model] = []int64{}
-			continue
-		}
-		kept := make([]int64, 0, len(ids))
-		seen := make(map[int64]struct{}, len(ids))
+		updated := append([]int64(nil), ids...)
+		found := false
 		for _, id := range ids {
-			if _, ok := availableAccountIDs[id]; !ok {
-				continue
+			if id == accountID {
+				found = true
+				break
 			}
-			if _, ok := seen[id]; ok {
-				continue
-			}
-			seen[id] = struct{}{}
-			kept = append(kept, id)
 		}
-		if len(kept) == 0 && len(fallback) > 0 {
-			kept = append([]int64(nil), fallback...)
+		if !found {
+			updated = append(updated, accountID)
 		}
-		cleaned[model] = kept
+		result[model] = updated
 	}
-	return cleaned
-}
-
-func sortedAccountIDs(ids map[int64]struct{}) []int64 {
-	result := make([]int64, 0, len(ids))
-	for id := range ids {
-		result = append(result, id)
-	}
-	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
 	return result
 }
 
