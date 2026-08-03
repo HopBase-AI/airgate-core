@@ -1,6 +1,7 @@
 package blogssr
 
 import (
+	"encoding/json"
 	"net/url"
 	"strings"
 	"testing"
@@ -141,7 +142,7 @@ func TestBuildDetailView_SEOAndCTA(t *testing.T) {
 	}
 	assertRegisterURL(t, v.RegisterURL, "abc123", "", "https://hop-base.com/blog/my-post?inv=abc123")
 	jsonld := string(v.JSONLD)
-	for _, want := range []string{`"@type":"BlogPosting"`, `"isAccessibleForFree":true`, "My Post", "hop-base.com/blog/my-post"} {
+	for _, want := range []string{`"@type":"BlogPosting"`, `"isAccessibleForFree":true`, `"inLanguage":"zh-Hant"`, "My Post", "hop-base.com/blog/my-post"} {
 		if !strings.Contains(jsonld, want) {
 			t.Errorf("json-ld missing %q\n got: %s", want, jsonld)
 		}
@@ -277,13 +278,16 @@ func TestBuildListView(t *testing.T) {
 		{Title: "A", Slug: "a", Summary: "sa", CoverImage: "/c.png", PublishedAt: &pub},
 	}
 	v := buildListView(b, posts, "", "")
-	if v.PageTitle != "HopBase · Blog" {
+	if v.PageTitle != "HopBase 博客" {
 		t.Errorf("page title = %q", v.PageTitle)
 	}
 	if len(v.Posts) != 1 {
 		t.Fatalf("posts len = %d", len(v.Posts))
 	}
 	it := v.Posts[0]
+	if it.Language != "zh-Hant" {
+		t.Errorf("legacy post language = %q, want resolved list language zh-Hant", it.Language)
+	}
 	if it.URL != "/blog/a" {
 		t.Errorf("url = %q", it.URL)
 	}
@@ -299,11 +303,112 @@ func TestBuildListView(t *testing.T) {
 
 	// 空品牌名 + 空列表
 	v2 := buildListView(Branding{OriginBase: "https://x.com"}, nil, "", "")
-	if v2.PageTitle != "Blog" {
-		t.Errorf("empty brand page title = %q, want Blog", v2.PageTitle)
+	if v2.PageTitle != "博客" {
+		t.Errorf("empty brand page title = %q, want 博客", v2.PageTitle)
 	}
 	if len(v2.Posts) != 0 {
 		t.Error("empty posts expected")
+	}
+}
+
+func TestResolveLandingAnnouncement(t *testing.T) {
+	enabled, text, link, href := resolveLandingAnnouncement(`{
+		"href":"#pricing",
+		"text":{"zh-HK":"繁體公告","en":"English notice"},
+		"link":{"zh-HK":"查看收費"}
+	}`, "zh-Hant")
+	if !enabled || text != "繁體公告" || link != "查看收費" || href != "/#pricing" {
+		t.Fatalf("localized announcement = %v %q %q %q", enabled, text, link, href)
+	}
+
+	enabled, text, link, href = resolveLandingAnnouncement(`{"enabled":false}`, "en")
+	if enabled || text == "" || link == "" || href != "/#pricing" {
+		t.Fatalf("disabled announcement should retain safe defaults without rendering: %v %q %q %q", enabled, text, link, href)
+	}
+
+	enabled, text, link, href = resolveLandingAnnouncement(`{invalid`, "zh")
+	if !enabled || text != defaultLandingAnnouncementText["zh"] || link != defaultLandingAnnouncementLink["zh"] || href != "/#pricing" {
+		t.Fatalf("invalid announcement should degrade to defaults: %v %q %q %q", enabled, text, link, href)
+	}
+	if got := announcementHref("javascript:alert(1)"); got != "/#pricing" {
+		t.Fatalf("unsafe announcement href = %q", got)
+	}
+}
+
+func TestBuildListView_SEOAndGEO(t *testing.T) {
+	pub := time.Date(2026, 8, 4, 9, 0, 0, 0, time.UTC)
+	b := Branding{
+		SiteName:    "HopBase",
+		OriginBase:  "https://hop-base.com",
+		Theme:       themeHopBase,
+		LogoURL:     "data:image/svg+xml;base64,AAAA",
+		SocialImage: "data:image/png;base64,BBBB",
+		Chrome: Chrome{
+			ShowLangs: true, DefaultLang: "zh-Hant", Title: "Engineering journal", Subtitle: "Routing notes and model practice.",
+		},
+	}
+	posts := []appblog.Post{
+		{Title: `First </script><script>alert(1)</script>`, Slug: "first", Summary: "first summary", CoverImage: "data:image/png;base64,CCCC", Lang: "en", PublishedAt: &pub},
+		{Title: "Second", Slug: "second", Summary: "second summary", CoverImage: "/assets-runtime/second.jpg", Lang: "en", PublishedAt: &pub},
+	}
+	v := buildListView(b, posts, "Share7", "en")
+	if v.PageTitle != "Engineering journal · HopBase" || v.MetaDescription != "Routing notes and model practice." {
+		t.Fatalf("localized title/description = %q / %q", v.PageTitle, v.MetaDescription)
+	}
+	if v.Canonical != "https://hop-base.com/blog?lang=en" {
+		t.Fatalf("canonical = %q", v.Canonical)
+	}
+	if strings.Contains(v.Canonical, "inv=") {
+		t.Fatalf("canonical leaked invitation context: %q", v.Canonical)
+	}
+	wantAlternates := map[string]string{
+		"zh-Hant":   "https://hop-base.com/blog",
+		"en":        "https://hop-base.com/blog?lang=en",
+		"zh-Hans":   "https://hop-base.com/blog?lang=zh",
+		"x-default": "https://hop-base.com/blog",
+	}
+	if len(v.Hreflang) != len(wantAlternates) {
+		t.Fatalf("hreflang count = %d, want %d: %+v", len(v.Hreflang), len(wantAlternates), v.Hreflang)
+	}
+	for _, alternate := range v.Hreflang {
+		if wantAlternates[alternate.Lang] != alternate.Href {
+			t.Errorf("hreflang %q = %q, want %q", alternate.Lang, alternate.Href, wantAlternates[alternate.Lang])
+		}
+	}
+	if v.OGImage != "https://hop-base.com/assets-runtime/second.jpg" {
+		t.Fatalf("first crawler-usable article cover should win, got %q", v.OGImage)
+	}
+
+	var document map[string]any
+	if err := json.Unmarshal([]byte(v.JSONLD), &document); err != nil {
+		t.Fatalf("list JSON-LD is invalid: %v\n%s", err, v.JSONLD)
+	}
+	graph, ok := document["@graph"].([]any)
+	if !ok || len(graph) != 2 {
+		t.Fatalf("JSON-LD graph = %#v", document["@graph"])
+	}
+	if graph[0].(map[string]any)["@type"] != "Blog" || graph[1].(map[string]any)["@type"] != "ItemList" {
+		t.Fatalf("JSON-LD graph types = %#v", graph)
+	}
+	jsonLD := string(v.JSONLD)
+	for _, want := range []string{`"inLanguage":"en"`, `"position":1`, "https://hop-base.com/blog/first"} {
+		if !strings.Contains(jsonLD, want) {
+			t.Errorf("list JSON-LD missing %q\n%s", want, jsonLD)
+		}
+	}
+	for _, rejected := range []string{"inv=share7", "data:image", "</script>"} {
+		if strings.Contains(jsonLD, rejected) {
+			t.Errorf("list JSON-LD contains unsafe/noncanonical value %q\n%s", rejected, jsonLD)
+		}
+	}
+
+	fallback := buildListView(Branding{SiteName: "HopBase", OriginBase: "https://hop-base.com", Theme: themeHopBase}, nil, "", "")
+	if fallback.OGImage != "https://hop-base.com/assets/hopbase-og.png" {
+		t.Fatalf("HopBase share fallback = %q", fallback.OGImage)
+	}
+	configured := buildListView(Branding{SiteName: "HopBase", OriginBase: "https://hop-base.com", Theme: themeHopBase, SocialImage: "/share.png"}, posts, "", "")
+	if configured.OGImage != "https://hop-base.com/share.png" {
+		t.Fatalf("configured share image should win, got %q", configured.OGImage)
 	}
 }
 

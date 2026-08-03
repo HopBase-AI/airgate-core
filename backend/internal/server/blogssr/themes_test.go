@@ -149,7 +149,7 @@ func TestBuildListView_FeaturedSplitAndFallback(t *testing.T) {
 		t.Errorf("CoverClass 轮转错误: %q %q %q", v.Featured.CoverClass, v.Rest[0].CoverClass, v.Rest[1].CoverClass)
 	}
 	// 默认标题文案与旧版一致
-	if v.Heading != "HopBase 博客" || v.Subtitle != "AI 使用方法、模型技巧与实践分享" {
+	if v.Heading != "HopBase 博客" || v.Subtitle != "AI 使用方法、模型技巧與實踐分享" {
 		t.Errorf("Heading/Subtitle = %q / %q", v.Heading, v.Subtitle)
 	}
 
@@ -168,9 +168,10 @@ func TestBuildListView_FeaturedSplitAndFallback(t *testing.T) {
 
 // themedSettings 返回带皮肤配置的 site 设置。
 type themedSettings struct {
-	theme   string
-	chrome  string
-	siteKey string
+	theme        string
+	chrome       string
+	siteKey      string
+	announcement string
 }
 
 func (s themedSettings) List(_ context.Context, group string) ([]appsettings.Setting, error) {
@@ -184,6 +185,7 @@ func (s themedSettings) List(_ context.Context, group string) ([]appsettings.Set
 		{Key: "blog_theme", Value: s.theme, Group: "site"},
 		{Key: "blog_chrome", Value: s.chrome, Group: "site"},
 		{Key: "blog_site_key", Value: s.siteKey, Group: "site"},
+		{Key: "landing_announcement_json", Value: s.announcement, Group: "site"},
 	}, nil
 }
 
@@ -317,6 +319,8 @@ func TestSSR_HopBaseHostUsesLandingAlignedTheme(t *testing.T) {
 	}
 	body := w.Body.String()
 	for _, want := range []string{
+		`class="hb-announcement"`,
+		"All three GPT-5.6 variants are now available",
 		`class="hb-header"`,
 		`class="hb-intro"`,
 		`class="hb-featured"`,
@@ -331,6 +335,21 @@ func TestSSR_HopBaseHostUsesLandingAlignedTheme(t *testing.T) {
 		`href="/#faq">FAQ</a>`,
 		`role="menuitemradio"`,
 		`landingLang=blogLang==='zh-Hant'?'zh-HK':blogLang`,
+		`syncHeader(){header.classList.toggle('scrolled',window.scrollY>16);}`,
+		`.hb-header{position:fixed`,
+		`.hb-control,.hb-login,.hb-user,.hb-menu-button{box-sizing:border-box;height:32px`,
+		`.hb-intro .hb-frame{min-height:220px`,
+		`.hb-featured{min-height:280px`,
+		`.hb-row{min-height:112px;display:grid;grid-template-columns:112px minmax(0,1fr) 156px`,
+		`.hb-featured-copy{grid-row:2`,
+		`aspect-ratio:16/9;grid-column:1;grid-row:3`,
+		`<link rel="canonical" href="https://hop-base.com/blog?lang=en">`,
+		`hreflang="zh-Hant" href="https://hop-base.com/blog"`,
+		`hreflang="x-default" href="https://hop-base.com/blog"`,
+		`property="og:image" content="https://hop-base.com/assets/hopbase-og.png"`,
+		`name="twitter:card" content="summary_large_image"`,
+		`"@type":"Blog"`,
+		`"@type":"ItemList"`,
 		"Feature Post",
 	} {
 		if !strings.Contains(body, want) {
@@ -342,9 +361,17 @@ func TestSSR_HopBaseHostUsesLandingAlignedTheme(t *testing.T) {
 			t.Errorf("hopbase list retained legacy treatment %q", rejected)
 		}
 	}
+	copyPosition := strings.Index(body, `<span class="hb-featured-copy">`)
+	mediaPosition := strings.Index(body, `<span class="hb-terminal-cover">`)
+	if copyPosition < 0 || mediaPosition < 0 || copyPosition > mediaPosition {
+		t.Fatalf("featured mobile semantic order must be metadata, copy, media: copy=%d media=%d", copyPosition, mediaPosition)
+	}
+	if strings.Contains(body, `.hb-nav a:hover,.hb-nav a.act{color:var(--hb-ink);border`) {
+		t.Error("active Blog navigation must not add an underline")
+	}
 
 	detail := doGetHost(t, r, "hop-base.com", "/blog/feature-post?lang=en").Body.String()
-	for _, want := range []string{`class="hb-header"`, `class="article-title"`, `class="blog-cta"`, `class="hb-footer"`} {
+	for _, want := range []string{`class="hb-header"`, `class="article-title"`, `class="blog-cta"`, `class="hb-footer"`, `"inLanguage":"en"`} {
 		if !strings.Contains(detail, want) {
 			t.Errorf("hopbase detail missing %q", want)
 		}
@@ -358,6 +385,30 @@ func TestSSR_HopBaseHostUsesLandingAlignedTheme(t *testing.T) {
 		if !strings.Contains(notFound.Body.String(), want) {
 			t.Errorf("localized 404 missing %q", want)
 		}
+	}
+}
+
+func TestSSR_HopBaseAnnouncementDisabledHasNoOffsetElement(t *testing.T) {
+	posts := themedTestPosts()
+	for i := range posts {
+		posts[i].Lang = "en"
+	}
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	renderer := NewRenderer(appblog.NewService(&ssrRepo{posts: posts}), themedSettings{
+		theme:        themeEmber,
+		chrome:       `{"show_langs":true,"default_lang":"en"}`,
+		announcement: `{"enabled":false}`,
+	})
+	r.GET("/blog", renderer.RenderList)
+	body := doGetHost(t, r, "hop-base.com", "/blog").Body.String()
+	if strings.Contains(body, `class="hb-announcement"`) {
+		t.Error("disabled landing announcement must be omitted from SSR HTML")
+	}
+	headerPosition := strings.Index(body, `<header class="hb-header"`)
+	mainPosition := strings.Index(body, `<main class="hb-main"`)
+	if headerPosition < 0 || mainPosition < headerPosition {
+		t.Fatalf("disabled announcement should leave header directly before main: header=%d main=%d", headerPosition, mainPosition)
 	}
 }
 
