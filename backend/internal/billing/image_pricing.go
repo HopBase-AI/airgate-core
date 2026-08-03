@@ -1,6 +1,7 @@
 package billing
 
 import (
+	"math"
 	"strconv"
 	"strings"
 )
@@ -44,7 +45,7 @@ func ImageTierPriceFromSettings(settings map[string]map[string]string, tier stri
 				return 0, false
 			}
 			price, err := strconv.ParseFloat(raw, 64)
-			if err != nil || price < 0 {
+			if err != nil || math.IsNaN(price) || math.IsInf(price, 0) || price < 0 {
 				return 0, false
 			}
 			return price, true

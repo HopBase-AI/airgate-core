@@ -195,6 +195,7 @@
     "image_gt_261w": "> 2.61 MP / 張",
     "image_input_reference": "參考圖 / 張",
     "image_input_ref_gt_first": "額外參考圖（第 2 張起）/ 張",
+    "token_pricing_fallback": "按 Token 計費",
     "long_context": "超過 {{threshold}} 後按階梯倍率計費",
     "name_missing": "未提供顯示名稱",
     "not_provided": "未提供",

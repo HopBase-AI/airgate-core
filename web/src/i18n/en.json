@@ -195,6 +195,7 @@
     "image_gt_261w": "> 2.61 MP / image",
     "image_input_reference": "Reference image / image",
     "image_input_ref_gt_first": "Additional reference (image 2+) / image",
+    "token_pricing_fallback": "Token pricing",
     "long_context": "Tiered rates apply beyond {{threshold}}",
     "name_missing": "No display name provided",
     "not_provided": "Not provided",

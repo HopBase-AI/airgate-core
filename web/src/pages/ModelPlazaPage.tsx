@@ -14,7 +14,12 @@ import { useToast } from '../shared/ui';
 import { FETCH_ALL_PARAMS } from '../shared/constants';
 import { useAuth } from '../app/providers/AuthProvider';
 import { mergeCatalog, type ModelLedgerItem } from './modelPlazaCatalog';
-import { formatModelPrice, resolveFixedImageTierPrices } from './modelPlazaPricing';
+import {
+  formatModelPrice,
+  resolveBucketDiscount,
+  resolveFixedImageTierPrices,
+  shouldBackfillTokenPricing,
+} from './modelPlazaPricing';
 
 interface TocPricingConfig {
   fx?: number;
@@ -136,9 +141,10 @@ function resolveStandardPrice(model: ModelLedgerItem, config: TocPricingConfig |
 interface BucketPrice {
   bucket: string;
   label: string;
-  sale: number;
+  sale: number | null;
   official: number;
   officialOnly: boolean;
+  imageBillingMode?: 'fixed' | 'token';
 }
 
 // 分辨率展示序：低→高，4k 垫底；no_ref 在前、with_ref 在后。
@@ -245,22 +251,24 @@ function formatZhe(zhe: number): string {
   return value < 1 ? value.toFixed(2) : value.toFixed(1);
 }
 
-function PriceCell({ label, sale, official, officialOnly, officialTitle, saleSymbol, officialSymbol }: {
+function PriceCell({ label, sale, official, officialOnly, officialTitle, saleSymbol, officialSymbol, allowZero, fallbackLabel }: {
   label: string;
-  sale: number;
+  sale: number | null;
   official: number;
   officialOnly: boolean;
   officialTitle: string;
   saleSymbol: '$' | '¥';
   officialSymbol: '$' | '¥';
+  allowZero?: boolean;
+  fallbackLabel?: string;
 }) {
   // 有售价换算时同格展示划线官方原价，折扣一眼可比
-  const showStrike = !officialOnly && official > 0 && !(officialSymbol === saleSymbol && official === sale);
+  const showStrike = sale != null && !officialOnly && official > 0 && !(officialSymbol === saleSymbol && official === sale);
   return (
     <div>
       <dt>{label}</dt>
       <dd>
-        {formatModelPrice(sale, officialOnly ? officialSymbol : saleSymbol)}
+        {sale == null ? (fallbackLabel ?? '—') : formatModelPrice(sale, officialOnly ? officialSymbol : saleSymbol, allowZero)}
         {showStrike ? <del title={officialTitle}>{formatModelPrice(official, officialSymbol)}</del> : null}
       </dd>
     </div>
@@ -300,7 +308,10 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode }
   // 视频生成按 video token 桶铺价；图片生成按像素档位的单张价铺价。
   const buckets = video ?? image;
   if (buckets) {
-    const bucketDiscount = userMode && (model.user_rate ?? 0) > 0 ? (model.user_rate ?? 0) / fx : null;
+    const hasFixedImagePricing = !!image?.some((bucket) => bucket.imageBillingMode != null);
+    const bucketDiscount = userMode
+      ? resolveBucketDiscount(model.user_rate, fx, hasFixedImagePricing)
+      : null;
     return (
       <div className="ag-model-price-wrap">
         {video ? <p className="ag-model-video-price-unit">{t('model_plaza.video_price_unit')}</p> : null}
@@ -316,6 +327,8 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode }
               officialSymbol="$"
               sale={b.sale}
               saleSymbol={videoSaleSymbol}
+              allowZero={b.imageBillingMode === 'fixed'}
+              fallbackLabel={b.imageBillingMode === 'token' ? t('model_plaza.token_pricing_fallback') : undefined}
             />
           ))}
         </dl>
@@ -411,7 +424,7 @@ export default function ModelPlazaPage() {
 
   const models = useMemo(
     () => mergeCatalog(myPricingQuery.data?.platforms ?? catalogQuery.data ?? []).map((model) => {
-      if (!userMode || (model.user_rate ?? 0) > 0) return model;
+      if (!shouldBackfillTokenPricing(userMode, model)) return model;
       const best = bestGroupForModel(model, model.platforms, groupsQuery.data?.list ?? [], user?.group_rates);
       if (!best) return model;
       return {
@@ -595,12 +608,13 @@ export default function ModelPlazaPage() {
               {filteredModels.map((model) => {
                 const video = isVideoModel(model) ? resolveVideoPrices(model, pricingConfig, userMode, plazaCurrency, t) : null;
                 const fixedImage = userMode
-                  ? resolveFixedImageTierPrices(model, fx, plazaCurrency).map(({ tier, sale }) => ({
+                  ? resolveFixedImageTierPrices(model, fx, plazaCurrency).map(({ tier, sale, billingMode }) => ({
                       bucket: tier,
                       label: tier.toUpperCase(),
                       sale,
                       official: 0,
                       officialOnly: false,
+                      imageBillingMode: billingMode,
                     }))
                   : [];
                 const image = fixedImage.length > 0

@@ -56,13 +56,15 @@ type MyPlatformPricingResp struct {
 	Models   []MyPricingModelResp `json:"models"`
 }
 
-// MyPricingModelResp 单模型的用户报价：公开定价 + 最优可用分组的实付倍率。
-// user_rate=0（省略）表示无可用分组能路由到该模型，展示端回退官方价。
+// MyPricingModelResp 单模型的用户报价：公开定价 + 最优可用分组的 token 实付倍率。
+// 部分图片尺寸有固定价时，user_rate 是未配置尺寸的 token 回退倍率；三个尺寸均
+// 有固定价或无可用 token 报价时为 0（省略）。固定图价使用余额/CNY 单位/张。
 type MyPricingModelResp struct {
 	PublicPricingModelResp
-	UserRate  float64 `json:"user_rate,omitempty"`
-	GroupID   int     `json:"group_id,omitempty"`
-	GroupName string  `json:"group_name,omitempty"`
+	UserRate float64 `json:"user_rate,omitempty"`
+	// Group* 只描述 user_rate 的 token 报价来源，不代表固定图价来源。
+	GroupID   int    `json:"group_id,omitempty"`
+	GroupName string `json:"group_name,omitempty"`
 	// GroupNameI18n 分组名多语言覆盖（键=语言码 en / zh-HK / ja；zh 基准即 group_name）。
 	GroupNameI18n map[string]string `json:"group_name_i18n,omitempty"`
 	ImagePrice1K  *float64          `json:"image_price_1k,omitempty"`

@@ -33,14 +33,17 @@ type UserReader interface {
 // ModelQuote 单模型对当前用户的报价：公开基准价 + 用户最优分组的实付倍率。
 type ModelQuote struct {
 	apppluginadmin.PublicPricingModel
-	// UserRate 用户在该模型上的最优实付倍率（计费口径，user.group_rates 覆盖后）；
-	// 0 表示没有任何可用分组能路由到该模型（展示端回退官方价）。
-	UserRate  float64
+	// UserRate 用户在该模型上的最优 token 实付倍率（计费口径，user.group_rates 覆盖后）；
+	// 部分图片尺寸有固定价时，它表示未配置尺寸的 token 回退倍率。0 表示没有可用
+	// token 报价，或所有图片尺寸均使用固定价。
+	UserRate float64
+	// GroupID/GroupName/GroupNameI18n 仅标识 UserRate 的 token 报价来源；固定价
+	// 可能按档位来自其他可用分组，不能据此归属固定价。
 	GroupID   int
 	GroupName string
 	// GroupNameI18n 分组名多语言覆盖（键=语言码 en / zh-HK / ja；zh 基准即 GroupName）。
 	GroupNameI18n map[string]string
-	// ImagePrice* 是命中 user/group plugin_settings 后的最终固定图价（余额单位/张）。
+	// ImagePrice* 是命中 user/group plugin_settings 后的最终固定图价（余额/CNY 单位/张）。
 	// nil 表示该档位没有固定价，必须继续使用 token 计费。
 	ImagePrice1K *float64
 	ImagePrice2K *float64

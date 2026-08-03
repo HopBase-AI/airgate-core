@@ -75,9 +75,9 @@ func (s *Service) UserPricing(ctx context.Context, userID int) (Result, error) {
 					quote.GroupNameI18n = g.NameI18n
 				}
 			}
-			if hasFixedImagePrices(quote) {
-				// 固定价覆盖纯图片模型整单 token 成本。不要同时返回 token 倍率，
-				// 否则展示端会制造一份实际不会扣取的 token 报价。
+			if hasCompleteFixedImagePrices(quote) {
+				// 三个尺寸都有固定价时，纯图片模型不会再走 token 计费。部分
+				// 档位固定时保留 token 倍率，明确表示未配置档位的真实回退。
 				quote.UserRate = 0
 				quote.GroupID = 0
 				quote.GroupName = ""
@@ -158,7 +158,7 @@ func (s *Service) APIKeyPricing(ctx context.Context, userID, apiKeyID int) (Resu
 			quote.ImagePrice1K = prices.ImagePrice1K
 			quote.ImagePrice2K = prices.ImagePrice2K
 			quote.ImagePrice4K = prices.ImagePrice4K
-			if rateAvailable && !hasFixedImagePrices(quote) {
+			if rateAvailable && !hasCompleteFixedImagePrices(quote) {
 				quote.UserRate = rate
 			}
 			quotes.Models = append(quotes.Models, quote)
@@ -195,6 +195,10 @@ func resolveFixedImagePrices(modelID string, userSettings, groupSettings map[str
 
 func hasFixedImagePrices(quote ModelQuote) bool {
 	return quote.ImagePrice1K != nil || quote.ImagePrice2K != nil || quote.ImagePrice4K != nil
+}
+
+func hasCompleteFixedImagePrices(quote ModelQuote) bool {
+	return quote.ImagePrice1K != nil && quote.ImagePrice2K != nil && quote.ImagePrice4K != nil
 }
 
 func mergeLowestImagePrices(target *ModelQuote, candidate ModelQuote) {

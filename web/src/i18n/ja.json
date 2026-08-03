@@ -195,6 +195,7 @@
     "image_gt_261w": "> 2.61 MP / 枚",
     "image_input_reference": "参照画像 / 枚",
     "image_input_ref_gt_first": "追加参照画像（2 枚目以降）/ 枚",
+    "token_pricing_fallback": "トークン課金",
     "long_context": "{{threshold}} を超えると段階料金が適用されます",
     "name_missing": "表示名がありません",
     "not_provided": "未提供",

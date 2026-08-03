@@ -321,6 +321,37 @@ func TestAPIKeyPricingSuppressesRateForFixedPriceImageModels(t *testing.T) {
 	}
 }
 
+func TestAPIKeyPricingKeepsTokenFallbackRateForPartialFixedPriceImageModels(t *testing.T) {
+	groupID := 7
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
+		Platform: "openai",
+		Models:   []apppluginadmin.PublicPricingModel{{ID: "gpt-image-2", Input: 5, Output: 30}},
+	}}}
+	groups := &fakeGroups{groups: []appgroup.Group{{
+		ID: groupID, Platform: "openai", RateMultiplier: 0.6,
+		PluginSettings: map[string]map[string]string{"openai": {
+			"image_price_1k": "0.08",
+		}},
+	}}}
+	keys := &fakeAPIKeys{key: appapikey.Key{
+		ID: 9, UserID: 7, GroupID: &groupID, SellRate: 2.8, Status: "active",
+	}}
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{Status: "active"}}, keys)
+
+	result, err := svc.APIKeyPricing(context.Background(), 7, 9)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	quote := result.Platforms[0].Models[0]
+	if quote.ImagePrice1K == nil || *quote.ImagePrice1K != 0.08 ||
+		quote.ImagePrice2K != nil || quote.ImagePrice4K != nil {
+		t.Fatalf("partial fixed image prices = %+v", quote)
+	}
+	if quote.UserRate != 2.8 {
+		t.Fatalf("token fallback rate = %v, want sell_rate 2.8", quote.UserRate)
+	}
+}
+
 func TestUserPricingReturnsLowestEffectiveFixedImagePrices(t *testing.T) {
 	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
 		Platform: "openai",
@@ -367,6 +398,34 @@ func TestUserPricingReturnsLowestEffectiveFixedImagePrices(t *testing.T) {
 	}
 	if token := quotes["gpt-5.5"]; token.UserRate != 0.6 || hasFixedImagePrices(token) {
 		t.Fatalf("token quote = %+v, want rate 0.6 without image prices", token)
+	}
+}
+
+func TestUserPricingKeepsTokenFallbackQuoteForPartialFixedPriceImageModels(t *testing.T) {
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
+		Platform: "openai",
+		Models:   []apppluginadmin.PublicPricingModel{{ID: "gpt-image-2", Input: 5, Output: 30}},
+	}}}
+	groups := &fakeGroups{groups: []appgroup.Group{
+		{
+			ID: 7, Name: "Image Fixed", Platform: "openai", RateMultiplier: 0.7,
+			PluginSettings: map[string]map[string]string{"openai": {"image_price_1k": "0.08"}},
+		},
+		{ID: 8, Name: "Image Token", Platform: "openai", RateMultiplier: 0.6},
+	}}
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{}}, &fakeAPIKeys{})
+
+	result, err := svc.UserPricing(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	quote := result.Platforms[0].Models[0]
+	if quote.ImagePrice1K == nil || *quote.ImagePrice1K != 0.08 ||
+		quote.ImagePrice2K != nil || quote.ImagePrice4K != nil {
+		t.Fatalf("partial fixed image prices = %+v", quote)
+	}
+	if quote.UserRate != 0.6 || quote.GroupID != 8 || quote.GroupName != "Image Token" {
+		t.Fatalf("token fallback quote = %+v, want Image Token at 0.6", quote)
 	}
 }
 
