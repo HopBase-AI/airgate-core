@@ -761,7 +761,7 @@ func (s *Service) doStreamProbe(ctx context.Context, baseURL, apiKey string, pla
 	if err != nil {
 		return StreamProbe{Tested: true, Error: err.Error(), LatencyMS: time.Since(start).Milliseconds(), Transport: trace}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	probe := StreamProbe{
 		Tested:      true,
@@ -1069,7 +1069,7 @@ func (s *Service) doThinkingStreamWithOptions(ctx context.Context, baseURL, apiK
 	if err != nil {
 		return ThinkingProbe{Tested: true, Requested: true, Supported: true, Error: err.Error(), Transport: trace}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		trace = enrichResponseTrace(trace, resp, nil)
@@ -1519,7 +1519,7 @@ func (s *Service) doAWSBedrockRuntimeJSON(ctx context.Context, method, endpoint,
 	if err != nil {
 		return httpProbeResponse{Trace: trace, Err: err}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
 		trace = enrichResponseTrace(trace, resp, nil)
@@ -2884,7 +2884,7 @@ func (s *Service) doJSONWithOptions(ctx context.Context, method, endpoint, apiKe
 	if err != nil {
 		return httpProbeResponse{Trace: trace, Err: err}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	limited := io.LimitReader(resp.Body, 4<<20)
 	respBody, err := io.ReadAll(limited)
 	if err != nil {
@@ -3531,11 +3531,6 @@ func protocolForModel(model string, platform PlatformType) string {
 		return "anthropic"
 	}
 	return "openai"
-}
-
-func looksAnthropicModel(model string) bool {
-	m := strings.ToLower(model)
-	return strings.Contains(m, "claude") || strings.Contains(m, "anthropic")
 }
 
 func isClaudeTarget(target probeTarget) bool {
@@ -6932,9 +6927,10 @@ func externalCapabilityStandardChecks(platform PlatformType, hasSuite bool, caps
 			evidence = []string{fmt.Sprintf("relay-auth-check protocols.%s.capabilities.%s 返回 ok=%v。", protocol, capability, item.Detail["ok"])}
 			metrics = cloneDetailMap(item.Detail)
 			missing = nil
-			if status == "pass" {
+			switch status {
+			case "pass":
 				conclusion = item.Message
-			} else if status == "fail" {
+			case "fail":
 				conclusion = item.Message
 			}
 		}
@@ -6963,10 +6959,6 @@ func shouldShowExternalCapability(platform PlatformType, id string, hasSuite boo
 	default:
 		return false
 	}
-}
-
-func isOpenAIPlatform(platform PlatformType) bool {
-	return platform == PlatformOpenAI
 }
 
 func isClaudeLikePlatform(platform PlatformType) bool {
@@ -7006,40 +6998,8 @@ func emptyDash(value string) string {
 	return value
 }
 
-func overallGrade(total, available, riskCount int) string {
-	if total == 0 || available == 0 {
-		return "F"
-	}
-	ratio := float64(available) / float64(total)
-	switch {
-	case ratio >= 0.98 && riskCount == 0:
-		return "A"
-	case ratio >= 0.9 && riskCount <= maxInt(1, total/10):
-		return "B"
-	case ratio >= 0.75:
-		return "C"
-	default:
-		return "D"
-	}
-}
-
-func channelLabel(grade string) string {
-	switch grade {
-	case "A":
-		return "兼容层高置信"
-	case "B":
-		return "兼容层可用"
-	case "C":
-		return "需复核"
-	case "D":
-		return "风险较高"
-	default:
-		return "不可用"
-	}
-}
-
 // classifyChannel 从已采集的证据(聚合层泄漏/外来模型/号池闸门/换模/注水等风险码)推出"渠道类型"结论,
-// 而不是像旧 channelLabel 那样把等级换个说法。这是各标准最核心的采购结论。纯函数,便于单测。
+// 而不是把等级换个说法。这是各标准最核心的采购结论。纯函数,便于单测。
 func classifyChannel(risks []RiskFinding, scoreEligible bool) string {
 	codes := make(map[string]bool, len(risks))
 	for _, r := range risks {
@@ -7068,19 +7028,6 @@ func classifyChannel(risks []RiskFinding, scoreEligible bool) string {
 	default:
 		return "直连或透明代理"
 	}
-}
-
-func confidenceLabel(total, available, riskCount int) string {
-	if total == 0 {
-		return "low"
-	}
-	if total >= 10 && available == total && riskCount == 0 {
-		return "high"
-	}
-	if total >= 3 {
-		return "medium"
-	}
-	return "low"
 }
 
 func coverageFromMatrix(rows []ModelMatrixRow) CoverageSummary {
@@ -7826,14 +7773,6 @@ func intFromMaps(key string, maps ...map[string]interface{}) int {
 		}
 	}
 	return 0
-}
-
-func toInterfaceMap(in map[string]any) map[string]interface{} {
-	out := make(map[string]interface{}, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
 }
 
 func mergeExecution(base map[string]interface{}, patch map[string]any) map[string]interface{} {

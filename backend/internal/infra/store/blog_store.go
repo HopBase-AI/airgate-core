@@ -40,7 +40,7 @@ func (s *BlogStore) List(ctx context.Context, filter appblog.ListFilter) ([]appb
 	}
 
 	list, err := query.
-		Offset((filter.Page - 1) * filter.PageSize).
+		Offset((filter.Page-1)*filter.PageSize).
 		Limit(filter.PageSize).
 		Order(ent.Desc(entblogpost.FieldPublishedAt), ent.Desc(entblogpost.FieldCreatedAt)).
 		All(ctx)

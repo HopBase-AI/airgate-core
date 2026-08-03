@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
@@ -112,6 +113,95 @@ func TestImageOutputBillingOverride_CurrentImage2Prices(t *testing.T) {
 			}
 			if !got.replacesTotal {
 				t.Fatal("image model fixed image price should replace the whole request")
+			}
+		})
+	}
+}
+
+func TestApplyImageBillingOverride_SeparatesRetailFromAccountCost(t *testing.T) {
+	tests := []struct {
+		name         string
+		references   int
+		upstreamCost float64
+		retailCost   float64
+	}{
+		{name: "no references", references: 0, upstreamCost: 0.09, retailCost: 0.09},
+		{name: "first reference", references: 1, upstreamCost: 0.09, retailCost: 0.093},
+		{name: "multiple references", references: 3, upstreamCost: 0.096, retailCost: 0.099},
+	}
+	paths := []struct {
+		name     string
+		sellRate float64
+	}{
+		{name: "toc host forwarding"},
+		{name: "tob public forwarding", sellRate: 3},
+	}
+
+	for _, path := range paths {
+		path := path
+		t.Run(path.name, func(t *testing.T) {
+			for _, tt := range tests {
+				tt := tt
+				t.Run(tt.name, func(t *testing.T) {
+					usage := &sdk.Usage{
+						AccountCost: tt.upstreamCost,
+						Metrics: []sdk.UsageMetric{
+							{Key: "images", Kind: "image", Value: 1, AccountCost: 0.09},
+						},
+						Metadata: map[string]string{
+							imageBillingBaseCostOverrideMetadataKey: fmt.Sprintf("%g", tt.retailCost),
+							"reference_image_count":                 fmt.Sprintf("%d", tt.references),
+						},
+					}
+					snap := usageSnapshotFromSDK(usage)
+					input := billing.CalculateInput{
+						InputCost:         snap.InputCost,
+						ImageInputCost:    snap.ImageInputCost,
+						OutputCost:        snap.OutputCost,
+						CachedInputCost:   snap.CachedInputCost,
+						CacheCreationCost: snap.CacheCreationCost,
+						ImageCost:         snap.ImageCost,
+						BillingRate:       2,
+						SellRate:          path.sellRate,
+						AccountRate:       0.5,
+					}
+					applied, replacesTotal := applyImageBillingOverride(&input, usage, nil, nil)
+					if !applied || !replacesTotal {
+						t.Fatalf("override applied=%v replacesTotal=%v, want true/true", applied, replacesTotal)
+					}
+
+					got := billing.NewCalculator().Calculate(input)
+					if math.Abs(got.TotalCost-tt.upstreamCost) > 1e-9 {
+						t.Fatalf("TotalCost = %v, want upstream %v", got.TotalCost, tt.upstreamCost)
+					}
+					if math.Abs(got.AccountCost-tt.upstreamCost*0.5) > 1e-9 {
+						t.Fatalf("AccountCost = %v, want %v", got.AccountCost, tt.upstreamCost*0.5)
+					}
+					if math.Abs(got.ActualCost-tt.retailCost*2) > 1e-9 {
+						t.Fatalf("ActualCost = %v, want %v", got.ActualCost, tt.retailCost*2)
+					}
+					wantBilled := got.ActualCost
+					if path.sellRate > 0 {
+						wantBilled = tt.retailCost * path.sellRate
+					}
+					if math.Abs(got.BilledCost-wantBilled) > 1e-9 {
+						t.Fatalf("BilledCost = %v, want %v", got.BilledCost, wantBilled)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestImageOutputBillingOverride_RejectsInvalidPluginBaseCost(t *testing.T) {
+	for _, value := range []string{"", "0", "-0.003", "NaN", "Inf", "not-a-number"} {
+		t.Run(value, func(t *testing.T) {
+			usage := &sdk.Usage{
+				Metrics:  []sdk.UsageMetric{{Key: "images", Kind: "image", Value: 1}},
+				Metadata: map[string]string{imageBillingBaseCostOverrideMetadataKey: value},
+			}
+			if got, ok := imageOutputBillingOverride(usage, nil, nil); ok {
+				t.Fatalf("override = %+v, want invalid metadata to be ignored", got)
 			}
 		})
 	}

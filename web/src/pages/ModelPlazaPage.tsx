@@ -205,7 +205,7 @@ function resolveImagePrices(
 ): BucketPrice[] {
   const userRate = userMode ? (model.user_rate ?? 0) : 0;
   const { multiplier, fx } = resolveMultiplier(model, config);
-  const order = ['le_236w', 'gt_236w'];
+  const order = ['le_236w', 'le_261w', 'gt_236w', 'gt_261w', 'input_reference', 'input_ref_gt_first'];
   return Object.entries(model.image ?? {})
     .sort(([a], [b]) => {
       const ai = order.indexOf(a);

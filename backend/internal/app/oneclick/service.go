@@ -240,7 +240,7 @@ func renderScript(name, tmpl string, cfg Config) (string, error) {
 		return "", err
 	}
 	var buf bytes.Buffer
-	if err := tpl.Execute(&buf, scriptTemplateData{BaseURL: cfg.BaseURL, SiteName: cfg.SiteName}); err != nil {
+	if err := tpl.Execute(&buf, scriptTemplateData(cfg)); err != nil {
 		return "", err
 	}
 	return buf.String(), nil

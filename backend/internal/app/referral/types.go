@@ -47,7 +47,7 @@ type TopupEvent struct {
 // MyReferral 用户侧「我的邀请」概览。
 type MyReferral struct {
 	InviteCode    string
-	LinkBaseURL   string  // 空 = 前端用当前域名拼链接
+	LinkBaseURL   string // 空 = 前端用当前域名拼链接
 	Enabled       bool
 	ReferralRate  float64 // 当前用户有效返利比例（0~1）：用户级覆盖 else 全局默认
 	InviteeCount  int

@@ -12,11 +12,12 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql/schema"
+	_ "github.com/mattn/go-sqlite3"
+
 	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/ent/enttest"
 	enttask "github.com/DouDOU-start/airgate-core/ent/task"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 // relayTestSecret 是测试用加密 secret(hex，解码后 32 字节),仅供 NewService 构造,
@@ -97,7 +98,7 @@ func TestParseModelList(t *testing.T) {
 func TestDiscoverModelsReportsHTMLBlockPageAsNonJSON(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, "<!doctype html><html><title>Cloudflare</title><body>Access denied</body></html>")
+		_, _ = fmt.Fprint(w, "<!doctype html><html><title>Cloudflare</title><body>Access denied</body></html>")
 	}))
 	defer server.Close()
 
@@ -2071,23 +2072,23 @@ func newMockAnthropicRelay(t *testing.T, opts mockRelayOptions) *httptest.Server
 			if stream, _ := body["stream"].(bool); stream {
 				w.Header().Set("Content-Type", "text/event-stream")
 				if opts.badStream {
-					fmt.Fprint(w, "data: {\"type\":\"content_block_delta\"}\n\n")
+					_, _ = fmt.Fprint(w, "data: {\"type\":\"content_block_delta\"}\n\n")
 					return
 				}
 				if _, ok := body["thinking"]; ok {
-					fmt.Fprint(w, "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_mock\",\"model\":\"claude-sonnet-4-5-20250929\",\"usage\":{\"input_tokens\":18}}}\n\n")
-					fmt.Fprint(w, "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\n")
-					fmt.Fprint(w, "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"brief thought\"}}\n\n")
-					fmt.Fprint(w, "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"sig_mock\"}}\n\n")
-					fmt.Fprint(w, "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n")
-					fmt.Fprint(w, "data: {\"type\":\"message_stop\"}\n\n")
+					_, _ = fmt.Fprint(w, "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_mock\",\"model\":\"claude-sonnet-4-5-20250929\",\"usage\":{\"input_tokens\":18}}}\n\n")
+					_, _ = fmt.Fprint(w, "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\n")
+					_, _ = fmt.Fprint(w, "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"brief thought\"}}\n\n")
+					_, _ = fmt.Fprint(w, "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"sig_mock\"}}\n\n")
+					_, _ = fmt.Fprint(w, "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n")
+					_, _ = fmt.Fprint(w, "data: {\"type\":\"message_stop\"}\n\n")
 					return
 				}
-				fmt.Fprint(w, "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_mock\",\"model\":\"claude-sonnet-4-5-20250929\",\"usage\":{\"input_tokens\":12}}}\n\n")
-				fmt.Fprint(w, "data: {\"type\":\"content_block_start\"}\n\n")
-				fmt.Fprint(w, "data: {\"type\":\"content_block_delta\"}\n\n")
-				fmt.Fprint(w, "data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":1}}\n\n")
-				fmt.Fprint(w, "data: {\"type\":\"message_stop\"}\n\n")
+				_, _ = fmt.Fprint(w, "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_mock\",\"model\":\"claude-sonnet-4-5-20250929\",\"usage\":{\"input_tokens\":12}}}\n\n")
+				_, _ = fmt.Fprint(w, "data: {\"type\":\"content_block_start\"}\n\n")
+				_, _ = fmt.Fprint(w, "data: {\"type\":\"content_block_delta\"}\n\n")
+				_, _ = fmt.Fprint(w, "data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":1}}\n\n")
+				_, _ = fmt.Fprint(w, "data: {\"type\":\"message_stop\"}\n\n")
 				return
 			}
 			prompt := extractMockPrompt(body)
@@ -2150,7 +2151,7 @@ func newMockAnthropicRelay(t *testing.T, opts mockRelayOptions) *httptest.Server
 				if profile != "" {
 					profileCacheCalls[profile]++
 					usage := map[string]any{"input_tokens": 1200, "output_tokens": 1}
-					if !(opts.plainSDKCacheFails && profile == "plain-sdk") {
+					if !opts.plainSDKCacheFails || profile != "plain-sdk" {
 						if profileCacheCalls[profile] == 1 {
 							usage["cache_creation_input_tokens"] = 1100
 						} else {
@@ -2255,12 +2256,12 @@ func newMockOpenAIRelay(t *testing.T, opts mockRelayOptions) *httptest.Server {
 			if stream, _ := body["stream"].(bool); stream {
 				w.Header().Set("Content-Type", "text/event-stream")
 				if opts.badStream {
-					fmt.Fprint(w, "data: {}\n\n")
+					_, _ = fmt.Fprint(w, "data: {}\n\n")
 					return
 				}
-				fmt.Fprint(w, "data: {\"id\":\"chatcmpl_mock\",\"model\":\"gpt-5.5\",\"choices\":[{\"delta\":{\"content\":\"PONG\"}}]}\n\n")
-				fmt.Fprint(w, "data: {\"id\":\"chatcmpl_mock\",\"model\":\"gpt-5.5\",\"choices\":[{\"delta\":{}}],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":1}}\n\n")
-				fmt.Fprint(w, "data: [DONE]\n\n")
+				_, _ = fmt.Fprint(w, "data: {\"id\":\"chatcmpl_mock\",\"model\":\"gpt-5.5\",\"choices\":[{\"delta\":{\"content\":\"PONG\"}}]}\n\n")
+				_, _ = fmt.Fprint(w, "data: {\"id\":\"chatcmpl_mock\",\"model\":\"gpt-5.5\",\"choices\":[{\"delta\":{}}],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":1}}\n\n")
+				_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 				return
 			}
 			if _, ok := body["tools"]; ok {
