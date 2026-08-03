@@ -29,6 +29,20 @@ type UserResp struct {
 	TimeMixin
 }
 
+// APIKeySessionUserResp 是 API Key 登录会话唯一允许返回的用户态投影。
+// 这里故意不嵌入 UserResp，避免未来给用户 DTO 增加字段时意外把 reseller
+// 的身份、余额、并发或账户元数据透传给下游 Key 持有者。
+type APIKeySessionUserResp struct {
+	Role            string  `json:"role"`
+	APIKeyID        int64   `json:"api_key_id"`
+	APIKeyName      string  `json:"api_key_name"`
+	APIKeyQuotaUSD  float64 `json:"api_key_quota_usd"`
+	APIKeyUsedQuota float64 `json:"api_key_used_quota"`
+	APIKeyExpiresAt string  `json:"api_key_expires_at,omitempty"`
+	APIKeyRate      float64 `json:"api_key_rate,omitempty"`
+	APIKeyPlatform  string  `json:"api_key_platform,omitempty"`
+}
+
 // UpdateProfileReq 用户更新资料请求
 type UpdateProfileReq struct {
 	Username string `json:"username"`

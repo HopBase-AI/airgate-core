@@ -96,8 +96,12 @@ func (s *Server) registerRoutes() {
 
 	// === 用户路由（需要 JWT 认证） ===
 	userGroup := v1.Group("")
-	userGroup.Use(middleware.JWTAuth(s.jwtMgr))
+	userGroup.Use(middleware.JWTUserAuth(s.jwtMgr, s.db))
 	{
+		// 模型广场同时支持普通账号和受限 API Key 登录；API Key 报价由 handler
+		// 按 JWT 中的 api_key_id 限定到当前 Key 的分组和模型。
+		userGroup.GET("/models/pricing/me", middleware.RequireRoles("admin", "user", "api_key"), handlers.ModelPricing.MyModelPricing)
+
 		accountGroup := userGroup.Group("")
 		accountGroup.Use(middleware.RequireRoles("admin", "user"))
 
@@ -128,9 +132,6 @@ func (s *Server) registerRoutes() {
 
 		// 分组
 		accountGroup.GET("/groups", handlers.Group.ListAvailableGroups)
-
-		// 用户实付价视图（模型广场/分组选择数据源）
-		accountGroup.GET("/models/pricing/me", handlers.ModelPricing.MyModelPricing)
 
 		// 订阅
 		accountGroup.GET("/subscriptions", handlers.Subscription.UserSubscriptions)

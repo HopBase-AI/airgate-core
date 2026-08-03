@@ -19,6 +19,14 @@ type LoginResp struct {
 	APIKeyName string   `json:"api_key_name,omitempty"`
 }
 
+// APIKeyLoginResp 使用独立的白名单会话 DTO，禁止 API Key 登录响应复用完整 UserResp。
+type APIKeyLoginResp struct {
+	Token      string                `json:"token"`
+	User       APIKeySessionUserResp `json:"user"`
+	APIKeyID   int64                 `json:"api_key_id"`
+	APIKeyName string                `json:"api_key_name"`
+}
+
 // RegisterReq 注册请求
 type RegisterReq struct {
 	Email      string `json:"email" binding:"required,email"`

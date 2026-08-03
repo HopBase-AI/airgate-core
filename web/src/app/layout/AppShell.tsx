@@ -273,7 +273,7 @@ export function AppShell({ children }: AppShellProps) {
   const currentLanguage = normalizeAppLanguage(i18n.resolvedLanguage || i18n.language);
   const currentLanguageOption = LANGUAGE_OPTIONS.find((item) => item.key === currentLanguage) ?? LANGUAGE_OPTIONS[0];
 
-  const displayName = user?.username || user?.email?.split('@')[0] || site.site_name || 'HopBase';
+  const displayName = user?.api_key_name || user?.username || user?.email?.split('@')[0] || site.site_name || 'HopBase';
   useEffect(() => {
     document.title = site.site_name || 'HopBase';
   }, [site.site_name]);

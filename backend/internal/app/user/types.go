@@ -205,7 +205,7 @@ type Repository interface {
 	// todayStart 必须由调用方按用户时区计算好。
 	ListAPIKeys(ctx context.Context, userID, page, pageSize int, todayStart time.Time) ([]APIKey, int64, error)
 	GetAPIKeyName(ctx context.Context, keyID int) (string, error)
-	GetAPIKeyInfo(ctx context.Context, keyID int) (APIKeyBrief, error)
+	GetAPIKeyInfo(ctx context.Context, userID, keyID int) (APIKeyBrief, error)
 	UpdateBalanceAlert(ctx context.Context, userID int, threshold float64) error
 	SetBalanceAlertNotified(ctx context.Context, userID int, notified bool) error
 }

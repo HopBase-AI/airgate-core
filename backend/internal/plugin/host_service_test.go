@@ -487,7 +487,14 @@ func TestListGroupsEligibleOnly(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	u := db.User.Create().SetEmail("u@example.com").SetPasswordHash("hash").SetBalance(1).SaveX(ctx)
-	cheap := db.Group.Create().SetName("标准").SetPlatform("gemini").SetRateMultiplier(1.0).SaveX(ctx)
+	cheap := db.Group.Create().SetName("标准").SetPlatform("gemini").SetRateMultiplier(1.0).
+		SetPluginSettings(map[string]map[string]string{"openai": {
+			"image_price_1k": "0.08", "image_price_2k": "0.12", "internal_secret": "hidden",
+		}}).SaveX(ctx)
+	db.User.UpdateOneID(u.ID).SetGroupPluginSettings(map[int64]map[string]map[string]string{
+		int64(cheap.ID): {"openai": {"image_price_2k": "0.11"}},
+	}).ExecX(ctx)
+	u = db.User.GetX(ctx, u.ID)
 	pricey := db.Group.Create().SetName("高清").SetPlatform("gemini").SetRateMultiplier(2.0).SaveX(ctx)
 	db.Group.Create().SetName("专属未授权").SetPlatform("gemini").SetRateMultiplier(0.5).SetIsExclusive(true).SaveX(ctx)
 	db.Group.Create().SetName("别的平台").SetPlatform("openai").SetRateMultiplier(1.0).SaveX(ctx)
@@ -516,6 +523,13 @@ func TestListGroupsEligibleOnly(t *testing.T) {
 	}
 	if items[0]["effective_rate"].(float64) != 1.0 || items[1]["effective_rate"].(float64) != 2.0 {
 		t.Fatalf("effective_rate = %v,%v", items[0]["effective_rate"], items[1]["effective_rate"])
+	}
+	fixed, ok := items[0]["fixed_image_prices"].(map[string]interface{})
+	if !ok || fixed["1k"] != 0.08 || fixed["2k"] != 0.11 || fixed["currency"] != "CNY" {
+		t.Fatalf("fixed_image_prices = %#v", items[0]["fixed_image_prices"])
+	}
+	if _, leaked := items[0]["plugin_settings"]; leaked {
+		t.Fatalf("groups.list leaked plugin_settings: %#v", items[0])
 	}
 
 	// 授权专属分组后应出现且按 0.5 倍率排最前

@@ -318,13 +318,26 @@ func (s *UserStore) GetAPIKeyName(ctx context.Context, keyID int) (string, error
 }
 
 // GetAPIKeyInfo 获取 API Key 基本信息（名称、额度、到期时间、销售/分组倍率）。
-func (s *UserStore) GetAPIKeyInfo(ctx context.Context, keyID int) (appuser.APIKeyBrief, error) {
+func (s *UserStore) GetAPIKeyInfo(ctx context.Context, userID, keyID int) (appuser.APIKeyBrief, error) {
 	ak, err := s.db.APIKey.Query().
-		Where(entapikey.IDEQ(keyID)).
+		Where(
+			entapikey.IDEQ(keyID),
+			entapikey.StatusEQ(entapikey.StatusActive),
+			entapikey.HasUserWith(
+				entuser.IDEQ(userID),
+				entuser.StatusEQ(entuser.StatusActive),
+			),
+		).
 		WithGroup().
 		Only(ctx)
 	if err != nil {
+		if ent.IsNotFound(err) {
+			return appuser.APIKeyBrief{}, appuser.ErrInvalidAPIKeySession
+		}
 		return appuser.APIKeyBrief{}, err
+	}
+	if ak.ExpiresAt != nil && ak.ExpiresAt.Before(time.Now()) {
+		return appuser.APIKeyBrief{}, appuser.ErrInvalidAPIKeySession
 	}
 	brief := appuser.APIKeyBrief{
 		Name:      ak.Name,

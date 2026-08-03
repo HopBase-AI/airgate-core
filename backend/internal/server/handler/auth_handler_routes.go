@@ -2,13 +2,13 @@ package handler
 
 import (
 	"errors"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
-	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/server/dto"
 	"github.com/DouDOU-start/airgate-core/internal/server/response"
 )
@@ -39,7 +39,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			response.BadRequest(c, message)
 			return
 		}
-		response.InternalError(c, message)
+		response.Error(c, httpCode, httpCode, message)
 		return
 	}
 
@@ -49,7 +49,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	})
 }
 
-// LoginByAPIKey 使用 API Key 登录（仅能查看该 Key 的使用记录）。
+// LoginByAPIKey 使用 API Key 登录（仅能查看该 Key 的使用记录与可用模型价格）。
 func (h *AuthHandler) LoginByAPIKey(c *gin.Context) {
 	var req dto.APIKeyLoginReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -69,26 +69,25 @@ func (h *AuthHandler) LoginByAPIKey(c *gin.Context) {
 			response.Unauthorized(c, message)
 		case 403:
 			response.Forbidden(c, message)
+		case http.StatusServiceUnavailable:
+			response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, message)
 		default:
 			response.InternalError(c, message)
 		}
 		return
 	}
 
-	userResp := userToResp(result.User)
-	userResp.Role = auth.APIKeySessionRole
-	userResp.APIKeyID = int64(result.APIKeyID)
-	userResp.APIKeyName = result.APIKeyName
-	userResp.APIKeyQuotaUSD = result.QuotaUSD
-	userResp.APIKeyUsedQuota = result.UsedQuota
-	userResp.APIKeyRate = result.Rate
-	if result.ExpiresAt != nil {
-		userResp.APIKeyExpiresAt = result.ExpiresAt.Format(time.RFC3339)
-	}
-
-	response.Success(c, dto.LoginResp{
-		Token:      result.Token,
-		User:       userResp,
+	response.Success(c, dto.APIKeyLoginResp{
+		Token: result.Token,
+		User: apiKeySessionUserResp(
+			result.APIKeyID,
+			result.APIKeyName,
+			result.QuotaUSD,
+			result.UsedQuota,
+			result.Rate,
+			result.ExpiresAt,
+			result.Platform,
+		),
 		APIKeyID:   int64(result.APIKeyID),
 		APIKeyName: result.APIKeyName,
 	})
@@ -202,7 +201,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 			response.Forbidden(c, "用户已被禁用")
 			return
 		}
-		response.InternalError(c, "刷新 Token 失败")
+		response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "认证服务暂不可用")
 		return
 	}
 

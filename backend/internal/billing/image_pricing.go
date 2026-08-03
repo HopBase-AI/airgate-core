@@ -1,6 +1,7 @@
 package billing
 
 import (
+	"math"
 	"strconv"
 	"strings"
 )
@@ -12,6 +13,16 @@ const (
 	ImagePrice2KKey = "image_price_2k"
 	ImagePrice4KKey = "image_price_4k"
 )
+
+// IsFixedImageTierPricingModel 判断模型的固定图片档位价格是否替代整单 token 计费。
+// 计费与报价必须共用此判定，避免展示价格和实际扣费口径漂移。
+func IsFixedImageTierPricingModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(model, "gpt-image") ||
+		strings.HasPrefix(model, "dall-e") ||
+		strings.HasPrefix(model, "dalle") ||
+		(strings.HasPrefix(model, "gemini-") && strings.Contains(model, "-image"))
+}
 
 // ResolveImageTierPrice resolves a configured fixed image price for a size tier.
 // User-specific settings win over group defaults. Missing or invalid prices mean
@@ -44,7 +55,7 @@ func ImageTierPriceFromSettings(settings map[string]map[string]string, tier stri
 				return 0, false
 			}
 			price, err := strconv.ParseFloat(raw, 64)
-			if err != nil || price < 0 {
+			if err != nil || math.IsNaN(price) || math.IsInf(price, 0) || price < 0 {
 				return 0, false
 			}
 			return price, true

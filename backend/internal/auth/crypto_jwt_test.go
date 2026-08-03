@@ -42,7 +42,7 @@ func TestDecryptAPIKeyRejectsInvalidCiphertext(t *testing.T) {
 
 func TestJWTGenerateParseAndRefresh(t *testing.T) {
 	mgr := NewJWTManager("jwt-secret", 1)
-	token, err := mgr.GenerateAPIKeyToken(7, "user", "u@example.com", 11)
+	token, err := mgr.GenerateAPIKeyToken(11)
 	if err != nil {
 		t.Fatalf("签发 token 失败: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestJWTGenerateParseAndRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("解析 token 失败: %v", err)
 	}
-	if claims.UserID != 7 || claims.Role != APIKeySessionRole || claims.Email != "u@example.com" || claims.APIKeyID != 11 {
+	if claims.UserID != 0 || claims.Role != APIKeySessionRole || claims.Email != "" || claims.APIKeyID != 11 {
 		t.Fatalf("claims 异常: %+v", claims)
 	}
 
@@ -63,14 +63,14 @@ func TestJWTGenerateParseAndRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("解析刷新 token 失败: %v", err)
 	}
-	if refreshedClaims.APIKeyID != 11 {
-		t.Fatalf("刷新后 APIKeyID = %d，期望 11", refreshedClaims.APIKeyID)
+	if refreshedClaims.APIKeyID != 11 || refreshedClaims.UserID != 0 || refreshedClaims.Email != "" {
+		t.Fatalf("刷新后 claims 泄漏 owner 信息或 Key ID 异常: %+v", refreshedClaims)
 	}
 }
 
 func TestAPIKeyTokenAlwaysUsesAPIKeySessionRole(t *testing.T) {
 	mgr := NewJWTManager("jwt-secret", 1)
-	token, err := mgr.GenerateAPIKeyToken(7, "admin", "admin@example.com", 11)
+	token, err := mgr.GenerateAPIKeyToken(11)
 	if err != nil {
 		t.Fatalf("签发 token 失败: %v", err)
 	}
@@ -81,6 +81,63 @@ func TestAPIKeyTokenAlwaysUsesAPIKeySessionRole(t *testing.T) {
 	}
 	if claims.Role != APIKeySessionRole {
 		t.Fatalf("API Key 登录 role = %q，期望 %q", claims.Role, APIKeySessionRole)
+	}
+	if claims.UserID != 0 || claims.Email != "" {
+		t.Fatalf("API Key JWT 不应携带 owner 身份: %+v", claims)
+	}
+}
+
+func TestJWTRejectsMismatchedAPIKeySessionClaims(t *testing.T) {
+	mgr := NewJWTManager("jwt-secret", 1)
+	tests := []Claims{
+		{UserID: 7, Role: APIKeySessionRole},
+		{UserID: 7, Role: "user", APIKeyID: 11},
+		{Role: APIKeySessionRole, Email: "owner@example.com"},
+	}
+	for _, claims := range tests {
+		claims.RegisteredClaims = jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "airgate",
+		}
+		token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(mgr.secret)
+		if err != nil {
+			t.Fatalf("签发 token 失败: %v", err)
+		}
+		if _, err := mgr.ParseToken(token); !errors.Is(err, ErrInvalidToken) {
+			t.Fatalf("claims=%+v err=%v，期望 ErrInvalidToken", claims, err)
+		}
+	}
+}
+
+func TestJWTAcceptsLegacyAPIKeySessionAndRefreshDropsOwnerClaims(t *testing.T) {
+	mgr := NewJWTManager("jwt-secret", 1)
+	legacy := Claims{
+		UserID: 99, Role: APIKeySessionRole, Email: "owner@example.com", APIKeyID: 11,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "airgate",
+		},
+	}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, legacy).SignedString(mgr.secret)
+	if err != nil {
+		t.Fatalf("签发旧版 token 失败: %v", err)
+	}
+	claims, err := mgr.ParseToken(token)
+	if err != nil {
+		t.Fatalf("迁移期应接受旧版 API Key token: %v", err)
+	}
+	refreshed, err := mgr.RefreshToken(claims)
+	if err != nil {
+		t.Fatalf("刷新旧版 token 失败: %v", err)
+	}
+	minimal, err := mgr.ParseToken(refreshed)
+	if err != nil {
+		t.Fatalf("解析刷新 token 失败: %v", err)
+	}
+	if minimal.APIKeyID != 11 || minimal.Role != APIKeySessionRole || minimal.UserID != 0 || minimal.Email != "" {
+		t.Fatalf("刷新后未收敛为最小 claims: %+v", minimal)
 	}
 }
 

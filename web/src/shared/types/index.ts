@@ -43,6 +43,24 @@ export interface LoginResp {
   api_key_name?: string;
 }
 
+export interface APIKeySessionUserResp {
+  role: 'api_key';
+  api_key_id: number;
+  api_key_name: string;
+  api_key_quota_usd: number;
+  api_key_used_quota: number;
+  api_key_expires_at?: string;
+  api_key_rate?: number;
+  api_key_platform?: string;
+}
+
+export interface APIKeyLoginResp {
+  token: string;
+  user: APIKeySessionUserResp;
+  api_key_id: number;
+  api_key_name: string;
+}
+
 export interface RegisterReq {
   email: string;
   password: string;

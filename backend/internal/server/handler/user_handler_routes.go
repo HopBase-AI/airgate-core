@@ -1,14 +1,13 @@
 package handler
 
 import (
-	"time"
+	"errors"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
-	corauth "github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/server/dto"
-	"github.com/DouDOU-start/airgate-core/internal/server/middleware"
 	"github.com/DouDOU-start/airgate-core/internal/server/response"
 )
 
@@ -20,37 +19,37 @@ func (h *UserHandler) GetMe(c *gin.Context) {
 		return
 	}
 
+	// API Key 会话使用独立白名单投影。先按 owner + key 校验当前会话，
+	// 且不读取完整用户对象，避免 owner 资料进入序列化路径。
+	if apiKeyID := scopedAPIKeyID(c); apiKeyID > 0 {
+		info, err := h.service.GetAPIKeyInfo(c.Request.Context(), userID, int(apiKeyID))
+		if err != nil {
+			if errors.Is(err, appuser.ErrInvalidAPIKeySession) {
+				response.Unauthorized(c, "API Key 登录会话已失效，请重新登录")
+			} else {
+				response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "认证服务暂不可用")
+			}
+			return
+		}
+		response.Success(c, apiKeySessionUserRespFromBrief(int(apiKeyID), info))
+		return
+	}
+
 	item, err := h.service.Get(c.Request.Context(), userID)
 	if err != nil {
+		if errors.Is(err, appuser.ErrUserNotFound) {
+			response.Unauthorized(c, "登录会话已失效，请重新登录")
+			return
+		}
 		httpCode, message := h.handleError("查询当前用户失败", "查询失败", err)
+		if httpCode == http.StatusInternalServerError {
+			httpCode = http.StatusServiceUnavailable
+			message = "认证服务暂不可用"
+		}
 		response.Error(c, httpCode, httpCode, message)
 		return
 	}
-	resp := toUserRespFromDomain(item)
-
-	// API Key 登录场景：附带 Key 信息（名称、额度、到期时间）
-	if apiKeyID, exists := c.Get(middleware.CtxKeyAPIKeyID); exists {
-		if id, ok := apiKeyID.(int); ok && id > 0 {
-			resp.Role = corauth.APIKeySessionRole
-			resp.APIKeyID = int64(id)
-			if info, err := h.service.GetAPIKeyInfo(c.Request.Context(), id); err == nil {
-				resp.APIKeyName = info.Name
-				resp.APIKeyQuotaUSD = info.QuotaUSD
-				resp.APIKeyUsedQuota = info.UsedQuota
-				if info.SellRate > 0 {
-					resp.APIKeyRate = info.SellRate
-				} else {
-					resp.APIKeyRate = info.GroupRate
-				}
-				resp.APIKeyPlatform = info.Platform
-				if info.ExpiresAt != nil {
-					resp.APIKeyExpiresAt = info.ExpiresAt.Format(time.RFC3339)
-				}
-			}
-		}
-	}
-
-	response.Success(c, resp)
+	response.Success(c, toUserRespFromDomain(item))
 }
 
 // UpdateProfile 更新当前用户资料。

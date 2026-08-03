@@ -1,7 +1,11 @@
 package handler
 
 import (
+	"time"
+
 	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
+	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
+	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/server/dto"
 )
 
@@ -24,4 +28,42 @@ func userToResp(user appauth.User) dto.UserResp {
 			UpdatedAt: user.UpdatedAt,
 		},
 	}
+}
+
+func apiKeySessionUserResp(
+	keyID int,
+	name string,
+	quotaUSD, usedQuota, rate float64,
+	expiresAt *time.Time,
+	platform string,
+) dto.APIKeySessionUserResp {
+	resp := dto.APIKeySessionUserResp{
+		Role:            auth.APIKeySessionRole,
+		APIKeyID:        int64(keyID),
+		APIKeyName:      name,
+		APIKeyQuotaUSD:  quotaUSD,
+		APIKeyUsedQuota: usedQuota,
+		APIKeyRate:      rate,
+		APIKeyPlatform:  platform,
+	}
+	if expiresAt != nil {
+		resp.APIKeyExpiresAt = expiresAt.Format(time.RFC3339)
+	}
+	return resp
+}
+
+func apiKeySessionUserRespFromBrief(keyID int, brief appuser.APIKeyBrief) dto.APIKeySessionUserResp {
+	rate := brief.SellRate
+	if rate <= 0 {
+		rate = brief.GroupRate
+	}
+	return apiKeySessionUserResp(
+		keyID,
+		brief.Name,
+		brief.QuotaUSD,
+		brief.UsedQuota,
+		rate,
+		brief.ExpiresAt,
+		brief.Platform,
+	)
 }

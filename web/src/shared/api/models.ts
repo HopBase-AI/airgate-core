@@ -50,14 +50,20 @@ export interface PublicPlatformPricing {
   models: PublicPricingModel[];
 }
 
-// 用户实付价视图（/models/pricing/me）：公开定价 + 最优可用分组的实付倍率。
+// 用户实付价视图（/models/pricing/me）：公开定价 + 最优可用分组的 token 实付倍率。
 export interface MyPricingModel extends PublicPricingModel {
-  // 实付倍率（计费口径，含用户专属调价）；缺省 = 无可用分组能路由到该模型。
+  // 部分图片尺寸有固定价时，实付倍率用于未配置尺寸的 token 回退。缺省表示
+  // 无可用 token 报价，或三个图片尺寸均使用固定价。
   user_rate?: number;
+  // 分组字段只归属 user_rate 的 token 报价，不代表固定图片档位的来源。
   group_id?: number;
   group_name?: string;
   // 分组名多语言覆盖(键=语言码 en / zh-HK / ja;zh 基准即 group_name)
   group_name_i18n?: Record<string, string>;
+  // 纯图片接口命中用户/分组覆盖后的最终固定价（余额/CNY 单位 / 张）。
+  image_price_1k?: number;
+  image_price_2k?: number;
+  image_price_4k?: number;
 }
 
 export interface MyPlatformPricing {

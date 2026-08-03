@@ -10,7 +10,7 @@ import type { APIKeyResp } from '../types';
 
 export const usersApi = {
   // 用户接口
-  me: () => get<UserResp>('/api/v1/users/me'),
+  me: (signal?: AbortSignal) => get<UserResp>('/api/v1/users/me', undefined, { signal }),
   updateProfile: (data: UpdateProfileReq) => put<void>('/api/v1/users/me', data),
   changePassword: (data: ChangePasswordReq) => post<void>('/api/v1/users/me/password', data),
   updateBalanceAlert: (threshold: number) => put<void>('/api/v1/users/me/balance-alert', { threshold }),

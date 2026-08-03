@@ -150,7 +150,7 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 	referralService := appreferral.NewService(store.NewReferralStore(dep.DB), userService, settingsService)
 
 	// 用户实付价视图：模型目录（含覆盖层）× 可用分组 × 用户专属倍率
-	modelPricingService := appmodelpricing.NewService(pluginAdminService, groupStore, userService)
+	modelPricingService := appmodelpricing.NewService(pluginAdminService, groupStore, userService, apiKeyStore)
 
 	upgradeService := upgrade.NewService(upgrade.DetectMode(), dep.Redis)
 

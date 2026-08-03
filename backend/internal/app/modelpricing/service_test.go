@@ -2,8 +2,12 @@ package modelpricing
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
+	appapikey "github.com/DouDOU-start/airgate-core/internal/app/apikey"
+	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 	apppluginadmin "github.com/DouDOU-start/airgate-core/internal/app/pluginadmin"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
@@ -23,9 +27,33 @@ func (f *fakeGroups) ListAvailable(context.Context, appgroup.AvailableFilter) ([
 	return f.groups, int64(len(f.groups)), nil
 }
 
+func (f *fakeGroups) FindByID(_ context.Context, id int) (appgroup.Group, error) {
+	for _, group := range f.groups {
+		if group.ID == id {
+			return group, nil
+		}
+	}
+	return appgroup.Group{}, appgroup.ErrGroupNotFound
+}
+
 type fakeUsers struct{ user appuser.User }
 
 func (f *fakeUsers) Get(context.Context, int) (appuser.User, error) { return f.user, nil }
+
+type fakeAPIKeys struct {
+	key appapikey.Key
+	err error
+}
+
+func (f *fakeAPIKeys) FindOwned(_ context.Context, userID, id int) (appapikey.Key, error) {
+	if f.err != nil {
+		return appapikey.Key{}, f.err
+	}
+	if f.key.ID != id || f.key.UserID != userID {
+		return appapikey.Key{}, appapikey.ErrKeyNotFound
+	}
+	return f.key, nil
+}
 
 // 仿生产形态的目录/分组：Codex 双档显式路由 gpt 模型、GLM 分组只路由 glm-5.2（CNY 基准 + 官方美元参考价）、
 // Claude 分组空路由（不限制）。
@@ -58,7 +86,7 @@ func testService(userRates map[int64]float64) *Service {
 		// 固定图价哨兵组：倍率 0 + 空路由（匹配所有 openai 模型），不得污染 token 报价
 		{ID: 7, Name: "Image 4k", Platform: "openai", RateMultiplier: 0, ModelRouting: map[string][]int64{}},
 	}}
-	return NewService(catalog, groups, &fakeUsers{user: appuser.User{GroupRates: userRates}})
+	return NewService(catalog, groups, &fakeUsers{user: appuser.User{GroupRates: userRates}}, &fakeAPIKeys{})
 }
 
 func TestUserPricingPicksBestEligibleGroup(t *testing.T) {
@@ -149,7 +177,7 @@ func TestUserPricingExcludesFixedPriceSentinel(t *testing.T) {
 			ModelRouting: map[string][]int64{"gemini-3.5-flash": {29}}},
 		{ID: 7, Name: "Image 4k", Platform: "openai", RateMultiplier: 0, ModelRouting: map[string][]int64{}},
 	}}
-	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{}})
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{}}, &fakeAPIKeys{})
 
 	result, err := svc.UserPricing(context.Background(), 1)
 	if err != nil {
@@ -174,6 +202,366 @@ func TestUserPricingExcludesFixedPriceSentinel(t *testing.T) {
 		if g.ID == 7 && g.USDMultiplier != 0 {
 			t.Fatalf("哨兵组 usd_multiplier 应为 0: %+v", g)
 		}
+	}
+}
+
+func TestAPIKeyPricingScopesAzureGeminiAndUsesFixedImagePrices(t *testing.T) {
+	groupID := 18
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{
+		{Platform: "openai", Models: []apppluginadmin.PublicPricingModel{
+			{ID: "gemini-3.1-flash-image", Vendor: "google", Input: 0.5, Output: 3},
+			{ID: "gpt-5.5", Vendor: "openai", Input: 5, Output: 30},
+		}},
+		{Platform: "claude", Models: []apppluginadmin.PublicPricingModel{
+			{ID: "claude-sonnet-5", Input: 3, Output: 15},
+		}},
+	}}
+	groups := &fakeGroups{groups: []appgroup.Group{{
+		ID:             groupID,
+		Name:           "Azure Gemini internal",
+		Platform:       "openai",
+		RateMultiplier: 3.1,
+		ModelRouting:   map[string][]int64{"gemini-*": {29}},
+		PluginSettings: map[string]map[string]string{"openai": {
+			"image_enabled":  "true",
+			"image_price_1k": "0.08", "image_price_2k": "0.12", "image_price_4k": "0.15",
+		}},
+	}}}
+	keys := &fakeAPIKeys{key: appapikey.Key{ID: 9, UserID: 7, GroupID: &groupID, Status: "active"}}
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{Status: "active"}}, keys)
+
+	result, err := svc.APIKeyPricing(context.Background(), 7, 9)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if len(result.Platforms) != 1 || result.Platforms[0].Platform != "openai" {
+		t.Fatalf("platforms = %+v", result.Platforms)
+	}
+	if len(result.Platforms[0].Models) != 1 {
+		t.Fatalf("models = %+v", result.Platforms[0].Models)
+	}
+	quote := result.Platforms[0].Models[0]
+	if quote.ID != "gemini-3.1-flash-image" || quote.UserRate != 0 {
+		t.Fatalf("Azure Gemini quote = %+v", quote)
+	}
+	if quote.ImagePrice1K == nil || *quote.ImagePrice1K != 0.08 ||
+		quote.ImagePrice2K == nil || *quote.ImagePrice2K != 0.12 ||
+		quote.ImagePrice4K == nil || *quote.ImagePrice4K != 0.15 {
+		t.Fatalf("Azure Gemini fixed prices = %+v", quote)
+	}
+	if quote.GroupID != 0 || quote.GroupName != "" || len(result.Groups) != 0 {
+		t.Fatalf("API Key response leaked group internals: quote=%+v groups=%+v", quote, result.Groups)
+	}
+}
+
+func TestAPIKeyPricingPrefersSellRateAndChecksOwnership(t *testing.T) {
+	groupID := 18
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
+		Platform: "openai",
+		Models:   []apppluginadmin.PublicPricingModel{{ID: "gemini-2.5-flash-image", Input: 0.3, Output: 30}},
+	}}}
+	groups := &fakeGroups{groups: []appgroup.Group{{
+		ID: groupID, Platform: "openai", RateMultiplier: 3.1,
+		PluginSettings: map[string]map[string]string{"openai": {"image_enabled": "true"}},
+	}}}
+	keys := &fakeAPIKeys{key: appapikey.Key{ID: 9, UserID: 7, GroupID: &groupID, SellRate: 2.8, Status: "active"}}
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{GroupRates: map[int64]float64{18: 2.5}, Status: "active"}}, keys)
+
+	result, err := svc.APIKeyPricing(context.Background(), 7, 9)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got := result.Platforms[0].Models[0].UserRate; got != 2.8 {
+		t.Fatalf("user rate = %v, want sell_rate 2.8", got)
+	}
+	if _, err := svc.APIKeyPricing(context.Background(), 8, 9); !errors.Is(err, appapikey.ErrKeyNotFound) {
+		t.Fatalf("ownership error = %v, want ErrKeyNotFound", err)
+	}
+}
+
+func TestAPIKeyPricingSuppressesRateForFixedPriceImageModels(t *testing.T) {
+	groupID := 7
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
+		Platform: "openai",
+		Models: []apppluginadmin.PublicPricingModel{
+			{ID: "gpt-image-1", Input: 5, Output: 30},
+			{ID: "gpt-5.5", Input: 5, Output: 30},
+		},
+	}}}
+	groups := &fakeGroups{groups: []appgroup.Group{{
+		ID:             groupID,
+		Platform:       "openai",
+		RateMultiplier: 0.6,
+		PluginSettings: map[string]map[string]string{"openai": {
+			"image_enabled":  "true",
+			"image_price_1k": "0.08",
+			"image_price_2k": "0.12",
+			"image_price_4k": "0.15",
+		}},
+	}}}
+	keys := &fakeAPIKeys{key: appapikey.Key{ID: 9, UserID: 7, GroupID: &groupID, SellRate: 2.8, Status: "active"}}
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{
+		Status: "active",
+		GroupPluginSettings: map[int64]map[string]map[string]string{
+			7: {"openai": {"image_price_2k": "0.11"}},
+		},
+	}}, keys)
+
+	result, err := svc.APIKeyPricing(context.Background(), 7, 9)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	quotes := map[string]ModelQuote{}
+	for _, model := range result.Platforms[0].Models {
+		quotes[model.ID] = model
+	}
+	if got := quotes["gpt-image-1"].UserRate; got != 0 {
+		t.Fatalf("fixed-price image user rate = %v, want 0", got)
+	}
+	image := quotes["gpt-image-1"]
+	if image.ImagePrice1K == nil || *image.ImagePrice1K != 0.08 ||
+		image.ImagePrice2K == nil || *image.ImagePrice2K != 0.11 ||
+		image.ImagePrice4K == nil || *image.ImagePrice4K != 0.15 {
+		t.Fatalf("fixed image prices = %+v, want 0.08/0.11/0.15", image)
+	}
+	if got := quotes["gpt-5.5"].UserRate; got != 2.8 {
+		t.Fatalf("token-priced model user rate = %v, want 2.8", got)
+	}
+	if hasFixedImagePrices(quotes["gpt-5.5"]) {
+		t.Fatalf("token model received fixed image prices: %+v", quotes["gpt-5.5"])
+	}
+}
+
+func TestAPIKeyPricingKeepsTokenFallbackRateForPartialFixedPriceImageModels(t *testing.T) {
+	groupID := 7
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
+		Platform: "openai",
+		Models:   []apppluginadmin.PublicPricingModel{{ID: "gpt-image-2", Input: 5, Output: 30}},
+	}}}
+	groups := &fakeGroups{groups: []appgroup.Group{{
+		ID: groupID, Platform: "openai", RateMultiplier: 0.6,
+		PluginSettings: map[string]map[string]string{"openai": {
+			"image_enabled":  "true",
+			"image_price_1k": "0.08",
+		}},
+	}}}
+	keys := &fakeAPIKeys{key: appapikey.Key{
+		ID: 9, UserID: 7, GroupID: &groupID, SellRate: 2.8, Status: "active",
+	}}
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{Status: "active"}}, keys)
+
+	result, err := svc.APIKeyPricing(context.Background(), 7, 9)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	quote := result.Platforms[0].Models[0]
+	if quote.ImagePrice1K == nil || *quote.ImagePrice1K != 0.08 ||
+		quote.ImagePrice2K != nil || quote.ImagePrice4K != nil {
+		t.Fatalf("partial fixed image prices = %+v", quote)
+	}
+	if quote.UserRate != 2.8 {
+		t.Fatalf("token fallback rate = %v, want sell_rate 2.8", quote.UserRate)
+	}
+}
+
+func TestUserPricingUsesOneSelectedGroupForAllFixedImagePrices(t *testing.T) {
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
+		Platform: "openai",
+		Models: []apppluginadmin.PublicPricingModel{
+			{ID: "gpt-image-2", Input: 5, Output: 30},
+			{ID: "gpt-5.5", Input: 5, Output: 30},
+		},
+	}}}
+	groups := &fakeGroups{groups: []appgroup.Group{
+		{
+			ID: 7, Name: "Image A", Platform: "openai", RateMultiplier: 0.6,
+			PluginSettings: map[string]map[string]string{"openai": {
+				"image_enabled":  "true",
+				"image_price_1k": "0.09", "image_price_2k": "0.12", "image_price_4k": "0.16",
+			}},
+		},
+		{
+			ID: 8, Name: "Image B", Platform: "openai", RateMultiplier: 0.7,
+			PluginSettings: map[string]map[string]string{"openai": {
+				"image_enabled":  "true",
+				"image_price_1k": "0.08", "image_price_2k": "0.13", "image_price_4k": "0.15",
+			}},
+		},
+	}}
+	users := &fakeUsers{user: appuser.User{GroupPluginSettings: map[int64]map[string]map[string]string{
+		7: {"openai": {"image_price_2k": "0.10"}},
+	}}}
+	svc := NewService(catalog, groups, users, &fakeAPIKeys{})
+
+	result, err := svc.UserPricing(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	quotes := map[string]ModelQuote{}
+	for _, model := range result.Platforms[0].Models {
+		quotes[model.ID] = model
+	}
+	image := quotes["gpt-image-2"]
+	if image.ImagePrice1K == nil || *image.ImagePrice1K != 0.09 ||
+		image.ImagePrice2K == nil || *image.ImagePrice2K != 0.10 ||
+		image.ImagePrice4K == nil || *image.ImagePrice4K != 0.16 {
+		t.Fatalf("selected-group fixed prices = %+v, want Image A 0.09/0.10/0.16", image)
+	}
+	if image.UserRate != 0 || image.GroupID != 7 || image.GroupName != "Image A" {
+		t.Fatalf("fixed image quote must identify its selected group: %+v", image)
+	}
+	if token := quotes["gpt-5.5"]; token.UserRate != 0.6 || hasFixedImagePrices(token) {
+		t.Fatalf("token quote = %+v, want rate 0.6 without image prices", token)
+	}
+}
+
+func TestUserPricingExcludesImageDisabledGroupFromFixedPricing(t *testing.T) {
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
+		Platform: "openai",
+		Models:   []apppluginadmin.PublicPricingModel{{ID: "gpt-image-2", Input: 5, Output: 30}},
+	}}}
+	groups := &fakeGroups{groups: []appgroup.Group{
+		{
+			ID: 7, Name: "Disabled Image", Platform: "openai", RateMultiplier: 0.1,
+			PluginSettings: map[string]map[string]string{"openai": {
+				"image_enabled": "false", "image_price_1k": "0.01",
+				"image_price_2k": "0.02", "image_price_4k": "0.03",
+			}},
+		},
+		{
+			ID: 8, Name: "Enabled Image", Platform: "openai", RateMultiplier: 0.6,
+			PluginSettings: map[string]map[string]string{"openai": {
+				"image_enabled": "true", "image_price_1k": "0.08",
+				"image_price_2k": "0.12", "image_price_4k": "0.15",
+			}},
+		},
+	}}
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{}}, &fakeAPIKeys{})
+
+	result, err := svc.UserPricing(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	quote := result.Platforms[0].Models[0]
+	if quote.GroupID != 8 || quote.GroupName != "Enabled Image" ||
+		quote.ImagePrice1K == nil || *quote.ImagePrice1K != 0.08 {
+		t.Fatalf("fixed image quote selected an unroutable group: %+v", quote)
+	}
+}
+
+func TestUserPricingKeepsTokenFallbackQuoteForPartialFixedPriceImageModels(t *testing.T) {
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
+		Platform: "openai",
+		Models:   []apppluginadmin.PublicPricingModel{{ID: "gpt-image-2", Input: 5, Output: 30}},
+	}}}
+	groups := &fakeGroups{groups: []appgroup.Group{
+		{
+			ID: 7, Name: "Image Fixed", Platform: "openai", RateMultiplier: 0.7,
+			PluginSettings: map[string]map[string]string{"openai": {
+				"image_enabled": "true", "image_price_1k": "0.08",
+			}},
+		},
+		{ID: 8, Name: "Image Token", Platform: "openai", RateMultiplier: 0.6,
+			PluginSettings: map[string]map[string]string{"openai": {"image_enabled": "true"}}},
+	}}
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{}}, &fakeAPIKeys{})
+
+	result, err := svc.UserPricing(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	quote := result.Platforms[0].Models[0]
+	if hasFixedImagePrices(quote) {
+		t.Fatalf("fixed prices must not be copied from the unselected group: %+v", quote)
+	}
+	if quote.UserRate != 0.6 || quote.GroupID != 8 || quote.GroupName != "Image Token" {
+		t.Fatalf("token fallback quote = %+v, want Image Token at 0.6", quote)
+	}
+}
+
+func TestUserPricingPartialFixedZeroRateUsesSameGroupBillingFallback(t *testing.T) {
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
+		Platform: "openai",
+		Models:   []apppluginadmin.PublicPricingModel{{ID: "gemini-3.1-flash-image", Input: 0.5, Output: 3}},
+	}}}
+	groups := &fakeGroups{groups: []appgroup.Group{
+		{
+			ID: 7, Name: "Azure Image", Platform: "openai", RateMultiplier: 0,
+			ModelRouting: map[string][]int64{"gemini-3.1-flash-image": {50}},
+			PluginSettings: map[string]map[string]string{"openai": {
+				"image_enabled":  "true",
+				"image_price_1k": "0.08",
+			}},
+		},
+		{ID: 8, Name: "Token Backup", Platform: "openai", RateMultiplier: 1.2,
+			ModelRouting:   map[string][]int64{"gemini-3.1-flash-image": {51}},
+			PluginSettings: map[string]map[string]string{"openai": {"image_enabled": "true"}}},
+	}}
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{}}, &fakeAPIKeys{})
+
+	result, err := svc.UserPricing(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	quote := result.Platforms[0].Models[0]
+	if quote.ImagePrice1K == nil || *quote.ImagePrice1K != 0.08 ||
+		quote.ImagePrice2K != nil || quote.ImagePrice4K != nil {
+		t.Fatalf("partial fixed image prices = %+v", quote)
+	}
+	if quote.UserRate != 1 || quote.GroupID != 7 || quote.GroupName != "Azure Image" {
+		t.Fatalf("same-group token fallback = %+v, want Azure Image at billing fallback 1.0", quote)
+	}
+}
+
+func TestAPIKeyPricingPartialFixedZeroRateUsesBillingFallback(t *testing.T) {
+	groupID := 7
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
+		Platform: "openai",
+		Models:   []apppluginadmin.PublicPricingModel{{ID: "gemini-3-pro-image", Input: 0.5, Output: 3}},
+	}}}
+	groups := &fakeGroups{groups: []appgroup.Group{{
+		ID: groupID, Platform: "openai", RateMultiplier: 0,
+		PluginSettings: map[string]map[string]string{"openai": {
+			"image_enabled": "true", "image_price_1k": "0.08",
+		}},
+	}}}
+	keys := &fakeAPIKeys{key: appapikey.Key{ID: 9, UserID: 7, GroupID: &groupID, Status: "active"}}
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{Status: "active"}}, keys)
+
+	result, err := svc.APIKeyPricing(context.Background(), 7, 9)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	quote := result.Platforms[0].Models[0]
+	if quote.ImagePrice1K == nil || *quote.ImagePrice1K != 0.08 || quote.UserRate != 1 {
+		t.Fatalf("API Key partial fixed fallback = %+v, want fixed 1K and token rate 1.0", quote)
+	}
+}
+
+func TestAPIKeyPricingRejectsInactiveSessions(t *testing.T) {
+	groupID := 18
+	groups := &fakeGroups{groups: []appgroup.Group{{ID: groupID, Platform: "openai", RateMultiplier: 3.1}}}
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{{
+		Platform: "openai",
+		Models:   []apppluginadmin.PublicPricingModel{{ID: "gemini-3.1-flash-image", Input: 0.5, Output: 3}},
+	}}}
+	expiredAt := time.Now().Add(-time.Minute)
+	tests := []appapikey.Key{
+		{ID: 9, UserID: 7, GroupID: &groupID, Status: "disabled"},
+		{ID: 9, UserID: 7, GroupID: &groupID, Status: "active", ExpiresAt: &expiredAt},
+	}
+	for _, key := range tests {
+		svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{Status: "active"}}, &fakeAPIKeys{key: key})
+		if _, err := svc.APIKeyPricing(context.Background(), 7, 9); !errors.Is(err, appauth.ErrInvalidAPIKeySession) {
+			t.Fatalf("key=%+v err=%v, want ErrInvalidAPIKeySession", key, err)
+		}
+	}
+
+	svc := NewService(catalog, groups, &fakeUsers{user: appuser.User{Status: "disabled"}}, &fakeAPIKeys{key: appapikey.Key{
+		ID: 9, UserID: 7, GroupID: &groupID, Status: "active",
+	}})
+	if _, err := svc.APIKeyPricing(context.Background(), 7, 9); !errors.Is(err, appauth.ErrInvalidAPIKeySession) {
+		t.Fatalf("disabled owner err=%v, want ErrInvalidAPIKeySession", err)
 	}
 }
 

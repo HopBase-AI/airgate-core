@@ -3,6 +3,7 @@ package modelpricing
 import (
 	"context"
 
+	appapikey "github.com/DouDOU-start/airgate-core/internal/app/apikey"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 	apppluginadmin "github.com/DouDOU-start/airgate-core/internal/app/pluginadmin"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
@@ -16,6 +17,12 @@ type CatalogReader interface {
 // GroupReader 读取用户可用分组（含专属分组授权过滤，复用 group Repository 子集）。
 type GroupReader interface {
 	ListAvailable(ctx context.Context, filter appgroup.AvailableFilter) ([]appgroup.Group, int64, error)
+	FindByID(ctx context.Context, id int) (appgroup.Group, error)
+}
+
+// APIKeyReader 读取当前会话 API Key 的归属、分组和最终客户销售倍率。
+type APIKeyReader interface {
+	FindOwned(ctx context.Context, userID, id int) (appapikey.Key, error)
 }
 
 // UserReader 读取用户（取 group_rates 专属调价）。
@@ -26,13 +33,21 @@ type UserReader interface {
 // ModelQuote 单模型对当前用户的报价：公开基准价 + 用户最优分组的实付倍率。
 type ModelQuote struct {
 	apppluginadmin.PublicPricingModel
-	// UserRate 用户在该模型上的最优实付倍率（计费口径，user.group_rates 覆盖后）；
-	// 0 表示没有任何可用分组能路由到该模型（展示端回退官方价）。
-	UserRate  float64
+	// UserRate 用户在该模型上的最优 token 实付倍率（计费口径，user.group_rates 覆盖后）；
+	// 部分图片尺寸有固定价时，它表示未配置尺寸的 token 回退倍率。0 表示没有可用
+	// token 报价，或所有图片尺寸均使用固定价。
+	UserRate float64
+	// GroupID/GroupName/GroupNameI18n 标识该模型整份报价的真实分组来源；固定档位
+	// 与缺失档位的 token 回退始终来自同一分组。
 	GroupID   int
 	GroupName string
 	// GroupNameI18n 分组名多语言覆盖（键=语言码 en / zh-HK / ja；zh 基准即 GroupName）。
 	GroupNameI18n map[string]string
+	// ImagePrice* 是命中 user/group plugin_settings 后的最终固定图价（余额/CNY 单位/张）。
+	// nil 表示该档位没有固定价，必须继续使用 token 计费。
+	ImagePrice1K *float64
+	ImagePrice2K *float64
+	ImagePrice4K *float64
 }
 
 // PlatformQuotes 单平台的模型报价清单。

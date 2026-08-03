@@ -80,12 +80,11 @@ func (s *AuthStore) FindByID(ctx context.Context, id int, withAllowedGroups bool
 }
 
 // ValidateAPIKeySession 校验 API Key scoped JWT 仍然对应一把有效的 Key 和 active 用户。
-func (s *AuthStore) ValidateAPIKeySession(ctx context.Context, userID, keyID int) (appauth.User, error) {
+func (s *AuthStore) ValidateAPIKeySession(ctx context.Context, keyID int) (appauth.User, error) {
 	ak, err := s.db.APIKey.Query().
 		Where(
 			entapikey.IDEQ(keyID),
 			entapikey.StatusEQ(entapikey.StatusActive),
-			entapikey.HasUserWith(entuser.IDEQ(userID)),
 		).
 		WithUser().
 		Only(ctx)
@@ -121,7 +120,10 @@ func (s *AuthStore) ValidateAPIKeyForLogin(ctx context.Context, key string) (app
 		WithUser().
 		Only(ctx)
 	if err != nil {
-		return appauth.APIKeyLoginInfo{}, appauth.ErrInvalidAPIKey
+		if ent.IsNotFound(err) {
+			return appauth.APIKeyLoginInfo{}, appauth.ErrInvalidAPIKey
+		}
+		return appauth.APIKeyLoginInfo{}, err
 	}
 
 	if ak.ExpiresAt != nil && ak.ExpiresAt.Before(time.Now()) {
@@ -147,6 +149,9 @@ func (s *AuthStore) GetAPIKeyBrief(ctx context.Context, keyID int) (appauth.APIK
 		WithGroup().
 		Only(ctx)
 	if err != nil {
+		if ent.IsNotFound(err) {
+			return appauth.APIKeyBrief{}, appauth.ErrInvalidAPIKeySession
+		}
 		return appauth.APIKeyBrief{}, err
 	}
 
@@ -158,6 +163,7 @@ func (s *AuthStore) GetAPIKeyBrief(ctx context.Context, keyID int) (appauth.APIK
 	}
 	if g := ak.Edges.Group; g != nil {
 		brief.GroupRate = g.RateMultiplier
+		brief.Platform = g.Platform
 	}
 	return brief, nil
 }

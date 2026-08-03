@@ -332,9 +332,12 @@ const adminBlogEditRoute = createRoute({
   }),
 });
 
-const profileRoute = createRoute({ getParentRoute: () => authLayout, path: '/profile', component: renderPage(ProfilePage) });
-const inviteRoute = createRoute({ getParentRoute: () => authLayout, path: '/invite', component: renderPage(InvitePage) });
-const userKeysRoute = createRoute({ getParentRoute: () => authLayout, path: '/keys', component: renderPage(UserKeysPage) });
+const accountPageBeforeLoad = () => {
+  if (getTokenRole() === 'api_key') throw redirect({ to: '/' });
+};
+const profileRoute = createRoute({ getParentRoute: () => authLayout, path: '/profile', beforeLoad: accountPageBeforeLoad, component: renderPage(ProfilePage) });
+const inviteRoute = createRoute({ getParentRoute: () => authLayout, path: '/invite', beforeLoad: accountPageBeforeLoad, component: renderPage(InvitePage) });
+const userKeysRoute = createRoute({ getParentRoute: () => authLayout, path: '/keys', beforeLoad: accountPageBeforeLoad, component: renderPage(UserKeysPage) });
 const userUsageRoute = createRoute({ getParentRoute: () => authLayout, path: '/usage', component: renderPage(UserUsagePage) });
 const modelPlazaRoute = createRoute({ getParentRoute: () => authLayout, path: '/models', component: renderPage(ModelPlazaPage) });
 

@@ -2,11 +2,14 @@ package modelpricing
 
 import (
 	"context"
-	"path/filepath"
+	"time"
 
+	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 	apppluginadmin "github.com/DouDOU-start/airgate-core/internal/app/pluginadmin"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
+	"github.com/DouDOU-start/airgate-core/internal/routing"
+	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 )
 
 // maxGroupsPageSize 可用分组一次取满（生产分组量级为个位数~十位数，500 足够）。
@@ -18,11 +21,18 @@ type Service struct {
 	catalog CatalogReader
 	groups  GroupReader
 	users   UserReader
+	apiKeys APIKeyReader
+}
+
+type modelGroupCandidate struct {
+	group       appgroup.Group
+	effective   float64
+	fixedPrices ModelQuote
 }
 
 // NewService 构造服务。
-func NewService(catalog CatalogReader, groups GroupReader, users UserReader) *Service {
-	return &Service{catalog: catalog, groups: groups, users: users}
+func NewService(catalog CatalogReader, groups GroupReader, users UserReader, apiKeys APIKeyReader) *Service {
+	return &Service{catalog: catalog, groups: groups, users: users, apiKeys: apiKeys}
 }
 
 // UserPricing 计算用户视角的模型报价：
@@ -51,19 +61,21 @@ func (s *Service) UserPricing(ctx context.Context, userID int) (Result, error) {
 		}
 		for _, model := range platform.Models {
 			quote := ModelQuote{PublicPricingModel: model}
-			for _, g := range groups {
-				if g.Platform != platform.Platform || !groupServesModel(g.ModelRouting, model.ID) {
-					continue
-				}
-				rate, ok := effectiveGroupRate(u.GroupRates, g)
-				if !ok {
-					continue // 固定图价/特殊分组（倍率哨兵 0）：不参与 token 报价
-				}
-				if quote.UserRate == 0 || rate < quote.UserRate {
-					quote.UserRate = rate
-					quote.GroupID = g.ID
-					quote.GroupName = g.Name
-					quote.GroupNameI18n = g.NameI18n
+			if candidate, ok := selectModelGroupCandidate(
+				model.ID,
+				platform.Platform,
+				groups,
+				u.GroupRates,
+				u.GroupPluginSettings,
+			); ok {
+				quote.ImagePrice1K = candidate.fixedPrices.ImagePrice1K
+				quote.ImagePrice2K = candidate.fixedPrices.ImagePrice2K
+				quote.ImagePrice4K = candidate.fixedPrices.ImagePrice4K
+				quote.GroupID = candidate.group.ID
+				quote.GroupName = candidate.group.Name
+				quote.GroupNameI18n = candidate.group.NameI18n
+				if !hasCompleteFixedImagePrices(quote) {
+					quote.UserRate = candidate.effective
 				}
 			}
 			quotes.Models = append(quotes.Models, quote)
@@ -84,6 +96,156 @@ func (s *Service) UserPricing(ctx context.Context, userID int) (Result, error) {
 		})
 	}
 	return result, nil
+}
+
+// APIKeyPricing 计算 API Key 登录会话的实付价视图。
+//
+// API Key 会话只能看到当前 Key 绑定分组可路由的模型。报价优先使用 Key 的
+// sell_rate；未配置时沿用真实计费链（用户分组专属倍率 > 分组倍率）。响应不带
+// 分组 ID/名称和分组摘要，避免向下游 Key 持有者暴露 reseller 的内部供价结构。
+func (s *Service) APIKeyPricing(ctx context.Context, userID, apiKeyID int) (Result, error) {
+	key, err := s.apiKeys.FindOwned(ctx, userID, apiKeyID)
+	if err != nil {
+		return Result{}, err
+	}
+	if key.Status != "active" || (key.ExpiresAt != nil && key.ExpiresAt.Before(time.Now())) {
+		return Result{}, appauth.ErrInvalidAPIKeySession
+	}
+	if key.GroupID == nil {
+		return Result{}, appgroup.ErrGroupNotFound
+	}
+
+	group, err := s.groups.FindByID(ctx, *key.GroupID)
+	if err != nil {
+		return Result{}, err
+	}
+	u, err := s.users.Get(ctx, userID)
+	if err != nil {
+		return Result{}, err
+	}
+	if u.Status != "active" {
+		return Result{}, appauth.ErrInvalidAPIKeySession
+	}
+
+	catalog := s.catalog.PublicModelPricing(ctx)
+	userPluginSettings := u.GroupPluginSettings[int64(group.ID)]
+	result := Result{Platforms: make([]PlatformQuotes, 0, 1)}
+	for _, platform := range catalog {
+		if platform.Platform != group.Platform {
+			continue
+		}
+		quotes := PlatformQuotes{
+			Platform: platform.Platform,
+			Models:   make([]ModelQuote, 0, len(platform.Models)),
+		}
+		for _, model := range platform.Models {
+			if !groupServesPricingModel(group, model.ID) {
+				continue
+			}
+			quote := ModelQuote{PublicPricingModel: model}
+			prices := resolveFixedImagePrices(model.ID, userPluginSettings, group.PluginSettings)
+			quote.ImagePrice1K = prices.ImagePrice1K
+			quote.ImagePrice2K = prices.ImagePrice2K
+			quote.ImagePrice4K = prices.ImagePrice4K
+			rate := key.SellRate
+			rateAvailable := rate > 0
+			if !rateAvailable {
+				rate, rateAvailable = pricingGroupRate(u.GroupRates, group, prices)
+			}
+			if rateAvailable && !hasCompleteFixedImagePrices(quote) {
+				quote.UserRate = rate
+			}
+			quotes.Models = append(quotes.Models, quote)
+		}
+		if len(quotes.Models) > 0 {
+			result.Platforms = append(result.Platforms, quotes)
+		}
+	}
+	return result, nil
+}
+
+// resolveFixedImagePrices 按真实计费优先级解析纯图片模型的各尺寸固定价：
+// 用户分组覆盖 > 分组默认。0 是合法免费价，因此用指针区分「未配置」。
+func resolveFixedImagePrices(modelID string, userSettings, groupSettings map[string]map[string]string) ModelQuote {
+	if !billing.IsFixedImageTierPricingModel(modelID) {
+		return ModelQuote{}
+	}
+	prices := ModelQuote{}
+	for tier, target := range map[string]**float64{
+		"1k": &prices.ImagePrice1K,
+		"2k": &prices.ImagePrice2K,
+		"4k": &prices.ImagePrice4K,
+	} {
+		if price, _, ok := billing.ResolveImageTierPrice(tier, userSettings, groupSettings); ok {
+			value := price
+			*target = &value
+		}
+	}
+	return prices
+}
+
+func hasFixedImagePrices(quote ModelQuote) bool {
+	return quote.ImagePrice1K != nil || quote.ImagePrice2K != nil || quote.ImagePrice4K != nil
+}
+
+func hasCompleteFixedImagePrices(quote ModelQuote) bool {
+	return quote.ImagePrice1K != nil && quote.ImagePrice2K != nil && quote.ImagePrice4K != nil
+}
+
+// selectModelGroupCandidate 使用自动路由同口径的有效倍率选择一个真实分组。
+// 固定档位和 token 回退必须全部来自该分组，禁止跨分组拼接最低档位价格。
+func selectModelGroupCandidate(
+	modelID, platform string,
+	groups []appgroup.Group,
+	userGroupRates map[int64]float64,
+	userPluginSettings map[int64]map[string]map[string]string,
+) (modelGroupCandidate, bool) {
+	var selected modelGroupCandidate
+	found := false
+	for _, g := range groups {
+		if g.Platform != platform || !groupServesPricingModel(g, modelID) {
+			continue
+		}
+		fixedPrices := resolveFixedImagePrices(modelID, userPluginSettings[int64(g.ID)], g.PluginSettings)
+		effective, ok := pricingGroupRate(userGroupRates, g, fixedPrices)
+		if !ok {
+			continue
+		}
+		candidate := modelGroupCandidate{group: g, effective: effective, fixedPrices: fixedPrices}
+		if !found || modelGroupCandidateLess(candidate, selected) {
+			selected = candidate
+			found = true
+		}
+	}
+	return selected, found
+}
+
+func modelGroupCandidateLess(left, right modelGroupCandidate) bool {
+	return routing.CandidatePrecedes(
+		routing.Candidate{
+			GroupID:       left.group.ID,
+			EffectiveRate: left.effective,
+			SortWeight:    left.group.SortWeight,
+		},
+		routing.Candidate{
+			GroupID:       right.group.ID,
+			EffectiveRate: right.effective,
+			SortWeight:    right.group.SortWeight,
+		},
+	)
+}
+
+// pricingGroupRate 返回报价选组使用的真实有效倍率。倍率 0 的特殊分组默认
+// 不参与 token 报价；但若同组存在固定图片档位，缺失档位会按 billing 的 1.0
+// 兜底继续计费，因此该分组必须作为有效候选。
+func pricingGroupRate(userGroupRates map[int64]float64, g appgroup.Group, fixedPrices ModelQuote) (float64, bool) {
+	if rate, ok := effectiveGroupRate(userGroupRates, g); ok {
+		return rate, true
+	}
+	if hasFixedImagePrices(fixedPrices) {
+		return billing.ResolveBillingRateForGroup(userGroupRates, g.ID, g.RateMultiplier), true
+	}
+	return 0, false
 }
 
 // effectiveGroupRate 返回分组对该用户的有效 token 倍率。
@@ -149,21 +311,23 @@ func groupUSDMultiplier(catalog []apppluginadmin.PublicPlatformPricing, g appgro
 	return best
 }
 
-// groupServesModel 判定分组的模型路由白名单是否放行该模型。
-// 语义须与 scheduler/selection.go 的 applyModelRouting/matchModelRouting 保持一致：
-// 路由表为空 = 不限制；精确键优先，其次 filepath.Match 通配；命中但账号列表为空 = 不放行；
-// 有规则但未命中 = 不放行。
-func groupServesModel(routing map[string][]int64, model string) bool {
-	if len(routing) == 0 {
+// groupServesPricingModel applies the same model and image-capability gates as a
+// real request before a group may contribute user-visible pricing.
+func groupServesPricingModel(g appgroup.Group, model string) bool {
+	if !groupServesModel(g.ModelRouting, model) {
+		return false
+	}
+	if !billing.IsFixedImageTierPricingModel(model) {
 		return true
 	}
-	if ids, ok := routing[model]; ok {
-		return len(ids) > 0
-	}
-	for pattern, ids := range routing {
-		if matched, _ := filepath.Match(pattern, model); matched {
-			return len(ids) > 0
-		}
-	}
-	return false
+	return routing.GroupSupportsImageRequirement(
+		g.Platform,
+		g.PluginSettings,
+		routing.Requirements{NeedsImage: true},
+	)
+}
+
+// groupServesModel delegates to the scheduler's canonical model-routing matcher.
+func groupServesModel(routing map[string][]int64, model string) bool {
+	return scheduler.ModelRoutingServes(routing, model)
 }

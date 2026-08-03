@@ -671,7 +671,7 @@ func enrichUsageCostDetails(rec UsageRecord) []sdk.UsageCostDetail {
 					items[i].Metadata["billing_mode"] = "fixed_image_price"
 					if imageCount := parseCostMetadataPositiveInt(items[i].Metadata, "image_count"); imageCount > 0 {
 						items[i].Metadata["fixed_unit_price"] = fmt.Sprintf("%.10g", items[i].UserCost/float64(imageCount))
-						items[i].Metadata["fixed_unit"] = "USD/image"
+						items[i].Metadata["fixed_unit"] = "CNY/image"
 					}
 				} else {
 					items[i].Metadata["billing_mode"] = "image_token"

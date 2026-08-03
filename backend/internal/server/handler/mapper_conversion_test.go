@@ -8,6 +8,7 @@ import (
 	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
 	appdashboard "github.com/DouDOU-start/airgate-core/internal/app/dashboard"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
+	appmodelpricing "github.com/DouDOU-start/airgate-core/internal/app/modelpricing"
 	apppluginadmin "github.com/DouDOU-start/airgate-core/internal/app/pluginadmin"
 	appproxy "github.com/DouDOU-start/airgate-core/internal/app/proxy"
 	appsettings "github.com/DouDOU-start/airgate-core/internal/app/settings"
@@ -34,6 +35,53 @@ func TestUserToRespClonesAllowedGroupIDs(t *testing.T) {
 
 	if resp.ID != 1 || resp.Email != "u@test.com" || resp.AllowedGroupIDs[0] != 1 {
 		t.Fatalf("认证用户响应异常: %+v", resp)
+	}
+}
+
+func TestAPIKeySessionUserRespJSONIsAllowlisted(t *testing.T) {
+	expiresAt := time.Date(2026, 8, 5, 10, 0, 0, 0, time.UTC)
+	resp := apiKeySessionUserResp(9, "customer-key", 20, 3.5, 2.8, &expiresAt, "openai")
+	payload, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("序列化 API Key 会话失败: %v", err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(payload, &fields); err != nil {
+		t.Fatalf("解析 API Key 会话失败: %v", err)
+	}
+	for _, forbidden := range []string{
+		"id", "email", "username", "display_badge", "balance", "can_author_blog",
+		"max_concurrency", "group_rates", "group_plugin_settings", "allowed_group_ids",
+		"balance_alert_threshold", "status", "signup_source", "created_at", "updated_at",
+	} {
+		if _, exists := fields[forbidden]; exists {
+			t.Fatalf("API Key 会话泄漏字段 %q: %s", forbidden, payload)
+		}
+	}
+	if fields["role"] != "api_key" || fields["api_key_id"] != float64(9) ||
+		fields["api_key_name"] != "customer-key" || fields["api_key_quota_usd"] != float64(20) ||
+		fields["api_key_used_quota"] != 3.5 || fields["api_key_rate"] != 2.8 ||
+		fields["api_key_platform"] != "openai" {
+		t.Fatalf("API Key 会话字段异常: %s", payload)
+	}
+}
+
+func TestMyModelPricingMapperIncludesFixedImageTiers(t *testing.T) {
+	oneK, twoK, fourK := 0.08, 0.12, 0.15
+	resp := toMyModelPricingResp(appmodelpricing.Result{Platforms: []appmodelpricing.PlatformQuotes{{
+		Platform: "openai",
+		Models: []appmodelpricing.ModelQuote{{
+			PublicPricingModel: apppluginadmin.PublicPricingModel{ID: "gpt-image-2"},
+			ImagePrice1K:       &oneK,
+			ImagePrice2K:       &twoK,
+			ImagePrice4K:       &fourK,
+		}},
+	}}})
+	model := resp.Platforms[0].Models[0]
+	if model.ImagePrice1K == nil || *model.ImagePrice1K != oneK ||
+		model.ImagePrice2K == nil || *model.ImagePrice2K != twoK ||
+		model.ImagePrice4K == nil || *model.ImagePrice4K != fourK {
+		t.Fatalf("固定图价 DTO 映射异常: %+v", model)
 	}
 }
 
