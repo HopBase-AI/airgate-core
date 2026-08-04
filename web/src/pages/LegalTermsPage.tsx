@@ -1,10 +1,9 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
-import { Button, Link as HeroLink } from '@heroui/react';
-import { Activity, ArrowRight, Moon, ShieldCheck, Sun } from 'lucide-react';
+import { Button } from '@heroui/react';
+import { ArrowRight, Moon, ShieldCheck, Sun } from 'lucide-react';
 import { useSiteSettings } from '../app/providers/SiteSettingsProvider';
 import { useTheme } from '../app/providers/ThemeProvider';
-import { useStatusPageEnabled } from '../shared/hooks/useStatusPageEnabled';
 import { getToken } from '../shared/api/client';
 import { SiteBrand } from '../shared/components/SiteBrand';
 
@@ -16,7 +15,6 @@ export default function LegalTermsPage() {
   const navigate = useNavigate();
   const site = useSiteSettings();
   const { theme, toggleTheme } = useTheme();
-  const showStatusEntry = useStatusPageEnabled();
   const isLoggedIn = !!getToken();
   const siteName = site.site_name || 'HopBase';
   const rawSections = t('legal.terms.sections', { returnObjects: true }) as unknown;
@@ -30,15 +28,6 @@ export default function LegalTermsPage() {
             <SiteBrand iconSize={30} />
           </Link>
           <div className="flex items-center gap-2">
-            {showStatusEntry && (
-              <HeroLink
-                href="/status"
-                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-text transition-colors"
-              >
-                <Activity className="w-3.5 h-3.5" />
-                {t('nav.status')}
-              </HeroLink>
-            )}
             <Button
               aria-label={theme === 'dark' ? t('legal.theme_to_light') : t('legal.theme_to_dark')}
               isIconOnly

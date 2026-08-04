@@ -10,7 +10,6 @@ import { usersApi } from '../shared/api/users';
 import { referralApi } from '../shared/api/referral';
 import { queryKeys } from '../shared/queryKeys';
 import { useTheme } from '../app/providers/ThemeProvider';
-import { useStatusPageEnabled } from '../shared/hooks/useStatusPageEnabled';
 import { getOriginSite } from '../shared/originSite';
 import { clearInviteCode, getInviteCode, getInviteCodeFromURL } from '../shared/inviteCode';
 import {
@@ -25,7 +24,7 @@ import {
 import { consumeAuthReturnTo } from '../shared/authReturnTo';
 import { SiteBrand } from '../shared/components/SiteBrand';
 import { markNewRegistration } from '../shared/onboarding/storage';
-import { Mail, Lock, User, ArrowRight, Sun, Moon, ShieldCheck, Activity, Layers, Gauge, BarChart3, BadgeCheck } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, Sun, Moon, ShieldCheck, Layers, Gauge, BarChart3, BadgeCheck } from 'lucide-react';
 
 /* ==================== 第三方登录 ==================== */
 
@@ -642,7 +641,6 @@ export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const site = useSiteSettings();
-  const showStatusEntry = useStatusPageEnabled();
   const [activeTab, setActiveTab] = useState<TabKey>('login');
   const [oauthError, setOauthError] = useState('');
   const [oauthLoading, setOauthLoading] = useState(false);
@@ -941,15 +939,6 @@ export default function LoginPage() {
 
           {/* 底部 */}
           <div className="mt-6 flex flex-col items-center gap-2">
-            {showStatusEntry && (
-              <HeroLink
-                href="/status"
-                className="inline-flex items-center gap-1.5 text-[11px] text-text-tertiary hover:text-primary transition-colors"
-              >
-                <Activity className="w-3 h-3" />
-                {t('nav.status')}
-              </HeroLink>
-            )}
             <p className="text-center text-[10px] text-text-tertiary font-mono uppercase">
               Powered by {site.site_name || 'HopBase'}
             </p>

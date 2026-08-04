@@ -28,6 +28,7 @@ import {
   lazyWithPreload,
   LoginPage,
   ModelPlazaPage,
+  NotificationsPage,
   PluginPage,
   PluginsPage,
   RelayDetectionPage,
@@ -320,6 +321,7 @@ const adminProxiesRoute = createRoute({ getParentRoute: () => adminLayout, path:
 const adminUsageRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/usage', component: renderPage(UsagePage) });
 const adminRelayDetectionRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/relay-detection', component: renderPage(RelayDetectionPage) });
 const adminPluginsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/plugins', component: renderPage(PluginsPage) });
+const adminNotificationsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/notifications', component: renderPage(NotificationsPage) });
 const adminSettingsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/settings', component: renderPage(SettingsPage) });
 const adminReferralRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/referral', component: renderPage(ReferralPage) });
 const adminBlogRoute = createRoute({ getParentRoute: () => blogAuthorLayout, path: '/admin/blog', component: renderPage(BlogListPage) });
@@ -430,6 +432,7 @@ const routeTree = rootRoute.addChildren([
       adminUsageRoute,
       adminRelayDetectionRoute,
       adminPluginsRoute,
+      adminNotificationsRoute,
       adminSettingsRoute,
       adminReferralRoute,
     ]),

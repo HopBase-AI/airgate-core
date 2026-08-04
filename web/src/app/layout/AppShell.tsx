@@ -15,6 +15,7 @@ import { useIsMobile } from '../../shared/hooks/useMediaQuery';
 import { usePersistentBoolean } from '../../shared/hooks/usePersistentBoolean';
 import { TopLoadingLine } from '../../shared/components/PageLoading';
 import { AnnouncementBanner } from '../../shared/components/AnnouncementBanner';
+import { NotificationCenter } from '../../shared/components/NotificationCenter';
 import { SiteBrand } from '../../shared/components/SiteBrand';
 import { useOnboardingReplay } from '../onboarding/OnboardingRoot';
 import {
@@ -38,7 +39,6 @@ import {
   ShieldCheck,
   BookOpen,
   MessageCircle,
-  Activity,
   Gift,
   HelpCircle,
   Megaphone,
@@ -51,6 +51,7 @@ import {
   Boxes,
   Clapperboard,
   Route,
+  Bell,
 } from 'lucide-react';
 
 interface AppShellProps {
@@ -80,6 +81,7 @@ const adminMenuItems: MenuItem[] = [
   { path: '/admin/referral', labelKey: 'nav.referral_admin', icon: <Megaphone className="h-5 w-5" />, sectionKey: 'nav.marketing' },
   { path: '/admin/blog', labelKey: 'nav.blog', icon: <FileText className="h-5 w-5" /> },
   { path: '/admin/plugins', labelKey: 'nav.plugins', icon: <Puzzle className="h-5 w-5" />, sectionKey: 'nav.system' },
+  { path: '/admin/notifications', labelKey: 'nav.notifications', icon: <Bell className="h-5 w-5" /> },
   { path: '/admin/settings', labelKey: 'nav.settings', icon: <Settings className="h-5 w-5" /> },
 ];
 
@@ -135,7 +137,6 @@ function pluginPagePath(pluginName: string, pagePath: string) {
 function usePluginMenuItems(isAdmin: boolean, isAPIKeySession: boolean): {
   adminItems: MenuItem[];
   userItems: MenuItem[];
-  healthInstalled: boolean;
 } {
   const { data } = useQuery({
     queryKey: queryKeys.pluginsMenu(),
@@ -145,11 +146,7 @@ function usePluginMenuItems(isAdmin: boolean, isAPIKeySession: boolean): {
   });
 
   return useMemo(() => {
-    if (!data?.list) return { adminItems: [], userItems: [], healthInstalled: false };
-
-    // 服务状态页由 airgate-health 插件提供（core 反代 /status/* → 插件）；
-    // 未装该插件时顶栏不显示状态入口，避免点进去看到 404 / "状态页未启用" 错误。
-    const healthInstalled = data.list.some((p) => p.name === 'airgate-health');
+    if (!data?.list) return { adminItems: [], userItems: [] };
 
     const adminItems: MenuItem[] = [];
     const userItems: MenuItem[] = [];
@@ -187,7 +184,7 @@ function usePluginMenuItems(isAdmin: boolean, isAPIKeySession: boolean): {
         }
       }
     }
-    return { adminItems, userItems, healthInstalled };
+    return { adminItems, userItems };
   }, [data?.list, isAdmin]);
 }
 
@@ -227,8 +224,7 @@ export function AppShell({ children }: AppShellProps) {
   const isAPIKeySession = user?.role === 'api_key' || !!(user?.api_key_id && user.api_key_id > 0);
   const isAdmin = !isAPIKeySession && (getTokenRole() === 'admin' || user?.role === 'admin');
 
-  const { adminItems: pluginAdminItems, userItems: pluginUserItems, healthInstalled } = usePluginMenuItems(isAdmin, isAPIKeySession);
-  const showStatusEntry = healthInstalled;
+  const { adminItems: pluginAdminItems, userItems: pluginUserItems } = usePluginMenuItems(isAdmin, isAPIKeySession);
   const sections = useMemo(() => {
     const userItemsWithInvite = site.referral_enabled ? [...userMenuItems, inviteMenuItem] : userMenuItems;
     const adminUserItems = userItemsWithInvite
@@ -274,6 +270,9 @@ export function AppShell({ children }: AppShellProps) {
   const currentLanguageOption = LANGUAGE_OPTIONS.find((item) => item.key === currentLanguage) ?? LANGUAGE_OPTIONS[0];
 
   const displayName = user?.api_key_name || user?.username || user?.email?.split('@')[0] || site.site_name || 'HopBase';
+  const notificationIdentity = isAPIKeySession
+    ? `api-key:${user?.api_key_id ?? 'session'}`
+    : `user:${user?.id ?? 'session'}`;
   useEffect(() => {
     document.title = site.site_name || 'HopBase';
   }, [site.site_name]);
@@ -479,18 +478,7 @@ export function AppShell({ children }: AppShellProps) {
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            {/* Service status — 仅当 airgate-health 插件已安装时显示
-                注意：用普通 href 而非 SPA Link，因为 /status 由后端反代到 health 插件
-                的 standalone 页面，不在 SPA 路由树里 */}
-            {showStatusEntry && (
-              <HeroLink
-                href="/status"
-                aria-label={t('nav.status')}
-                className="flex h-10 w-10 items-center justify-center rounded-[var(--radius)] text-text-secondary transition-colors hover:text-text"
-              >
-                <Activity className="h-5 w-5" />
-              </HeroLink>
-            )}
+            <NotificationCenter key={notificationIdentity} identity={notificationIdentity} />
             {/* Docs：未配置外部链接时回退到内置 /docs */}
             {(() => {
               const docs = effectiveDocUrl(site.doc_url);

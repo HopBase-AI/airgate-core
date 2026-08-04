@@ -47,7 +47,6 @@ export const queryKeys = {
   myModelPricing: () => ['my-model-pricing'] as const,
   userBalanceHistory: (...args: unknown[]) => ['user-balance-history', ...args] as const,
   userTrend: (...args: unknown[]) => ['user-trend', ...args] as const,
-  statusPageEnabled: () => ['status-page-enabled'] as const,
   referralMe: () => ['referral-me'] as const,
   referralResolve: (code: string) => ['referral-resolve', code] as const,
   referralMyCommissions: (...args: unknown[]) => ['referral-my-commissions', ...args] as const,

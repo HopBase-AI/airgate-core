@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { settingsApi } from '../../shared/api/settings';
 import { queryKeys } from '../../shared/queryKeys';
 import { getOriginSite, subscribeOriginSite } from '../../shared/originSite';
+import { mergeLegacyNotification, parseNotificationHistory, type SiteNotification } from '../../shared/notifications';
 import defaultLogoUrl from '../../assets/logo.svg';
 
 export { defaultLogoUrl };
@@ -74,10 +75,13 @@ interface SiteSettings {
   oauth_github_enabled: boolean;
   // 分销邀请开关（控制台据此显示「我的邀请」入口）
   referral_enabled: boolean;
-  // 整站通知横幅（管理员在站点设置里配置，公开设置接口下发）
+  // 整站通知与历史（管理员在独立通知栏目配置，公开设置接口下发）
   announcement_enabled: boolean;
+  announcement_id: string;
+  announcement_title: string;
   announcement_level: string;
   announcement_content: string;
+  notifications: SiteNotification[];
   // 博客可投放站点选项(后台编辑器「发布站点」多选);空=未配置多站,编辑器隐藏该选择器
   blog_sites: BlogSiteOption[];
   settings_loaded: boolean;
@@ -100,8 +104,11 @@ const defaults: SiteSettings = {
   oauth_github_enabled: false,
   referral_enabled: false,
   announcement_enabled: false,
+  announcement_id: '',
+  announcement_title: '',
   announcement_level: 'info',
   announcement_content: '',
+  notifications: [],
   blog_sites: [],
   settings_loaded: false,
 };
@@ -137,8 +144,18 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
     oauth_github_enabled: data?.oauth_github_enabled === 'true',
     referral_enabled: data?.referral_enabled === 'true',
     announcement_enabled: data?.announcement_enabled === 'true',
+    announcement_id: data?.announcement_id || '',
+    announcement_title: data?.announcement_title || '',
     announcement_level: data?.announcement_level || 'info',
     announcement_content: data?.announcement_content || '',
+    notifications: mergeLegacyNotification(
+      parseNotificationHistory(data?.announcement_history_json),
+      {
+        title: data?.announcement_title,
+        content: data?.announcement_content,
+        level: data?.announcement_level,
+      },
+    ),
     blog_sites: parseBlogSites(data?.blog_sites),
     settings_loaded: !isPending,
     };
