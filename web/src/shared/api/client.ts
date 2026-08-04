@@ -84,6 +84,13 @@ export function clearTokenIfSessionCurrent(identity: SessionIdentity): boolean {
   return true;
 }
 
+// A login or registration submit owns a fresh anonymous epoch immediately,
+// so an older auth flow cannot win while the newer request is still pending.
+export function beginAuthenticationAttempt(): SessionIdentity {
+  setToken(null);
+  return sessionEpoch;
+}
+
 export function getTokenClaims(token = accessToken): TokenClaims | null {
   if (!token) return null;
 
@@ -520,8 +527,8 @@ export function get<T>(path: string, params?: QueryParams, options?: RequestOpti
   return request<T>('GET', path, undefined, params, options);
 }
 
-export function post<T>(path: string, body?: unknown): Promise<T> {
-  return request<T>('POST', path, body);
+export function post<T>(path: string, body?: unknown, options?: RequestOptions): Promise<T> {
+  return request<T>('POST', path, body, undefined, options);
 }
 
 export function put<T>(path: string, body?: unknown): Promise<T> {

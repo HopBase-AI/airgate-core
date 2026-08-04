@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -15,10 +15,12 @@ import { getOriginSite } from '../shared/originSite';
 import { clearInviteCode, getInviteCode, getInviteCodeFromURL } from '../shared/inviteCode';
 import {
   ApiError,
+  beginAuthenticationAttempt,
   clearTokenIfSessionCurrent,
   getSessionIdentity,
   isSessionIdentityCurrent,
   setToken,
+  type SessionIdentity,
 } from '../shared/api/client';
 import { consumeAuthReturnTo } from '../shared/authReturnTo';
 import { SiteBrand } from '../shared/components/SiteBrand';
@@ -106,6 +108,13 @@ function OAuthButtons({
 }
 
 type TabKey = 'login' | 'register';
+type AuthenticationAttempt = {
+  controller: AbortController;
+  identity: SessionIdentity;
+};
+type AuthenticationFormProps = {
+  startAuthenticationAttempt: () => AuthenticationAttempt;
+};
 
 // 后端错误文案是简体中文硬编码;登录/注册是匿名用户第一触点(ToC 多落地页繁体/英文受众),
 // 已知消息按界面语言本地化,未命中映射的消息原样展示(后端新增错误时自然回退)。
@@ -169,7 +178,7 @@ function AgreementCheckbox({
 
 /* ==================== 登录表单 ==================== */
 
-function LoginForm() {
+function LoginForm({ startAuthenticationAttempt }: AuthenticationFormProps) {
   const navigate = useNavigate();
   const { login } = useAuth();
   const { t } = useTranslation();
@@ -185,21 +194,26 @@ function LoginForm() {
     if (!acceptedAgreement) { setError(t('auth.agreement_required')); return; }
     setLoading(true);
     setError('');
+    const attempt = startAuthenticationAttempt();
 
     try {
-      const resp = await authApi.login({ email, password });
+      const resp = await authApi.login({ email, password }, attempt.controller.signal);
+      if (attempt.controller.signal.aborted || !isSessionIdentityCurrent(attempt.identity)) return;
       login(resp.token, resp.user);
       const returnTo = consumeAuthReturnTo();
       if (returnTo) window.location.assign(returnTo);
       else navigate({ to: '/' });
     } catch (err) {
+      if (attempt.controller.signal.aborted || !isSessionIdentityCurrent(attempt.identity)) return;
       if (err instanceof ApiError) {
         setError(localizeServerMessage(t, err.message));
       } else {
         setError(t('auth.login_failed'));
       }
     } finally {
-      setLoading(false);
+      if (!attempt.controller.signal.aborted && isSessionIdentityCurrent(attempt.identity)) {
+        setLoading(false);
+      }
     }
   };
 
@@ -266,7 +280,7 @@ function LoginForm() {
 
 /* ==================== 注册表单 ==================== */
 
-function RegisterForm() {
+function RegisterForm({ startAuthenticationAttempt }: AuthenticationFormProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -379,6 +393,7 @@ function RegisterForm() {
 
     setLoading(true);
     setError('');
+    const attempt = startAuthenticationAttempt();
     try {
       // 注册接口与登录同构返回 token+user，直接入会话免去二次登录
       const resp = await authApi.register({
@@ -388,13 +403,15 @@ function RegisterForm() {
         verify_code: needVerify ? verifiedCode : undefined,
         source_site: getOriginSite() || undefined,
         invite_code: getInviteCode() || undefined,
-      });
+      }, attempt.controller.signal);
+      if (attempt.controller.signal.aborted || !isSessionIdentityCurrent(attempt.identity)) return;
       markNewRegistration(resp.user.id);
       login(resp.token, resp.user);
       const returnTo = consumeAuthReturnTo();
       if (returnTo) window.location.assign(returnTo);
       else navigate({ to: '/' });
     } catch (err) {
+      if (attempt.controller.signal.aborted || !isSessionIdentityCurrent(attempt.identity)) return;
       if (err instanceof ApiError) {
         // 验证码错误则回到第一步(判断用后端原文,展示用本地化文案)
         if (err.message.includes('验证码')) {
@@ -407,7 +424,9 @@ function RegisterForm() {
         setError(t('auth.register_failed'));
       }
     } finally {
-      setLoading(false);
+      if (!attempt.controller.signal.aborted && isSessionIdentityCurrent(attempt.identity)) {
+        setLoading(false);
+      }
     }
   };
 
@@ -584,6 +603,40 @@ export default function LoginPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('login');
   const [oauthError, setOauthError] = useState('');
   const [oauthLoading, setOauthLoading] = useState(false);
+  const authenticationAttemptRef = useRef<AuthenticationAttempt | null>(null);
+
+  const startAuthenticationAttempt = useCallback((token: string | null): AuthenticationAttempt => {
+    const previous = authenticationAttemptRef.current;
+    let identity: SessionIdentity;
+    if (token === null) {
+      identity = beginAuthenticationAttempt();
+    } else {
+      setToken(token);
+      identity = getSessionIdentity();
+    }
+    const attempt = { controller: new AbortController(), identity };
+    authenticationAttemptRef.current = attempt;
+    previous?.controller.abort();
+    return attempt;
+  }, []);
+
+  const startFormAuthenticationAttempt = useCallback(() => {
+    const attempt = startAuthenticationAttempt(null);
+    setOauthLoading(false);
+    setOauthError('');
+    return attempt;
+  }, [startAuthenticationAttempt]);
+
+  const cancelActiveAuthenticationAttempt = useCallback(() => {
+    const active = authenticationAttemptRef.current;
+    authenticationAttemptRef.current = null;
+    if (active) {
+      if (isSessionIdentityCurrent(active.identity)) beginAuthenticationAttempt();
+      active.controller.abort();
+    }
+    setOauthLoading(false);
+    setOauthError('');
+  }, []);
 
   // 展示身份只认「本次登录页地址明确携带的 ?inv=」，不能用 localStorage 中的历史归因，
   // 否则访客日后直接打开普通 /login 也会误见上次推广人的认证条。
@@ -621,6 +674,14 @@ export default function LoginPage() {
   });
   const officialInvite = resolvedInvite?.exists && resolvedInvite.tier === 'official' ? resolvedInvite : null;
 
+  useEffect(() => () => {
+    const active = authenticationAttemptRef.current;
+    authenticationAttemptRef.current = null;
+    if (!active) return;
+    active.controller.abort();
+    clearTokenIfSessionCurrent(active.identity);
+  }, []);
+
   // 第三方登录回调：JWT 经 URL fragment 带回（不进服务端日志），换取用户信息后入会话；
   // 失败信息经 oauth_error 查询参数带回。两者读取后都立即从地址栏清除。
   useEffect(() => {
@@ -637,13 +698,12 @@ export default function LoginPage() {
     if (!token) return;
     window.history.replaceState(null, '', window.location.pathname + window.location.search);
 
-    const controller = new AbortController();
+    const attempt = startAuthenticationAttempt(token);
     setOauthLoading(true);
-    setToken(token);
-    const oauthSession = getSessionIdentity();
-    void usersApi.me(controller.signal)
+    void usersApi.me(attempt.controller.signal)
       .then((userData) => {
-        if (controller.signal.aborted || !isSessionIdentityCurrent(oauthSession)) return;
+        if (attempt.controller.signal.aborted || !isSessionIdentityCurrent(attempt.identity)) return;
+        if (authenticationAttemptRef.current === attempt) authenticationAttemptRef.current = null;
         if (isNewUser) markNewRegistration(userData.id);
         login(token, userData);
         const returnTo = consumeAuthReturnTo();
@@ -651,15 +711,12 @@ export default function LoginPage() {
         else void navigate({ to: '/' });
       })
       .catch(() => {
-        if (controller.signal.aborted || !clearTokenIfSessionCurrent(oauthSession)) return;
+        if (attempt.controller.signal.aborted || !clearTokenIfSessionCurrent(attempt.identity)) return;
+        if (authenticationAttemptRef.current === attempt) authenticationAttemptRef.current = null;
         setOauthError(t('auth.oauth_failed', { defaultValue: '第三方登录失败，请重试' }));
         setOauthLoading(false);
       });
     // 仅在挂载时消费一次回调参数
-    return () => {
-      controller.abort();
-      clearTokenIfSessionCurrent(oauthSession);
-    };
   }, []);
 
   return (
@@ -788,7 +845,11 @@ export default function LoginPage() {
           <Tabs
             className="mb-6 w-full"
             selectedKey={activeTab}
-            onSelectionChange={(key) => setActiveTab(key as TabKey)}
+            onSelectionChange={(key) => {
+              const nextTab = key as TabKey;
+              if (nextTab !== activeTab) cancelActiveAuthenticationAttempt();
+              setActiveTab(nextTab);
+            }}
             variant="secondary"
           >
             <Tabs.List className="w-full">
@@ -821,9 +882,9 @@ export default function LoginPage() {
             )}
 
             {activeTab === 'register' && site.registration_enabled ? (
-              <RegisterForm />
+              <RegisterForm startAuthenticationAttempt={startFormAuthenticationAttempt} />
             ) : (
-              <LoginForm />
+              <LoginForm startAuthenticationAttempt={startFormAuthenticationAttempt} />
             )}
             </Card.Content>
           </Card>

@@ -185,6 +185,45 @@ describe('API client refresh availability', () => {
     expect(localStorage.getItem('token')).toBe(replacementToken);
   });
 
+  it('does not let an old OAuth flow clear a newer pending authentication attempt', async () => {
+    const oauthToken = tokenWithClaims({ role: 'user', user_id: 7, jti: 'oauth' });
+    const client = await import('./client');
+
+    client.setToken(oauthToken);
+    const oauthSession = client.getSessionIdentity();
+    const passwordAttempt = client.beginAuthenticationAttempt();
+
+    expect(client.isSessionIdentityCurrent(passwordAttempt)).toBe(true);
+    expect(client.clearTokenIfSessionCurrent(oauthSession)).toBe(false);
+    expect(client.getToken()).toBeNull();
+  });
+
+  it('accepts only the latest pending anonymous authentication attempt', async () => {
+    const firstResponse = deferred<Response>();
+    const secondResponse = deferred<Response>();
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(() => firstResponse.promise)
+      .mockImplementationOnce(() => secondResponse.promise);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = await import('./client');
+    const firstAttempt = client.beginAuthenticationAttempt();
+    const firstRequest = client.post('/api/v1/auth/login', { email: 'first@example.com' });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const secondAttempt = client.beginAuthenticationAttempt();
+    const secondRequest = client.post('/api/v1/auth/register', { email: 'second@example.com' });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    firstResponse.resolve(apiResponse(200, 0, 'ok', { attempt: 'first' }));
+    await expect(firstRequest).rejects.toBeInstanceOf(client.SessionSupersededError);
+    secondResponse.resolve(apiResponse(200, 0, 'ok', { attempt: 'second' }));
+
+    await expect(secondRequest).resolves.toEqual({ attempt: 'second' });
+    expect(client.isSessionIdentityCurrent(firstAttempt)).toBe(false);
+    expect(client.isSessionIdentityCurrent(secondAttempt)).toBe(true);
+  });
+
   it('discards a delayed anonymous login response after another session is established', async () => {
     const replacementToken = tokenWithClaims({ role: 'user', user_id: 9, jti: 'replacement' });
     const delayed = deferred<Response>();
