@@ -7,9 +7,8 @@ import { CommonModal } from './CommonModal';
 
 const DISMISS_STORAGE_KEY = 'airgate.announcement.dismissed';
 
-// fingerprint 公告内容指纹：用户关闭弹窗记住的是这个值,
-// 管理员改了级别或文案后指纹变化 → 弹窗对所有人重新弹出。
-function fingerprint(level: string, content: string): string {
+// 旧公告没有发布 ID 时继续使用原内容指纹，避免升级后已关闭的弹窗再次出现。
+function legacyFingerprint(level: string, content: string): string {
   const s = `${level}|${content}`;
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
@@ -28,7 +27,7 @@ function resolveLevelStyle(level: string) {
   return LEVEL_STYLE[level as AnnouncementLevel] ?? LEVEL_STYLE.info;
 }
 
-// AnnouncementBanner 整站通知弹窗：管理员在「站点设置」配置,登录后所有控制台用户居中弹出。
+// AnnouncementBanner 整站通知弹窗：管理员在独立「通知」栏目配置,登录后所有控制台用户居中弹出。
 // 关闭即「不再提示」(localStorage 按内容指纹记忆),内容或级别更新后对所有人重新弹出。
 // 注:props.className 为历史横幅挂载点(AppShell/PluginShell)保留,弹窗形态下不再使用。
 export function AnnouncementBanner(_: { className?: string } = {}) {
@@ -46,7 +45,7 @@ export function AnnouncementBanner(_: { className?: string } = {}) {
 
   const content = (site.announcement_content || '').trim();
   const { color, Icon } = resolveLevelStyle(site.announcement_level);
-  const fp = fingerprint(site.announcement_level, content);
+  const fp = site.announcement_id || legacyFingerprint(site.announcement_level, content);
   const shouldShow = Boolean(site.announcement_enabled) && content !== '' && dismissed !== fp;
   const isOpen = shouldShow && !closed;
 
@@ -73,7 +72,7 @@ export function AnnouncementBanner(_: { className?: string } = {}) {
       size="sm"
       surface={false}
       icon={<Icon className="h-5 w-5" style={{ color }} />}
-      title={t('settings.announcement_popup_title')}
+      title={site.announcement_title || t('settings.announcement_popup_title')}
       footer={(
         <Button variant="primary" onPress={dismiss}>
           {t('settings.announcement_popup_dismiss')}
