@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -52,9 +52,11 @@ function GitHubIcon() {
 function OAuthButtons({
   acceptedAgreement,
   onAgreementMissing,
+  onAuthenticationStart,
 }: {
   acceptedAgreement: boolean;
   onAgreementMissing: () => void;
+  onAuthenticationStart: () => void;
 }) {
   const { t } = useTranslation();
   const site = useSiteSettings();
@@ -84,6 +86,7 @@ function OAuthButtons({
                 onAgreementMissing();
                 return;
               }
+              onAuthenticationStart();
               // 注册归因（来源站/邀请码）经 query 交给后端签进 OAuth state 往返穿透，
               // 否则第三方授权跳转会丢归因（OAuth 注册用户查不到来源）。
               const attribution = new URLSearchParams();
@@ -114,7 +117,27 @@ type AuthenticationAttempt = {
 };
 type AuthenticationFormProps = {
   startAuthenticationAttempt: () => AuthenticationAttempt;
+  cancelAuthenticationAttempt: (attempt: AuthenticationAttempt) => void;
 };
+type LoginFormProps = AuthenticationFormProps & {
+  cancelActiveAuthenticationAttempt: () => void;
+};
+
+function useAuthenticationAttemptOwner(
+  cancelAuthenticationAttempt: (attempt: AuthenticationAttempt) => void,
+) {
+  const attemptRef = useRef<AuthenticationAttempt | null>(null);
+
+  // Layout cleanup advances the epoch during the unmount commit, before a
+  // settings-driven form replacement can accept the removed form's response.
+  useLayoutEffect(() => () => {
+    const attempt = attemptRef.current;
+    attemptRef.current = null;
+    if (attempt) cancelAuthenticationAttempt(attempt);
+  }, [cancelAuthenticationAttempt]);
+
+  return attemptRef;
+}
 
 // 后端错误文案是简体中文硬编码;登录/注册是匿名用户第一触点(ToC 多落地页繁体/英文受众),
 // 已知消息按界面语言本地化,未命中映射的消息原样展示(后端新增错误时自然回退)。
@@ -178,7 +201,11 @@ function AgreementCheckbox({
 
 /* ==================== 登录表单 ==================== */
 
-function LoginForm({ startAuthenticationAttempt }: AuthenticationFormProps) {
+function LoginForm({
+  startAuthenticationAttempt,
+  cancelAuthenticationAttempt,
+  cancelActiveAuthenticationAttempt,
+}: LoginFormProps) {
   const navigate = useNavigate();
   const { login } = useAuth();
   const { t } = useTranslation();
@@ -188,6 +215,7 @@ function LoginForm({ startAuthenticationAttempt }: AuthenticationFormProps) {
   const [loading, setLoading] = useState(false);
   const [acceptedAgreement, setAcceptedAgreement] = useState(false);
   const [error, setError] = useState('');
+  const authenticationAttemptRef = useAuthenticationAttemptOwner(cancelAuthenticationAttempt);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -195,6 +223,7 @@ function LoginForm({ startAuthenticationAttempt }: AuthenticationFormProps) {
     setLoading(true);
     setError('');
     const attempt = startAuthenticationAttempt();
+    authenticationAttemptRef.current = attempt;
 
     try {
       const resp = await authApi.login({ email, password }, attempt.controller.signal);
@@ -273,6 +302,7 @@ function LoginForm({ startAuthenticationAttempt }: AuthenticationFormProps) {
       <OAuthButtons
         acceptedAgreement={acceptedAgreement}
         onAgreementMissing={() => setError(t('auth.agreement_required'))}
+        onAuthenticationStart={cancelActiveAuthenticationAttempt}
       />
     </Form>
   );
@@ -280,7 +310,10 @@ function LoginForm({ startAuthenticationAttempt }: AuthenticationFormProps) {
 
 /* ==================== 注册表单 ==================== */
 
-function RegisterForm({ startAuthenticationAttempt }: AuthenticationFormProps) {
+function RegisterForm({
+  startAuthenticationAttempt,
+  cancelAuthenticationAttempt,
+}: AuthenticationFormProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -302,6 +335,7 @@ function RegisterForm({ startAuthenticationAttempt }: AuthenticationFormProps) {
   const [countdown, setCountdown] = useState(0);
   const [acceptedAgreement, setAcceptedAgreement] = useState(false);
   const [error, setError] = useState('');
+  const authenticationAttemptRef = useAuthenticationAttemptOwner(cancelAuthenticationAttempt);
 
   const passwordMismatch = confirmPassword !== '' && password !== confirmPassword;
 
@@ -309,6 +343,14 @@ function RegisterForm({ startAuthenticationAttempt }: AuthenticationFormProps) {
     setVerifiedEmail('');
     setVerifiedCode('');
   };
+
+  const returnToEmailStep = useCallback(() => {
+    const attempt = authenticationAttemptRef.current;
+    authenticationAttemptRef.current = null;
+    if (attempt) cancelAuthenticationAttempt(attempt);
+    setLoading(false);
+    setStep(1);
+  }, [authenticationAttemptRef, cancelAuthenticationAttempt]);
 
   // 倒计时
   useEffect(() => {
@@ -319,11 +361,11 @@ function RegisterForm({ startAuthenticationAttempt }: AuthenticationFormProps) {
     return () => window.clearInterval(timer);
   }, [countdown]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (settingsReady && needVerify && step === 2 && (!verifiedEmail || !verifiedCode)) {
-      setStep(1);
+      returnToEmailStep();
     }
-  }, [needVerify, settingsReady, step, verifiedCode, verifiedEmail]);
+  }, [needVerify, returnToEmailStep, settingsReady, step, verifiedCode, verifiedEmail]);
 
   // 发送验证码
   const handleSendCode = async () => {
@@ -386,7 +428,7 @@ function RegisterForm({ startAuthenticationAttempt }: AuthenticationFormProps) {
 
     const registrationEmail = needVerify ? verifiedEmail : email.trim();
     if (needVerify && (!verifiedEmail || !verifiedCode || email.trim() !== verifiedEmail)) {
-      setStep(1);
+      returnToEmailStep();
       setError(t('auth.email_verification_required'));
       return;
     }
@@ -394,6 +436,7 @@ function RegisterForm({ startAuthenticationAttempt }: AuthenticationFormProps) {
     setLoading(true);
     setError('');
     const attempt = startAuthenticationAttempt();
+    authenticationAttemptRef.current = attempt;
     try {
       // 注册接口与登录同构返回 token+user，直接入会话免去二次登录
       const resp = await authApi.register({
@@ -415,7 +458,7 @@ function RegisterForm({ startAuthenticationAttempt }: AuthenticationFormProps) {
       if (err instanceof ApiError) {
         // 验证码错误则回到第一步(判断用后端原文,展示用本地化文案)
         if (err.message.includes('验证码')) {
-          setStep(1);
+          returnToEmailStep();
           setVerifyCode('');
           resetVerifiedEmail();
         }
@@ -523,7 +566,7 @@ function RegisterForm({ startAuthenticationAttempt }: AuthenticationFormProps) {
           className="ml-auto shrink-0"
           size="sm"
           variant="ghost"
-          onPress={() => setStep(1)}
+          onPress={returnToEmailStep}
         >
           {t('auth.change_email')}
         </Button>
@@ -627,16 +670,19 @@ export default function LoginPage() {
     return attempt;
   }, [startAuthenticationAttempt]);
 
+  const cancelAuthenticationAttempt = useCallback((attempt: AuthenticationAttempt) => {
+    if (authenticationAttemptRef.current !== attempt) return;
+    authenticationAttemptRef.current = null;
+    if (isSessionIdentityCurrent(attempt.identity)) beginAuthenticationAttempt();
+    attempt.controller.abort();
+  }, []);
+
   const cancelActiveAuthenticationAttempt = useCallback(() => {
     const active = authenticationAttemptRef.current;
-    authenticationAttemptRef.current = null;
-    if (active) {
-      if (isSessionIdentityCurrent(active.identity)) beginAuthenticationAttempt();
-      active.controller.abort();
-    }
+    if (active) cancelAuthenticationAttempt(active);
     setOauthLoading(false);
     setOauthError('');
-  }, []);
+  }, [cancelAuthenticationAttempt]);
 
   // 展示身份只认「本次登录页地址明确携带的 ?inv=」，不能用 localStorage 中的历史归因，
   // 否则访客日后直接打开普通 /login 也会误见上次推广人的认证条。
@@ -674,13 +720,10 @@ export default function LoginPage() {
   });
   const officialInvite = resolvedInvite?.exists && resolvedInvite.tier === 'official' ? resolvedInvite : null;
 
-  useEffect(() => () => {
+  useLayoutEffect(() => () => {
     const active = authenticationAttemptRef.current;
-    authenticationAttemptRef.current = null;
-    if (!active) return;
-    active.controller.abort();
-    clearTokenIfSessionCurrent(active.identity);
-  }, []);
+    if (active) cancelAuthenticationAttempt(active);
+  }, [cancelAuthenticationAttempt]);
 
   // 第三方登录回调：JWT 经 URL fragment 带回（不进服务端日志），换取用户信息后入会话；
   // 失败信息经 oauth_error 查询参数带回。两者读取后都立即从地址栏清除。
@@ -882,9 +925,16 @@ export default function LoginPage() {
             )}
 
             {activeTab === 'register' && site.registration_enabled ? (
-              <RegisterForm startAuthenticationAttempt={startFormAuthenticationAttempt} />
+              <RegisterForm
+                startAuthenticationAttempt={startFormAuthenticationAttempt}
+                cancelAuthenticationAttempt={cancelAuthenticationAttempt}
+              />
             ) : (
-              <LoginForm startAuthenticationAttempt={startFormAuthenticationAttempt} />
+              <LoginForm
+                startAuthenticationAttempt={startFormAuthenticationAttempt}
+                cancelAuthenticationAttempt={cancelAuthenticationAttempt}
+                cancelActiveAuthenticationAttempt={cancelActiveAuthenticationAttempt}
+              />
             )}
             </Card.Content>
           </Card>

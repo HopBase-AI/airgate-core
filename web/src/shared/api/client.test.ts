@@ -224,6 +224,30 @@ describe('API client refresh availability', () => {
     expect(client.isSessionIdentityCurrent(secondAttempt)).toBe(true);
   });
 
+  it('forwards cancellation to an anonymous authentication request', async () => {
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        const error = new Error('authentication cancelled');
+        error.name = 'AbortError';
+        reject(error);
+      }, { once: true });
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = await import('./client');
+    const controller = new AbortController();
+    client.beginAuthenticationAttempt();
+    const request = client.post('/api/v1/auth/login', { email: 'cancel@example.com' }, {
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+
+    controller.abort();
+
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+  });
+
   it('discards a delayed anonymous login response after another session is established', async () => {
     const replacementToken = tokenWithClaims({ role: 'user', user_id: 9, jti: 'replacement' });
     const delayed = deferred<Response>();
