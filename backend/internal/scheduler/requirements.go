@@ -51,6 +51,12 @@ func accountMatchesRequirements(acc *ent.Account, req AccountRequirements) bool 
 	return true
 }
 
+// AccountMatchesRequirements exposes the scheduler's canonical workload and
+// image-protocol eligibility check to read-only route snapshots.
+func AccountMatchesRequirements(acc *ent.Account, req AccountRequirements) bool {
+	return accountMatchesRequirements(acc, req)
+}
+
 func accountAllowsWorkload(acc *ent.Account, workload Workload) bool {
 	allowed := extraStringSet(acc.Extra, "allowed_workloads")
 	if len(allowed) == 0 {

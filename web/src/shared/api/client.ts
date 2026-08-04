@@ -28,6 +28,7 @@ function writeBrowserStorage(kind: 'localStorage' | 'sessionStorage', key: strin
 }
 
 let accessToken: string | null = readBrowserStorage('localStorage', 'token');
+let sessionEpoch = Symbol('auth-session');
 
 interface TokenClaims {
   user_id?: number;
@@ -36,7 +37,7 @@ interface TokenClaims {
   exp?: number;
 }
 
-export function setToken(token: string | null) {
+function persistToken(token: string | null) {
   const previousAPIKeyID = getTokenRole(accessToken) === 'api_key'
     ? getTokenAPIKeyID(accessToken)
     : null;
@@ -56,8 +57,38 @@ export function setToken(token: string | null) {
   }
 }
 
+// Login/logout always starts a new client session, even when the JWT belongs to
+// the same user. Only a successful refresh may preserve the current epoch.
+export function setToken(token: string | null) {
+  sessionEpoch = Symbol('auth-session');
+  persistToken(token);
+}
+
 export function getToken(): string | null {
   return accessToken;
+}
+
+export type SessionIdentity = symbol;
+
+export function getSessionIdentity(): SessionIdentity {
+  return sessionEpoch;
+}
+
+export function isSessionIdentityCurrent(identity: SessionIdentity): boolean {
+  return sessionEpoch === identity;
+}
+
+export function clearTokenIfSessionCurrent(identity: SessionIdentity): boolean {
+  if (!isSessionIdentityCurrent(identity)) return false;
+  setToken(null);
+  return true;
+}
+
+// A login or registration submit owns a fresh anonymous epoch immediately,
+// so an older auth flow cannot win while the newer request is still pending.
+export function beginAuthenticationAttempt(): SessionIdentity {
+  setToken(null);
+  return sessionEpoch;
 }
 
 export function getTokenClaims(token = accessToken): TokenClaims | null {
@@ -88,7 +119,9 @@ export function getTokenAPIKeyID(token = accessToken): number | null {
   return typeof id === 'number' && id > 0 ? id : null;
 }
 
-// Token refresh changes the JWT string but preserves this stable session identity.
+// Token identity is used for display/session metadata only. Request replay uses
+// the stricter client session epoch below so a same-user login is never treated
+// as a token refresh.
 export function isSameTokenSession(left: string | null, right: string | null): boolean {
   if (!left || !right) return false;
   if (left === right) return true;
@@ -109,8 +142,8 @@ export function isSameTokenSession(left: string | null, right: string | null): b
 syncBlogReaderSession(!!accessToken, getTokenClaims(accessToken)?.exp);
 if (!accessToken) {
   clearBlogSession();
-  setSessionAPIKey(null);
 }
+if (getTokenRole(accessToken) !== 'api_key') setSessionAPIKey(null);
 
 // API Key 登录场景下用户输入的原文 Key，仅保留在 sessionStorage 内，
 // 退出登录或关闭浏览器即清除。供 CCS 导入等需要原文 Key 的客户端功能使用。
@@ -139,13 +172,13 @@ function browserTimezone(): string {
 }
 
 // 构建请求头
-function buildHeaders(includeContentType: boolean): Record<string, string> {
+function buildHeaders(includeContentType: boolean, token = accessToken): Record<string, string> {
   const headers: Record<string, string> = {};
   if (includeContentType) {
     headers['Content-Type'] = 'application/json';
   }
-  if (accessToken) {
-    headers['Authorization'] = `Bearer ${accessToken}`;
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
   }
   return headers;
 }
@@ -153,16 +186,32 @@ function buildHeaders(includeContentType: boolean): Record<string, string> {
 // Token 自动刷新：在过期前 30 分钟内首次请求时静默续期。
 // 明确失效和临时故障必须分开，避免 DB/网络抖动把有效会话永久删除。
 type RefreshResult =
-  | { kind: 'refreshed' }
+  | { kind: 'refreshed'; token: string }
   | { kind: 'rejected'; error: ApiError }
-  | { kind: 'retryable'; error: ApiError };
+  | { kind: 'retryable'; error: ApiError }
+  | { kind: 'superseded'; error: SessionSupersededError };
 
-let refreshPromise: Promise<RefreshResult> | null = null;
+const REFRESH_TIMEOUT_MS = 15_000;
 
-function tokenExpiresWithin(seconds: number): boolean {
-  const claims = getTokenClaims();
+let refreshInFlight: {
+  token: string;
+  epoch: symbol;
+  id: symbol;
+  promise: Promise<RefreshResult>;
+} | null = null;
+
+function tokenExpiresWithin(token: string, seconds: number): boolean {
+  const claims = getTokenClaims(token);
   if (!claims?.exp) return false;
   return claims.exp - Date.now() / 1000 < seconds;
+}
+
+function sessionSupersededError(): SessionSupersededError {
+  return new SessionSupersededError();
+}
+
+function supersededRefresh(): RefreshResult {
+  return { kind: 'superseded', error: sessionSupersededError() };
 }
 
 function refreshFailure(error: ApiError): RefreshResult {
@@ -186,67 +235,150 @@ async function refreshResponseError(res: Response): Promise<ApiError> {
   }
 }
 
-async function tryRefreshToken(): Promise<RefreshResult> {
-  if (!accessToken) {
+function refreshSessionIsCurrent(token: string, epoch: symbol): boolean {
+  return accessToken === token && sessionEpoch === epoch;
+}
+
+function replaceRefreshedToken(token: string, epoch: symbol, refreshedToken: string): boolean {
+  if (!refreshSessionIsCurrent(token, epoch)) return false;
+  persistToken(refreshedToken);
+  return true;
+}
+
+function abortError(): Error {
+  const error = new Error('request cancelled');
+  error.name = 'AbortError';
+  return error;
+}
+
+function waitForRefresh(
+  promise: Promise<RefreshResult>,
+  signal?: AbortSignal,
+): Promise<RefreshResult> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(abortError());
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      cleanup();
+      reject(abortError());
+    };
+    const cleanup = () => signal.removeEventListener('abort', abort);
+    signal.addEventListener('abort', abort, { once: true });
+    promise.then(
+      (result) => {
+        cleanup();
+        resolve(result);
+      },
+      (error: unknown) => {
+        cleanup();
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
+async function tryRefreshToken(token: string | null, epoch: symbol): Promise<RefreshResult> {
+  if (!token) {
     return {
       kind: 'rejected',
       error: new ApiError(-1, i18n.t('common.unauthorized', 'Unauthorized'), 401),
     };
   }
-  if (refreshPromise) return refreshPromise;
+  if (!refreshSessionIsCurrent(token, epoch)) return supersededRefresh();
+  if (refreshInFlight?.token === token && refreshInFlight.epoch === epoch) {
+    return refreshInFlight.promise;
+  }
 
-  refreshPromise = (async () => {
+  const refreshID = Symbol('token-refresh');
+  const promise: Promise<RefreshResult> = (async () => {
+    const controller = new AbortController();
+    const timeout = globalThis.setTimeout(() => controller.abort(), REFRESH_TIMEOUT_MS);
     try {
       const res = await fetch(`${BASE_URL}/api/v1/auth/refresh`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        signal: controller.signal,
       });
-      if (!res.ok) return refreshFailure(await refreshResponseError(res));
+      if (!refreshSessionIsCurrent(token, epoch)) return supersededRefresh();
+      if (!res.ok) {
+        const error = await refreshResponseError(res);
+        if (!refreshSessionIsCurrent(token, epoch)) return supersededRefresh();
+        return refreshFailure(error);
+      }
 
       let json: ApiResponse<{ token: string }>;
       try {
         json = await res.json() as ApiResponse<{ token: string }>;
       } catch {
+        if (!refreshSessionIsCurrent(token, epoch)) return supersededRefresh();
         return {
           kind: 'retryable',
           error: new ApiError(-1, i18n.t('common.server_error', { status: res.status }), res.status),
         };
       }
+      if (!refreshSessionIsCurrent(token, epoch)) return supersededRefresh();
       if (json.code !== 0 || !json.data?.token) {
         return refreshFailure(new ApiError(json.code, json.message, res.status));
       }
-      setToken(json.data.token);
-      return { kind: 'refreshed' };
+      const refreshedToken = json.data.token;
+      if (!replaceRefreshedToken(token, epoch, refreshedToken)) return supersededRefresh();
+      return { kind: 'refreshed', token: refreshedToken };
     } catch {
+      if (!refreshSessionIsCurrent(token, epoch)) return supersededRefresh();
       return {
         kind: 'retryable',
         error: new ApiError(-1, i18n.t('common.network_error'), 0),
       };
     } finally {
-      refreshPromise = null;
+      globalThis.clearTimeout(timeout);
+      if (refreshInFlight?.id === refreshID) refreshInFlight = null;
     }
   })();
+  refreshInFlight = { token, epoch, id: refreshID, promise };
 
-  return refreshPromise;
+  return promise;
 }
 
-function invalidateSession() {
+async function awaitRefreshToken(
+  token: string | null,
+  epoch: symbol,
+  signal?: AbortSignal,
+): Promise<RefreshResult> {
+  if (signal?.aborted) throw abortError();
+  return waitForRefresh(tryRefreshToken(token, epoch), signal);
+}
+
+function invalidateSession(expectedToken: string | null, expectedEpoch: symbol): boolean {
+  if (!expectedToken || accessToken !== expectedToken || sessionEpoch !== expectedEpoch) return false;
   setToken(null);
   if (typeof window !== 'undefined') window.location.href = '/login';
+  return true;
+}
+
+function assertRequestSession(requestEpoch: SessionIdentity) {
+  if (sessionEpoch !== requestEpoch) throw sessionSupersededError();
 }
 
 // 统一响应处理
-async function handleResponse<T>(res: Response): Promise<T> {
+async function handleResponse<T>(
+  res: Response,
+  requestToken: string | null,
+  requestEpoch: symbol,
+): Promise<T> {
+  assertRequestSession(requestEpoch);
   let json: ApiResponse<T>;
   try {
     json = await res.json();
-  } catch {
+  } catch (err) {
+    assertRequestSession(requestEpoch);
+    if (isAbortError(err)) throw err;
     throw new ApiError(-1, i18n.t('common.server_error', { status: res.status }), res.status);
   }
+  assertRequestSession(requestEpoch);
 
   if (json.code !== 0) {
-    if (res.status === 401 && accessToken) {
-      invalidateSession();
+    if (res.status === 401) {
+      invalidateSession(requestToken, requestEpoch);
     }
     throw new ApiError(json.code, json.message, res.status);
   }
@@ -262,15 +394,23 @@ function isAbortError(err: unknown): boolean {
     && (err as { name?: unknown }).name === 'AbortError';
 }
 
-async function doFetch(url: string, init: RequestInit): Promise<Response> {
+async function doFetch(
+  url: string,
+  init: RequestInit,
+  requestEpoch: SessionIdentity,
+): Promise<Response> {
+  let response: Response;
   try {
-    return await fetch(url, init);
+    response = await fetch(url, init);
   } catch (err) {
+    assertRequestSession(requestEpoch);
     if (isAbortError(err)) {
       throw err;
     }
     throw new ApiError(-1, i18n.t('common.network_error'), 0);
   }
+  assertRequestSession(requestEpoch);
+  return response;
 }
 
 // 统一请求方法
@@ -281,15 +421,23 @@ async function request<T>(
   params?: QueryParams,
   options?: RequestOptions,
 ): Promise<T> {
+  const initialToken = accessToken;
+  const requestEpoch = sessionEpoch;
   let proactiveRefresh: RefreshResult | null = null;
   // 过期前 30 分钟自动刷新
-  if (accessToken && tokenExpiresWithin(1800)) {
-    proactiveRefresh = await tryRefreshToken();
+  if (initialToken && tokenExpiresWithin(initialToken, 1800)) {
+    proactiveRefresh = await awaitRefreshToken(initialToken, requestEpoch, options?.signal);
     if (proactiveRefresh.kind === 'rejected') {
-      invalidateSession();
+      invalidateSession(initialToken, requestEpoch);
       throw proactiveRefresh.error;
     }
+    if (proactiveRefresh.kind === 'superseded') throw proactiveRefresh.error;
   }
+
+  const requestToken = proactiveRefresh?.kind === 'refreshed'
+    ? proactiveRefresh.token
+    : initialToken;
+  assertRequestSession(requestEpoch);
 
   const url = new URL(`${BASE_URL}${path}`, window.location.origin);
 
@@ -312,31 +460,47 @@ async function request<T>(
 
   const res = await doFetch(url.toString(), {
     method,
-    headers: buildHeaders(true),
+    headers: buildHeaders(true, requestToken),
     body: body ? JSON.stringify(body) : undefined,
     signal: options?.signal,
-  });
+  }, requestEpoch);
 
   // 401 时尝试刷新 token 并重试一次
-  if (res.status === 401 && accessToken) {
-    // 新 Token 已经被服务端拒绝时无需再次刷新，按明确 401 结束会话。
-    if (proactiveRefresh?.kind === 'refreshed') return handleResponse<T>(res);
-
-    const refreshResult = proactiveRefresh ?? await tryRefreshToken();
-    if (refreshResult.kind === 'refreshed') {
+  if (res.status === 401 && requestToken) {
+    // 另一请求已刷新了同一逻辑会话时，直接用新 Token 重试；旧 401 不能清掉新 Token。
+    if (accessToken !== requestToken) {
+      const retryToken = accessToken;
+      if (!retryToken) return handleResponse<T>(res, requestToken, requestEpoch);
       const retryRes = await doFetch(url.toString(), {
         method,
-        headers: buildHeaders(true),
+        headers: buildHeaders(true, retryToken),
         body: body ? JSON.stringify(body) : undefined,
         signal: options?.signal,
-      });
-      return handleResponse<T>(retryRes);
+      }, requestEpoch);
+      return handleResponse<T>(retryRes, retryToken, requestEpoch);
     }
-    if (refreshResult.kind === 'rejected') invalidateSession();
+    // 新 Token 已经被服务端拒绝时无需再次刷新，按明确 401 结束会话。
+    if (proactiveRefresh?.kind === 'refreshed') {
+      return handleResponse<T>(res, requestToken, requestEpoch);
+    }
+
+    const refreshResult = proactiveRefresh
+      ?? await awaitRefreshToken(requestToken, requestEpoch, options?.signal);
+    if (refreshResult.kind === 'refreshed') {
+      const retryToken = refreshResult.token;
+      const retryRes = await doFetch(url.toString(), {
+        method,
+        headers: buildHeaders(true, retryToken),
+        body: body ? JSON.stringify(body) : undefined,
+        signal: options?.signal,
+      }, requestEpoch);
+      return handleResponse<T>(retryRes, retryToken, requestEpoch);
+    }
+    if (refreshResult.kind === 'rejected') invalidateSession(requestToken, requestEpoch);
     throw refreshResult.error;
   }
 
-  return handleResponse<T>(res);
+  return handleResponse<T>(res, requestToken, requestEpoch);
 }
 
 // API 错误类
@@ -351,13 +515,20 @@ export class ApiError extends Error {
   }
 }
 
+export class SessionSupersededError extends Error {
+  constructor() {
+    super('request belongs to a superseded session');
+    this.name = 'SessionSupersededError';
+  }
+}
+
 // 导出快捷方法
 export function get<T>(path: string, params?: QueryParams, options?: RequestOptions): Promise<T> {
   return request<T>('GET', path, undefined, params, options);
 }
 
-export function post<T>(path: string, body?: unknown): Promise<T> {
-  return request<T>('POST', path, body);
+export function post<T>(path: string, body?: unknown, options?: RequestOptions): Promise<T> {
+  return request<T>('POST', path, body, undefined, options);
 }
 
 export function put<T>(path: string, body?: unknown): Promise<T> {
@@ -373,24 +544,38 @@ export function patch<T>(path: string, body?: unknown): Promise<T> {
 }
 
 // 文件上传（multipart/form-data）
-export async function upload<T>(path: string, formData: FormData): Promise<T> {
+export async function upload<T>(
+  path: string,
+  formData: FormData,
+  options?: RequestOptions,
+): Promise<T> {
   const url = new URL(`${BASE_URL}${path}`, window.location.origin);
-  const send = () => doFetch(url.toString(), {
+  let requestToken = accessToken;
+  const requestEpoch = sessionEpoch;
+  const send = (token: string | null) => doFetch(url.toString(), {
     method: 'POST',
-    headers: buildHeaders(false),
+    headers: buildHeaders(false, token),
     body: formData,
-  });
+    signal: options?.signal,
+  }, requestEpoch);
 
-  let res = await send();
-  if (res.status === 401 && accessToken) {
-    const refreshResult = await tryRefreshToken();
-    if (refreshResult.kind === 'refreshed') {
-      res = await send();
+  let res = await send(requestToken);
+  if (res.status === 401 && requestToken) {
+    if (accessToken !== requestToken) {
+      requestToken = accessToken;
+      if (!requestToken) return handleResponse<T>(res, requestToken, requestEpoch);
+      res = await send(requestToken);
     } else {
-      if (refreshResult.kind === 'rejected') invalidateSession();
-      throw refreshResult.error;
+      const refreshResult = await awaitRefreshToken(requestToken, requestEpoch, options?.signal);
+      if (refreshResult.kind === 'refreshed') {
+        requestToken = refreshResult.token;
+        res = await send(requestToken);
+      } else {
+        if (refreshResult.kind === 'rejected') invalidateSession(requestToken, requestEpoch);
+        throw refreshResult.error;
+      }
     }
   }
 
-  return handleResponse<T>(res);
+  return handleResponse<T>(res, requestToken, requestEpoch);
 }

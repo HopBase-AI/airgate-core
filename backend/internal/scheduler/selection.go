@@ -275,17 +275,57 @@ func ModelRoutingServes(routing map[string][]int64, model string) bool {
 	return len(matchModelRouting(routing, model)) > 0
 }
 
+// ModelRoutingServesAccounts verifies that a model route reaches at least one
+// currently usable account that is actually bound to the group. The caller
+// supplies the non-disabled, same-platform account snapshot from the store.
+func ModelRoutingServesAccounts(routing map[string][]int64, model string, accountIDs []int64) bool {
+	if len(accountIDs) == 0 {
+		return false
+	}
+	if len(routing) == 0 {
+		return true
+	}
+	allowed := matchModelRouting(routing, model)
+	if len(allowed) == 0 {
+		return false
+	}
+	available := make(map[int64]struct{}, len(accountIDs))
+	for _, id := range accountIDs {
+		available[id] = struct{}{}
+	}
+	for _, id := range allowed {
+		if _, ok := available[id]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 // matchModelRouting 匹配模型路由规则，返回允许的账号 ID 列表。nil 或空表示不限制。
 func matchModelRouting(routing map[string][]int64, model string) []int64 {
 	if ids, ok := routing[model]; ok {
 		return ids
 	}
-	for pattern, ids := range routing {
-		if matched, _ := filepath.Match(pattern, model); matched {
-			return ids
+	bestPattern := ""
+	for pattern := range routing {
+		if matched, _ := filepath.Match(pattern, model); matched &&
+			(bestPattern == "" || modelRoutingPatternPrecedes(pattern, bestPattern)) {
+			bestPattern = pattern
 		}
 	}
+	if bestPattern != "" {
+		return routing[bestPattern]
+	}
 	return nil
+}
+
+// Longer glob patterns are treated as more specific; lexical order breaks ties.
+// Exact model keys always win before this comparison.
+func modelRoutingPatternPrecedes(left, right string) bool {
+	if len(left) != len(right) {
+		return len(left) > len(right)
+	}
+	return left < right
 }
 
 // checkSchedulabilityWithLoad 先看状态（state + state_until），再叠加软约束（并发 / windowCost / RPM / session），取最严格者。

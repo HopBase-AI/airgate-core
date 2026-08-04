@@ -1,4 +1,4 @@
-import type { MyModelPricing, MyPricingModel } from './api/models';
+import type { MyModelPricing } from './api/models';
 import type { GroupResp } from './types';
 
 function globMatches(pattern: string, value: string): boolean {
@@ -23,33 +23,16 @@ export function groupServesModel(
   if (Object.prototype.hasOwnProperty.call(routing, modelID)) {
     return Array.isArray(exact) && exact.length > 0;
   }
-  for (const [pattern, accountIDs] of entries) {
-    if (globMatches(pattern, modelID)) {
-      return Array.isArray(accountIDs) && accountIDs.length > 0;
-    }
-  }
-  return false;
+  const matched = entries
+    .filter(([pattern]) => globMatches(pattern, modelID))
+    .sort(([left], [right]) => right.length - left.length || (left < right ? -1 : left > right ? 1 : 0))[0];
+  return !!matched && Array.isArray(matched[1]) && matched[1].length > 0;
 }
 
 export function effectiveGroupRate(group: GroupResp, userGroupRates?: Record<number, number>): number {
   const override = userGroupRates?.[group.id];
   if (override != null && override > 0) return override;
   return group.rate_multiplier > 0 ? group.rate_multiplier : 0;
-}
-
-export function bestGroupForModel(
-  model: MyPricingModel,
-  platforms: string[],
-  groups: GroupResp[],
-  userGroupRates?: Record<number, number>,
-): { group: GroupResp; rate: number } | null {
-  let best: { group: GroupResp; rate: number } | null = null;
-  for (const group of groups) {
-    if (!platforms.includes(group.platform) || !groupServesModel(group.model_routing, model.id)) continue;
-    const rate = effectiveGroupRate(group, userGroupRates);
-    if (rate > 0 && (!best || rate < best.rate)) best = { group, rate };
-  }
-  return best;
 }
 
 export function deriveGroupUSDMultiplier(
@@ -77,4 +60,21 @@ export function deriveGroupUSDMultiplier(
     }
   }
   return best > 0 ? best : null;
+}
+
+export function groupUSDMultiplierForDisplay(
+  pricing: MyModelPricing | undefined,
+  group: GroupResp,
+  userGroupRates?: Record<number, number>,
+): number | null {
+  if (!pricing) return null;
+  if (Object.prototype.hasOwnProperty.call(pricing, 'groups')) {
+    const quote = pricing.groups?.find((item) => item.id === group.id);
+    const multiplier = quote?.usd_multiplier;
+    return quote && quote.effective_rate > 0 && typeof multiplier === 'number'
+      && Number.isFinite(multiplier) && multiplier > 0
+      ? multiplier
+      : null;
+  }
+  return deriveGroupUSDMultiplier(pricing, group, userGroupRates);
 }

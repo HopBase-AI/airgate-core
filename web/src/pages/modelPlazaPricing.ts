@@ -11,10 +11,6 @@ export interface FixedImagePriceModel {
   image_price_4k?: number;
 }
 
-export interface FixedImagePricingModel extends FixedImagePriceModel {
-  user_rate?: number;
-}
-
 export interface FixedImageTierPrice {
   tier: '1k' | '2k' | '4k';
   sale: number | null;
@@ -32,10 +28,6 @@ function validFixedImagePrice(price: number | undefined): price is number {
 export function hasFixedImageTierPrices(model: FixedImagePriceModel): boolean {
   return [model.image_price_1k, model.image_price_2k, model.image_price_4k]
     .some(validFixedImagePrice);
-}
-
-export function shouldBackfillTokenPricing(userMode: boolean, model: FixedImagePricingModel): boolean {
-  return userMode && !(typeof model.user_rate === 'number' && model.user_rate > 0) && !hasFixedImageTierPrices(model);
 }
 
 // API 返回的固定图价是余额/CNY 单位；ToC 美元视图按站点汇率换算，ToB 人民币视图直接展示。

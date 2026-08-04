@@ -161,6 +161,124 @@ func TestGroupStoreUpdateAllowedUsers(t *testing.T) {
 	}
 }
 
+func TestGroupStoreLoadsRoutableAccountSnapshot(t *testing.T) {
+	db := enttestOpen(t)
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close db: %v", err)
+		}
+	}()
+	ctx := context.Background()
+	store := NewGroupStore(db)
+
+	viewer := createTestUser(t, db, "pricing-snapshot@example.com")
+	group := mustCreateGroup(t, store, appgroup.CreateInput{
+		Name: "image-provider", Platform: "openai", RateMultiplier: 1,
+		StatusVisible: true, SubscriptionType: "standard",
+	})
+	active, err := db.Account.Create().
+		SetName("chat-only").
+		SetPlatform("openai").
+		SetType("apikey").
+		SetExtra(map[string]interface{}{"allowed_workloads": []interface{}{"chat"}}).
+		SetCredentials(map[string]string{}).
+		AddGroupIDs(group.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create chat-only account: %v", err)
+	}
+	imageOnly, err := db.Account.Create().
+		SetName("image-only").
+		SetPlatform("openai").
+		SetType("apikey").
+		SetExtra(map[string]interface{}{
+			"allowed_workloads": []interface{}{"image"},
+			"image_protocols":   []interface{}{"images_api"},
+		}).
+		SetCredentials(map[string]string{"api_key": "test-placeholder"}).
+		AddGroupIDs(group.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create image-only account: %v", err)
+	}
+	degraded, err := db.Account.Create().
+		SetName("degraded-both").
+		SetPlatform("openai").
+		SetType("apikey").
+		SetState(entaccount.StateDegraded).
+		SetExtra(map[string]interface{}{"allowed_workloads": []interface{}{"chat", "image"}}).
+		SetCredentials(map[string]string{"access_token": "test-placeholder"}).
+		AddGroupIDs(group.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create degraded account: %v", err)
+	}
+	if _, err := db.Account.Create().
+		SetName("disabled").
+		SetPlatform("openai").
+		SetType("apikey").
+		SetState(entaccount.StateDisabled).
+		SetCredentials(map[string]string{}).
+		AddGroupIDs(group.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create disabled account: %v", err)
+	}
+	if _, err := db.Account.Create().
+		SetName("cross-platform").
+		SetPlatform("claude").
+		SetType("apikey").
+		SetCredentials(map[string]string{}).
+		AddGroupIDs(group.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create cross-platform account: %v", err)
+	}
+
+	assertSnapshot := func(label string, got appgroup.Group) {
+		t.Helper()
+		if !got.AccountAvailabilityKnown {
+			t.Fatalf("%s account availability is unknown", label)
+		}
+		wantChat := []int64{int64(active.ID), int64(degraded.ID)}
+		if len(got.RoutableChatAccountIDs) != len(wantChat) {
+			t.Fatalf("%s chat account IDs = %v, want %v", label, got.RoutableChatAccountIDs, wantChat)
+		}
+		for i := range wantChat {
+			if got.RoutableChatAccountIDs[i] != wantChat[i] {
+				t.Fatalf("%s chat account IDs = %v, want %v", label, got.RoutableChatAccountIDs, wantChat)
+			}
+		}
+		wantImage := []int64{int64(imageOnly.ID), int64(degraded.ID)}
+		if len(got.RoutableImageAccountIDs) != len(wantImage) {
+			t.Fatalf("%s image account IDs = %v, want %v", label, got.RoutableImageAccountIDs, wantImage)
+		}
+		for i := range wantImage {
+			if got.RoutableImageAccountIDs[i] != wantImage[i] {
+				t.Fatalf("%s image account IDs = %v, want %v", label, got.RoutableImageAccountIDs, wantImage)
+			}
+		}
+	}
+
+	found, err := store.FindByID(ctx, group.ID)
+	if err != nil {
+		t.Fatalf("find group: %v", err)
+	}
+	assertSnapshot("FindByID", found)
+
+	available, _, err := store.ListAvailable(ctx, appgroup.AvailableFilter{
+		UserID: viewer.ID, Page: 1, PageSize: 50,
+	})
+	if err != nil {
+		t.Fatalf("list available groups: %v", err)
+	}
+	for _, item := range available {
+		if item.ID == group.ID {
+			assertSnapshot("ListAvailable", item)
+			return
+		}
+	}
+	t.Fatalf("ListAvailable did not return group %d", group.ID)
+}
+
 func TestGroupStoreUpdateSanitizesModelRoutingToBoundPlatformAccounts(t *testing.T) {
 	db := enttestOpen(t)
 	defer func() {

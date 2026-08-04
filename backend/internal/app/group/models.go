@@ -59,18 +59,23 @@ type Group struct {
 	StatusVisible  bool
 	// AllowedUsers 仅在加载了 allowed_users 边时填充（管理员列表/详情）；
 	// 用户可用分组列表不填充，避免泄漏其他用户。
-	AllowedUsers      []GroupAllowedUser
-	SubscriptionType  string
-	Quotas            map[string]any
-	ModelRouting      map[string][]int64
-	PluginSettings    map[string]map[string]string
-	ServiceTier       string
-	ForceInstructions string
-	Note              string
-	NoteI18n          map[string]string
-	SortWeight        int
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	AllowedUsers     []GroupAllowedUser
+	SubscriptionType string
+	Quotas           map[string]any
+	ModelRouting     map[string][]int64
+	PluginSettings   map[string]map[string]string
+	// AccountAvailabilityKnown 表示仓储已加载分组账号快照；两组 ID 只包含
+	// 同平台、未 disabled 且满足真实调度 workload/protocol 要求的绑定账号。
+	AccountAvailabilityKnown bool
+	RoutableChatAccountIDs   []int64
+	RoutableImageAccountIDs  []int64
+	ServiceTier              string
+	ForceInstructions        string
+	Note                     string
+	NoteI18n                 map[string]string
+	SortWeight               int
+	CreatedAt                time.Time
+	UpdatedAt                time.Time
 }
 
 // ListFilter 描述管理员分组列表查询条件。
