@@ -28,43 +28,37 @@ func (s *Scheduler) SelectAccount(ctx context.Context, platform, model string, u
 }
 
 func (s *Scheduler) SelectAccountWithRequirements(ctx context.Context, platform, model string, userID, groupID int, sessionID string, req AccountRequirements, excludeIDs ...int) (*ent.Account, error) {
-	candidates, err := s.routeAccounts(ctx, platform, model, groupID)
+	tiers, err := s.routeAccountTiers(ctx, platform, model, groupID)
 	if err != nil {
 		return nil, err
 	}
-	if candidates = excludeAccounts(candidates, excludeIDs); len(candidates) == 0 {
-		return nil, ErrNoAvailableAccount
-	}
-	if candidates = filterAccountsByRequirements(candidates, req); len(candidates) == 0 {
-		return nil, ErrNoAvailableAccount
-	}
-	if fn, ok := s.accountFilters[platform]; ok {
-		if candidates = fn(candidates, model); len(candidates) == 0 {
-			return nil, ErrNoAvailableAccount
+	filterTier := func(candidates []*ent.Account) []*ent.Account {
+		candidates = excludeAccounts(candidates, excludeIDs)
+		candidates = filterAccountsByRequirements(candidates, req)
+		if fn, ok := s.accountFilters[platform]; ok {
+			candidates = fn(candidates, model)
 		}
+		return candidates
+	}
+	primaryCandidates := filterTier(tiers.primary)
+	fallbackCandidates := filterTier(tiers.poolFallback)
+	if len(primaryCandidates) == 0 && len(fallbackCandidates) == 0 {
+		return nil, ErrNoAvailableAccount
 	}
 
 	now := time.Now()
 
 	// 预获取所有候选账号的并发负载，避免 checkSchedulability 和 selectByLoadBalance 重复查 Redis
-	loadCache := make(map[int]int, len(candidates))
-	for _, acc := range candidates {
+	loadCache := make(map[int]int, len(primaryCandidates)+len(fallbackCandidates))
+	for _, acc := range appendAccountSlices(primaryCandidates, fallbackCandidates) {
 		loadCache[acc.ID] = s.getCurrentLoad(ctx, acc.ID)
 	}
 
-	normalCandidates := make([]*ent.Account, 0, len(candidates))
-	stickyCandidates := make([]*ent.Account, 0, len(candidates))
-	for _, acc := range candidates {
-		switch s.checkSchedulabilityWithLoad(ctx, acc, model, now, loadCache[acc.ID]) {
-		case Normal:
-			normalCandidates = append(normalCandidates, acc)
-			stickyCandidates = append(stickyCandidates, acc)
-		case StickyOnly:
-			stickyCandidates = append(stickyCandidates, acc)
-		case NotSchedulable:
-			// 跳过
-		}
-	}
+	primaryNormal, primaryStickyOnly := s.partitionSchedulable(ctx, primaryCandidates, model, now, loadCache)
+	fallbackNormal, fallbackStickyOnly := s.partitionSchedulable(ctx, fallbackCandidates, model, now, loadCache)
+	primarySticky := appendAccountSlices(primaryNormal, primaryStickyOnly)
+	fallbackSticky := appendAccountSlices(fallbackNormal, fallbackStickyOnly)
+	stickyCandidates := appendAccountSlices(primarySticky, fallbackSticky)
 
 	// 粘性会话优先（可命中 StickyOnly + Normal）
 	if sessionID != "" {
@@ -86,28 +80,73 @@ func (s *Scheduler) SelectAccountWithRequirements(ctx context.Context, platform,
 		}
 	}
 
-	if len(normalCandidates) == 0 {
-		// 没有 Normal 但可能有 StickyOnly 兜底（如 degraded 账号）
-		if len(stickyCandidates) == 0 {
-			return nil, ErrNoAvailableAccount
+	type candidateTier struct {
+		accounts     []*ent.Account
+		poolFallback bool
+		degraded     bool
+	}
+	selectionOrder := []candidateTier{
+		{accounts: primaryNormal},
+		{accounts: fallbackNormal, poolFallback: true},
+		{accounts: primaryStickyOnly, degraded: true},
+		{accounts: fallbackStickyOnly, poolFallback: true, degraded: true},
+	}
+	for _, tier := range selectionOrder {
+		if len(tier.accounts) == 0 {
+			continue
 		}
-		selected := s.selectByLoadBalanceWithCache(ctx, stickyCandidates, now, loadCache)
+		selected := s.selectByLoadBalanceWithCache(ctx, tier.accounts, now, loadCache)
 		if selected == nil {
-			return nil, ErrNoAvailableAccount
+			continue
 		}
-		slog.Warn("scheduler_fallback_degraded_account",
-			sdk.LogFieldAccountID, selected.ID,
-			sdk.LogFieldPlatform, platform,
-			sdk.LogFieldModel, model,
-		)
-		return s.maybeRegisterSession(ctx, selected, userID, platform, sessionID, stickyCandidates, now)
+		selected, err = s.maybeRegisterSession(ctx, selected, userID, platform, sessionID, tier.accounts, now)
+		if errors.Is(err, ErrNoAvailableAccount) {
+			// Session capacity can change after schedulability was checked. Exhaust
+			// this tier before moving to the next primary/fallback tier.
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if tier.poolFallback {
+			slog.Warn("scheduler_pool_failover_account",
+				sdk.LogFieldAccountID, selected.ID,
+				sdk.LogFieldGroupID, groupID,
+				sdk.LogFieldPlatform, platform,
+				sdk.LogFieldModel, model,
+			)
+		}
+		if tier.degraded {
+			slog.Warn("scheduler_fallback_degraded_account",
+				sdk.LogFieldAccountID, selected.ID,
+				sdk.LogFieldPlatform, platform,
+				sdk.LogFieldModel, model,
+			)
+		}
+		return selected, nil
 	}
+	return nil, ErrNoAvailableAccount
+}
 
-	selected := s.selectByLoadBalanceWithCache(ctx, normalCandidates, now, loadCache)
-	if selected == nil {
-		return nil, ErrNoAvailableAccount
+func appendAccountSlices(first, second []*ent.Account) []*ent.Account {
+	combined := make([]*ent.Account, 0, len(first)+len(second))
+	combined = append(combined, first...)
+	combined = append(combined, second...)
+	return combined
+}
+
+func (s *Scheduler) partitionSchedulable(ctx context.Context, candidates []*ent.Account, model string, now time.Time, loadCache map[int]int) (normal, stickyOnly []*ent.Account) {
+	normal = make([]*ent.Account, 0, len(candidates))
+	stickyOnly = make([]*ent.Account, 0, len(candidates))
+	for _, acc := range candidates {
+		switch s.checkSchedulabilityWithLoad(ctx, acc, model, now, loadCache[acc.ID]) {
+		case Normal:
+			normal = append(normal, acc)
+		case StickyOnly:
+			stickyOnly = append(stickyOnly, acc)
+		}
 	}
-	return s.maybeRegisterSession(ctx, selected, userID, platform, sessionID, normalCandidates, now)
+	return normal, stickyOnly
 }
 
 // excludeAccounts 过滤掉 excludeIDs 中的账号（failover 已尝试过的）。
@@ -133,25 +172,22 @@ func (s *Scheduler) maybeRegisterSession(ctx context.Context, selected *ent.Acco
 	if sessionID == "" {
 		return selected, nil
 	}
-	if s.RegisterSession(ctx, selected.ID, sessionID, selected.Extra) {
-		s.sticky.Set(ctx, userID, platform, sessionID, selected.ID, s.sticky.stickyTTLFromExtra(selected.Extra))
-		return selected, nil
-	}
-	retry := pool[:0]
-	for _, acc := range pool {
-		if acc.ID != selected.ID {
-			retry = append(retry, acc)
+	remaining := append([]*ent.Account(nil), pool...)
+	for selected != nil {
+		if s.RegisterSession(ctx, selected.ID, sessionID, selected.Extra) {
+			s.sticky.Set(ctx, userID, platform, sessionID, selected.ID, s.sticky.stickyTTLFromExtra(selected.Extra))
+			return selected, nil
 		}
+		retry := remaining[:0]
+		for _, acc := range remaining {
+			if acc.ID != selected.ID {
+				retry = append(retry, acc)
+			}
+		}
+		remaining = retry
+		selected = s.selectByLoadBalance(ctx, remaining, now)
 	}
-	if len(retry) == 0 {
-		return nil, ErrNoAvailableAccount
-	}
-	selected = s.selectByLoadBalance(ctx, retry, now)
-	if selected == nil || !s.RegisterSession(ctx, selected.ID, sessionID, selected.Extra) {
-		return nil, ErrNoAvailableAccount
-	}
-	s.sticky.Set(ctx, userID, platform, sessionID, selected.ID, s.sticky.stickyTTLFromExtra(selected.Extra))
-	return selected, nil
+	return nil, ErrNoAvailableAccount
 }
 
 // routeAccounts 取分组下匹配模型路由的账号；状态过滤延到 checkSchedulability。
@@ -161,14 +197,19 @@ func (s *Scheduler) maybeRegisterSession(ctx context.Context, selected *ent.Acco
 // 首层命中 routeCache（key = (groupID, platform)）；miss 才查 DB。Model routing
 // 规则与账号列表一起缓存，按 model 过滤的动作每次都重新跑——避免"不同 model 复用同一条缓存"
 // 带来的错配。
-func (s *Scheduler) routeAccounts(ctx context.Context, platform, model string, groupID int) ([]*ent.Account, error) {
+type routedAccountTiers struct {
+	primary      []*ent.Account
+	poolFallback []*ent.Account
+}
+
+func (s *Scheduler) routeAccountTiers(ctx context.Context, platform, model string, groupID int) (routedAccountTiers, error) {
 	if accounts, routing, ok := s.routeCache.Get(groupID, platform); ok {
-		return classifyRoutedAccounts(accounts, routing, model)
+		return classifyRoutedAccountTiers(accounts, routing, model)
 	}
 
 	grp, err := s.db.Group.Get(ctx, groupID)
 	if err != nil {
-		return nil, normalizeGroupLookupError(err)
+		return routedAccountTiers{}, normalizeGroupLookupError(err)
 	}
 
 	accounts, err := grp.QueryAccounts().
@@ -176,13 +217,13 @@ func (s *Scheduler) routeAccounts(ctx context.Context, platform, model string, g
 		WithProxy().
 		All(ctx)
 	if err != nil {
-		return nil, normalizeGroupAccountsLookupError(err)
+		return routedAccountTiers{}, normalizeGroupAccountsLookupError(err)
 	}
 
 	// 缓存全量 platform 账号（包含所有 state）+ group 的 ModelRouting
 	s.routeCache.Set(groupID, platform, accounts, grp.ModelRouting)
 
-	return classifyRoutedAccounts(accounts, grp.ModelRouting, model)
+	return classifyRoutedAccountTiers(accounts, grp.ModelRouting, model)
 }
 
 // classifyRoutedAccounts 在候选为空时区分"结构性不可用"与"暂时不可用"，让上层能给客户端
@@ -197,19 +238,52 @@ func (s *Scheduler) routeAccounts(ctx context.Context, platform, model string, g
 // 必须继续走 ErrNoAvailableAccount 的 503 重试路径。读的 State 与 SchedulabilityOf 同源
 // （同一批 routeCache 对象，TTL 3s 且 admin 改动即失效），不引入额外的陈旧判断。
 func classifyRoutedAccounts(accounts []*ent.Account, routing map[string][]int64, model string) ([]*ent.Account, error) {
+	tiers, err := classifyRoutedAccountTiers(accounts, routing, model)
+	if err != nil {
+		return nil, err
+	}
+	return tiers.primary, nil
+}
+
+// classifyRoutedAccountTiers keeps model_routing as the primary routing contract,
+// while treating other upstream pool accounts in the same group as standbys. A
+// standby is considered only when all explicit candidates are excluded or not
+// schedulable; regular accounts remain strictly constrained by model_routing.
+func classifyRoutedAccountTiers(accounts []*ent.Account, routing map[string][]int64, model string) (routedAccountTiers, error) {
 	if len(accounts) == 0 {
-		return nil, ErrGroupOffline
+		return routedAccountTiers{}, ErrGroupOffline
 	}
 	routed := applyModelRouting(accounts, routing, model)
 	if len(routed) == 0 {
-		return nil, ErrModelNotServed
+		return routedAccountTiers{}, ErrModelNotServed
 	}
-	for _, acc := range routed {
+	fallback := poolFallbackAccounts(accounts, routed)
+	for _, acc := range appendAccountSlices(routed, fallback) {
 		if acc.State != account.StateDisabled {
-			return routed, nil
+			return routedAccountTiers{primary: routed, poolFallback: fallback}, nil
 		}
 	}
-	return nil, ErrGroupOffline
+	return routedAccountTiers{}, ErrGroupOffline
+}
+
+func poolFallbackAccounts(accounts, routed []*ent.Account) []*ent.Account {
+	routedIDs := make(map[int]struct{}, len(routed))
+	hasPoolPrimary := false
+	for _, acc := range routed {
+		routedIDs[acc.ID] = struct{}{}
+		hasPoolPrimary = hasPoolPrimary || acc.UpstreamIsPool
+	}
+	if !hasPoolPrimary {
+		return nil
+	}
+	fallback := make([]*ent.Account, 0, len(accounts)-len(routed))
+	for _, acc := range accounts {
+		if _, exists := routedIDs[acc.ID]; exists || !acc.UpstreamIsPool {
+			continue
+		}
+		fallback = append(fallback, acc)
+	}
+	return fallback
 }
 
 func normalizeGroupLookupError(err error) error {
