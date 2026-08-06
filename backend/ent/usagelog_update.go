@@ -826,6 +826,69 @@ func (ulu *UsageLogUpdate) SetNillableUserEmailSnapshot(s *string) *UsageLogUpda
 	return ulu
 }
 
+// SetStatus sets the "status" field.
+func (ulu *UsageLogUpdate) SetStatus(s string) *UsageLogUpdate {
+	ulu.mutation.SetStatus(s)
+	return ulu
+}
+
+// SetNillableStatus sets the "status" field if the given value is not nil.
+func (ulu *UsageLogUpdate) SetNillableStatus(s *string) *UsageLogUpdate {
+	if s != nil {
+		ulu.SetStatus(*s)
+	}
+	return ulu
+}
+
+// SetErrorCode sets the "error_code" field.
+func (ulu *UsageLogUpdate) SetErrorCode(s string) *UsageLogUpdate {
+	ulu.mutation.SetErrorCode(s)
+	return ulu
+}
+
+// SetNillableErrorCode sets the "error_code" field if the given value is not nil.
+func (ulu *UsageLogUpdate) SetNillableErrorCode(s *string) *UsageLogUpdate {
+	if s != nil {
+		ulu.SetErrorCode(*s)
+	}
+	return ulu
+}
+
+// SetErrorStatus sets the "error_status" field.
+func (ulu *UsageLogUpdate) SetErrorStatus(i int) *UsageLogUpdate {
+	ulu.mutation.ResetErrorStatus()
+	ulu.mutation.SetErrorStatus(i)
+	return ulu
+}
+
+// SetNillableErrorStatus sets the "error_status" field if the given value is not nil.
+func (ulu *UsageLogUpdate) SetNillableErrorStatus(i *int) *UsageLogUpdate {
+	if i != nil {
+		ulu.SetErrorStatus(*i)
+	}
+	return ulu
+}
+
+// AddErrorStatus adds i to the "error_status" field.
+func (ulu *UsageLogUpdate) AddErrorStatus(i int) *UsageLogUpdate {
+	ulu.mutation.AddErrorStatus(i)
+	return ulu
+}
+
+// SetErrorMessage sets the "error_message" field.
+func (ulu *UsageLogUpdate) SetErrorMessage(s string) *UsageLogUpdate {
+	ulu.mutation.SetErrorMessage(s)
+	return ulu
+}
+
+// SetNillableErrorMessage sets the "error_message" field if the given value is not nil.
+func (ulu *UsageLogUpdate) SetNillableErrorMessage(s *string) *UsageLogUpdate {
+	if s != nil {
+		ulu.SetErrorMessage(*s)
+	}
+	return ulu
+}
+
 // SetUserID sets the "user" edge to the User entity by ID.
 func (ulu *UsageLogUpdate) SetUserID(id int) *UsageLogUpdate {
 	ulu.mutation.SetUserID(id)
@@ -1221,6 +1284,21 @@ func (ulu *UsageLogUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := ulu.mutation.UserEmailSnapshot(); ok {
 		_spec.SetField(usagelog.FieldUserEmailSnapshot, field.TypeString, value)
+	}
+	if value, ok := ulu.mutation.Status(); ok {
+		_spec.SetField(usagelog.FieldStatus, field.TypeString, value)
+	}
+	if value, ok := ulu.mutation.ErrorCode(); ok {
+		_spec.SetField(usagelog.FieldErrorCode, field.TypeString, value)
+	}
+	if value, ok := ulu.mutation.ErrorStatus(); ok {
+		_spec.SetField(usagelog.FieldErrorStatus, field.TypeInt, value)
+	}
+	if value, ok := ulu.mutation.AddedErrorStatus(); ok {
+		_spec.AddField(usagelog.FieldErrorStatus, field.TypeInt, value)
+	}
+	if value, ok := ulu.mutation.ErrorMessage(); ok {
+		_spec.SetField(usagelog.FieldErrorMessage, field.TypeString, value)
 	}
 	if ulu.mutation.UserCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -2151,6 +2229,69 @@ func (uluo *UsageLogUpdateOne) SetNillableUserEmailSnapshot(s *string) *UsageLog
 	return uluo
 }
 
+// SetStatus sets the "status" field.
+func (uluo *UsageLogUpdateOne) SetStatus(s string) *UsageLogUpdateOne {
+	uluo.mutation.SetStatus(s)
+	return uluo
+}
+
+// SetNillableStatus sets the "status" field if the given value is not nil.
+func (uluo *UsageLogUpdateOne) SetNillableStatus(s *string) *UsageLogUpdateOne {
+	if s != nil {
+		uluo.SetStatus(*s)
+	}
+	return uluo
+}
+
+// SetErrorCode sets the "error_code" field.
+func (uluo *UsageLogUpdateOne) SetErrorCode(s string) *UsageLogUpdateOne {
+	uluo.mutation.SetErrorCode(s)
+	return uluo
+}
+
+// SetNillableErrorCode sets the "error_code" field if the given value is not nil.
+func (uluo *UsageLogUpdateOne) SetNillableErrorCode(s *string) *UsageLogUpdateOne {
+	if s != nil {
+		uluo.SetErrorCode(*s)
+	}
+	return uluo
+}
+
+// SetErrorStatus sets the "error_status" field.
+func (uluo *UsageLogUpdateOne) SetErrorStatus(i int) *UsageLogUpdateOne {
+	uluo.mutation.ResetErrorStatus()
+	uluo.mutation.SetErrorStatus(i)
+	return uluo
+}
+
+// SetNillableErrorStatus sets the "error_status" field if the given value is not nil.
+func (uluo *UsageLogUpdateOne) SetNillableErrorStatus(i *int) *UsageLogUpdateOne {
+	if i != nil {
+		uluo.SetErrorStatus(*i)
+	}
+	return uluo
+}
+
+// AddErrorStatus adds i to the "error_status" field.
+func (uluo *UsageLogUpdateOne) AddErrorStatus(i int) *UsageLogUpdateOne {
+	uluo.mutation.AddErrorStatus(i)
+	return uluo
+}
+
+// SetErrorMessage sets the "error_message" field.
+func (uluo *UsageLogUpdateOne) SetErrorMessage(s string) *UsageLogUpdateOne {
+	uluo.mutation.SetErrorMessage(s)
+	return uluo
+}
+
+// SetNillableErrorMessage sets the "error_message" field if the given value is not nil.
+func (uluo *UsageLogUpdateOne) SetNillableErrorMessage(s *string) *UsageLogUpdateOne {
+	if s != nil {
+		uluo.SetErrorMessage(*s)
+	}
+	return uluo
+}
+
 // SetUserID sets the "user" edge to the User entity by ID.
 func (uluo *UsageLogUpdateOne) SetUserID(id int) *UsageLogUpdateOne {
 	uluo.mutation.SetUserID(id)
@@ -2576,6 +2717,21 @@ func (uluo *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, er
 	}
 	if value, ok := uluo.mutation.UserEmailSnapshot(); ok {
 		_spec.SetField(usagelog.FieldUserEmailSnapshot, field.TypeString, value)
+	}
+	if value, ok := uluo.mutation.Status(); ok {
+		_spec.SetField(usagelog.FieldStatus, field.TypeString, value)
+	}
+	if value, ok := uluo.mutation.ErrorCode(); ok {
+		_spec.SetField(usagelog.FieldErrorCode, field.TypeString, value)
+	}
+	if value, ok := uluo.mutation.ErrorStatus(); ok {
+		_spec.SetField(usagelog.FieldErrorStatus, field.TypeInt, value)
+	}
+	if value, ok := uluo.mutation.AddedErrorStatus(); ok {
+		_spec.AddField(usagelog.FieldErrorStatus, field.TypeInt, value)
+	}
+	if value, ok := uluo.mutation.ErrorMessage(); ok {
+		_spec.SetField(usagelog.FieldErrorMessage, field.TypeString, value)
 	}
 	if uluo.mutation.UserCleared() {
 		edge := &sqlgraph.EdgeSpec{

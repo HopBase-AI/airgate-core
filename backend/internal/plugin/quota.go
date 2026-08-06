@@ -5,11 +5,13 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
@@ -25,6 +27,11 @@ func (f *Forwarder) checkBalance(c *gin.Context, state *forwardState) bool {
 	}
 	if state.keyInfo.UserBalance <= 0 {
 		protocolError(c, http.StatusPaymentRequired, "insufficient_quota", "insufficient_quota", "余额不足")
+		f.recordFailureUsage(c, state, usageFailure{
+			code:    appusage.ErrorCodeInsufficientQuota,
+			status:  http.StatusPaymentRequired,
+			message: "账户余额不足",
+		})
 		return false
 	}
 	return true
@@ -63,6 +70,11 @@ func (f *Forwarder) acquireClientQuota(c *gin.Context, state *forwardState) func
 	if max := state.keyInfo.UserMaxConcurrency; max > 0 {
 		if err := f.concurrency.AcquireUserSlot(ctx, userID, slotID, max, 0); err != nil {
 			protocolError(c, http.StatusTooManyRequests, "rate_limit_error", "user_concurrency_limit", "用户并发已达上限，请稍后重试")
+			f.recordFailureUsage(c, state, usageFailure{
+				code:    appusage.ErrorCodeConcurrencyLimit,
+				status:  http.StatusTooManyRequests,
+				message: "用户并发已达上限（" + strconv.Itoa(max) + "）",
+			})
 			return nil
 		}
 		userHeld = true
@@ -75,6 +87,11 @@ func (f *Forwarder) acquireClientQuota(c *gin.Context, state *forwardState) func
 				f.concurrency.ReleaseUserSlot(ctx, userID, slotID)
 			}
 			protocolError(c, http.StatusTooManyRequests, "rate_limit_error", "apikey_concurrency_limit", "API Key 并发已达上限，请稍后重试")
+			f.recordFailureUsage(c, state, usageFailure{
+				code:    appusage.ErrorCodeConcurrencyLimit,
+				status:  http.StatusTooManyRequests,
+				message: "API Key 并发已达上限（" + strconv.Itoa(max) + "）",
+			})
 			return nil
 		}
 		keyHeld = true
@@ -182,17 +199,42 @@ func (f *Forwarder) forwardMetadataOnly(c *gin.Context, state *forwardState) {
 	outcome, err := state.plugin.Gateway.Forward(c.Request.Context(), req)
 	if err != nil {
 		slog.Error("metadata 请求插件失败", "plugin", state.plugin.Name, "path", state.requestPath, "error", err)
-		protocolError(c, http.StatusBadGateway, "server_error", "upstream_error", "metadata 请求插件失败")
+		protocolError(c, http.StatusBadGateway, "server_error", appusage.ErrorCodeUpstreamError, "metadata 请求插件失败")
+		f.recordFailureUsage(c, state, usageFailure{
+			code:    appusage.ErrorCodePluginError,
+			status:  http.StatusBadGateway,
+			message: "metadata 请求插件失败",
+		})
 		return
 	}
 	if err := f.scopeMetadataOnlyModels(c.Request.Context(), state, &outcome); err != nil {
 		slog.Error("metadata 模型列表按分组收敛失败", "plugin", state.plugin.Name, "path", state.requestPath, "group_id", state.keyInfo.GroupID, "error", err)
-		protocolError(c, http.StatusInternalServerError, "server_error", "metadata_scope_failed", "模型列表加载失败")
+		protocolError(c, http.StatusInternalServerError, "server_error", appusage.ErrorCodeMetadataScopeFailed, "模型列表加载失败")
+		f.recordFailureUsage(c, state, usageFailure{
+			code:    appusage.ErrorCodeMetadataScopeFailed,
+			status:  http.StatusInternalServerError,
+			message: "模型列表加载失败",
+		})
 		return
 	}
 	if len(outcome.Upstream.Body) == 0 {
-		protocolError(c, http.StatusBadGateway, "server_error", "upstream_error", "metadata 请求插件返回空响应")
+		protocolError(c, http.StatusBadGateway, "server_error", appusage.ErrorCodeUpstreamError, "metadata 请求插件返回空响应")
+		f.recordFailureUsage(c, state, usageFailure{
+			code:    appusage.ErrorCodeUpstreamError,
+			status:  http.StatusBadGateway,
+			message: "metadata 请求插件返回空响应",
+		})
 		return
+	}
+	if outcome.Upstream.StatusCode >= http.StatusBadRequest {
+		failure := failureFromOutcome(forwardExecution{outcome: outcome})
+		if failure.code == sdk.OutcomeUnknown.String() {
+			failure.code = appusage.ErrorCodeUpstreamError
+		}
+		if failure.message == "" {
+			failure.message = "metadata 请求失败"
+		}
+		f.recordFailureUsage(c, state, failure)
 	}
 	writeUpstream(c, outcome.Upstream)
 }

@@ -3,6 +3,7 @@
 package migrate
 
 import (
+	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/dialect/sql/schema"
 	"entgo.io/ent/schema/field"
 )
@@ -466,6 +467,10 @@ var (
 		{Name: "request_id", Type: field.TypeString, Nullable: true},
 		{Name: "user_id_snapshot", Type: field.TypeInt, Default: 0},
 		{Name: "user_email_snapshot", Type: field.TypeString, Default: ""},
+		{Name: "status", Type: field.TypeString, Default: "success"},
+		{Name: "error_code", Type: field.TypeString, Default: ""},
+		{Name: "error_status", Type: field.TypeInt, Default: 0},
+		{Name: "error_message", Type: field.TypeString, Default: ""},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "api_key_usage_logs", Type: field.TypeInt, Nullable: true},
 		{Name: "account_usage_logs", Type: field.TypeInt, Nullable: true},
@@ -480,25 +485,25 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "usage_logs_api_keys_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[44]},
+				Columns:    []*schema.Column{UsageLogsColumns[48]},
 				RefColumns: []*schema.Column{APIKeysColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "usage_logs_accounts_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[45]},
+				Columns:    []*schema.Column{UsageLogsColumns[49]},
 				RefColumns: []*schema.Column{AccountsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "usage_logs_groups_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[46]},
+				Columns:    []*schema.Column{UsageLogsColumns[50]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "usage_logs_users_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[47]},
+				Columns:    []*schema.Column{UsageLogsColumns[51]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -507,7 +512,7 @@ var (
 			{
 				Name:    "usage_log_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[43]},
+				Columns: []*schema.Column{UsageLogsColumns[47]},
 			},
 			{
 				Name:    "usage_log_request_id_unique",
@@ -517,37 +522,45 @@ var (
 			{
 				Name:    "usage_log_platform_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[1], UsageLogsColumns[43]},
+				Columns: []*schema.Column{UsageLogsColumns[1], UsageLogsColumns[47]},
 			},
 			{
 				Name:    "usage_log_user_snapshot_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[41], UsageLogsColumns[43]},
+				Columns: []*schema.Column{UsageLogsColumns[41], UsageLogsColumns[47]},
 			},
 			{
 				Name:    "usage_log_model_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[2], UsageLogsColumns[43]},
+				Columns: []*schema.Column{UsageLogsColumns[2], UsageLogsColumns[47]},
+			},
+			{
+				Name:    "usage_log_error_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{UsageLogsColumns[47]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "error_code <> ''",
+				},
 			},
 			{
 				Name:    "usage_log_user",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[47]},
+				Columns: []*schema.Column{UsageLogsColumns[51]},
 			},
 			{
 				Name:    "usage_log_api_key",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[44]},
+				Columns: []*schema.Column{UsageLogsColumns[48]},
 			},
 			{
 				Name:    "usage_log_account",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[45]},
+				Columns: []*schema.Column{UsageLogsColumns[49]},
 			},
 			{
 				Name:    "usage_log_group",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[46]},
+				Columns: []*schema.Column{UsageLogsColumns[50]},
 			},
 		},
 	}

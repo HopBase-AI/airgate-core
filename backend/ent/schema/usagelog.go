@@ -3,6 +3,7 @@ package schema
 import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
+	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
@@ -89,6 +90,18 @@ func (UsageLog) Fields() []ent.Field {
 			Comment("用户 ID 快照。用户硬删除后保留历史使用记录与计费归属。"),
 		field.String("user_email_snapshot").Default("").
 			Comment("用户邮箱快照。用户硬删除后后台使用记录仍能展示历史归属。"),
+		// 请求结果。失败请求也落一条记录（token/费用全 0），供用户自查与排障。
+		// 历史行经自动迁移取默认值 success，既有统计口径不受影响。
+		field.String("status").Default("success").
+			Comment("请求结果：success（正常计费）/ error（失败，token 与费用为 0）"),
+		field.String("error_code").Default("").
+			Comment("失败分类，取自转发判决（client_error/account_rate_limited/upstream_transient 等）或 Core 侧拦截原因；成功请求为空"),
+		field.Int("error_status").Default(0).
+			Comment("失败时优先记录上游 HTTP 状态码；无上游响应时记录 Core 对外状态码；成功请求为 0"),
+		// 不设 MaxLen：ent 的长度校验会让超长文本把整批 CreateBulk 一起写失败
+		// （同批正常计费记录会被拖进 WAL 反复重试）。长度由写入侧截断保证。
+		field.String("error_message").Default("").
+			Comment("失败原因，写入前脱敏并截断；成功请求为空"),
 		field.Time("created_at").Default(timeNow).Immutable(),
 	}
 }
@@ -116,6 +129,11 @@ func (UsageLog) Indexes() []ent.Index {
 			StorageKey("usage_log_user_snapshot_created_at"),
 		index.Fields("model", "created_at").
 			StorageKey("usage_log_model_created_at"),
+		// 「只看失败」按 error_code <> '' 查询；被上游计费的 4xx 同样带 error_code，
+		// 因而不能用 status 索引代替。partial index 保持很小并匹配实际谓词。
+		index.Fields("created_at").
+			StorageKey("usage_log_error_created_at").
+			Annotations(entsql.IndexWhere("error_code <> ''")),
 		index.Edges("user").
 			StorageKey("usage_log_user"),
 		index.Edges("api_key").

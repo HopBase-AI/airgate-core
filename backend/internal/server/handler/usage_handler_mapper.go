@@ -5,6 +5,26 @@ import (
 	"github.com/DouDOU-start/airgate-core/internal/server/dto"
 )
 
+// usageStatusOf 请求结果。历史记录（该字段上线前写入）status 为空，按成功处理。
+func usageStatusOf(record appusage.LogRecord) string {
+	if record.Status == "" {
+		return appusage.StatusSuccess
+	}
+	return record.Status
+}
+
+// userFacingErrorMessage 用户可见的失败原因。
+//
+// 客户端自身的错误（参数非法、模型不支持、余额不足、超并发）本来就会随响应体
+// 原样返回给调用方，展示在使用日志里不增加泄露；上游账号/服务类故障属于内部细节，
+// 用户侧只给分类（前端按 error_code 渲染文案），与转发层的脱敏口径保持一致。
+func userFacingErrorMessage(record appusage.LogRecord) string {
+	if !appusage.ErrorMessageVisibleToUser(record.ErrorCode) {
+		return ""
+	}
+	return record.ErrorMessage
+}
+
 // toUsageLogResp 转换为 reseller / admin 视角的完整响应（包含 actual_cost、billed_cost 等所有字段）。
 func toUsageLogResp(record appusage.LogRecord) dto.UsageLogResp {
 	return dto.UsageLogResp{
@@ -59,6 +79,10 @@ func toUsageLogResp(record appusage.LogRecord) dto.UsageLogResp {
 		UsageMetrics:          record.UsageMetrics,
 		UsageCostDetails:      record.UsageCostDetails,
 		UsageMetadata:         record.UsageMetadata,
+		Status:                usageStatusOf(record),
+		ErrorCode:             record.ErrorCode,
+		ErrorStatus:           record.ErrorStatus,
+		ErrorMessage:          record.ErrorMessage,
 		CreatedAt:             record.CreatedAt,
 	}
 }
@@ -117,6 +141,10 @@ func toUserUsageLogResp(record appusage.LogRecord) dto.UserUsageLogResp {
 		UsageMetrics:          record.UsageMetrics,
 		UsageCostDetails:      record.UsageCostDetails,
 		UsageMetadata:         record.UsageMetadata,
+		Status:                usageStatusOf(record),
+		ErrorCode:             record.ErrorCode,
+		ErrorStatus:           record.ErrorStatus,
+		ErrorMessage:          userFacingErrorMessage(record),
 		CreatedAt:             record.CreatedAt,
 	}
 }
@@ -148,6 +176,10 @@ func toCustomerUsageLogResp(record appusage.LogRecord) dto.CustomerUsageLogResp 
 		UsageAttributes:       record.UsageAttributes,
 		UsageMetrics:          record.UsageMetrics,
 		UsageMetadata:         record.UsageMetadata,
+		Status:                usageStatusOf(record),
+		ErrorCode:             record.ErrorCode,
+		ErrorStatus:           record.ErrorStatus,
+		ErrorMessage:          userFacingErrorMessage(record),
 		CreatedAt:             record.CreatedAt,
 	}
 }
@@ -155,6 +187,7 @@ func toCustomerUsageLogResp(record appusage.LogRecord) dto.CustomerUsageLogResp 
 func toUsageStatsResp(result appusage.StatsResult) dto.UsageStatsResp {
 	resp := dto.UsageStatsResp{
 		TotalRequests:   result.TotalRequests,
+		FailedRequests:  result.FailedRequests,
 		TotalTokens:     result.TotalTokens,
 		TotalCost:       result.TotalCost,
 		TotalActualCost: result.TotalActualCost,

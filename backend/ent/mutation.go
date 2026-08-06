@@ -14545,6 +14545,11 @@ type UsageLogMutation struct {
 	user_id_snapshot            *int
 	adduser_id_snapshot         *int
 	user_email_snapshot         *string
+	status                      *string
+	error_code                  *string
+	error_status                *int
+	adderror_status             *int
+	error_message               *string
 	created_at                  *time.Time
 	clearedFields               map[string]struct{}
 	user                        *int
@@ -16823,6 +16828,170 @@ func (m *UsageLogMutation) ResetUserEmailSnapshot() {
 	m.user_email_snapshot = nil
 }
 
+// SetStatus sets the "status" field.
+func (m *UsageLogMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *UsageLogMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *UsageLogMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetErrorCode sets the "error_code" field.
+func (m *UsageLogMutation) SetErrorCode(s string) {
+	m.error_code = &s
+}
+
+// ErrorCode returns the value of the "error_code" field in the mutation.
+func (m *UsageLogMutation) ErrorCode() (r string, exists bool) {
+	v := m.error_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorCode returns the old "error_code" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldErrorCode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorCode: %w", err)
+	}
+	return oldValue.ErrorCode, nil
+}
+
+// ResetErrorCode resets all changes to the "error_code" field.
+func (m *UsageLogMutation) ResetErrorCode() {
+	m.error_code = nil
+}
+
+// SetErrorStatus sets the "error_status" field.
+func (m *UsageLogMutation) SetErrorStatus(i int) {
+	m.error_status = &i
+	m.adderror_status = nil
+}
+
+// ErrorStatus returns the value of the "error_status" field in the mutation.
+func (m *UsageLogMutation) ErrorStatus() (r int, exists bool) {
+	v := m.error_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorStatus returns the old "error_status" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldErrorStatus(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorStatus: %w", err)
+	}
+	return oldValue.ErrorStatus, nil
+}
+
+// AddErrorStatus adds i to the "error_status" field.
+func (m *UsageLogMutation) AddErrorStatus(i int) {
+	if m.adderror_status != nil {
+		*m.adderror_status += i
+	} else {
+		m.adderror_status = &i
+	}
+}
+
+// AddedErrorStatus returns the value that was added to the "error_status" field in this mutation.
+func (m *UsageLogMutation) AddedErrorStatus() (r int, exists bool) {
+	v := m.adderror_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetErrorStatus resets all changes to the "error_status" field.
+func (m *UsageLogMutation) ResetErrorStatus() {
+	m.error_status = nil
+	m.adderror_status = nil
+}
+
+// SetErrorMessage sets the "error_message" field.
+func (m *UsageLogMutation) SetErrorMessage(s string) {
+	m.error_message = &s
+}
+
+// ErrorMessage returns the value of the "error_message" field in the mutation.
+func (m *UsageLogMutation) ErrorMessage() (r string, exists bool) {
+	v := m.error_message
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorMessage returns the old "error_message" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldErrorMessage(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorMessage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorMessage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorMessage: %w", err)
+	}
+	return oldValue.ErrorMessage, nil
+}
+
+// ResetErrorMessage resets all changes to the "error_message" field.
+func (m *UsageLogMutation) ResetErrorMessage() {
+	m.error_message = nil
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (m *UsageLogMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -17049,7 +17218,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 43)
+	fields := make([]string, 0, 47)
 	if m.platform != nil {
 		fields = append(fields, usagelog.FieldPlatform)
 	}
@@ -17176,6 +17345,18 @@ func (m *UsageLogMutation) Fields() []string {
 	if m.user_email_snapshot != nil {
 		fields = append(fields, usagelog.FieldUserEmailSnapshot)
 	}
+	if m.status != nil {
+		fields = append(fields, usagelog.FieldStatus)
+	}
+	if m.error_code != nil {
+		fields = append(fields, usagelog.FieldErrorCode)
+	}
+	if m.error_status != nil {
+		fields = append(fields, usagelog.FieldErrorStatus)
+	}
+	if m.error_message != nil {
+		fields = append(fields, usagelog.FieldErrorMessage)
+	}
 	if m.created_at != nil {
 		fields = append(fields, usagelog.FieldCreatedAt)
 	}
@@ -17271,6 +17452,14 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.UserIDSnapshot()
 	case usagelog.FieldUserEmailSnapshot:
 		return m.UserEmailSnapshot()
+	case usagelog.FieldStatus:
+		return m.Status()
+	case usagelog.FieldErrorCode:
+		return m.ErrorCode()
+	case usagelog.FieldErrorStatus:
+		return m.ErrorStatus()
+	case usagelog.FieldErrorMessage:
+		return m.ErrorMessage()
 	case usagelog.FieldCreatedAt:
 		return m.CreatedAt()
 	}
@@ -17366,6 +17555,14 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldUserIDSnapshot(ctx)
 	case usagelog.FieldUserEmailSnapshot:
 		return m.OldUserEmailSnapshot(ctx)
+	case usagelog.FieldStatus:
+		return m.OldStatus(ctx)
+	case usagelog.FieldErrorCode:
+		return m.OldErrorCode(ctx)
+	case usagelog.FieldErrorStatus:
+		return m.OldErrorStatus(ctx)
+	case usagelog.FieldErrorMessage:
+		return m.OldErrorMessage(ctx)
 	case usagelog.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	}
@@ -17671,6 +17868,34 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetUserEmailSnapshot(v)
 		return nil
+	case usagelog.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case usagelog.FieldErrorCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorCode(v)
+		return nil
+	case usagelog.FieldErrorStatus:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorStatus(v)
+		return nil
+	case usagelog.FieldErrorMessage:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorMessage(v)
+		return nil
 	case usagelog.FieldCreatedAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -17767,6 +17992,9 @@ func (m *UsageLogMutation) AddedFields() []string {
 	if m.adduser_id_snapshot != nil {
 		fields = append(fields, usagelog.FieldUserIDSnapshot)
 	}
+	if m.adderror_status != nil {
+		fields = append(fields, usagelog.FieldErrorStatus)
+	}
 	return fields
 }
 
@@ -17829,6 +18057,8 @@ func (m *UsageLogMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedFirstTokenMs()
 	case usagelog.FieldUserIDSnapshot:
 		return m.AddedUserIDSnapshot()
+	case usagelog.FieldErrorStatus:
+		return m.AddedErrorStatus()
 	}
 	return nil, false
 }
@@ -18027,6 +18257,13 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddUserIDSnapshot(v)
 		return nil
+	case usagelog.FieldErrorStatus:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddErrorStatus(v)
+		return nil
 	}
 	return fmt.Errorf("unknown UsageLog numeric field %s", name)
 }
@@ -18212,6 +18449,18 @@ func (m *UsageLogMutation) ResetField(name string) error {
 		return nil
 	case usagelog.FieldUserEmailSnapshot:
 		m.ResetUserEmailSnapshot()
+		return nil
+	case usagelog.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case usagelog.FieldErrorCode:
+		m.ResetErrorCode()
+		return nil
+	case usagelog.FieldErrorStatus:
+		m.ResetErrorStatus()
+		return nil
+	case usagelog.FieldErrorMessage:
+		m.ResetErrorMessage()
 		return nil
 	case usagelog.FieldCreatedAt:
 		m.ResetCreatedAt()

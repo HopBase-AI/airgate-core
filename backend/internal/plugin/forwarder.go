@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/DouDOU-start/airgate-core/ent"
+	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
 	"github.com/DouDOU-start/airgate-core/internal/routing"
@@ -133,6 +135,11 @@ func (f *Forwarder) Forward(c *gin.Context) {
 			"scheduling_models", state.schedulingModelCandidates(),
 		)
 		protocolError(c, http.StatusNotFound, "invalid_request_error", "model_not_found", reason)
+		f.recordFailureUsage(c, state, usageFailure{
+			code:    appusage.ErrorCodeModelNotFound,
+			status:  http.StatusNotFound,
+			message: reason,
+		})
 		return
 	}
 
@@ -152,9 +159,19 @@ func (f *Forwarder) Forward(c *gin.Context) {
 		)
 		if errResp, ok := apiKeyGroupRequirementError(state.keyInfo, requirements); ok {
 			protocolError(c, errResp.status, errResp.errType, errResp.code, errResp.message)
+			f.recordFailureUsage(c, state, usageFailure{
+				code:    appusage.ErrorCodeCapabilityDenied,
+				status:  errResp.status,
+				message: errResp.message,
+			})
 			return
 		}
 		protocolError(c, http.StatusServiceUnavailable, "server_error", "no_available_route", "请求暂时无法完成，请稍后重试")
+		f.recordFailureUsage(c, state, usageFailure{
+			code:    appusage.ErrorCodeNoAvailableRoute,
+			status:  http.StatusServiceUnavailable,
+			message: "当前分组没有可用于本次请求的上游账号",
+		})
 		return
 	}
 
@@ -361,6 +378,24 @@ func (f *Forwarder) Forward(c *gin.Context) {
 	logger.Error("forward_request_failed", failAttrs...)
 
 	writeAllRoutesFailed(c, failureSummary)
+
+	// 全部候选账号都失败：这是用户最需要在使用日志里看到的一类失败（上游全挂、
+	// 账号欠费被封、全量限流）。落库用与客户端响应一致的 code/status，避免两套口径。
+	failResp := selectAllRoutesFailureResponse(failureSummary)
+	f.recordFailureUsage(c, state, usageFailure{
+		code:    failResp.code,
+		status:  failResp.status,
+		message: allRoutesFailureLogMessage(failResp.message, totalAttempts),
+	})
+}
+
+// allRoutesFailureLogMessage 给「全部上游失败」的日志补上尝试次数，便于区分
+// 「一次就失败」与「换了 3 个账号仍失败」。
+func allRoutesFailureLogMessage(message string, attempts int) string {
+	if attempts <= 0 {
+		return message + "（未取到可用账号）"
+	}
+	return message + "（已尝试 " + strconv.Itoa(attempts) + " 次上游调用）"
 }
 
 func canceledRequestStatus(err error) int {
@@ -494,7 +529,7 @@ func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFa
 		return allRoutesFailureResponse{
 			status:     http.StatusTooManyRequests,
 			errType:    "rate_limit_error",
-			code:       "all_routes_rate_limited",
+			code:       appusage.ErrorCodeAllRoutesRateLimited,
 			message:    "上游账号当前被限流，请稍后重试",
 			retryAfter: retryAfter,
 		}
@@ -503,7 +538,7 @@ func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFa
 		return allRoutesFailureResponse{
 			status:  http.StatusServiceUnavailable,
 			errType: "server_error",
-			code:    "all_routes_failed",
+			code:    appusage.ErrorCodeAllRoutesFailed,
 			message: "请求暂时无法完成，请稍后重试",
 		}
 	}
@@ -511,7 +546,7 @@ func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFa
 		return allRoutesFailureResponse{
 			status:  http.StatusGatewayTimeout,
 			errType: "server_error",
-			code:    "upstream_timeout",
+			code:    appusage.ErrorCodeUpstreamTimeout,
 			message: "上游请求超时，请稍后重试",
 		}
 	}
@@ -519,7 +554,7 @@ func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFa
 		return allRoutesFailureResponse{
 			status:  http.StatusBadGateway,
 			errType: "server_error",
-			code:    "upstream_error",
+			code:    appusage.ErrorCodeUpstreamError,
 			message: "上游服务暂不可用，请稍后重试",
 		}
 	}
@@ -535,7 +570,7 @@ func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFa
 			return allRoutesFailureResponse{
 				status:  http.StatusNotFound,
 				errType: "not_found_error",
-				code:    "group_offline",
+				code:    appusage.ErrorCodeGroupOffline,
 				message: "当前 API Key 所属分组已下线，无法继续提供服务。请在控制台重新创建 API Key 或改用其它分组。",
 			}
 		}
@@ -543,7 +578,7 @@ func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFa
 			return allRoutesFailureResponse{
 				status:  http.StatusNotFound,
 				errType: "not_found_error",
-				code:    "model_not_served",
+				code:    appusage.ErrorCodeModelNotServed,
 				message: "当前 API Key 所属分组未提供所请求的模型，请更换模型或改用其它分组。",
 			}
 		}
@@ -552,14 +587,14 @@ func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFa
 		return allRoutesFailureResponse{
 			status:  http.StatusServiceUnavailable,
 			errType: "server_error",
-			code:    "no_available_account",
+			code:    appusage.ErrorCodeNoAvailableAccount,
 			message: "暂无可用上游账号，请稍后重试",
 		}
 	}
 	return allRoutesFailureResponse{
 		status:  http.StatusServiceUnavailable,
 		errType: "server_error",
-		code:    "all_routes_failed",
+		code:    appusage.ErrorCodeAllRoutesFailed,
 		message: "请求暂时无法完成，请稍后重试",
 	}
 }

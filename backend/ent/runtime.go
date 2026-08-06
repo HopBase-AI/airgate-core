@@ -698,8 +698,24 @@ func init() {
 	usagelogDescUserEmailSnapshot := usagelogFields[41].Descriptor()
 	// usagelog.DefaultUserEmailSnapshot holds the default value on creation for the user_email_snapshot field.
 	usagelog.DefaultUserEmailSnapshot = usagelogDescUserEmailSnapshot.Default.(string)
+	// usagelogDescStatus is the schema descriptor for status field.
+	usagelogDescStatus := usagelogFields[42].Descriptor()
+	// usagelog.DefaultStatus holds the default value on creation for the status field.
+	usagelog.DefaultStatus = usagelogDescStatus.Default.(string)
+	// usagelogDescErrorCode is the schema descriptor for error_code field.
+	usagelogDescErrorCode := usagelogFields[43].Descriptor()
+	// usagelog.DefaultErrorCode holds the default value on creation for the error_code field.
+	usagelog.DefaultErrorCode = usagelogDescErrorCode.Default.(string)
+	// usagelogDescErrorStatus is the schema descriptor for error_status field.
+	usagelogDescErrorStatus := usagelogFields[44].Descriptor()
+	// usagelog.DefaultErrorStatus holds the default value on creation for the error_status field.
+	usagelog.DefaultErrorStatus = usagelogDescErrorStatus.Default.(int)
+	// usagelogDescErrorMessage is the schema descriptor for error_message field.
+	usagelogDescErrorMessage := usagelogFields[45].Descriptor()
+	// usagelog.DefaultErrorMessage holds the default value on creation for the error_message field.
+	usagelog.DefaultErrorMessage = usagelogDescErrorMessage.Default.(string)
 	// usagelogDescCreatedAt is the schema descriptor for created_at field.
-	usagelogDescCreatedAt := usagelogFields[42].Descriptor()
+	usagelogDescCreatedAt := usagelogFields[46].Descriptor()
 	// usagelog.DefaultCreatedAt holds the default value on creation for the created_at field.
 	usagelog.DefaultCreatedAt = usagelogDescCreatedAt.Default.(func() time.Time)
 	userFields := schema.User{}.Fields()

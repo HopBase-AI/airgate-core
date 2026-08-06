@@ -98,6 +98,14 @@ const (
 	FieldUserIDSnapshot = "user_id_snapshot"
 	// FieldUserEmailSnapshot holds the string denoting the user_email_snapshot field in the database.
 	FieldUserEmailSnapshot = "user_email_snapshot"
+	// FieldStatus holds the string denoting the status field in the database.
+	FieldStatus = "status"
+	// FieldErrorCode holds the string denoting the error_code field in the database.
+	FieldErrorCode = "error_code"
+	// FieldErrorStatus holds the string denoting the error_status field in the database.
+	FieldErrorStatus = "error_status"
+	// FieldErrorMessage holds the string denoting the error_message field in the database.
+	FieldErrorMessage = "error_message"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// EdgeUser holds the string denoting the user edge name in mutations.
@@ -185,6 +193,10 @@ var Columns = []string{
 	FieldRequestID,
 	FieldUserIDSnapshot,
 	FieldUserEmailSnapshot,
+	FieldStatus,
+	FieldErrorCode,
+	FieldErrorStatus,
+	FieldErrorMessage,
 	FieldCreatedAt,
 }
 
@@ -287,6 +299,14 @@ var (
 	DefaultUserIDSnapshot int
 	// DefaultUserEmailSnapshot holds the default value on creation for the "user_email_snapshot" field.
 	DefaultUserEmailSnapshot string
+	// DefaultStatus holds the default value on creation for the "status" field.
+	DefaultStatus string
+	// DefaultErrorCode holds the default value on creation for the "error_code" field.
+	DefaultErrorCode string
+	// DefaultErrorStatus holds the default value on creation for the "error_status" field.
+	DefaultErrorStatus int
+	// DefaultErrorMessage holds the default value on creation for the "error_message" field.
+	DefaultErrorMessage string
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 )
@@ -487,6 +507,26 @@ func ByUserIDSnapshot(opts ...sql.OrderTermOption) OrderOption {
 // ByUserEmailSnapshot orders the results by the user_email_snapshot field.
 func ByUserEmailSnapshot(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUserEmailSnapshot, opts...).ToFunc()
+}
+
+// ByStatus orders the results by the status field.
+func ByStatus(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldStatus, opts...).ToFunc()
+}
+
+// ByErrorCode orders the results by the error_code field.
+func ByErrorCode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldErrorCode, opts...).ToFunc()
+}
+
+// ByErrorStatus orders the results by the error_status field.
+func ByErrorStatus(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldErrorStatus, opts...).ToFunc()
+}
+
+// ByErrorMessage orders the results by the error_message field.
+func ByErrorMessage(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldErrorMessage, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

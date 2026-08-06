@@ -565,6 +565,62 @@ func (ulc *UsageLogCreate) SetNillableUserEmailSnapshot(s *string) *UsageLogCrea
 	return ulc
 }
 
+// SetStatus sets the "status" field.
+func (ulc *UsageLogCreate) SetStatus(s string) *UsageLogCreate {
+	ulc.mutation.SetStatus(s)
+	return ulc
+}
+
+// SetNillableStatus sets the "status" field if the given value is not nil.
+func (ulc *UsageLogCreate) SetNillableStatus(s *string) *UsageLogCreate {
+	if s != nil {
+		ulc.SetStatus(*s)
+	}
+	return ulc
+}
+
+// SetErrorCode sets the "error_code" field.
+func (ulc *UsageLogCreate) SetErrorCode(s string) *UsageLogCreate {
+	ulc.mutation.SetErrorCode(s)
+	return ulc
+}
+
+// SetNillableErrorCode sets the "error_code" field if the given value is not nil.
+func (ulc *UsageLogCreate) SetNillableErrorCode(s *string) *UsageLogCreate {
+	if s != nil {
+		ulc.SetErrorCode(*s)
+	}
+	return ulc
+}
+
+// SetErrorStatus sets the "error_status" field.
+func (ulc *UsageLogCreate) SetErrorStatus(i int) *UsageLogCreate {
+	ulc.mutation.SetErrorStatus(i)
+	return ulc
+}
+
+// SetNillableErrorStatus sets the "error_status" field if the given value is not nil.
+func (ulc *UsageLogCreate) SetNillableErrorStatus(i *int) *UsageLogCreate {
+	if i != nil {
+		ulc.SetErrorStatus(*i)
+	}
+	return ulc
+}
+
+// SetErrorMessage sets the "error_message" field.
+func (ulc *UsageLogCreate) SetErrorMessage(s string) *UsageLogCreate {
+	ulc.mutation.SetErrorMessage(s)
+	return ulc
+}
+
+// SetNillableErrorMessage sets the "error_message" field if the given value is not nil.
+func (ulc *UsageLogCreate) SetNillableErrorMessage(s *string) *UsageLogCreate {
+	if s != nil {
+		ulc.SetErrorMessage(*s)
+	}
+	return ulc
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (ulc *UsageLogCreate) SetCreatedAt(t time.Time) *UsageLogCreate {
 	ulc.mutation.SetCreatedAt(t)
@@ -830,6 +886,22 @@ func (ulc *UsageLogCreate) defaults() {
 		v := usagelog.DefaultUserEmailSnapshot
 		ulc.mutation.SetUserEmailSnapshot(v)
 	}
+	if _, ok := ulc.mutation.Status(); !ok {
+		v := usagelog.DefaultStatus
+		ulc.mutation.SetStatus(v)
+	}
+	if _, ok := ulc.mutation.ErrorCode(); !ok {
+		v := usagelog.DefaultErrorCode
+		ulc.mutation.SetErrorCode(v)
+	}
+	if _, ok := ulc.mutation.ErrorStatus(); !ok {
+		v := usagelog.DefaultErrorStatus
+		ulc.mutation.SetErrorStatus(v)
+	}
+	if _, ok := ulc.mutation.ErrorMessage(); !ok {
+		v := usagelog.DefaultErrorMessage
+		ulc.mutation.SetErrorMessage(v)
+	}
 	if _, ok := ulc.mutation.CreatedAt(); !ok {
 		v := usagelog.DefaultCreatedAt()
 		ulc.mutation.SetCreatedAt(v)
@@ -958,6 +1030,18 @@ func (ulc *UsageLogCreate) check() error {
 	}
 	if _, ok := ulc.mutation.UserEmailSnapshot(); !ok {
 		return &ValidationError{Name: "user_email_snapshot", err: errors.New(`ent: missing required field "UsageLog.user_email_snapshot"`)}
+	}
+	if _, ok := ulc.mutation.Status(); !ok {
+		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "UsageLog.status"`)}
+	}
+	if _, ok := ulc.mutation.ErrorCode(); !ok {
+		return &ValidationError{Name: "error_code", err: errors.New(`ent: missing required field "UsageLog.error_code"`)}
+	}
+	if _, ok := ulc.mutation.ErrorStatus(); !ok {
+		return &ValidationError{Name: "error_status", err: errors.New(`ent: missing required field "UsageLog.error_status"`)}
+	}
+	if _, ok := ulc.mutation.ErrorMessage(); !ok {
+		return &ValidationError{Name: "error_message", err: errors.New(`ent: missing required field "UsageLog.error_message"`)}
 	}
 	if _, ok := ulc.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "UsageLog.created_at"`)}
@@ -1155,6 +1239,22 @@ func (ulc *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := ulc.mutation.UserEmailSnapshot(); ok {
 		_spec.SetField(usagelog.FieldUserEmailSnapshot, field.TypeString, value)
 		_node.UserEmailSnapshot = value
+	}
+	if value, ok := ulc.mutation.Status(); ok {
+		_spec.SetField(usagelog.FieldStatus, field.TypeString, value)
+		_node.Status = value
+	}
+	if value, ok := ulc.mutation.ErrorCode(); ok {
+		_spec.SetField(usagelog.FieldErrorCode, field.TypeString, value)
+		_node.ErrorCode = value
+	}
+	if value, ok := ulc.mutation.ErrorStatus(); ok {
+		_spec.SetField(usagelog.FieldErrorStatus, field.TypeInt, value)
+		_node.ErrorStatus = value
+	}
+	if value, ok := ulc.mutation.ErrorMessage(); ok {
+		_spec.SetField(usagelog.FieldErrorMessage, field.TypeString, value)
+		_node.ErrorMessage = value
 	}
 	if value, ok := ulc.mutation.CreatedAt(); ok {
 		_spec.SetField(usagelog.FieldCreatedAt, field.TypeTime, value)
