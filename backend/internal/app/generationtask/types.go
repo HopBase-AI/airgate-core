@@ -33,6 +33,12 @@ type Task struct {
 	ErrorType           string
 	ErrorCode           string
 	ErrorMessage        string
+	RequestID           string
+	GroupID             int64
+	APIKeyID            int64
+	AccountID           int64
+	UpstreamStatus      int
+	UpstreamErrorCode   string
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 	StartedAt           *time.Time

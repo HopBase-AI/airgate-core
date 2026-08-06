@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -346,6 +347,29 @@ func TestFailureRecordPlatformAndModel(t *testing.T) {
 				t.Fatalf("failureRecordModel = %q, want %q", got, tt.wantModel)
 			}
 		})
+	}
+}
+
+func TestUsageMetadataWithTraceDoesNotMutatePluginMetadata(t *testing.T) {
+	original := map[string]string{"source": "plugin"}
+	ctx := sdk.WithRequestID(context.Background(), "request-123")
+	got := usageMetadataWithTrace(original, ctx)
+	if got["trace_id"] != "request-123" || got["source"] != "plugin" {
+		t.Fatalf("metadata = %#v", got)
+	}
+	if _, exists := original["trace_id"]; exists {
+		t.Fatalf("original metadata mutated: %#v", original)
+	}
+}
+
+func TestCanceledRequestFailure(t *testing.T) {
+	client := canceledRequestFailure(statusClientClosedRequest)
+	if client.code != appusage.ErrorCodeClientCanceled || client.status != statusClientClosedRequest {
+		t.Fatalf("client cancellation = %+v", client)
+	}
+	timeout := canceledRequestFailure(http.StatusGatewayTimeout)
+	if timeout.code != appusage.ErrorCodeRequestTimeout || timeout.status != http.StatusGatewayTimeout {
+		t.Fatalf("timeout cancellation = %+v", timeout)
 	}
 }
 

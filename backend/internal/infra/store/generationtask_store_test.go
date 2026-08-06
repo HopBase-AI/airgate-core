@@ -37,14 +37,23 @@ func TestGenerationTaskStoreListAndSummary(t *testing.T) {
 			builder.SetCompletedAt(updatedAt)
 		}
 		if status == enttask.StatusFailed {
+			execution := map[string]interface{}{
+				"upstream_created_at":   createdAt.Add(30 * time.Second).Format(time.RFC3339Nano),
+				"upstream_completed_at": updatedAt.Add(-30 * time.Second).Format(time.RFC3339Nano),
+			}
+			if taskType == "asset.attempt" {
+				execution["request_id"] = "request-asset-502"
+				execution["group_id"] = int64(21)
+				execution["api_key_id"] = int64(206)
+				execution["account_id"] = int64(33)
+				execution["upstream_status"] = 502
+				execution["upstream_error_code"] = "account_unavailable"
+			}
 			builder.
 				SetErrorType("upstream_error").
 				SetErrorCode("E_UPSTREAM").
 				SetErrorMessage("上游生成失败").
-				SetExecution(map[string]interface{}{
-					"upstream_created_at":   createdAt.Add(30 * time.Second).Format(time.RFC3339Nano),
-					"upstream_completed_at": updatedAt.Add(-30 * time.Second).Format(time.RFC3339Nano),
-				})
+				SetExecution(execution)
 		}
 		task, createErr := builder.Save(ctx)
 		if createErr != nil {
@@ -59,6 +68,7 @@ func TestGenerationTaskStoreListAndSummary(t *testing.T) {
 	createTask("video.api", enttask.StatusProcessing, now.Add(-30*time.Minute), now.Add(-20*time.Minute))
 	createTask("image.generate", enttask.StatusCompleted, now.Add(-2*time.Hour), now.Add(-time.Hour))
 	failedID := createTask("image.generate", enttask.StatusFailed, now.Add(-3*time.Hour), now.Add(-2*time.Hour))
+	assetAttemptID := createTask("asset.attempt", enttask.StatusFailed, now.Add(-90*time.Minute), now.Add(-89*time.Minute))
 	createTask("image.generate", enttask.StatusFailed, now.Add(-48*time.Hour), now.Add(-47*time.Hour))
 	createTask("document.generate", enttask.StatusCompleted, now.Add(-48*time.Hour), now.Add(-47*time.Hour))
 	createTask("relay_detection", enttask.StatusPending, now.Add(-24*time.Hour), now.Add(-24*time.Hour))
@@ -80,6 +90,18 @@ func TestGenerationTaskStoreListAndSummary(t *testing.T) {
 		!list[0].UpstreamCompletedAt.Equal(list[0].UpdatedAt.Add(-30*time.Second)) {
 		t.Fatalf("mapped upstream timing = %+v", list[0])
 	}
+	assetAttempts, assetTotal, err := store.List(ctx, appgenerationtask.ListFilter{Page: 1, PageSize: 20, Status: failedStatus, Kind: "asset"})
+	if err != nil {
+		t.Fatalf("List asset attempts: %v", err)
+	}
+	if assetTotal != 1 || len(assetAttempts) != 1 || assetAttempts[0].ID != assetAttemptID {
+		t.Fatalf("asset attempts = %+v total = %d", assetAttempts, assetTotal)
+	}
+	asset := assetAttempts[0]
+	if asset.RequestID != "request-asset-502" || asset.GroupID != 21 || asset.APIKeyID != 206 ||
+		asset.AccountID != 33 || asset.UpstreamStatus != 502 || asset.UpstreamErrorCode != "account_unavailable" {
+		t.Fatalf("asset attempt diagnostics = %+v", asset)
+	}
 
 	summary, err := store.Summary(ctx, now.Add(-24*time.Hour), now.Add(-5*time.Minute), now.Add(-15*time.Minute))
 	if err != nil {
@@ -88,7 +110,7 @@ func TestGenerationTaskStoreListAndSummary(t *testing.T) {
 	if summary.Pending != 2 || summary.Retrying != 1 || summary.Processing != 1 {
 		t.Fatalf("active summary = %+v", summary)
 	}
-	if summary.Backlog != 2 || summary.StaleProcessing != 1 || summary.CompletedRecent != 1 || summary.FailedRecent != 1 {
+	if summary.Backlog != 2 || summary.StaleProcessing != 1 || summary.CompletedRecent != 1 || summary.FailedRecent != 2 {
 		t.Fatalf("health summary = %+v", summary)
 	}
 	if summary.OldestQueuedAt == nil || !summary.OldestQueuedAt.Equal(now.Add(-10*time.Minute)) {
@@ -97,7 +119,7 @@ func TestGenerationTaskStoreListAndSummary(t *testing.T) {
 	if len(summary.Plugins) != 1 || summary.Plugins[0] != "airgate-seedance" {
 		t.Fatalf("plugins = %v", summary.Plugins)
 	}
-	if len(summary.TaskTypes) != 5 {
+	if len(summary.TaskTypes) != 6 {
 		t.Fatalf("task types = %v", summary.TaskTypes)
 	}
 }

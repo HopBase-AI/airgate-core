@@ -180,6 +180,99 @@ func TestHostInvokeRequiresDeclaredCapability(t *testing.T) {
 	}
 }
 
+func TestSelectAccountEmptyModelUsesCurrentGroupRouting(t *testing.T) {
+	ctx := context.Background()
+	db := enttest.Open(t, "sqlite3", "file:host_select_group_model?mode=memory&cache=shared&_fk=1", enttest.WithMigrateOptions(schema.WithGlobalUniqueID(false)))
+	t.Cleanup(func() { _ = db.Close() })
+
+	overseasGroup := db.Group.Create().SetName("Seedance Overseas").SetPlatform("seedance").SaveX(ctx)
+	domesticGroup := db.Group.Create().SetName("Seedance Domestic").SetPlatform("seedance").SaveX(ctx)
+	overseasAccount := db.Account.Create().
+		SetName("dreamina-overseas").
+		SetPlatform("seedance").
+		SetCredentials(map[string]string{"api_key": "overseas"}).
+		AddGroups(overseasGroup).
+		SaveX(ctx)
+	domesticAccount := db.Account.Create().
+		SetName("doubao-domestic").
+		SetPlatform("seedance").
+		SetCredentials(map[string]string{"api_key": "domestic"}).
+		AddGroups(domesticGroup).
+		SaveX(ctx)
+
+	const (
+		domesticModel = "doubao-seedance-2-0-260128-a"
+		overseasModel = "dreamina-seedance-2-0-260128"
+	)
+	db.Group.UpdateOneID(overseasGroup.ID).
+		SetModelRouting(map[string][]int64{overseasModel: {int64(overseasAccount.ID)}}).
+		ExecX(ctx)
+	db.Group.UpdateOneID(domesticGroup.ID).
+		SetModelRouting(map[string][]int64{domesticModel: {int64(domesticAccount.ID)}}).
+		ExecX(ctx)
+
+	host := &HostService{
+		db: db,
+		manager: &Manager{modelCache: map[string][]sdk.ModelInfo{
+			"seedance": {
+				{ID: domesticModel},
+				{ID: overseasModel},
+			},
+		}},
+		scheduler: scheduler.NewScheduler(db, nil),
+	}
+
+	tests := []struct {
+		name          string
+		groupID       int
+		model         string
+		wantAccountID int
+	}{
+		{name: "海外分组空模型选择海外账号", groupID: overseasGroup.ID, wantAccountID: overseasAccount.ID},
+		{name: "国内分组空模型选择国内账号", groupID: domesticGroup.ID, wantAccountID: domesticAccount.ID},
+		{name: "显式模型保持原有选号", groupID: overseasGroup.ID, model: overseasModel, wantAccountID: overseasAccount.ID},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, err := host.selectAccount(ctx, hostSelectAccountRequest{GroupID: int64(tt.groupID), Model: tt.model})
+			if err != nil {
+				t.Fatalf("selectAccount() error = %v", err)
+			}
+			if got := int(resp["account_id"].(int64)); got != tt.wantAccountID {
+				t.Fatalf("account_id = %d, want %d", got, tt.wantAccountID)
+			}
+		})
+	}
+}
+
+func TestPickProbeModelForRouting(t *testing.T) {
+	models := []sdk.ModelInfo{
+		{ID: "domestic-video"},
+		{ID: "overseas-image", Capabilities: []string{sdk.ModelCapImageGeneration}},
+		{ID: "overseas-video"},
+	}
+	routing := map[string][]int64{
+		"overseas-*": {33},
+	}
+	if got := pickProbeModelForRouting(models, routing); got != "overseas-video" {
+		t.Fatalf("pickProbeModelForRouting() = %q, want overseas-video", got)
+	}
+}
+
+func TestPickRoutableModelRespectsExactDisableOverGlob(t *testing.T) {
+	models := []sdk.ModelInfo{
+		{ID: "seedance-domestic"},
+		{ID: "seedance-overseas"},
+	}
+	routing := map[string][]int64{
+		"seedance-*":        {33},
+		"seedance-domestic": {},
+	}
+	if got := pickRoutableModel(models, routing); got != "seedance-overseas" {
+		t.Fatalf("pickRoutableModel() = %q, want seedance-overseas", got)
+	}
+}
+
 func TestHostDeleteAssetLocal(t *testing.T) {
 	ctx := context.Background()
 	db := enttest.Open(t, "sqlite3", "file:host_delete_asset?mode=memory&cache=shared&_fk=1", enttest.WithMigrateOptions(schema.WithGlobalUniqueID(false)))

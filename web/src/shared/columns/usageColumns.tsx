@@ -76,7 +76,7 @@ function TooltipPanel({
         <div className="text-sm font-semibold leading-none text-text">{title}</div>
         {subtitle ? <div className="mt-1 truncate text-xs text-text-tertiary">{subtitle}</div> : null}
       </div>
-      <div className="space-y-0.5 p-2">{children}</div>
+      <div className="max-h-[min(70vh,36rem)] space-y-0.5 overflow-y-auto p-2">{children}</div>
     </div>
   );
 }
@@ -108,7 +108,7 @@ function TooltipRow({
     <div className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,max-content)] items-center gap-3 rounded-[var(--radius)] bg-surface px-2 py-1 text-xs">
       <span className="min-w-0 truncate text-text-tertiary">{label}</span>
       <span
-        className={`min-w-0 max-w-[12rem] justify-self-end truncate text-right font-mono font-medium ${toneClass}`}
+        className={`min-w-0 max-w-[12rem] justify-self-end break-all text-right font-mono font-medium ${toneClass}`}
         style={color ? { color } : undefined}
       >
         {value}
@@ -147,6 +147,8 @@ export const ERROR_CODE_META: Record<string, { labelKey: string; tone: 'danger' 
   all_routes_failed: { labelKey: 'usage.error_all_routes_failed', tone: 'danger' },
   plugin_error: { labelKey: 'usage.error_upstream_transient', tone: 'danger' },
   metadata_scope_failed: { labelKey: 'usage.error_metadata_scope_failed', tone: 'danger' },
+  client_canceled: { labelKey: 'usage.error_client_canceled', tone: 'warning' },
+  request_timeout: { labelKey: 'usage.error_request_timeout', tone: 'danger' },
 };
 
 /** 本行是否是一次失败请求。判据是 error_code：被上游计了费的 4xx 仍是计费行，但同样算失败。 */
@@ -167,23 +169,48 @@ function errorToneColor(tone: 'danger' | 'warning'): string {
   return tone === 'danger' ? 'var(--ag-danger)' : 'var(--ag-warning)';
 }
 
-/** 失败原因面板：上游状态码 + 分类 + （可展示时的）原文。 */
-function ErrorDetail({ row, t }: { row: UsageRow; t: TFunction }) {
+/** 失败原因面板：HTTP 状态码 + 分类 + （可展示时的）原文。 */
+function ErrorDetail({ adminView, row, t }: { adminView: boolean; row: UsageRow; t: TFunction }) {
   const code = row.error_code ?? '';
   const meta = ERROR_CODE_META[code];
   const label = meta ? t(meta.labelKey, code) : code;
   const message = row.error_message?.trim();
+  const adminRow = adminView ? row as UsageLogResp : null;
+  const traceID = row.usage_metadata?.trace_id?.trim();
+  const apiKey = adminRow
+    ? [adminRow.api_key_name?.trim(), adminRow.api_key_id ? `#${adminRow.api_key_id}` : ''].filter(Boolean).join(' / ')
+    : '';
+  const account = adminRow
+    ? [adminRow.account_name?.trim(), adminRow.account_email?.trim(), adminRow.account_id ? `#${adminRow.account_id}` : ''].filter(Boolean).join(' / ')
+    : '';
+  const user = adminRow
+    ? [adminRow.user_email?.trim(), adminRow.user_id ? `#${adminRow.user_id}` : ''].filter(Boolean).join(' / ')
+    : '';
 
   return (
-    <TooltipPanel title={t('usage.error_detail', '失败详情')} subtitle={row.model}>
+    <TooltipPanel title={t('usage.error_detail', '失败详情')} subtitle={[row.platform, row.model].filter(Boolean).join(' / ')}>
       <TooltipRow label={t('usage.error_type', '类型')} value={label} tone={meta?.tone === 'danger' ? 'warning' : 'accent'} />
+      <TooltipRow label={t('usage.error_code', '错误码')} value={code || '-'} tone="strong" />
       {row.error_status ? (
-        <TooltipRow label={t('usage.error_status', '上游状态码')} value={row.error_status} tone="strong" />
+        <TooltipRow label={t('usage.error_status', 'HTTP 状态码')} value={row.error_status} tone="strong" />
       ) : null}
+      {adminRow ? <TooltipRow label={t('usage.log_id', '记录 ID')} value={`#${adminRow.id}`} /> : null}
+      {traceID ? <TooltipRow label={t('usage.trace_id', '链路 ID')} value={traceID} /> : null}
+      {adminRow?.request_id ? <TooltipRow label={t('usage.request_id', '记录请求 ID')} value={adminRow.request_id} /> : null}
+      <TooltipRow label={t('usage.time', '时间')} value={new Date(row.created_at).toLocaleString()} />
+      {user ? <TooltipRow label={t('common.user', '用户')} value={user} /> : null}
+      {adminRow?.group_id ? <TooltipRow label={t('usage.group_id', '分组 ID')} value={`#${adminRow.group_id}`} /> : null}
+      {apiKey ? <TooltipRow label="API Key" value={apiKey} /> : null}
+      {account ? <TooltipRow label={t('usage.upstream_credential', '上游凭证')} value={account} /> : null}
+      {adminRow?.endpoint ? <TooltipRow label={t('usage.endpoint', '端点')} value={adminRow.endpoint} /> : null}
+      {adminRow?.ip_address ? <TooltipRow label={t('usage.ip_address', '客户端 IP')} value={adminRow.ip_address} /> : null}
+      {adminRow?.user_agent ? <TooltipRow label={t('usage.user_agent', '客户端')} value={adminRow.user_agent} /> : null}
+      <TooltipRow label={t('usage.duration', '耗时')} value={`${row.duration_ms} ms`} />
       {message ? (
         <>
           <TooltipDivider />
-          <div className="rounded-[var(--radius)] bg-surface px-2 py-1 text-xs leading-relaxed text-text-secondary">
+          <div className="px-2 pt-1 text-xs text-text-tertiary">{t('usage.error_message', '错误原文')}</div>
+          <div className="max-h-48 select-text overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius)] bg-surface px-2 py-1 font-mono text-xs leading-relaxed text-text-secondary">
             {message}
           </div>
         </>
@@ -634,7 +661,7 @@ export function useUsageColumns(opts?: { customerScope?: boolean; adminView?: bo
         const color = errorToneColor(meta?.tone ?? 'danger');
 
         return (
-          <RichTooltip placement="right" content={() => <ErrorDetail row={row} t={t} />}>
+          <RichTooltip placement="right" content={() => <ErrorDetail adminView={adminView} row={row} t={t} />}>
             <span
               className="inline-flex h-5 shrink-0 items-center justify-center gap-1 truncate rounded px-1.5 text-[12px] font-semibold leading-none whitespace-nowrap"
               style={{

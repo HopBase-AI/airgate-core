@@ -5,6 +5,7 @@ import sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 // UsageLogResp 使用记录响应（reseller / admin scope，包含完整的成本字段）
 type UsageLogResp struct {
 	ID                    int64                 `json:"id"`
+	RequestID             string                `json:"request_id,omitempty"`
 	UserID                int64                 `json:"user_id"`
 	UserEmail             string                `json:"user_email,omitempty"`
 	UserDeleted           bool                  `json:"user_deleted,omitempty"`

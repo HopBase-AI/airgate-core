@@ -5,8 +5,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DouDOU-start/airgate-core/ent"
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 )
+
+func TestMapUsageLogCarriesRequestID(t *testing.T) {
+	record := mapUsageLog(&ent.UsageLog{
+		ID:        7,
+		RequestID: "usage-request-7",
+		Platform:  "seedance",
+		Model:     "unknown",
+	})
+	if record.RequestID != "usage-request-7" {
+		t.Fatalf("RequestID = %q, want usage-request-7", record.RequestID)
+	}
+}
 
 func TestUsageStoreListPaginationIsStableForIdenticalCreatedAt(t *testing.T) {
 	db := enttestOpen(t)

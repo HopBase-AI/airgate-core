@@ -98,3 +98,17 @@ func TestToUsageStatsRespCarriesFailedRequests(t *testing.T) {
 		t.Fatalf("stats = (total %d, failed %d), want (7, 3)", resp.TotalRequests, resp.FailedRequests)
 	}
 }
+
+func TestToUsageLogRespCarriesAdminDiagnostics(t *testing.T) {
+	record := appusage.LogRecord{
+		ID:        7,
+		RequestID: "usage-request-7",
+		GroupID:   21,
+		APIKeyID:  206,
+		AccountID: 33,
+	}
+	resp := toUsageLogResp(record)
+	if resp.RequestID != record.RequestID || resp.GroupID != 21 || resp.APIKeyID != 206 || resp.AccountID != 33 {
+		t.Fatalf("admin diagnostics = %+v", resp)
+	}
+}
