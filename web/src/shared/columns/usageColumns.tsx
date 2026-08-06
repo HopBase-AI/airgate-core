@@ -121,6 +121,77 @@ function TooltipDivider() {
   return <div className="my-0.5 border-t border-border" />;
 }
 
+/** 失败分类 → i18n 键与色调。后端取值见 app/usage/errorcode.go。 */
+export const ERROR_CODE_META: Record<string, { labelKey: string; tone: 'danger' | 'warning' }> = {
+  client_error: { labelKey: 'usage.error_client_error', tone: 'warning' },
+  invalid_request: { labelKey: 'usage.error_client_error', tone: 'warning' },
+  request_too_large: { labelKey: 'usage.error_request_too_large', tone: 'warning' },
+  model_not_found: { labelKey: 'usage.error_model_not_found', tone: 'warning' },
+  model_not_served: { labelKey: 'usage.error_model_not_served', tone: 'warning' },
+  group_offline: { labelKey: 'usage.error_group_offline', tone: 'warning' },
+  insufficient_quota: { labelKey: 'usage.error_insufficient_quota', tone: 'warning' },
+  concurrency_limit: { labelKey: 'usage.error_concurrency_limit', tone: 'warning' },
+  capability_denied: { labelKey: 'usage.error_capability_denied', tone: 'warning' },
+  route_not_found: { labelKey: 'usage.error_route_not_found', tone: 'warning' },
+  middleware_denied: { labelKey: 'usage.error_middleware_denied', tone: 'warning' },
+  plugin_unavailable: { labelKey: 'usage.error_plugin_unavailable', tone: 'danger' },
+  account_rate_limited: { labelKey: 'usage.error_account_rate_limited', tone: 'warning' },
+  all_routes_rate_limited: { labelKey: 'usage.error_account_rate_limited', tone: 'warning' },
+  account_dead: { labelKey: 'usage.error_account_dead', tone: 'danger' },
+  no_available_account: { labelKey: 'usage.error_no_available_account', tone: 'danger' },
+  no_available_route: { labelKey: 'usage.error_no_available_account', tone: 'danger' },
+  upstream_transient: { labelKey: 'usage.error_upstream_transient', tone: 'danger' },
+  upstream_error: { labelKey: 'usage.error_upstream_transient', tone: 'danger' },
+  upstream_timeout: { labelKey: 'usage.error_upstream_timeout', tone: 'danger' },
+  stream_aborted: { labelKey: 'usage.error_stream_aborted', tone: 'danger' },
+  all_routes_failed: { labelKey: 'usage.error_all_routes_failed', tone: 'danger' },
+  plugin_error: { labelKey: 'usage.error_upstream_transient', tone: 'danger' },
+  metadata_scope_failed: { labelKey: 'usage.error_metadata_scope_failed', tone: 'danger' },
+};
+
+/** 本行是否是一次失败请求。判据是 error_code：被上游计了费的 4xx 仍是计费行，但同样算失败。 */
+export function isFailedUsageRow(row: UsageRow): boolean {
+  return !!row.error_code;
+}
+
+/** 未计费的失败请求：token 与费用恒为 0，费用/计量列显示占位符而不是 $0.00。 */
+function isUnbilledFailure(row: UsageRow): boolean {
+  return row.status === 'error';
+}
+
+function UnbilledCell() {
+  return <span className="block text-center font-mono text-[13px] text-text-tertiary">-</span>;
+}
+
+function errorToneColor(tone: 'danger' | 'warning'): string {
+  return tone === 'danger' ? 'var(--ag-danger)' : 'var(--ag-warning)';
+}
+
+/** 失败原因面板：上游状态码 + 分类 + （可展示时的）原文。 */
+function ErrorDetail({ row, t }: { row: UsageRow; t: TFunction }) {
+  const code = row.error_code ?? '';
+  const meta = ERROR_CODE_META[code];
+  const label = meta ? t(meta.labelKey, code) : code;
+  const message = row.error_message?.trim();
+
+  return (
+    <TooltipPanel title={t('usage.error_detail', '失败详情')} subtitle={row.model}>
+      <TooltipRow label={t('usage.error_type', '类型')} value={label} tone={meta?.tone === 'danger' ? 'warning' : 'accent'} />
+      {row.error_status ? (
+        <TooltipRow label={t('usage.error_status', '上游状态码')} value={row.error_status} tone="strong" />
+      ) : null}
+      {message ? (
+        <>
+          <TooltipDivider />
+          <div className="rounded-[var(--radius)] bg-surface px-2 py-1 text-xs leading-relaxed text-text-secondary">
+            {message}
+          </div>
+        </>
+      ) : null}
+    </TooltipPanel>
+  );
+}
+
 const MODEL_META_IMAGE_COLOR = 'rgb(148,163,184)';
 const META_CHIP_LOW_COLOR = 'rgb(34,197,94)';
 const META_CHIP_MEDIUM_COLOR = 'rgb(59,130,246)';
@@ -427,6 +498,8 @@ function buildResellerCostColumn(t: TFunction, adminView: boolean): UsageColumnC
     title: t('usage.cost'),
     width: '140px',
     render: (raw) => {
+      // 未计费的失败请求费用恒为 0，显示 $0.00 会让人误以为"计费了但是免费"。
+      if (isUnbilledFailure(raw)) return <UnbilledCell />;
       const row = raw as UsageLogResp;
       const PluginUsageCostDetail = getPluginUsageCostDetail(row.platform);
       return (
@@ -504,6 +577,7 @@ function buildCustomerCostColumn(t: TFunction): UsageColumnConfig<UsageRow> {
     title: t('usage.cost'),
     width: '140px',
     render: (raw) => {
+      if (isUnbilledFailure(raw)) return <UnbilledCell />;
       const cost = (raw as CustomerUsageLogResp).cost ?? 0;
       return (
         <RichTooltip
@@ -543,6 +617,38 @@ export function useUsageColumns(opts?: { customerScope?: boolean; adminView?: bo
     const costColumn = customerScope ? buildCustomerCostColumn(t) : buildResellerCostColumn(t, adminView);
 
     return [
+    {
+      key: 'status',
+      title: t('usage.result', '结果'),
+      width: '92px',
+      render: (row) => {
+        if (!isFailedUsageRow(row)) {
+          return (
+            <span className="inline-flex h-5 items-center justify-center rounded-[var(--radius)] px-1.5 text-[12px] font-medium leading-none text-text-tertiary">
+              {t('usage.result_success', '成功')}
+            </span>
+          );
+        }
+
+        const meta = ERROR_CODE_META[row.error_code ?? ''];
+        const color = errorToneColor(meta?.tone ?? 'danger');
+
+        return (
+          <RichTooltip placement="right" content={() => <ErrorDetail row={row} t={t} />}>
+            <span
+              className="inline-flex h-5 shrink-0 items-center justify-center gap-1 truncate rounded px-1.5 text-[12px] font-semibold leading-none whitespace-nowrap"
+              style={{
+                background: `color-mix(in srgb, ${color} 18%, transparent)`,
+                boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${color} 34%, transparent)`,
+                color,
+              }}
+            >
+              {row.error_status ? row.error_status : t('usage.result_failed', '失败')}
+            </span>
+          </RichTooltip>
+        );
+      },
+    },
     {
       key: 'created_at',
       title: t('usage.time'),
@@ -627,6 +733,7 @@ export function useUsageColumns(opts?: { customerScope?: boolean; adminView?: bo
       title: t('usage.metrics', '计量'),
       width: '220px',
       render: (row) => {
+        if (isUnbilledFailure(row)) return <UnbilledCell />;
         const metrics = rowMetrics(row);
         const PluginUsageMetricDetail = getPluginUsageMetricDetail(row.platform);
         const inputTokens = metricValue(metrics, ['input_tokens', 'input_token', 'prompt_tokens', 'prompt_token']) ?? row.input_tokens;

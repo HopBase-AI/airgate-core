@@ -93,8 +93,7 @@ func (s *DashboardStore) ListTrendLogs(ctx context.Context, startTime, endTime t
 	}
 
 	const trendLogLimit = 50000
-	list, err := s.db.UsageLog.Query().
-		Where(preds...).
+	list, err := excludeFailedUsage(s.db.UsageLog.Query().Where(preds...)).
 		Select(
 			entusagelog.FieldUserIDSnapshot,
 			entusagelog.FieldUserEmailSnapshot,
@@ -375,7 +374,9 @@ func (s *DashboardStore) loadStatsSnapshotFresh(ctx context.Context, todayStart,
 		return appdashboard.StatsSnapshot{}, err
 	}
 
-	usageQuery := s.db.UsageLog.Query().Where(userPred...)
+	// 仪表盘口径与使用统计一致：只算成功请求。失败记录费用与 token 全为 0，
+	// 计入会让总请求数虚高、平均耗时被超时请求拉偏。
+	usageQuery := excludeFailedUsage(s.db.UsageLog.Query().Where(userPred...))
 	allTimeTotals, err := queryUsageTotals(ctx, usageQuery)
 	if err != nil {
 		return appdashboard.StatsSnapshot{}, err

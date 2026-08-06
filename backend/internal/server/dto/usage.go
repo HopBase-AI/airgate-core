@@ -55,6 +55,10 @@ type UsageLogResp struct {
 	UsageMetrics          []sdk.UsageMetric     `json:"usage_metrics,omitempty"`
 	UsageCostDetails      []sdk.UsageCostDetail `json:"usage_cost_details,omitempty"`
 	UsageMetadata         map[string]string     `json:"usage_metadata,omitempty"`
+	Status                string                `json:"status"`                  // success / error
+	ErrorCode             string                `json:"error_code,omitempty"`    // 失败分类
+	ErrorStatus           int                   `json:"error_status,omitempty"`  // 失败时优先为上游 HTTP 状态码；无上游响应时为 Core 对外状态码
+	ErrorMessage          string                `json:"error_message,omitempty"` // 失败原因（已脱敏截断）
 	CreatedAt             string                `json:"created_at"`
 }
 
@@ -111,6 +115,10 @@ type UserUsageLogResp struct {
 	UsageMetrics          []sdk.UsageMetric     `json:"usage_metrics,omitempty"`
 	UsageCostDetails      []sdk.UsageCostDetail `json:"usage_cost_details,omitempty"`
 	UsageMetadata         map[string]string     `json:"usage_metadata,omitempty"`
+	Status                string                `json:"status"`                  // success / error
+	ErrorCode             string                `json:"error_code,omitempty"`    // 失败分类
+	ErrorStatus           int                   `json:"error_status,omitempty"`  // 失败时优先为上游 HTTP 状态码；无上游响应时为 Core 对外状态码
+	ErrorMessage          string                `json:"error_message,omitempty"` // 失败原因（已脱敏截断）
 	CreatedAt             string                `json:"created_at"`
 }
 
@@ -141,6 +149,10 @@ type CustomerUsageLogResp struct {
 	UsageAttributes       []sdk.UsageAttribute `json:"usage_attributes,omitempty"`
 	UsageMetrics          []sdk.UsageMetric    `json:"usage_metrics,omitempty"`
 	UsageMetadata         map[string]string    `json:"usage_metadata,omitempty"`
+	Status                string               `json:"status"`                  // success / error
+	ErrorCode             string               `json:"error_code,omitempty"`    // 失败分类
+	ErrorStatus           int                  `json:"error_status,omitempty"`  // 失败时优先为上游 HTTP 状态码；无上游响应时为 Core 对外状态码
+	ErrorMessage          string               `json:"error_message,omitempty"` // 失败原因（仅客户端类错误原文透出）
 	CreatedAt             string               `json:"created_at"`
 }
 
@@ -155,6 +167,8 @@ type UsageQuery struct {
 	Model     string `form:"model"`
 	StartDate string `form:"start_date"`
 	EndDate   string `form:"end_date"`
+	// Result 请求结果筛选：空 = 全部，success = 只看成功，error = 只看失败。
+	Result string `form:"result" binding:"omitempty,oneof=success error"`
 }
 
 // UsageFilterQuery 使用记录筛选参数（不含分页，用于聚合统计）
@@ -168,7 +182,8 @@ type UsageFilterQuery struct {
 
 // UsageStatsResp 聚合统计响应
 type UsageStatsResp struct {
-	TotalRequests   int64          `json:"total_requests"`
+	TotalRequests   int64          `json:"total_requests"`  // 只含成功请求，与费用/token 口径一致
+	FailedRequests  int64          `json:"failed_requests"` // 同筛选条件下的失败请求数
 	TotalTokens     int64          `json:"total_tokens"`
 	TotalCost       float64        `json:"total_cost"`
 	TotalActualCost float64        `json:"total_actual_cost"`

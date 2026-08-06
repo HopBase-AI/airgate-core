@@ -603,6 +603,12 @@ export default function UsagePage() {
   ];
   const selectedPlatformLabel = platformOptions.find((item) => item.id === (filters.platform || ''))?.label ?? t('common.all');
 
+  const resultOptions = [
+    { id: '', label: t('common.all') },
+    { id: 'success', label: t('usage.result_success', '成功') },
+    { id: 'error', label: t('usage.result_failed', '失败') },
+  ];
+
   const columns = useMemo(() => {
     const adminColumns: UsageColumnConfig<UsageLogResp>[] = [
       {
@@ -797,6 +803,32 @@ export default function UsagePage() {
             value={filters.model ?? ''}
             onModelChange={handleModelChange}
           />
+        </div>
+        <div className="w-full sm:w-40">
+          <Select
+            aria-label={t('usage.result', '结果')}
+            fullWidth
+            selectedKey={filters.result ?? ''}
+            onSelectionChange={(key) => updateFilter('result', key == null ? '' : String(key))}
+          >
+            <Select.Trigger>
+              <Select.Value>
+                {filters.result
+                  ? t(filters.result === 'error' ? 'usage.result_failed' : 'usage.result_success')
+                  : <span className="text-text-tertiary">{t('usage.result', '结果')}</span>}
+              </Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox items={resultOptions}>
+                {(item) => (
+                  <ListBox.Item id={item.id} textValue={item.label}>
+                    {item.label}
+                  </ListBox.Item>
+                )}
+              </ListBox>
+            </Select.Popover>
+          </Select>
         </div>
         <div className="w-full sm:w-48">
           <ComboBox

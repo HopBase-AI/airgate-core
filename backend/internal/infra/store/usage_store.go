@@ -115,6 +115,8 @@ func (s *UsageStore) StatsByModel(ctx context.Context, filter appusage.StatsFilt
 		query = query.Where(usageUserPredicate(*filter.UserID))
 	}
 	query = applyUsageStatsFilter(query, filter)
+	// 统计口径只含成功请求，失败记录费用与 token 全为 0。
+	query = excludeFailedUsage(query)
 
 	var rows []struct {
 		Model        string  `json:"model"`
@@ -166,6 +168,8 @@ func (s *UsageStore) StatsByUser(ctx context.Context, filter appusage.StatsFilte
 		query = query.Where(usageUserPredicate(*filter.UserID))
 	}
 	query = applyUsageStatsFilter(query, filter)
+	// 统计口径只含成功请求，失败记录费用与 token 全为 0。
+	query = excludeFailedUsage(query)
 
 	var rows []struct {
 		UserID       int     `json:"user_id_snapshot"`
@@ -242,6 +246,8 @@ func (s *UsageStore) StatsByAccount(ctx context.Context, filter appusage.StatsFi
 		query = query.Where(usageUserPredicate(*filter.UserID))
 	}
 	query = applyUsageStatsFilter(query, filter)
+	// 统计口径只含成功请求，失败记录费用与 token 全为 0。
+	query = excludeFailedUsage(query)
 
 	var rows []struct {
 		AccountID             int     `json:"account_usage_logs"`
@@ -327,6 +333,8 @@ func (s *UsageStore) StatsByGroup(ctx context.Context, filter appusage.StatsFilt
 		query = query.Where(usageUserPredicate(*filter.UserID))
 	}
 	query = applyUsageStatsFilter(query, filter)
+	// 统计口径只含成功请求，失败记录费用与 token 全为 0。
+	query = excludeFailedUsage(query)
 
 	var rows []struct {
 		GroupID      int     `json:"group_usage_logs"`
@@ -396,6 +404,8 @@ func (s *UsageStore) TrendEntries(ctx context.Context, filter appusage.TrendFilt
 		query = query.Where(usageUserPredicate(*filter.UserID))
 	}
 	query = applyUsageStatsFilter(query, filter.StatsFilter)
+	// 统计口径只含成功请求，失败记录费用与 token 全为 0。
+	query = excludeFailedUsage(query)
 	if filter.StartDate == "" && filter.EndDate == "" && filter.DefaultRecentHours > 0 {
 		query = query.Where(entusagelog.CreatedAtGTE(time.Now().Add(-time.Duration(filter.DefaultRecentHours) * time.Hour)))
 	}
@@ -465,6 +475,7 @@ func applyUsageListFilter(query *ent.UsageLogQuery, filter appusage.ListFilter) 
 	if filter.GroupID != nil {
 		query = query.Where(entusagelog.HasGroupWith(entgroup.IDEQ(int(*filter.GroupID))))
 	}
+	query = applyUsageResultFilter(query, filter.Result)
 	return applyUsageStatsFilter(query, appusage.StatsFilter{
 		Platform:    filter.Platform,
 		Model:       filter.Model,
@@ -473,6 +484,29 @@ func applyUsageListFilter(query *ent.UsageLogQuery, filter appusage.ListFilter) 
 		TZ:          filter.TZ,
 		ScopedToKey: filter.ScopedToKey,
 	})
+}
+
+// applyUsageResultFilter 按请求结果过滤列表。空值不加条件（成功与失败一起返回）。
+//
+// 判据是 error_code 而非 status：上游对失败请求也计了费时，记录以正常计费行落库
+// （status=success，费用与扣款一致）但带错误码，「只看失败」必须能筛出它。
+func applyUsageResultFilter(query *ent.UsageLogQuery, result string) *ent.UsageLogQuery {
+	switch result {
+	case appusage.ResultFilterError:
+		return query.Where(entusagelog.ErrorCodeNEQ(""))
+	case appusage.ResultFilterSuccess:
+		return query.Where(entusagelog.ErrorCodeEQ(""))
+	default:
+		return query
+	}
+}
+
+// excludeFailedUsage 把失败请求排除在聚合统计之外。
+//
+// 失败记录费用与 token 全为 0，计入总数会让"总请求数"和"平均耗时"的口径发生
+// 变化；统计侧一律只看成功请求，失败量单独经 Summary.FailedRequests 给出。
+func excludeFailedUsage(query *ent.UsageLogQuery) *ent.UsageLogQuery {
+	return query.Where(entusagelog.StatusNEQ(appusage.StatusError))
 }
 
 func applyUsageStatsFilter(query *ent.UsageLogQuery, filter appusage.StatsFilter) *ent.UsageLogQuery {
@@ -500,7 +534,13 @@ func applyUsageStatsFilter(query *ent.UsageLogQuery, filter appusage.StatsFilter
 }
 
 func scanSummary(ctx context.Context, query *ent.UsageLogQuery) (appusage.Summary, error) {
-	totalRequests, err := query.Clone().Count(ctx)
+	// 两个计数按 error_code 划分，与列表的「只看成功 / 只看失败」筛选同口径：
+	// 两者相加恰好等于总行数，「失败请求数」与「只看失败」列表的条数永远一致。
+	totalRequests, err := applyUsageResultFilter(query.Clone(), appusage.ResultFilterSuccess).Count(ctx)
+	if err != nil {
+		return appusage.Summary{}, err
+	}
+	failedRequests, err := applyUsageResultFilter(query.Clone(), appusage.ResultFilterError).Count(ctx)
 	if err != nil {
 		return appusage.Summary{}, err
 	}
@@ -514,7 +554,9 @@ func scanSummary(ctx context.Context, query *ent.UsageLogQuery) (appusage.Summar
 		ActualCost          float64 `json:"actual_cost"`
 		BilledCost          float64 `json:"billed_cost"`
 	}
-	err = query.Clone().
+	// 费用与 token 只排除 status=error（这类记录金额恒为 0）。被上游计了费的 4xx
+	// 仍是计费行，必须计入总额——否则页面显示的花费会与实际扣款对不上。
+	err = excludeFailedUsage(query.Clone()).
 		Aggregate(
 			ent.As(ent.Sum(entusagelog.FieldInputTokens), "input_tokens"),
 			ent.As(ent.Sum(entusagelog.FieldOutputTokens), "output_tokens"),
@@ -529,7 +571,10 @@ func scanSummary(ctx context.Context, query *ent.UsageLogQuery) (appusage.Summar
 		return appusage.Summary{}, err
 	}
 
-	summary := appusage.Summary{TotalRequests: int64(totalRequests)}
+	summary := appusage.Summary{
+		TotalRequests:  int64(totalRequests),
+		FailedRequests: int64(failedRequests),
+	}
 	if len(rows) > 0 {
 		summary.TotalTokens = rows[0].InputTokens + rows[0].OutputTokens + rows[0].CachedInputTokens + rows[0].CacheCreationTokens
 		summary.TotalCost = rows[0].TotalCost
@@ -581,6 +626,10 @@ func mapUsageLog(item *ent.UsageLog) appusage.LogRecord {
 		UsageMetrics:          item.UsageMetrics,
 		UsageCostDetails:      item.UsageCostDetails,
 		UsageMetadata:         item.UsageMetadata,
+		Status:                item.Status,
+		ErrorCode:             item.ErrorCode,
+		ErrorStatus:           item.ErrorStatus,
+		ErrorMessage:          item.ErrorMessage,
 		CreatedAt:             item.CreatedAt.Format(time.RFC3339),
 	}
 

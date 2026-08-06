@@ -107,6 +107,14 @@ type UsageLog struct {
 	UserIDSnapshot int `json:"user_id_snapshot,omitempty"`
 	// 用户邮箱快照。用户硬删除后后台使用记录仍能展示历史归属。
 	UserEmailSnapshot string `json:"user_email_snapshot,omitempty"`
+	// 请求结果：success（正常计费）/ error（失败，token 与费用为 0）
+	Status string `json:"status,omitempty"`
+	// 失败分类，取自转发判决（client_error/account_rate_limited/upstream_transient 等）或 Core 侧拦截原因；成功请求为空
+	ErrorCode string `json:"error_code,omitempty"`
+	// 失败时优先记录上游 HTTP 状态码；无上游响应时记录 Core 对外状态码；成功请求为 0
+	ErrorStatus int `json:"error_status,omitempty"`
+	// 失败原因，写入前脱敏并截断；成功请求为空
+	ErrorMessage string `json:"error_message,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
@@ -189,9 +197,9 @@ func (*UsageLog) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case usagelog.FieldInputPrice, usagelog.FieldOutputPrice, usagelog.FieldCachedInputPrice, usagelog.FieldCacheCreationPrice, usagelog.FieldCacheCreation1hPrice, usagelog.FieldInputCost, usagelog.FieldOutputCost, usagelog.FieldCachedInputCost, usagelog.FieldCacheCreationCost, usagelog.FieldImageCost, usagelog.FieldTotalCost, usagelog.FieldActualCost, usagelog.FieldBilledCost, usagelog.FieldAccountCost, usagelog.FieldRateMultiplier, usagelog.FieldSellRate, usagelog.FieldAccountRateMultiplier:
 			values[i] = new(sql.NullFloat64)
-		case usagelog.FieldID, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldCachedInputTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCacheCreation5mTokens, usagelog.FieldCacheCreation1hTokens, usagelog.FieldReasoningOutputTokens, usagelog.FieldDurationMs, usagelog.FieldFirstTokenMs, usagelog.FieldUserIDSnapshot:
+		case usagelog.FieldID, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldCachedInputTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCacheCreation5mTokens, usagelog.FieldCacheCreation1hTokens, usagelog.FieldReasoningOutputTokens, usagelog.FieldDurationMs, usagelog.FieldFirstTokenMs, usagelog.FieldUserIDSnapshot, usagelog.FieldErrorStatus:
 			values[i] = new(sql.NullInt64)
-		case usagelog.FieldPlatform, usagelog.FieldModel, usagelog.FieldServiceTier, usagelog.FieldImageSize, usagelog.FieldUserAgent, usagelog.FieldIPAddress, usagelog.FieldEndpoint, usagelog.FieldReasoningEffort, usagelog.FieldRequestID, usagelog.FieldUserEmailSnapshot:
+		case usagelog.FieldPlatform, usagelog.FieldModel, usagelog.FieldServiceTier, usagelog.FieldImageSize, usagelog.FieldUserAgent, usagelog.FieldIPAddress, usagelog.FieldEndpoint, usagelog.FieldReasoningEffort, usagelog.FieldRequestID, usagelog.FieldUserEmailSnapshot, usagelog.FieldStatus, usagelog.FieldErrorCode, usagelog.FieldErrorMessage:
 			values[i] = new(sql.NullString)
 		case usagelog.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -484,6 +492,30 @@ func (ul *UsageLog) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				ul.UserEmailSnapshot = value.String
 			}
+		case usagelog.FieldStatus:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field status", values[i])
+			} else if value.Valid {
+				ul.Status = value.String
+			}
+		case usagelog.FieldErrorCode:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field error_code", values[i])
+			} else if value.Valid {
+				ul.ErrorCode = value.String
+			}
+		case usagelog.FieldErrorStatus:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field error_status", values[i])
+			} else if value.Valid {
+				ul.ErrorStatus = int(value.Int64)
+			}
+		case usagelog.FieldErrorMessage:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field error_message", values[i])
+			} else if value.Valid {
+				ul.ErrorMessage = value.String
+			}
 		case usagelog.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field created_at", values[i])
@@ -699,6 +731,18 @@ func (ul *UsageLog) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("user_email_snapshot=")
 	builder.WriteString(ul.UserEmailSnapshot)
+	builder.WriteString(", ")
+	builder.WriteString("status=")
+	builder.WriteString(ul.Status)
+	builder.WriteString(", ")
+	builder.WriteString("error_code=")
+	builder.WriteString(ul.ErrorCode)
+	builder.WriteString(", ")
+	builder.WriteString("error_status=")
+	builder.WriteString(fmt.Sprintf("%v", ul.ErrorStatus))
+	builder.WriteString(", ")
+	builder.WriteString("error_message=")
+	builder.WriteString(ul.ErrorMessage)
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(ul.CreatedAt.Format(time.ANSIC))

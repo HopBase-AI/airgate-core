@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/DouDOU-start/airgate-core/ent"
+	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/pkg/usagemodel"
 	"github.com/DouDOU-start/airgate-core/internal/scheduler"
@@ -31,10 +32,10 @@ import (
 func bodyReadError(err error) (status int, code string, message string) {
 	var tooLarge *http.MaxBytesError
 	if errors.As(err, &tooLarge) {
-		return http.StatusRequestEntityTooLarge, "request_too_large",
+		return http.StatusRequestEntityTooLarge, appusage.ErrorCodeRequestTooLarge,
 			fmt.Sprintf("请求体超过大小限制（%d MB）", maxExtensionBodySize>>20)
 	}
-	return http.StatusBadRequest, "invalid_request", "读取请求体失败"
+	return http.StatusBadRequest, appusage.ErrorCodeInvalidRequest, "读取请求体失败"
 }
 
 // 直接写响应并返回 false。
@@ -44,6 +45,12 @@ func (f *Forwarder) parseRequest(c *gin.Context) (*forwardState, bool) {
 	keyInfo, ok := requireKeyInfo(c)
 	if !ok {
 		return nil, false
+	}
+	state := &forwardState{
+		startedAt:         startedAt,
+		requestPath:       requestPath(c),
+		requestedPlatform: requestedPlatform(c, keyInfo),
+		keyInfo:           keyInfo,
 	}
 
 	// 限制请求体大小，防止恶意大请求导致 OOM
@@ -57,40 +64,41 @@ func (f *Forwarder) parseRequest(c *gin.Context) (*forwardState, bool) {
 		)
 		status, code, message := bodyReadError(err)
 		protocolError(c, status, "invalid_request_error", code, message)
+		f.recordFailureUsage(c, state, usageFailure{
+			code:    code,
+			status:  status,
+			message: message,
+		})
 		return nil, false
 	}
 
-	path := requestPath(c)
 	parsed := parseBody(body, c.GetHeader("Content-Type"))
-	requestedPlatform := requestedPlatform(c, keyInfo)
-	inst := f.matchPlugin(c, keyInfo, requestedPlatform, path)
+	inst, matchFailure := f.matchPlugin(c, keyInfo, state.requestedPlatform, state.requestPath)
 	if inst == nil {
+		if matchFailure != nil {
+			f.recordFailureUsage(c, state, *matchFailure)
+		}
 		return nil, false
 	}
-	schedulingModels := schedulingModelsForRequest(f.manager, requestedPlatform, inst.Name, path, parsed.Model)
+	schedulingModels := schedulingModelsForRequest(f.manager, state.requestedPlatform, inst.Name, state.requestPath, parsed.Model)
 	schedulingModel := ""
 	if len(schedulingModels) > 0 {
 		schedulingModel = schedulingModels[0]
 	}
 
-	return &forwardState{
-		startedAt:             startedAt,
-		requestPath:           path,
-		body:                  body,
-		model:                 parsed.Model,
-		schedulingModels:      schedulingModels,
-		schedulingModel:       schedulingModel,
-		stream:                parsed.Stream,
-		realtime:              parsed.Stream,
-		sessionID:             parsed.SessionID,
-		reasoningEffort:       parsed.ReasoningEffort,
-		accountReq:            accountRequirementsForRequestCached(f.manager, path, parsed.Model, &parsed),
-		imageToolPayloadValid: parsed.imageToolPayloadValid,
-		imageToolPayload:      parsed.imageToolPayload,
-		requestedPlatform:     requestedPlatform,
-		keyInfo:               keyInfo,
-		plugin:                inst,
-	}, true
+	state.body = body
+	state.model = parsed.Model
+	state.schedulingModels = schedulingModels
+	state.schedulingModel = schedulingModel
+	state.stream = parsed.Stream
+	state.realtime = parsed.Stream
+	state.sessionID = parsed.SessionID
+	state.reasoningEffort = parsed.ReasoningEffort
+	state.accountReq = accountRequirementsForRequestCached(f.manager, state.requestPath, parsed.Model, &parsed)
+	state.imageToolPayloadValid = parsed.imageToolPayloadValid
+	state.imageToolPayload = parsed.imageToolPayload
+	state.plugin = inst
+	return state, true
 }
 
 func requireKeyInfo(c *gin.Context) (*auth.APIKeyInfo, bool) {
@@ -411,12 +419,13 @@ func parseMultipartFields(body []byte, contentType string) parsedRequest {
 }
 
 // matchPlugin 按 (platform, path) 路由到具体插件。
-// 插件未运行返回 503；路由不匹配返回 404。
-func (f *Forwarder) matchPlugin(c *gin.Context, keyInfo *auth.APIKeyInfo, platform, path string) *PluginInstance {
+// 插件未运行返回 503；路由不匹配返回 404。第二个返回值用于在认证成功后
+// 将该失败写入使用日志，避免解析阶段的失败成为排障盲点。
+func (f *Forwarder) matchPlugin(c *gin.Context, keyInfo *auth.APIKeyInfo, platform, path string) (*PluginInstance, *usageFailure) {
 	if platform != "" {
 		inst := f.manager.MatchPluginByPlatformAndPath(platform, path)
 		if inst != nil {
-			return inst
+			return inst, nil
 		}
 		if platformInst := f.manager.GetPluginByPlatform(platform); platformInst == nil {
 			slog.Error("plugin_not_loaded_for_platform",
@@ -426,7 +435,13 @@ func (f *Forwarder) matchPlugin(c *gin.Context, keyInfo *auth.APIKeyInfo, platfo
 				sdk.LogFieldGroupID, keyInfo.GroupID,
 				sdk.LogFieldPath, path,
 			)
-			protocolError(c, http.StatusServiceUnavailable, "server_error", "plugin_unavailable", "插件不可用，请联系管理员")
+			message := "插件不可用，请联系管理员"
+			protocolError(c, http.StatusServiceUnavailable, "server_error", appusage.ErrorCodePluginUnavailable, message)
+			return nil, &usageFailure{
+				code:    appusage.ErrorCodePluginUnavailable,
+				status:  http.StatusServiceUnavailable,
+				message: message,
+			}
 		} else {
 			slog.Warn("plugin_route_not_found",
 				sdk.LogFieldPlatform, platform,
@@ -436,9 +451,14 @@ func (f *Forwarder) matchPlugin(c *gin.Context, keyInfo *auth.APIKeyInfo, platfo
 			)
 			// 平台插件已知但路径未命中：404 也按该插件声明的协议格式写出
 			setRequestErrorFormat(c, f.manager.ErrorFormat(platformInst.Name, path))
-			protocolError(c, http.StatusNotFound, "invalid_request_error", "route_not_found", "当前平台不支持该 API 路径")
+			message := "当前平台不支持该 API 路径"
+			protocolError(c, http.StatusNotFound, "invalid_request_error", appusage.ErrorCodeRouteNotFound, message)
+			return nil, &usageFailure{
+				code:    appusage.ErrorCodeRouteNotFound,
+				status:  http.StatusNotFound,
+				message: message,
+			}
 		}
-		return nil
 	}
 
 	inst := f.manager.MatchPluginByPathPrefix(path)
@@ -447,9 +467,15 @@ func (f *Forwarder) matchPlugin(c *gin.Context, keyInfo *auth.APIKeyInfo, platfo
 			sdk.LogFieldPath, path,
 			sdk.LogFieldUserID, keyInfo.UserID,
 		)
-		protocolError(c, http.StatusNotFound, "invalid_request_error", "route_not_found", "未找到匹配的插件")
+		message := "未找到匹配的插件"
+		protocolError(c, http.StatusNotFound, "invalid_request_error", appusage.ErrorCodeRouteNotFound, message)
+		return nil, &usageFailure{
+			code:    appusage.ErrorCodeRouteNotFound,
+			status:  http.StatusNotFound,
+			message: message,
+		}
 	}
-	return inst
+	return inst, nil
 }
 
 // buildPluginRequest 组装给插件的 sdk.ForwardRequest。流式场景会带上 Writer。
