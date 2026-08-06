@@ -10,7 +10,7 @@ import { usePlatforms } from '../../shared/hooks/usePlatforms';
 import { useDebouncedValue } from '../../shared/hooks/useDebouncedValue';
 import { useDeferredActivation } from '../../shared/hooks/useDeferredActivation';
 import { queryKeys } from '../../shared/queryKeys';
-import { Activity, Coins, Hash, DollarSign, Search } from 'lucide-react';
+import { Activity, CircleX, Coins, Hash, DollarSign, Search } from 'lucide-react';
 import { useUsageColumns, fmtNum, type UsageColumnConfig } from '../../shared/columns/usageColumns';
 import type { APIKeyResp, UsageLogResp, UsageQuery, UsageTrendBucket } from '../../shared/types';
 import { CompactDataTable } from '../../shared/components/CompactDataTable';
@@ -629,6 +629,14 @@ export default function UsagePage() {
           );
         },
       },
+      {
+        key: 'group_id',
+        title: t('usage.group_id', '分组 ID'),
+        width: '86px',
+        render: (row) => (
+          <span className="font-mono text-xs text-text-secondary">{row.group_id ? `#${row.group_id}` : '-'}</span>
+        ),
+      },
     ];
     const modelIdx = sharedColumns.findIndex((c) => c.key === 'model');
     const streamColumn = sharedColumns.find((column) => column.key === 'stream');
@@ -653,12 +661,14 @@ export default function UsagePage() {
       width: '124px',
       hideOnMobile: true,
       render: (row) => {
-        if (row.api_key_deleted) {
-          return <span className="block max-w-full truncate text-[13px] text-text-tertiary">{t('usage.api_key_deleted')}</span>;
-        }
         const name = row.api_key_name || '-';
         return (
-          <span className="block max-w-full truncate text-xs text-text-secondary" title={name}>{name}</span>
+          <div className="flex w-full min-w-0 flex-col items-center text-center" title={`${name}\n#${row.api_key_id}`}>
+            <span className={`block max-w-full truncate text-xs ${row.api_key_deleted ? 'text-text-tertiary' : 'text-text-secondary'}`}>
+              {row.api_key_deleted ? t('usage.api_key_deleted') : name}
+            </span>
+            <span className="font-mono text-[11px] text-text-tertiary">{row.api_key_id ? `#${row.api_key_id}` : '-'}</span>
+          </div>
         );
       },
     };
@@ -670,15 +680,30 @@ export default function UsagePage() {
       render: (row) => {
         const name = row.account_name || '-';
         const email = row.account_email?.trim();
-        const title = email && name !== '-' ? `${name}\n${email}` : name;
+        const title = [name, email, row.account_id ? `#${row.account_id}` : ''].filter(Boolean).join('\n');
         return (
           <div className="flex w-full min-w-0 flex-col items-center text-center" title={title}>
             <span className="block max-w-full truncate text-xs font-medium text-text-secondary">{name}</span>
             {email && name !== '-' ? (
               <span className="block max-w-full truncate text-[11px] leading-tight text-text-tertiary">{email}</span>
             ) : null}
+            <span className="font-mono text-[11px] leading-tight text-text-tertiary">{row.account_id ? `#${row.account_id}` : '-'}</span>
           </div>
         );
+      },
+    };
+    const requestIDColumn: UsageColumnConfig<UsageLogResp> = {
+      key: 'request_id',
+      title: t('usage.trace_id', '链路 ID'),
+      width: '164px',
+      hideOnMobile: true,
+      render: (row) => {
+        const traceID = row.usage_metadata?.trace_id?.trim();
+        const value = traceID || row.request_id || '-';
+        const title = traceID && row.request_id && traceID !== row.request_id
+          ? `${t('usage.trace_id', '链路 ID')}: ${traceID}\n${t('usage.request_id', '记录请求 ID')}: ${row.request_id}`
+          : value;
+        return <span className="block max-w-full truncate font-mono text-xs text-text-secondary" title={title}>{value}</span>;
       },
     };
     return [
@@ -688,6 +713,7 @@ export default function UsagePage() {
       ...timingColumns,
       ...sharedColumnsAfterModel,
       endpointColumn,
+      requestIDColumn,
       apiKeyColumn,
       accountColumn,
     ] as UsageColumnConfig<UsageLogResp>[];
@@ -699,12 +725,18 @@ export default function UsagePage() {
       {/* 聚合统计 */}
       {activeStats && (
         <div className="mb-6 space-y-4">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:gap-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 2xl:gap-4">
             <StatCard
               title={t('usage.total_requests')}
               value={activeStats.total_requests.toLocaleString()}
               icon={<Activity className="w-5 h-5" />}
               accentColor="var(--ag-primary)"
+            />
+            <StatCard
+              title={t('usage.failed_requests')}
+              value={(activeStats.failed_requests ?? 0).toLocaleString()}
+              icon={<CircleX className="w-5 h-5" />}
+              accentColor="var(--ag-danger)"
             />
             <StatCard
               title={t('usage.total_tokens')}

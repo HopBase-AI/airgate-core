@@ -18,6 +18,12 @@ type GenerationTaskResp struct {
 	ErrorType           string `json:"error_type,omitempty"`
 	ErrorCode           string `json:"error_code,omitempty"`
 	ErrorMessage        string `json:"error_message,omitempty"`
+	RequestID           string `json:"request_id,omitempty"`
+	GroupID             int64  `json:"group_id,omitempty"`
+	APIKeyID            int64  `json:"api_key_id,omitempty"`
+	AccountID           int64  `json:"account_id,omitempty"`
+	UpstreamStatus      int    `json:"upstream_status,omitempty"`
+	UpstreamErrorCode   string `json:"upstream_error_code,omitempty"`
 	CreatedAt           string `json:"created_at"`
 	UpdatedAt           string `json:"updated_at"`
 	StartedAt           string `json:"started_at,omitempty"`

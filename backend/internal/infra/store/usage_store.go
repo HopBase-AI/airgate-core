@@ -587,6 +587,7 @@ func scanSummary(ctx context.Context, query *ent.UsageLogQuery) (appusage.Summar
 func mapUsageLog(item *ent.UsageLog) appusage.LogRecord {
 	record := appusage.LogRecord{
 		ID:                    int64(item.ID),
+		RequestID:             item.RequestID,
 		Platform:              item.Platform,
 		Model:                 item.Model,
 		InputTokens:           item.InputTokens,

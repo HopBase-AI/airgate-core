@@ -261,6 +261,12 @@ export interface GenerationTaskResp {
   error_type?: string;
   error_code?: string;
   error_message?: string;
+  request_id?: string;
+  group_id?: number;
+  api_key_id?: number;
+  account_id?: number;
+  upstream_status?: number;
+  upstream_error_code?: string;
   created_at: string;
   updated_at: string;
   started_at?: string;
@@ -607,6 +613,7 @@ export interface UsageCostDetail {
 
 export interface UsageLogResp {
   id: number;
+  request_id?: string;
   user_id: number;
   user_email?: string;
   user_deleted?: boolean;

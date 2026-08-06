@@ -557,9 +557,7 @@ func (h *HostService) selectAccount(ctx context.Context, req hostSelectAccountRe
 
 	model := req.Model
 	if model == "" {
-		if models := h.manager.GetModels(g.Platform); len(models) > 0 {
-			model = models[0].ID
-		}
+		model = pickRoutableModel(h.manager.GetModels(g.Platform), g.ModelRouting)
 	}
 
 	excludeIDs := make([]int, 0, len(req.ExcludeAccountIDs))
@@ -620,7 +618,7 @@ func (h *HostService) probeForward(ctx context.Context, req hostProbeForwardRequ
 	model := req.Model
 	if model == "" {
 		if models := h.manager.GetModels(g.Platform); len(models) > 0 {
-			model = pickProbeModel(models)
+			model = pickProbeModelForRouting(models, g.ModelRouting)
 		}
 	}
 	if model == "" {
@@ -2634,12 +2632,39 @@ func errProbeResp(kind, msg string, start time.Time) map[string]interface{} {
 	}
 }
 
-// pickProbeModel 从模型列表中选一个非图片模型用于探测。
+// pickRoutableModel 从当前分组可见且 scheduler 实际允许的模型中选一个。
+// 分组没有 model_routing 时保留历史行为，使用目录第一项；配置了路由时，
+// 精确规则和 glob 的展开语义与模型列表收敛、scheduler 完全一致。
+func pickRoutableModel(models []sdk.ModelInfo, routing map[string][]int64) string {
+	if len(routing) == 0 {
+		for _, model := range models {
+			if id := strings.TrimSpace(model.ID); id != "" {
+				return id
+			}
+		}
+		return ""
+	}
+
+	catalogIDs := make([]string, 0, len(models))
+	for _, model := range models {
+		if id := strings.TrimSpace(model.ID); id != "" {
+			catalogIDs = append(catalogIDs, id)
+		}
+	}
+	for _, id := range visibleModelIDsForRouting(routing, catalogIDs) {
+		if scheduler.ModelRoutingServes(routing, id) {
+			return id
+		}
+	}
+	return ""
+}
+
+// pickProbeModelForRouting 从当前分组可路由的模型中选一个非图片模型用于探测。
 // 图片模型探测需要实际生图（成本高），跳过；如果全是图片模型则返回空。
 // 直接使用 ModelInfo.HasCapability 判断，无需经过 Manager 全局查找。
-func pickProbeModel(models []sdk.ModelInfo) string {
+func pickProbeModelForRouting(models []sdk.ModelInfo, routing map[string][]int64) string {
 	for _, m := range models {
-		if !m.HasCapability(sdk.ModelCapImageGeneration) {
+		if scheduler.ModelRoutingServes(routing, m.ID) && !m.HasCapability(sdk.ModelCapImageGeneration) {
 			return m.ID
 		}
 	}

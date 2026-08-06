@@ -226,7 +226,22 @@ function TaskErrorModal({ task, onClose }: { task: GenerationTaskResp | null; on
   if (!task) return null;
 
   const message = task.error_message || t('generation_tasks.stale_task');
+  const diagnostics = [
+    { label: t('generation_tasks.request_id'), value: task.request_id || '-' },
+    { label: t('generation_tasks.user'), value: `${task.user_email || '-'} (#${task.user_id})` },
+    { label: t('generation_tasks.group_id'), value: task.group_id ? `#${task.group_id}` : '-' },
+    { label: t('generation_tasks.api_key_id'), value: task.api_key_id ? `#${task.api_key_id}` : '-' },
+    { label: t('generation_tasks.account_id'), value: task.account_id ? `#${task.account_id}` : '-' },
+    { label: t('generation_tasks.plugin'), value: task.plugin_id || '-' },
+    { label: t('generation_tasks.task_type'), value: task.task_type || '-' },
+    { label: t('generation_tasks.model'), value: task.model || '-' },
+    { label: t('generation_tasks.stage'), value: task.stage || '-' },
+    { label: t('generation_tasks.upstream_status'), value: task.upstream_status || '-' },
+    { label: t('generation_tasks.upstream_error_code'), value: task.upstream_error_code || '-' },
+  ];
   const copyText = [
+    `${t('generation_tasks.task')}: ${task.public_task_id || `#${task.id}`}`,
+    ...diagnostics.map((item) => `${item.label}: ${item.value}`),
     `${t('generation_tasks.error_type')}: ${task.error_type || '-'}`,
     `${t('generation_tasks.error_code')}: ${task.error_code || '-'}`,
     `${t('generation_tasks.error_message')}: ${message}`,
@@ -258,6 +273,12 @@ function TaskErrorModal({ task, onClose }: { task: GenerationTaskResp | null; on
     >
       <div className="space-y-4">
         <dl className="grid gap-3 sm:grid-cols-2">
+          {diagnostics.map((item) => (
+            <div className={`min-w-0 ${item.label === t('generation_tasks.request_id') ? 'sm:col-span-2' : ''}`} key={item.label}>
+              <dt className="text-xs font-medium text-text-tertiary">{item.label}</dt>
+              <dd className="mt-1 break-all font-mono text-sm text-text select-text">{item.value}</dd>
+            </div>
+          ))}
           <div className="min-w-0">
             <dt className="text-xs font-medium text-text-tertiary">{t('generation_tasks.error_type')}</dt>
             <dd className="mt-1 break-words font-mono text-sm text-text">{task.error_type || '-'}</dd>
@@ -327,6 +348,7 @@ export default function GenerationTasksPage() {
 
   const kindOptions = useMemo(() => [
     { id: '', label: t('generation_tasks.all_kinds') },
+    { id: 'asset', label: t('generation_tasks.kind_asset') },
     { id: 'image', label: t('generation_tasks.kind_image') },
     { id: 'video', label: t('generation_tasks.kind_video') },
     { id: 'audio', label: t('generation_tasks.kind_audio') },
@@ -455,7 +477,7 @@ export default function GenerationTasksPage() {
           <CommonTable.Column id="created_at" style={{ width: 150 }}>{t('generation_tasks.created_at')}</CommonTable.Column>
           <CommonTable.Column id="id" style={{ width: 205 }}>{t('generation_tasks.task')}</CommonTable.Column>
           <CommonTable.Column id="model" style={{ width: 190 }}>{t('generation_tasks.model_plugin')}</CommonTable.Column>
-          <CommonTable.Column id="user" style={{ width: 180 }}>{t('generation_tasks.user')}</CommonTable.Column>
+          <CommonTable.Column id="user" style={{ width: 210 }}>{t('generation_tasks.user')}</CommonTable.Column>
           <CommonTable.Column id="status" style={{ width: 160 }}>{t('generation_tasks.status')}</CommonTable.Column>
           <CommonTable.Column id="timing" style={{ width: 125 }}>{t('generation_tasks.timing')}</CommonTable.Column>
           <CommonTable.Column id="attempts" style={{ width: 82 }}>{t('generation_tasks.attempts')}</CommonTable.Column>
@@ -492,9 +514,18 @@ export default function GenerationTasksPage() {
                 </div>
               </CommonTable.Cell>
               <CommonTable.Cell>
-                <div className="flex min-w-0 flex-col gap-0.5" title={task.user_email || `#${task.user_id}`}>
+                <div
+                  className="flex min-w-0 flex-col gap-0.5"
+                  title={[task.user_email || `#${task.user_id}`, task.group_id ? `Group #${task.group_id}` : '', task.api_key_id ? `API Key #${task.api_key_id}` : ''].filter(Boolean).join('\n')}
+                >
                   <span className="truncate text-text">{task.user_email || `#${task.user_id}`}</span>
-                  <span className="font-mono text-[11px] text-text-tertiary">#{task.user_id}</span>
+                  <span className="truncate font-mono text-[11px] text-text-tertiary">
+                    {[
+                      `U#${task.user_id}`,
+                      task.group_id ? `G#${task.group_id}` : '',
+                      task.api_key_id ? `K#${task.api_key_id}` : '',
+                    ].filter(Boolean).join(' · ')}
+                  </span>
                 </div>
               </CommonTable.Cell>
               <CommonTable.Cell><TaskStatusCell task={task} /></CommonTable.Cell>

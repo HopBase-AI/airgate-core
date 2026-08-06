@@ -364,7 +364,7 @@ func (f *Forwarder) recordUsage(c *gin.Context, state *forwardState, execution f
 		UsageAttributes:              usage.Attributes,
 		UsageMetrics:                 usage.Metrics,
 		UsageCostDetails:             usage.CostDetails,
-		UsageMetadata:                usage.Metadata,
+		UsageMetadata:                usageMetadataWithTrace(usage.Metadata, c.Request.Context()),
 		ErrorCode:                    failure.code,
 		ErrorStatus:                  failure.status,
 		ErrorMessage:                 sanitizeFailureMessage(failure.message),

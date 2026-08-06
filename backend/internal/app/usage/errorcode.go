@@ -57,6 +57,10 @@ const (
 	ErrorCodePluginError = "plugin_error"
 	// ErrorCodeMetadataScopeFailed 元数据响应无法按分组权限收敛。
 	ErrorCodeMetadataScopeFailed = "metadata_scope_failed"
+	// ErrorCodeClientCanceled 客户端在请求完成前主动断开。
+	ErrorCodeClientCanceled = "client_canceled"
+	// ErrorCodeRequestTimeout 请求上下文在完成前超时。
+	ErrorCodeRequestTimeout = "request_timeout"
 )
 
 // ErrorMessageVisibleToUser 失败原因能否把原文展示给终端用户。
@@ -76,7 +80,9 @@ func ErrorMessageVisibleToUser(code string) bool {
 		ErrorCodeCapabilityDenied,
 		ErrorCodeConcurrencyLimit,
 		ErrorCodeRouteNotFound,
-		ErrorCodeMiddlewareDenied:
+		ErrorCodeMiddlewareDenied,
+		ErrorCodeClientCanceled,
+		ErrorCodeRequestTimeout:
 		return true
 	default:
 		return false

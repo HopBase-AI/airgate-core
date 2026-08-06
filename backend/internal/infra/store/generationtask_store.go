@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,10 +26,12 @@ func NewGenerationTaskStore(db *ent.Client) *GenerationTaskStore {
 }
 
 func generationTaskPredicate() predicate.Task {
-	// *.generate 自动覆盖后续新增的音频、文档等生成任务；image.edit 和
-	// video.api 是当前两个不以 .generate 结尾的生成链路。
+	// *.generate 自动覆盖后续新增的音频、文档等生成任务；*.attempt 是插件在
+	// 正式任务创建前记录的真实失败请求。image.edit 和 video.api 是当前两个
+	// 不以这些后缀结尾的生成链路。
 	return enttask.Or(
 		enttask.TaskTypeHasSuffix(".generate"),
+		enttask.TaskTypeHasSuffix(".attempt"),
 		enttask.TaskTypeEQ("image.edit"),
 		enttask.TaskTypeEQ("video.api"),
 	)
@@ -87,6 +91,12 @@ func (s *GenerationTaskStore) List(ctx context.Context, filter appgenerationtask
 			ErrorType:           row.ErrorType,
 			ErrorCode:           row.ErrorCode,
 			ErrorMessage:        row.ErrorMessage,
+			RequestID:           taskExecutionString(row.Execution, "request_id"),
+			GroupID:             taskExecutionInt64(row.Execution, "group_id"),
+			APIKeyID:            taskExecutionInt64(row.Execution, "api_key_id"),
+			AccountID:           taskExecutionInt64(row.Execution, "account_id"),
+			UpstreamStatus:      int(taskExecutionInt64(row.Execution, "upstream_status")),
+			UpstreamErrorCode:   taskExecutionString(row.Execution, "upstream_error_code"),
 			CreatedAt:           row.CreatedAt,
 			UpdatedAt:           row.UpdatedAt,
 			StartedAt:           row.StartedAt,
@@ -104,12 +114,40 @@ func (s *GenerationTaskStore) List(ctx context.Context, filter appgenerationtask
 }
 
 func taskExecutionTime(execution map[string]interface{}, key string) *time.Time {
-	raw, _ := execution[key].(string)
+	raw := taskExecutionString(execution, key)
 	parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(raw))
 	if err != nil {
 		return nil
 	}
 	return &parsed
+}
+
+func taskExecutionString(execution map[string]interface{}, key string) string {
+	value, _ := execution[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func taskExecutionInt64(execution map[string]interface{}, key string) int64 {
+	switch value := execution[key].(type) {
+	case int:
+		return int64(value)
+	case int32:
+		return int64(value)
+	case int64:
+		return value
+	case float32:
+		return int64(value)
+	case float64:
+		return int64(value)
+	case json.Number:
+		parsed, _ := value.Int64()
+		return parsed
+	case string:
+		parsed, _ := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		return parsed
+	default:
+		return 0
+	}
 }
 
 func taskModel(input map[string]interface{}) string {

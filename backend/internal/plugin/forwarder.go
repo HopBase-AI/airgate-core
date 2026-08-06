@@ -195,7 +195,7 @@ func (f *Forwarder) Forward(c *gin.Context) {
 
 		for attempt < maxFailoverAttempts {
 			if status := canceledRequestStatus(ctx.Err()); status != 0 {
-				markCanceledRequest(c, status)
+				f.recordCanceledRequest(c, state, status, false)
 				logger.Debug("forward_request_canceled",
 					"status_code", status,
 					"attempts", totalAttempts,
@@ -209,7 +209,7 @@ func (f *Forwarder) Forward(c *gin.Context) {
 
 			if err := f.pickAccount(c, state, exclude...); err != nil {
 				if status := canceledRequestStatus(ctx.Err()); status != 0 {
-					markCanceledRequest(c, status)
+					f.recordCanceledRequest(c, state, status, false)
 					logger.Debug("forward_request_canceled",
 						"status_code", status,
 						"attempts", totalAttempts,
@@ -234,7 +234,7 @@ func (f *Forwarder) Forward(c *gin.Context) {
 								}
 							}
 							if status := canceledRequestStatus(ctx.Err()); status != 0 {
-								markCanceledRequest(c, status)
+								f.recordCanceledRequest(c, state, status, false)
 								logger.Debug("forward_request_canceled",
 									"status_code", status,
 									"attempts", totalAttempts,
@@ -300,7 +300,7 @@ func (f *Forwarder) Forward(c *gin.Context) {
 					f.scheduler.DecrementRPM(context.Background(), accountID)
 					c.Set(ginCtxKeyAccountID, accountID)
 					c.Set(ginCtxKeyAttempts, totalAttempts)
-					markCanceledRequest(c, requestCanceled)
+					f.recordCanceledRequest(c, state, requestCanceled, true)
 					logger.Debug("forward_request_canceled",
 						"status_code", requestCanceled,
 						"attempts", totalAttempts,

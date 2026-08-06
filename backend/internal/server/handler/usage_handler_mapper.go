@@ -29,6 +29,7 @@ func userFacingErrorMessage(record appusage.LogRecord) string {
 func toUsageLogResp(record appusage.LogRecord) dto.UsageLogResp {
 	return dto.UsageLogResp{
 		ID:                    record.ID,
+		RequestID:             record.RequestID,
 		UserID:                record.UserID,
 		UserEmail:             record.UserEmail,
 		UserDeleted:           record.UserDeleted,

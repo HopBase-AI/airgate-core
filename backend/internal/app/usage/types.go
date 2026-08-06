@@ -61,6 +61,7 @@ type TrendFilter struct {
 // LogRecord 使用记录领域对象。
 type LogRecord struct {
 	ID                    int64
+	RequestID             string
 	UserID                int64
 	UserEmail             string
 	UserDeleted           bool

@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"context"
 	"net/http"
 	"regexp"
 	"strings"
@@ -75,20 +76,62 @@ func (f *Forwarder) recordFailureUsage(c *gin.Context, state *forwardState, fail
 		Model:     failureRecordModel(state),
 		Stream:    state.stream,
 		// 失败请求的耗时同样有诊断价值（区分"秒失败"与"卡 60s 超时"）。
-		DurationMs:   requestElapsedMs(state),
-		UserAgent:    c.Request.UserAgent(),
-		IPAddress:    c.ClientIP(),
-		Endpoint:     state.requestPath,
-		Status:       billing.UsageStatusError,
-		ErrorCode:    fail.code,
-		ErrorStatus:  fail.status,
-		ErrorMessage: sanitizeFailureMessage(fail.message),
+		DurationMs:    requestElapsedMs(state),
+		UserAgent:     c.Request.UserAgent(),
+		IPAddress:     c.ClientIP(),
+		Endpoint:      state.requestPath,
+		UsageMetadata: usageMetadataWithTrace(nil, c.Request.Context()),
+		Status:        billing.UsageStatusError,
+		ErrorCode:     fail.code,
+		ErrorStatus:   fail.status,
+		ErrorMessage:  sanitizeFailureMessage(fail.message),
 	}
 	if state.account != nil {
 		record.AccountID = state.account.ID
 	}
 
 	f.recorder.Record(record)
+}
+
+func usageMetadataWithTrace(metadata map[string]string, ctx context.Context) map[string]string {
+	traceID := sanitizeFailureMessage(sdk.RequestIDFromContext(ctx))
+	if traceID == "" {
+		return metadata
+	}
+	if runes := []rune(traceID); len(runes) > 128 {
+		traceID = string(runes[:128])
+	}
+	cloned := make(map[string]string, len(metadata)+1)
+	for key, value := range metadata {
+		cloned[key] = value
+	}
+	cloned["trace_id"] = traceID
+	return cloned
+}
+
+func canceledRequestFailure(status int) usageFailure {
+	if status == statusClientClosedRequest {
+		return usageFailure{
+			code:    appusage.ErrorCodeClientCanceled,
+			status:  statusClientClosedRequest,
+			message: "客户端在请求完成前断开连接",
+		}
+	}
+	return usageFailure{
+		code:    appusage.ErrorCodeRequestTimeout,
+		status:  http.StatusGatewayTimeout,
+		message: "请求在完成前超时",
+	}
+}
+
+func (f *Forwarder) recordCanceledRequest(c *gin.Context, state *forwardState, status int, includeAccount bool) {
+	markCanceledRequest(c, status)
+	if !includeAccount && state != nil {
+		withoutAccount := *state
+		withoutAccount.account = nil
+		state = &withoutAccount
+	}
+	f.recordFailureUsage(c, state, canceledRequestFailure(status))
 }
 
 // failureRecordPlatform / failureRecordModel 兜底 usage_log 的两个 NotEmpty 列。
