@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { parseTocPricing, serializeTocPricing, validateTocPricing } from './TocPricingEditor';
-import { parseSitesBranding, serializeSitesBranding, validateSitesBranding } from './SitesBrandingEditor';
-import { parseBlogSites, serializeBlogSites, validateBlogSites } from './BlogSitesEditor';
+import {
+  activeGroupRatesByPlatform,
+  parseTocPricing,
+  serializeTocPricing,
+  validateTocPricing,
+} from './TocPricingEditor';
+import {
+  isSitesBrandingShapeValid,
+  parseSitesBranding,
+  serializeSitesBranding,
+  validateSitesBranding,
+} from './SitesBrandingEditor';
+import { isBlogSitesShapeValid, parseBlogSites, serializeBlogSites, validateBlogSites } from './BlogSitesEditor';
 
 // 结构化编辑器把 JSON setting 拆成表单再拼回去。这里锁住最关键的性质：
 // 用生产上的真实值走一遍 parse → serialize，语义必须逐字段等价——否则管理员打开
@@ -40,6 +50,11 @@ describe('toc_landing_pricing 圆环往返', () => {
     expect(() => parseTocPricing('{"fx": 6.8,')).not.toThrow();
   });
 
+  it('非法 JSON 阻塞保存，而不是当成空配置', () => {
+    const errors = validateTocPricing(parseTocPricing('{"fx": 6.8,'), t);
+    expect(errors).toContain('settings.toc_landing_pricing_invalid');
+  });
+
   it('倍率为 0 或负数被判错', () => {
     const v = parseTocPricing('{"multipliers": {"claude": 2.13}}');
     v.multipliers['claude'] = '0';
@@ -56,6 +71,31 @@ describe('toc_landing_pricing 圆环往返', () => {
     v.multipliers['openai'] = '';
     const out = JSON.parse(serializeTocPricing(v)) as { multipliers: Record<string, number> };
     expect(out.multipliers).not.toHaveProperty('openai');
+  });
+
+  it('保留未知的扩展字段', () => {
+    const raw = '{"fx":6.8,"future_option":{"enabled":true}}';
+    expect(JSON.parse(serializeTocPricing(parseTocPricing(raw)))).toEqual(JSON.parse(raw));
+  });
+
+  it('保留单个模型牌价的未知扩展字段', () => {
+    const raw = '{"board":[{"id":"glm-5.2","multiplier":0.55,"future_option":{"enabled":true}}]}';
+    expect(JSON.parse(serializeTocPricing(parseTocPricing(raw)))).toEqual(JSON.parse(raw));
+  });
+
+  it('损坏的倍率或 board 条目会阻塞保存', () => {
+    expect(validateTocPricing(parseTocPricing('{"multipliers":{"claude":true}}'), t))
+      .toContain('settings.toc_landing_pricing_invalid');
+    expect(validateTocPricing(parseTocPricing('{"board":[null]}'), t))
+      .toContain('settings.toc_landing_pricing_invalid');
+  });
+
+  it('价格偏差提示忽略已下架分组', () => {
+    const rates = activeGroupRatesByPlatform([
+      { platform: 'seedance', rate_multiplier: 6.12, delisted: true },
+      { platform: 'seedance', rate_multiplier: 5.78, delisted: false },
+    ]);
+    expect(rates.get('seedance')).toBe(5.78);
   });
 });
 
@@ -100,7 +140,9 @@ describe('sites_branding 圆环往返', () => {
 
   it('blog_chrome 写坏时被判错且不写进配置', () => {
     const rows = parseSitesBranding('{"ink": {"name": "Essevin"}}');
-    rows[0]!.blogChrome = '{ not json';
+    const [row] = rows;
+    if (!row) throw new Error('expected parsed branding row');
+    row.blogChrome = '{ not json';
     expect(validateSitesBranding(rows, t).some((e) => e.startsWith('settings.sites_branding_err_chrome'))).toBe(true);
     const out = JSON.parse(serializeSitesBranding(rows)) as Record<string, Record<string, unknown>>;
     expect(out['ink']).not.toHaveProperty('blog_chrome');
@@ -109,6 +151,16 @@ describe('sites_branding 圆环往返', () => {
   it('缺品牌名被判错', () => {
     const rows = parseSitesBranding('{"ink": {"logo": "https://x/y.svg"}}');
     expect(validateSitesBranding(rows, t).some((e) => e.startsWith('settings.sites_branding_err_name'))).toBe(true);
+  });
+
+  it('原始 JSON 结构错误会阻塞保存', () => {
+    expect(isSitesBrandingShapeValid('{"ink":null}')).toBe(false);
+    expect(validateSitesBranding([], t, true)).toContain('settings.sites_branding_invalid');
+  });
+
+  it('保留单站未知扩展字段', () => {
+    const raw = '{"ink":{"name":"Essevin","future_option":{"enabled":true}}}';
+    expect(JSON.parse(serializeSitesBranding(parseSitesBranding(raw)))).toEqual(JSON.parse(raw));
   });
 });
 
@@ -139,5 +191,15 @@ describe('blog_sites 圆环往返', () => {
     const rows = parseBlogSites('[]');
     rows.push({ uid: 1, key: '', label: '有名字没 key' });
     expect(validateBlogSites(rows, t).some((e) => e === 'settings.blog_sites_err_key_empty')).toBe(true);
+  });
+
+  it('原始 JSON 结构错误会阻塞保存', () => {
+    expect(isBlogSitesShapeValid('{"key":"a"}')).toBe(false);
+    expect(validateBlogSites([], t, true)).toContain('settings.blog_sites_invalid');
+  });
+
+  it('保留单站未知扩展字段', () => {
+    const raw = '[{"key":"essevin","label":"Essevin","future_option":true}]';
+    expect(JSON.parse(serializeBlogSites(parseBlogSites(raw)))).toEqual(JSON.parse(raw));
   });
 });

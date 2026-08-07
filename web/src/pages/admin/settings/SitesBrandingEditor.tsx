@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Input } from '@heroui/react';
 import { ChevronDown, Plus, Trash2 } from 'lucide-react';
@@ -24,9 +24,9 @@ type SiteRow = {
   blogTheme: string;
   // blog_chrome 以原始 JSON 文本保存在行内，commit 时按对象嵌回。
   blogChrome: string;
+  // Preserve fields added by newer server versions.
+  extra?: Record<string, unknown>;
 };
-
-let siteUid = 0;
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -47,8 +47,9 @@ export function parseSitesBranding(raw: string): SiteRow[] {
     if (!val || typeof val !== 'object' || Array.isArray(val)) continue;
     const o = val as Record<string, unknown>;
     const chrome = o['blog_chrome'];
+    const knownKeys = new Set(['name', 'logo', 'doc_url', 'host', 'blog_theme', 'blog_chrome']);
     rows.push({
-      uid: (siteUid += 1),
+      uid: rows.length + 1,
       key,
       name: str(o['name']),
       logo: str(o['logo']),
@@ -59,9 +60,39 @@ export function parseSitesBranding(raw: string): SiteRow[] {
         chrome && typeof chrome === 'object' && !Array.isArray(chrome)
           ? JSON.stringify(chrome, null, 2)
           : '',
+      extra: Object.fromEntries(Object.entries(o).filter(([field]) => !knownKeys.has(field))),
     });
   }
   return rows;
+}
+
+function nextSiteUID(rows: SiteRow[]): number {
+  return rows.reduce((max, row) => Math.max(max, row.uid), 0) + 1;
+}
+
+// Validate the raw container before parsing rows. A malformed entry would
+// otherwise be skipped and silently disappear when another row is edited.
+export function isSitesBrandingShapeValid(raw: string): boolean {
+  if (!raw.trim()) return true;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return false;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+  for (const value of Object.values(parsed as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const entry = value as Record<string, unknown>;
+    for (const key of ['name', 'logo', 'doc_url', 'host', 'blog_theme']) {
+      if (key in entry && entry[key] !== null && typeof entry[key] !== 'string') return false;
+    }
+    if ('blog_chrome' in entry && entry.blog_chrome !== null &&
+      (typeof entry.blog_chrome !== 'object' || Array.isArray(entry.blog_chrome))) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function serializeSitesBranding(rows: SiteRow[]): string {
@@ -69,7 +100,7 @@ export function serializeSitesBranding(rows: SiteRow[]): string {
   for (const r of rows) {
     const key = r.key.trim();
     if (key === '') continue;
-    const entry: Record<string, unknown> = {};
+    const entry: Record<string, unknown> = { ...(r.extra ?? {}) };
     if (r.name.trim() !== '') entry['name'] = r.name.trim();
     if (r.logo.trim() !== '') entry['logo'] = r.logo.trim();
     if (r.docURL.trim() !== '') entry['doc_url'] = r.docURL.trim();
@@ -93,8 +124,10 @@ export function serializeSitesBranding(rows: SiteRow[]): string {
 export function validateSitesBranding(
   rows: SiteRow[],
   t: (k: string, o?: Record<string, unknown>) => string,
+  rawInvalid = false,
 ): string[] {
   const errs: string[] = [];
+  if (rawInvalid) errs.push(t('settings.sites_branding_invalid'));
   const seen = new Set<string>();
   for (const r of rows) {
     const key = r.key.trim();
@@ -131,8 +164,18 @@ export function SitesBrandingEditor({
 }) {
   const { t } = useTranslation();
   const [rows, setRows] = useState<SiteRow[]>(() => parseSitesBranding(value));
+  const [rawInvalid, setRawInvalid] = useState(() => !isSitesBrandingShapeValid(value));
+  const lastValueRef = useRef(value);
   // 每站展开态按 uid 记（不用下标，删中间行不会错位）；默认全部收起。
   const [openUids, setOpenUids] = useState<Set<number>>(() => new Set());
+
+  useEffect(() => {
+    if (value === lastValueRef.current) return;
+    setRows(parseSitesBranding(value));
+    setRawInvalid(!isSitesBrandingShapeValid(value));
+    setOpenUids(new Set());
+    lastValueRef.current = value;
+  }, [value]);
   const toggle = (uid: number) =>
     setOpenUids((s) => {
       const next = new Set(s);
@@ -143,13 +186,16 @@ export function SitesBrandingEditor({
 
   function commit(next: SiteRow[]) {
     setRows(next);
-    onChange(serializeSitesBranding(next));
+    setRawInvalid(false);
+    const serialized = serializeSitesBranding(next);
+    lastValueRef.current = serialized;
+    onChange(serialized);
   }
   const update = (uid: number, patch: Partial<SiteRow>) =>
     commit(rows.map((r) => (r.uid === uid ? { ...r, ...patch } : r)));
   const addRow = () => {
     const row: SiteRow = {
-      uid: (siteUid += 1),
+      uid: nextSiteUID(rows),
       key: '',
       name: '',
       logo: '',
@@ -157,19 +203,18 @@ export function SitesBrandingEditor({
       host: '',
       blogTheme: '',
       blogChrome: '',
+      extra: {},
     };
     setOpenUids((s) => new Set(s).add(row.uid));
     commit([...rows, row]);
   };
   const removeRow = (uid: number) => commit(rows.filter((r) => r.uid !== uid));
 
-  const errors = validateSitesBranding(rows, t);
-  // 依赖故意用 errorKey 而非 errors（新数组每渲染变引用，会死循环），同 TocPricingEditor。
-  const errorKey = errors.join('\n');
+  const errors = useMemo(() => validateSitesBranding(rows, t, rawInvalid), [rawInvalid, rows, t]);
   useEffect(() => {
     onValidationChange(errors);
     return () => onValidationChange([]);
-  }, [errorKey, onValidationChange]);
+  }, [errors, onValidationChange]);
 
   return (
     <SettingsSection

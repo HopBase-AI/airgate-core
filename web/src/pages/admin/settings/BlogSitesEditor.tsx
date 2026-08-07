@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Input } from '@heroui/react';
 import { Plus, Trash2 } from 'lucide-react';
@@ -10,9 +10,13 @@ import { SettingsSection, Field } from '../SettingsPage';
 // 本站点 key（blog_site_key）语义不同——它决定本实例 /blog 展示哪些文章，是单值，
 // 所以放在同一 section 顶部作为独立输入框。
 
-type BlogSiteRow = { uid: number; key: string; label: string };
-
-let rowUid = 0;
+type BlogSiteRow = {
+  uid: number;
+  key: string;
+  label: string;
+  // Preserve fields added by newer server versions.
+  extra?: Record<string, unknown>;
+};
 
 export function parseBlogSites(raw: string): BlogSiteRow[] {
   if (!raw.trim()) return [];
@@ -27,20 +31,45 @@ export function parseBlogSites(raw: string): BlogSiteRow[] {
   for (const entry of parsed) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
     const o = entry as Record<string, unknown>;
+    const extra = Object.fromEntries(Object.entries(o).filter(([key]) => key !== 'key' && key !== 'label'));
     rows.push({
-      uid: (rowUid += 1),
+      uid: rows.length + 1,
       key: typeof o['key'] === 'string' ? o['key'] : '',
       label: typeof o['label'] === 'string' ? o['label'] : '',
+      extra,
     });
   }
   return rows;
+}
+
+function nextBlogSiteUID(rows: BlogSiteRow[]): number {
+  return rows.reduce((max, row) => Math.max(max, row.uid), 0) + 1;
+}
+
+// Validate the raw container before parsing rows. Invalid entries must not be
+// silently discarded when an administrator edits a different row.
+export function isBlogSitesShapeValid(raw: string): boolean {
+  if (!raw.trim()) return true;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return false;
+  }
+  if (!Array.isArray(parsed)) return false;
+  return parsed.every((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const row = entry as Record<string, unknown>;
+    return (!('key' in row) || typeof row.key === 'string') &&
+      (!('label' in row) || typeof row.label === 'string');
+  });
 }
 
 export function serializeBlogSites(rows: BlogSiteRow[]): string {
   const out = rows
     .filter((r) => r.key.trim() !== '')
     .map((r) => {
-      const entry: Record<string, string> = { key: r.key.trim() };
+      const entry: Record<string, unknown> = { ...(r.extra ?? {}), key: r.key.trim() };
       if (r.label.trim() !== '') entry['label'] = r.label.trim();
       return entry;
     });
@@ -51,8 +80,10 @@ export function serializeBlogSites(rows: BlogSiteRow[]): string {
 export function validateBlogSites(
   rows: BlogSiteRow[],
   t: (k: string, o?: Record<string, unknown>) => string,
+  rawInvalid = false,
 ): string[] {
   const errs: string[] = [];
+  if (rawInvalid) errs.push(t('settings.blog_sites_invalid'));
   const seen = new Set<string>();
   for (const r of rows) {
     const key = r.key.trim();
@@ -83,23 +114,33 @@ export function BlogSitesEditor({
 }) {
   const { t } = useTranslation();
   const [rows, setRows] = useState<BlogSiteRow[]>(() => parseBlogSites(value));
+  const [rawInvalid, setRawInvalid] = useState(() => !isBlogSitesShapeValid(value));
+  const lastValueRef = useRef(value);
+
+  useEffect(() => {
+    if (value === lastValueRef.current) return;
+    setRows(parseBlogSites(value));
+    setRawInvalid(!isBlogSitesShapeValid(value));
+    lastValueRef.current = value;
+  }, [value]);
 
   function commit(next: BlogSiteRow[]) {
     setRows(next);
-    onChange(serializeBlogSites(next));
+    setRawInvalid(false);
+    const serialized = serializeBlogSites(next);
+    lastValueRef.current = serialized;
+    onChange(serialized);
   }
   const update = (uid: number, patch: Partial<BlogSiteRow>) =>
     commit(rows.map((r) => (r.uid === uid ? { ...r, ...patch } : r)));
-  const addRow = () => commit([...rows, { uid: (rowUid += 1), key: '', label: '' }]);
+  const addRow = () => commit([...rows, { uid: nextBlogSiteUID(rows), key: '', label: '', extra: {} }]);
   const removeRow = (uid: number) => commit(rows.filter((r) => r.uid !== uid));
 
-  const errors = validateBlogSites(rows, t);
-  // 依赖故意用 errorKey 而非 errors（新数组每渲染变引用，会死循环），同 TocPricingEditor。
-  const errorKey = errors.join('\n');
+  const errors = useMemo(() => validateBlogSites(rows, t, rawInvalid), [rawInvalid, rows, t]);
   useEffect(() => {
     onValidationChange(errors);
     return () => onValidationChange([]);
-  }, [errorKey, onValidationChange]);
+  }, [errors, onValidationChange]);
 
   return (
     <SettingsSection
