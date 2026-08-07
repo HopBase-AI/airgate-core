@@ -319,6 +319,26 @@ func TestFailureRecordPlatformAndModel(t *testing.T) {
 			wantModel:    "gpt-5",
 		},
 		{
+			name: "无请求模型时使用路由声明的操作标识",
+			state: &forwardState{
+				plugin:      &PluginInstance{Platform: "seedance"},
+				usageModel:  "sd-assets",
+				requestPath: "/v1/sd/assets",
+			},
+			wantPlatform: "seedance",
+			wantModel:    "sd-assets",
+		},
+		{
+			name: "真实模型优先于路由操作标识",
+			state: &forwardState{
+				plugin:     &PluginInstance{Platform: "seedance"},
+				model:      "dreamina-v3",
+				usageModel: "sd-assets",
+			},
+			wantPlatform: "seedance",
+			wantModel:    "dreamina-v3",
+		},
+		{
 			name: "插件实例存在但 Platform 为空同样回退",
 			state: &forwardState{
 				plugin:            &PluginInstance{},

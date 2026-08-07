@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ERROR_CODE_META, isFailedUsageRow } from './columns/usageColumns';
+import {
+  ERROR_CODE_META,
+  isAssetUsageOperation,
+  isFailedUsageRow,
+  resolvedUsageModel,
+} from './columns/usageColumns';
 import type { UsageRow } from './columns/usageColumns';
 import en from '../i18n/en.json';
 import ja from '../i18n/ja.json';
@@ -52,5 +57,37 @@ describe('usage 失败记录', () => {
     expect(isFailedUsageRow(usageRow({ status: 'success' }))).toBe(false);
     // 该字段上线前的历史记录：没有 status / error_code
     expect(isFailedUsageRow(usageRow({}))).toBe(false);
+  });
+
+  it('将历史素材接口 unknown 恢复为语义操作名，但不覆盖真实模型', () => {
+    const historical = usageRow({
+      platform: 'seedance',
+      model: 'unknown',
+      endpoint: '/v1/sd/assets?trace=1',
+    });
+    expect(isAssetUsageOperation(historical)).toBe(true);
+    expect(resolvedUsageModel(historical)).toBe('sd-assets');
+    expect(resolvedUsageModel(usageRow({
+      platform: 'seedance',
+      model: 'unknown',
+      endpoint: '/v1/sd/assets/asset-1',
+    }))).toBe('sd-assets');
+    expect(resolvedUsageModel(usageRow({
+      platform: 'seedance',
+      model: 'dreamina-v3',
+      endpoint: '/v1/sd/assets',
+    }))).toBe('dreamina-v3');
+    expect(resolvedUsageModel(usageRow({
+      platform: 'seedance',
+      model: 'unknown',
+      endpoint: '/v1/video/generate',
+    }))).toBe('unknown');
+  });
+
+  it('模型与操作标签在四种语言下都存在', () => {
+    for (const [locale, dict] of Object.entries(LOCALES)) {
+      expect(dict.usage.model_or_operation, `${locale} 缺少 usage.model_or_operation`).toBeTruthy();
+      expect(dict.usage.asset_operation, `${locale} 缺少 usage.asset_operation`).toBeTruthy();
+    }
   });
 });

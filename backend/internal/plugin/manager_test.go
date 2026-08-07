@@ -76,6 +76,34 @@ func TestGetModelsReturnsClone(t *testing.T) {
 	}
 }
 
+func TestUsageModel(t *testing.T) {
+	mgr := &Manager{
+		routeCache: map[string][]sdk.RouteDefinition{
+			"seedance-plugin": {
+				{Method: "POST", Path: "/v1/sd/assets", Metadata: map[string]string{"usage_model": "sd-assets"}},
+				{Method: "GET", Path: "/v1/video/tasks", Metadata: map[string]string{"usage_model": "video-tasks"}},
+			},
+		},
+	}
+
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "exact metadata route", path: "/v1/sd/assets", want: "sd-assets"},
+		{name: "prefixed metadata route", path: "/v1/video/tasks/task-1", want: "video-tasks"},
+		{name: "unmatched route", path: "/v1/video/generate", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := mgr.UsageModel("seedance-plugin", tt.path); got != tt.want {
+				t.Fatalf("UsageModel(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNewPluginClientConfigSetsStartTimeout(t *testing.T) {
 	mgr := &Manager{}
 	cfg := mgr.newPluginClientConfig(exec.Command("sh", "-c", "exit 0"), false, nil)
