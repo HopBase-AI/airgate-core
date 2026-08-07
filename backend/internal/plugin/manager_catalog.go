@@ -212,6 +212,30 @@ func (m *Manager) ErrorFormat(pluginName, path string) string {
 	return ""
 }
 
+// UsageModel returns the semantic usage label declared for a route. Metadata
+// endpoints do not necessarily carry a model in their request body, so plugins
+// can set RouteDefinition.Metadata["usage_model"] to keep failure logs
+// attributable without inventing an inference model.
+func (m *Manager) UsageModel(pluginName, path string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	name := m.resolveNameLocked(pluginName)
+	prefixModel := ""
+	for _, route := range m.routeCache[name] {
+		model := strings.TrimSpace(route.Metadata["usage_model"])
+		if model == "" {
+			continue
+		}
+		if route.Path == path {
+			return model
+		}
+		if prefixModel == "" && matchRoutePath(route.Path, path) {
+			prefixModel = model
+		}
+	}
+	return prefixModel
+}
+
 // SchedulingModelMap 查询插件路由声明的 Metadata["scheduling_model_map"]（tech-debt #5 治理）。
 // 值为 JSON 对象：键是模型 ID 前缀（大小写不敏感、最长前缀优先），值是调度候选模型列表（按优先级）。
 // 用于协议翻译路由（如 openai 插件的 /v1/messages）声明"请求模型 → 调度模型"映射，

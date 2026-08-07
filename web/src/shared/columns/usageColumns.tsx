@@ -156,6 +156,32 @@ export function isFailedUsageRow(row: UsageRow): boolean {
   return !!row.error_code;
 }
 
+const SEEDANCE_ASSET_USAGE_MODEL = 'sd-assets';
+
+function usageEndpointPath(endpoint?: string): string {
+  const [path = ''] = (endpoint || '').trim().split(/[?#]/, 1);
+  return path.replace(/\/+$/, '').toLowerCase();
+}
+
+/** Seedance 素材端点是操作接口，不携带推理模型。 */
+export function isAssetUsageOperation(row: UsageRow): boolean {
+  const endpoint = usageEndpointPath(row.endpoint);
+  return row.platform.trim().toLowerCase() === 'seedance'
+    && (endpoint === '/v1/sd/assets' || endpoint.startsWith('/v1/sd/assets/'));
+}
+
+/**
+ * 新记录由后端写入 sd-assets；历史记录仍是 unknown，按已记录端点恢复语义展示。
+ * 已存在真实模型时绝不覆盖，避免从分组或路径猜测推理模型。
+ */
+export function resolvedUsageModel(row: UsageRow): string {
+  const rawModel = row.model.trim();
+  if (isAssetUsageOperation(row) && (!rawModel || rawModel.toLowerCase() === 'unknown')) {
+    return SEEDANCE_ASSET_USAGE_MODEL;
+  }
+  return rawModel || 'unknown';
+}
+
 /** 未计费的失败请求：token 与费用恒为 0，费用/计量列显示占位符而不是 $0.00。 */
 function isUnbilledFailure(row: UsageRow): boolean {
   return row.status === 'error';
@@ -186,14 +212,16 @@ function ErrorDetail({ adminView, row, t }: { adminView: boolean; row: UsageRow;
   const user = adminRow
     ? [adminRow.user_email?.trim(), adminRow.user_id ? `#${adminRow.user_id}` : ''].filter(Boolean).join(' / ')
     : '';
+  const model = resolvedUsageModel(row);
 
   return (
-    <TooltipPanel title={t('usage.error_detail', '失败详情')} subtitle={[row.platform, row.model].filter(Boolean).join(' / ')}>
+    <TooltipPanel title={t('usage.error_detail', '失败详情')} subtitle={[row.platform, model].filter(Boolean).join(' / ')}>
       <TooltipRow label={t('usage.error_type', '类型')} value={label} tone={meta?.tone === 'danger' ? 'warning' : 'accent'} />
       <TooltipRow label={t('usage.error_code', '错误码')} value={code || '-'} tone="strong" />
       {row.error_status ? (
         <TooltipRow label={t('usage.error_status', 'HTTP 状态码')} value={row.error_status} tone="strong" />
       ) : null}
+      <TooltipRow label={t('usage.model_or_operation', '模型 / 操作')} value={model} tone="strong" />
       {adminRow ? <TooltipRow label={t('usage.log_id', '记录 ID')} value={`#${adminRow.id}`} /> : null}
       {traceID ? <TooltipRow label={t('usage.trace_id', '链路 ID')} value={traceID} /> : null}
       {adminRow?.request_id ? <TooltipRow label={t('usage.request_id', '记录请求 ID')} value={adminRow.request_id} /> : null}
@@ -463,7 +491,7 @@ function buildUsageRecordContext(row: UsageRow, customerScope: boolean) {
     usage_cost_details: usageCostDetails,
     usage_metadata: usageMetadata,
     // 常用的行级别字段做扁平化，方便插件扩展渲染器直接取值。
-    model: row.model,
+    model: resolvedUsageModel(row),
     platform: row.platform,
     service_tier: serviceTier,
     image_size: imageSize,
@@ -700,13 +728,23 @@ export function useUsageColumns(opts?: { customerScope?: boolean; adminView?: bo
     },
     {
       key: 'model',
-      title: t('usage.model'),
+      title: t('usage.model_or_operation', '模型 / 操作'),
       width: '220px',
       render: (row) => {
-        const PluginUsageModelMeta = getPluginUsageModelMeta(row.platform);
+        const assetOperation = isAssetUsageOperation(row);
+        const model = resolvedUsageModel(row);
+        const PluginUsageModelMeta = assetOperation ? undefined : getPluginUsageModelMeta(row.platform);
         const metaContext = buildUsageRecordContext(row, customerScope);
         const fallbackMeta = (() => {
           if (PluginUsageModelMeta) return null;
+          if (assetOperation) {
+            return (
+              <MetaChip
+                color="rgb(14,165,233)"
+                label={t('usage.asset_operation', '素材接口')}
+              />
+            );
+          }
           const imageSize = typeof metaContext.image_size === 'string' ? metaContext.image_size : '';
           if (imageSize) {
             return (
@@ -748,8 +786,8 @@ export function useUsageColumns(opts?: { customerScope?: boolean; adminView?: bo
                 />
               ) : fallbackMeta}
             </div>
-            <span className="min-w-0 truncate text-sm font-medium leading-none text-text" title={row.model}>
-              {row.model}
+            <span className="min-w-0 truncate text-sm font-medium leading-none text-text" title={model}>
+              {model}
             </span>
           </div>
         );

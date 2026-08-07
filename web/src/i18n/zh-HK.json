@@ -886,6 +886,8 @@
     "platform": "平台",
     "platform_placeholder": "例如：openai",
     "model": "模型",
+    "model_or_operation": "模型 / 操作",
+    "asset_operation": "素材介面",
     "account": "上游憑證",
     "upstream_credential": "上游憑證",
     "detail": "明細",

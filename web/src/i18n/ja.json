@@ -886,6 +886,8 @@
     "platform": "プラットフォーム",
     "platform_placeholder": "例：openai",
     "model": "モデル",
+    "model_or_operation": "モデル / 操作",
+    "asset_operation": "素材 API",
     "account": "上流クレデンシャル",
     "upstream_credential": "上流クレデンシャル",
     "detail": "明細",

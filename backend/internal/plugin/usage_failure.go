@@ -135,7 +135,8 @@ func (f *Forwarder) recordCanceledRequest(c *gin.Context, state *forwardState, s
 }
 
 // failureRecordPlatform / failureRecordModel 兜底 usage_log 的两个 NotEmpty 列。
-// 失败请求可能在解析出平台/模型之前就中断，空串会让整批 CreateBulk 失败。
+// 失败请求可能在解析出平台/模型之前就中断。无真实模型的元数据路由可声明
+// usage_model 作为操作标识；仍为空时由 recorder 最终回退 unknown。
 func failureRecordPlatform(state *forwardState) string {
 	if state.plugin != nil && state.plugin.Platform != "" {
 		return state.plugin.Platform
@@ -147,7 +148,10 @@ func failureRecordModel(state *forwardState) string {
 	if state.model != "" {
 		return state.model
 	}
-	return state.schedulingModel
+	if state.schedulingModel != "" {
+		return state.schedulingModel
+	}
+	return state.usageModel
 }
 
 // requestElapsedMs 进入 Forward 到现在的耗时。

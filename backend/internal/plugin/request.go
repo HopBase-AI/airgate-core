@@ -52,6 +52,7 @@ func (f *Forwarder) parseRequest(c *gin.Context) (*forwardState, bool) {
 		requestedPlatform: requestedPlatform(c, keyInfo),
 		keyInfo:           keyInfo,
 	}
+	state.usageModel = f.declaredUsageModel(state.requestedPlatform, state.requestPath)
 
 	// 限制请求体大小，防止恶意大请求导致 OOM
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxExtensionBodySize)
@@ -98,6 +99,9 @@ func (f *Forwarder) parseRequest(c *gin.Context) (*forwardState, bool) {
 	state.imageToolPayloadValid = parsed.imageToolPayloadValid
 	state.imageToolPayload = parsed.imageToolPayload
 	state.plugin = inst
+	if state.usageModel == "" {
+		state.usageModel = f.manager.UsageModel(inst.Name, state.requestPath)
+	}
 	return state, true
 }
 
@@ -137,6 +141,20 @@ func requestedPlatform(c *gin.Context, keyInfo *auth.APIKeyInfo) string {
 		return platform
 	}
 	return keyInfo.GroupPlatform
+}
+
+// declaredUsageModel resolves route-level attribution before the request body
+// is read, so even malformed or oversized metadata requests retain a useful
+// operation label in the failure log.
+func (f *Forwarder) declaredUsageModel(platform, path string) string {
+	if f == nil || f.manager == nil || platform == "" {
+		return ""
+	}
+	inst := f.manager.GetPluginByPlatform(platform)
+	if inst == nil {
+		return ""
+	}
+	return f.manager.UsageModel(inst.Name, path)
 }
 
 func parseBody(body []byte, contentType string) parsedRequest {
