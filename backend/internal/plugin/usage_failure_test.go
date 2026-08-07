@@ -88,6 +88,19 @@ func TestFailureFromOutcome(t *testing.T) {
 			wantMessage: "upstream 503",
 		},
 		{
+			name: "上游 504 归类为超时",
+			execution: forwardExecution{
+				outcome: sdk.ForwardOutcome{
+					Kind:     sdk.OutcomeUpstreamTransient,
+					Upstream: sdk.UpstreamResponse{StatusCode: http.StatusGatewayTimeout},
+					Reason:   "upstream_asset_timeout: 素材上传处理超时",
+				},
+			},
+			wantCode:    appusage.ErrorCodeUpstreamTimeout,
+			wantStatus:  http.StatusGatewayTimeout,
+			wantMessage: "upstream_asset_timeout: 素材上传处理超时",
+		},
+		{
 			name: "客户端错误也以上游状态码为准",
 			execution: forwardExecution{
 				outcome: sdk.ForwardOutcome{
