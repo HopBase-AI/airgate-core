@@ -52,6 +52,7 @@ func (s *GroupStore) List(ctx context.Context, filter appgroup.ListFilter) ([]ap
 // ListAvailable 查询用户可用分组列表。
 func (s *GroupStore) ListAvailable(ctx context.Context, filter appgroup.AvailableFilter) ([]appgroup.Group, int64, error) {
 	query := s.db.Group.Query().Where(
+		entgroup.DelistedEQ(false),
 		entgroup.Or(
 			entgroup.IsExclusiveEQ(false),
 			entgroup.And(
@@ -122,6 +123,7 @@ func (s *GroupStore) Create(ctx context.Context, input appgroup.CreateInput) (ap
 			SetRateMultiplier(input.RateMultiplier).
 			SetIsExclusive(input.IsExclusive).
 			SetStatusVisible(input.StatusVisible).
+			SetDelisted(input.Delisted).
 			SetSubscriptionType(entgroup.SubscriptionType(input.SubscriptionType)).
 			SetServiceTier(input.ServiceTier).
 			SetForceInstructions(input.ForceInstructions).
@@ -204,6 +206,7 @@ func (s *GroupStore) Create(ctx context.Context, input appgroup.CreateInput) (ap
 		SetRateMultiplier(input.RateMultiplier).
 		SetIsExclusive(input.IsExclusive).
 		SetStatusVisible(input.StatusVisible).
+		SetDelisted(input.Delisted).
 		SetSubscriptionType(entgroup.SubscriptionType(input.SubscriptionType)).
 		SetServiceTier(input.ServiceTier).
 		SetForceInstructions(input.ForceInstructions).
@@ -274,6 +277,9 @@ func (s *GroupStore) Update(ctx context.Context, id int, input appgroup.UpdateIn
 	}
 	if input.StatusVisible != nil {
 		builder = builder.SetStatusVisible(*input.StatusVisible)
+	}
+	if input.Delisted != nil {
+		builder = builder.SetDelisted(*input.Delisted)
 	}
 	if input.SubscriptionType != nil {
 		builder = builder.SetSubscriptionType(entgroup.SubscriptionType(*input.SubscriptionType))
@@ -729,6 +735,7 @@ func mapGroup(item *ent.Group) appgroup.Group {
 		RateMultiplier:           item.RateMultiplier,
 		IsExclusive:              item.IsExclusive,
 		StatusVisible:            item.StatusVisible,
+		Delisted:                 item.Delisted,
 		AllowedUsers:             mapAllowedUsers(item.Edges.AllowedUsers),
 		SubscriptionType:         string(item.SubscriptionType),
 		Quotas:                   appgroupCloneQuotas(item.Quotas),

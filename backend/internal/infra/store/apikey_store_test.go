@@ -85,3 +85,41 @@ func TestAPIKeyStoreListAdminSearchScope(t *testing.T) {
 		}
 	})
 }
+
+func TestAPIKeyStoreGetGroupAccessRejectsDelistedGroup(t *testing.T) {
+	db := enttestOpen(t)
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close db: %v", err)
+		}
+	}()
+	ctx := context.Background()
+	user := createTestUser(t, db, "delisted-key-user@example.com")
+	normal := db.Group.Create().SetName("normal").SetPlatform("openai").SaveX(ctx)
+	delisted := db.Group.Create().SetName("delisted").SetPlatform("openai").SetDelisted(true).SaveX(ctx)
+	store := NewAPIKeyStore(db)
+
+	access, err := store.GetGroupAccess(ctx, user.ID, normal.ID)
+	if err != nil {
+		t.Fatalf("normal group access: %v", err)
+	}
+	if !access.Exists || !access.Allowed {
+		t.Fatalf("normal group access = %+v, want exists and allowed", access)
+	}
+
+	access, err = store.GetGroupAccess(ctx, user.ID, delisted.ID)
+	if err != nil {
+		t.Fatalf("delisted group access: %v", err)
+	}
+	if !access.Exists || access.Allowed {
+		t.Fatalf("delisted group access = %+v, want exists but forbidden", access)
+	}
+
+	access, err = store.GetGroupAccess(ctx, user.ID, 999999)
+	if err != nil {
+		t.Fatalf("missing group access: %v", err)
+	}
+	if access.Exists || access.Allowed {
+		t.Fatalf("missing group access = %+v, want not exists", access)
+	}
+}

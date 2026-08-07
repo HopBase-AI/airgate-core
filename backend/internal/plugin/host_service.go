@@ -764,6 +764,10 @@ func (h *HostService) listGroups(ctx context.Context, req hostListGroupsRequest)
 	}
 	q := h.db.Group.Query()
 	if req.PublicOnly {
+		// Public group discovery must follow the same lifecycle rule as the
+		// user-facing /groups endpoint: delisted groups remain visible to
+		// administrators through the unfiltered path, but never to users.
+		q = q.Where(group.DelistedEQ(false))
 		if req.UserID > 0 {
 			q = q.Where(group.Or(
 				group.StatusVisible(true),

@@ -234,6 +234,7 @@ var (
 		{Name: "rate_multiplier", Type: field.TypeFloat64, Default: 1},
 		{Name: "is_exclusive", Type: field.TypeBool, Default: false},
 		{Name: "status_visible", Type: field.TypeBool, Default: true},
+		{Name: "delisted", Type: field.TypeBool, Default: false},
 		{Name: "subscription_type", Type: field.TypeEnum, Enums: []string{"standard", "subscription"}, Default: "standard"},
 		{Name: "quotas", Type: field.TypeJSON, Nullable: true},
 		{Name: "model_routing", Type: field.TypeJSON, Nullable: true},

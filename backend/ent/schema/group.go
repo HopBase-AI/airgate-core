@@ -27,6 +27,13 @@ func (Group) Fields() []ent.Field {
 		// （比如仅限熟客的专属分组、调试中的分组等）。
 		// 隐藏仅影响公开状态页 (/status)，不影响 admin 视图和 API 鉴权逻辑。
 		field.Bool("status_visible").Default(true),
+		// delisted 标记分组已下架。下架后：
+		// - 用户可用分组列表不再显示（ListAvailable 过滤）
+		// - 不能新建 API Key 到该分组（GroupAccess 拒绝）
+		// - 自动路由不再选中（ListEligibleGroups 过滤）
+		// - 存量 API Key 继续可用（靠账号清空或 admin 手动停 Key 断流）
+		// 默认 false（未下架）。
+		field.Bool("delisted").Default(false),
 		field.Enum("subscription_type").Values("standard", "subscription").Default("standard"),
 		field.JSON("quotas", map[string]interface{}{}).Optional(),
 		field.JSON("model_routing", map[string][]int64{}).Optional(),

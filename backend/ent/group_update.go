@@ -122,6 +122,20 @@ func (gu *GroupUpdate) SetNillableStatusVisible(b *bool) *GroupUpdate {
 	return gu
 }
 
+// SetDelisted sets the "delisted" field.
+func (gu *GroupUpdate) SetDelisted(b bool) *GroupUpdate {
+	gu.mutation.SetDelisted(b)
+	return gu
+}
+
+// SetNillableDelisted sets the "delisted" field if the given value is not nil.
+func (gu *GroupUpdate) SetNillableDelisted(b *bool) *GroupUpdate {
+	if b != nil {
+		gu.SetDelisted(*b)
+	}
+	return gu
+}
+
 // SetSubscriptionType sets the "subscription_type" field.
 func (gu *GroupUpdate) SetSubscriptionType(gt group.SubscriptionType) *GroupUpdate {
 	gu.mutation.SetSubscriptionType(gt)
@@ -530,6 +544,9 @@ func (gu *GroupUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := gu.mutation.StatusVisible(); ok {
 		_spec.SetField(group.FieldStatusVisible, field.TypeBool, value)
 	}
+	if value, ok := gu.mutation.Delisted(); ok {
+		_spec.SetField(group.FieldDelisted, field.TypeBool, value)
+	}
 	if value, ok := gu.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeEnum, value)
 	}
@@ -905,6 +922,20 @@ func (guo *GroupUpdateOne) SetStatusVisible(b bool) *GroupUpdateOne {
 func (guo *GroupUpdateOne) SetNillableStatusVisible(b *bool) *GroupUpdateOne {
 	if b != nil {
 		guo.SetStatusVisible(*b)
+	}
+	return guo
+}
+
+// SetDelisted sets the "delisted" field.
+func (guo *GroupUpdateOne) SetDelisted(b bool) *GroupUpdateOne {
+	guo.mutation.SetDelisted(b)
+	return guo
+}
+
+// SetNillableDelisted sets the "delisted" field if the given value is not nil.
+func (guo *GroupUpdateOne) SetNillableDelisted(b *bool) *GroupUpdateOne {
+	if b != nil {
+		guo.SetDelisted(*b)
 	}
 	return guo
 }
@@ -1346,6 +1377,9 @@ func (guo *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error
 	}
 	if value, ok := guo.mutation.StatusVisible(); ok {
 		_spec.SetField(group.FieldStatusVisible, field.TypeBool, value)
+	}
+	if value, ok := guo.mutation.Delisted(); ok {
+		_spec.SetField(group.FieldDelisted, field.TypeBool, value)
 	}
 	if value, ok := guo.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeEnum, value)

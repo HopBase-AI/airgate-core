@@ -45,6 +45,12 @@ func TestListEligibleGroups(t *testing.T) {
 		SetRateMultiplier(0.1).
 		SetIsExclusive(true).
 		SaveX(ctx)
+	db.Group.Create().
+		SetName("delisted cheapest").
+		SetPlatform("openai").
+		SetRateMultiplier(0.01).
+		SetDelisted(true).
+		SaveX(ctx)
 	tieHighWeight := db.Group.Create().
 		SetName("tie high weight").
 		SetPlatform("openai").

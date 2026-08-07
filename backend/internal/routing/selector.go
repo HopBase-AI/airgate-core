@@ -32,7 +32,10 @@ type Candidate struct {
 
 func ListEligibleGroups(ctx context.Context, db *ent.Client, userID int, platform string, userGroupRates map[int64]float64, userGroupPluginSettings map[int64]map[string]map[string]string, requirements Requirements) ([]Candidate, error) {
 	groups, err := db.Group.Query().
-		Where(group.PlatformEQ(platform)).
+		Where(
+			group.PlatformEQ(platform),
+			group.DelistedEQ(false),
+		).
 		All(ctx)
 	if err != nil {
 		slog.Error("routing_load_failed",

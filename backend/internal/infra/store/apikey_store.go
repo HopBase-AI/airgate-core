@@ -118,6 +118,7 @@ func (s *APIKeyStore) GetGroupAccess(ctx context.Context, userID, groupID int) (
 	allowed, err := s.db.Group.Query().
 		Where(
 			entgroup.IDEQ(groupID),
+			entgroup.DelistedEQ(false),
 			entgroup.Or(
 				entgroup.IsExclusiveEQ(false),
 				entgroup.And(

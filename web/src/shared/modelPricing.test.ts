@@ -44,6 +44,7 @@ describe('groupUSDMultiplierForDisplay', () => {
     rate_multiplier: 0.6,
     is_exclusive: false,
     status_visible: true,
+    delisted: false,
     subscription_type: 'standard',
     model_routing: { 'gpt-*': [11] },
     sort_weight: 0,
