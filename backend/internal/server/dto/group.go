@@ -9,8 +9,8 @@ type GroupResp struct {
 	Platform          string                       `json:"platform"`
 	RateMultiplier    float64                      `json:"rate_multiplier"`
 	IsExclusive       bool                         `json:"is_exclusive"`
-	StatusVisible     bool                         `json:"status_visible"` // 是否在公开 /status 页展示
-	Delisted          bool                         `json:"delisted"`       // 是否已下架
+	StatusVisible     bool                         `json:"status_visible"`    // 是否在公开 /status 页展示
+	Delisted          bool                         `json:"delisted"`          // 是否已下架
 	SubscriptionType  string                       `json:"subscription_type"` // standard / subscription
 	Quotas            map[string]interface{}       `json:"quotas,omitempty"`  // 日/周/月限额
 	ModelRouting      map[string][]int64           `json:"model_routing,omitempty"`
