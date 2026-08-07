@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	entaccount "github.com/DouDOU-start/airgate-core/ent/account"
+	entgroup "github.com/DouDOU-start/airgate-core/ent/group"
 	appaccount "github.com/DouDOU-start/airgate-core/internal/app/account"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 )
@@ -87,6 +88,112 @@ func TestGroupStoreVisibility(t *testing.T) {
 	}
 	if got[vip.ID] || got[adminOnly.ID] {
 		t.Fatalf("bob should only see public group, got ids %v", got)
+	}
+}
+
+func TestGroupStoreDelistedVisibilityAndPersistence(t *testing.T) {
+	db := enttestOpen(t)
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close db: %v", err)
+		}
+	}()
+	ctx := context.Background()
+	store := NewGroupStore(db)
+	viewer := createTestUser(t, db, "delisted-viewer@example.com")
+
+	public := mustCreateGroup(t, store, appgroup.CreateInput{
+		Name: "public", Platform: "openai", RateMultiplier: 1,
+		StatusVisible: true, SubscriptionType: "standard",
+	})
+	delisted := mustCreateGroup(t, store, appgroup.CreateInput{
+		Name: "delisted", Platform: "openai", RateMultiplier: 0.5,
+		StatusVisible: true, Delisted: true, SubscriptionType: "standard",
+	})
+	if !delisted.Delisted {
+		t.Fatal("create should persist delisted=true")
+	}
+
+	available, total, err := store.ListAvailable(ctx, appgroup.AvailableFilter{
+		UserID: viewer.ID, Page: 1, PageSize: 50,
+	})
+	if err != nil {
+		t.Fatalf("list available: %v", err)
+	}
+	if total != 1 || len(available) != 1 || available[0].ID != public.ID {
+		t.Fatalf("available groups = %+v (total %d), want only public group %d", available, total, public.ID)
+	}
+
+	adminList, total, err := store.List(ctx, appgroup.ListFilter{Page: 1, PageSize: 50})
+	if err != nil {
+		t.Fatalf("list admin groups: %v", err)
+	}
+	if total != 2 || !groupIDSet(adminList)[delisted.ID] {
+		t.Fatalf("admin groups = %+v (total %d), want delisted group retained", adminList, total)
+	}
+	for _, item := range adminList {
+		if item.ID == delisted.ID && !item.Delisted {
+			t.Fatal("admin list lost delisted flag")
+		}
+	}
+
+	falseValue := false
+	restored, err := store.Update(ctx, delisted.ID, appgroup.UpdateInput{Delisted: &falseValue})
+	if err != nil {
+		t.Fatalf("restore delisted group: %v", err)
+	}
+	if restored.Delisted {
+		t.Fatal("update delisted=false was not persisted")
+	}
+	available, total, err = store.ListAvailable(ctx, appgroup.AvailableFilter{
+		UserID: viewer.ID, Page: 1, PageSize: 50,
+	})
+	if err != nil {
+		t.Fatalf("list available after restore: %v", err)
+	}
+	if total != 2 || len(available) != 2 {
+		t.Fatalf("available groups after restore = %+v (total %d), want both groups", available, total)
+	}
+}
+
+func TestGroupStoreCopyCreatePersistsDelistedAndCopiesAccounts(t *testing.T) {
+	db := enttestOpen(t)
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close db: %v", err)
+		}
+	}()
+	ctx := context.Background()
+	store := NewGroupStore(db)
+
+	source := mustCreateGroup(t, store, appgroup.CreateInput{
+		Name: "source", Platform: "openai", RateMultiplier: 1,
+		StatusVisible: true, SubscriptionType: "standard",
+	})
+	if _, err := db.Account.Create().
+		SetName("copied-account").
+		SetPlatform("openai").
+		SetType("apikey").
+		SetCredentials(map[string]string{"api_key": "placeholder"}).
+		AddGroupIDs(source.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create source account: %v", err)
+	}
+
+	target := mustCreateGroup(t, store, appgroup.CreateInput{
+		Name: "delisted copy", Platform: "openai", RateMultiplier: 1,
+		StatusVisible: true, Delisted: true, SubscriptionType: "standard",
+		CopyAccountsFromGroupIDs: []int{source.ID},
+	})
+	if !target.Delisted {
+		t.Fatal("copy create should persist delisted=true")
+	}
+	count, err := db.Account.Query().Where(entaccount.HasGroupsWith(entgroup.IDEQ(target.ID))).Count(ctx)
+	if err != nil {
+		t.Fatalf("count copied accounts: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("copied account count = %d, want 1", count)
 	}
 }
 

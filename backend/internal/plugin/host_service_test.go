@@ -638,6 +638,27 @@ func TestListGroupsEligibleOnly(t *testing.T) {
 	}
 }
 
+func TestListGroupsPublicOnlyExcludesDelisted(t *testing.T) {
+	ctx := context.Background()
+	db := enttest.Open(t, "sqlite3", "file:list_groups_public_delisted?mode=memory&cache=shared&_fk=1", enttest.WithMigrateOptions(schema.WithGlobalUniqueID(false)))
+	t.Cleanup(func() { _ = db.Close() })
+
+	u := db.User.Create().SetEmail("public-groups@example.com").SetPasswordHash("hash").SaveX(ctx)
+	visible := db.Group.Create().SetName("visible").SetPlatform("openai").SetStatusVisible(true).SaveX(ctx)
+	delisted := db.Group.Create().SetName("delisted").SetPlatform("openai").SetStatusVisible(true).SetDelisted(true).SaveX(ctx)
+	db.Group.Create().SetName("status-hidden").SetPlatform("openai").SetStatusVisible(false).SaveX(ctx)
+
+	host := &HostService{db: db}
+	resp, err := host.listGroups(ctx, hostListGroupsRequest{PublicOnly: true, UserID: int64(u.ID)})
+	if err != nil {
+		t.Fatalf("listGroups public_only: %v", err)
+	}
+	items := resp["groups"].([]map[string]interface{})
+	if len(items) != 1 || items[0]["id"].(int64) != int64(visible.ID) {
+		t.Fatalf("public groups = %v, want only visible group %d (delisted %d excluded)", items, visible.ID, delisted.ID)
+	}
+}
+
 func TestListGroupsEligibleOnlyFiltersByModelSchedulability(t *testing.T) {
 	ctx := context.Background()
 	db := enttest.Open(t, "sqlite3", "file:list_groups_eligible_model?mode=memory&cache=shared&_fk=1", enttest.WithMigrateOptions(schema.WithGlobalUniqueID(false)))
