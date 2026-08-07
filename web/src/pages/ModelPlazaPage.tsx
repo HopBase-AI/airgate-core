@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button, Chip, Input, Skeleton } from '@heroui/react';
-import { Check, Copy, Database, RefreshCw, Search, WifiOff } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy, Database, RefreshCw, Search, WifiOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../shared/api/models';
 import { settingsApi } from '../shared/api/settings';
@@ -10,7 +10,13 @@ import { queryKeys } from '../shared/queryKeys';
 import { localizedGroupText } from '../shared/groupText';
 import { useToast } from '../shared/ui';
 import { useAuth } from '../app/providers/AuthProvider';
-import { mergeCatalog, type ModelLedgerItem } from './modelPlazaCatalog';
+import {
+  CATEGORY_ORDER,
+  groupBySeries,
+  mergeCatalog,
+  type ModelLedgerItem,
+  type SeriesGroup,
+} from './modelPlazaCatalog';
 import {
   formatModelPrice,
   hasFixedImagePricingBuckets,
@@ -378,8 +384,13 @@ export default function ModelPlazaPage() {
   const { toast } = useToast();
   const { isAPIKeySession } = useAuth();
   const [search, setSearch] = useState('');
+  // 三层导航：L1 用途大类（Tab）→ L2 厂商（chips）→ L3 系列折叠。
+  // platformFilter 是正交的第四轴「接入渠道」，从主轴降级为次级筛选。
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [vendorFilter, setVendorFilter] = useState('all');
   const [platformFilter, setPlatformFilter] = useState('all');
   const [capabilityFilter, setCapabilityFilter] = useState('all');
+  const [expandedSeries, setExpandedSeries] = useState<ReadonlySet<string>>(() => new Set());
   const [copiedID, setCopiedID] = useState<string | null>(null);
 
   // 首选登录态实付价视图。普通账号失败时可回退公开目录；API Key
@@ -444,6 +455,21 @@ export default function ModelPlazaPage() {
     () => [...new Set(models.flatMap((model) => model.capabilities))],
     [models],
   );
+  // L1 大类：只列目录里真实存在的类，按 CATEGORY_ORDER 固定顺序并带计数。
+  const categories = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const model of models) counts.set(model.categoryKey, (counts.get(model.categoryKey) ?? 0) + 1);
+    return CATEGORY_ORDER
+      .filter((key) => counts.has(key))
+      .map((key) => ({ key, count: counts.get(key) ?? 0 }));
+  }, [models]);
+  // L2 厂商：跟随已选大类收敛，避免列出当前大类下不存在的厂商。
+  const vendors = useMemo(() => {
+    const scoped = categoryFilter === 'all'
+      ? models
+      : models.filter((model) => model.categoryKey === categoryFilter);
+    return [...new Set(scoped.map((model) => model.vendorKey))].sort((left, right) => left.localeCompare(right));
+  }, [categoryFilter, models]);
   const filteredModels = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase();
     return models.filter((model) => {
@@ -451,12 +477,50 @@ export default function ModelPlazaPage() {
         || model.id.toLocaleLowerCase().includes(needle)
         || model.name?.toLocaleLowerCase().includes(needle);
       return matchesSearch
+        && (categoryFilter === 'all' || model.categoryKey === categoryFilter)
+        && (vendorFilter === 'all' || model.vendorKey === vendorFilter)
         && (platformFilter === 'all' || model.brands.includes(platformFilter))
         && (capabilityFilter === 'all' || model.capabilities.includes(capabilityFilter));
     });
-  }, [capabilityFilter, models, platformFilter, search]);
+  }, [capabilityFilter, categoryFilter, models, platformFilter, search, vendorFilter]);
+  const seriesGroups = useMemo(() => groupBySeries(filteredModels), [filteredModels]);
+  // 搜索时强制摊平：命中项藏在收起的系列卡里等于「搜了个寂寞」。
+  const searching = search.trim().length > 0;
+  const visibleRows = useMemo(() => {
+    const rows: Array<
+      | { kind: 'model'; model: ModelLedgerItem; nested: boolean }
+      | { kind: 'series'; group: SeriesGroup }
+    > = [];
+    for (const group of seriesGroups) {
+      if (!group.folded || searching) {
+        for (const model of group.items) rows.push({ kind: 'model', model, nested: false });
+        continue;
+      }
+      rows.push({ kind: 'series', group });
+      if (expandedSeries.has(group.key)) {
+        for (const model of group.items) rows.push({ kind: 'model', model, nested: true });
+      }
+    }
+    return rows;
+  }, [expandedSeries, searching, seriesGroups]);
+
+  function toggleSeries(key: string) {
+    setExpandedSeries((current) => {
+      const next = new Set(current);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  }
+
+  // 选大类时清掉厂商选择：厂商列表随大类收敛，留着旧值会筛出空结果。
+  function selectCategory(key: string) {
+    setCategoryFilter(key);
+    setVendorFilter('all');
+  }
 
   function clearFilters() {
+    setCategoryFilter('all');
+    setVendorFilter('all');
     setPlatformFilter('all');
     setCapabilityFilter('all');
   }
@@ -502,19 +566,52 @@ export default function ModelPlazaPage() {
               onChange={(event) => setSearch(event.target.value)}
             />
           </div>
-          <div className="ag-model-filter-group" aria-label={t('model_plaza.platform_filter')} role="group">
-            {['all', ...brands].map((brand) => (
+          <div className="ag-model-category-tabs" aria-label={t('model_plaza.category_filter')} role="group">
+            <Button
+              aria-pressed={categoryFilter === 'all'}
+              size="sm"
+              variant={categoryFilter === 'all' ? 'primary' : 'secondary'}
+              onPress={() => selectCategory('all')}
+            >
+              {t('common.all')}
+            </Button>
+            {categories.map(({ key, count }) => (
               <Button
-                key={brand}
-                aria-pressed={platformFilter === brand}
+                key={key}
+                aria-pressed={categoryFilter === key}
                 size="sm"
-                variant={platformFilter === brand ? 'primary' : 'secondary'}
-                onPress={() => setPlatformFilter(brand)}
+                variant={categoryFilter === key ? 'primary' : 'secondary'}
+                onPress={() => selectCategory(key)}
               >
-                {brand === 'all' ? t('common.all') : t(`model_plaza.source_${brand}`, brand)}
+                {t(`model_plaza.category_${key}`, key)}
+                <span className="ag-model-tab-count">{count}</span>
               </Button>
             ))}
           </div>
+          <div className="ag-model-filter-group" aria-label={t('model_plaza.vendor_filter')} role="group">
+            {['all', ...vendors].map((vendor) => (
+              <Button
+                key={vendor}
+                aria-pressed={vendorFilter === vendor}
+                size="sm"
+                variant={vendorFilter === vendor ? 'primary' : 'secondary'}
+                onPress={() => setVendorFilter(vendor)}
+              >
+                {vendor === 'all' ? t('model_plaza.vendor_all') : t(`model_plaza.vendor_${vendor}`, vendor)}
+              </Button>
+            ))}
+          </div>
+          <label className="ag-model-capability-filter">
+            <span>{t('model_plaza.platform_filter')}</span>
+            <select value={platformFilter} onChange={(event) => setPlatformFilter(event.target.value)}>
+              <option value="all">{t('common.all')}</option>
+              {brands.map((brand) => (
+                <option key={brand} value={brand}>
+                  {t(`model_plaza.source_${brand}`, brand)}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="ag-model-capability-filter">
             <span>{t('model_plaza.capability_filter')}</span>
             <select value={capabilityFilter} onChange={(event) => setCapabilityFilter(event.target.value)}>
@@ -533,7 +630,7 @@ export default function ModelPlazaPage() {
         <div className="ag-model-stat-strip" aria-live="polite">
           <span>{t('model_plaza.stat_all')} <strong>{models.length}</strong></span>
           <span>{t('model_plaza.stat_results')} <strong>{filteredModels.length}</strong></span>
-          <span>{t('model_plaza.stat_platforms')} <strong>{brands.length}</strong></span>
+          <span>{t('model_plaza.stat_vendors')} <strong>{vendors.length}</strong></span>
           {personalPricingFallback ? (
             <span className="ag-model-price-fallback">{t('model_plaza.personal_price_notice')}</span>
           ) : pricingFallback ? (
@@ -583,7 +680,47 @@ export default function ModelPlazaPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredModels.map((model) => {
+              {visibleRows.map((row) => {
+                if (row.kind === 'series') {
+                  const { group } = row;
+                  const expanded = expandedSeries.has(group.key);
+                  const channels = [...new Set(group.items.flatMap((item) => item.brands))];
+                  const seriesCapabilities = [...new Set(group.items.flatMap((item) => item.capabilities))];
+                  return (
+                    <tr key={group.key} className="ag-model-series-row">
+                      <td data-label={t('model_plaza.model')}>
+                        <Button
+                          aria-expanded={expanded}
+                          className="ag-model-series-toggle"
+                          size="sm"
+                          variant="ghost"
+                          onPress={() => toggleSeries(group.key)}
+                        >
+                          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          <span>{t(`model_plaza.series_${group.series}`, group.series)}</span>
+                        </Button>
+                      </td>
+                      <td data-label={t('model_plaza.platform_capability')}>
+                        <div className="ag-model-tags">
+                          <div>{channels.map((brand) => <Chip key={brand} size="sm" variant="soft">{t(`model_plaza.source_${brand}`, brand)}</Chip>)}</div>
+                          <p>{seriesCapabilities.length
+                            ? seriesCapabilities.map((capability) => t(`model_plaza.capability_${capability}`, capability)).join(' · ')
+                            : t('model_plaza.capabilities_none')}</p>
+                        </div>
+                      </td>
+                      <td data-label={t('model_plaza.context')}>
+                        <span className="ag-model-context">{t('model_plaza.series_versions', { count: group.items.length })}</span>
+                      </td>
+                      {/* 收起态刻意不展示价格：同系列各版本价差很大，给单一数字会误导。 */}
+                      <td data-label={t('model_plaza.series_price_hint')}>
+                        <Button size="sm" variant="secondary" onPress={() => toggleSeries(group.key)}>
+                          {expanded ? t('model_plaza.series_collapse') : t('model_plaza.series_expand')}
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                }
+                const { model, nested } = row;
                 const video = isVideoModel(model) ? resolveVideoPrices(model, pricingConfig, userMode, plazaCurrency, t) : null;
                 const fixedImage = userMode
                   ? resolveFixedImageTierPrices(model, fx, plazaCurrency).map(({ tier, sale, billingMode }) => ({
@@ -602,7 +739,7 @@ export default function ModelPlazaPage() {
                 const price = bucketPrices ? null : (userMode ? resolveUserPrice(model, fx, plazaCurrency) : resolveStandardPrice(model, pricingConfig));
                 const officialOnly = bucketPrices ? (bucketPrices[0]?.officialOnly ?? true) : price!.officialOnly;
                 return (
-                  <tr key={`${model.platform}:${model.id}`}>
+                  <tr key={`${model.platform}:${model.id}`} className={nested ? 'ag-model-series-child' : undefined}>
                     <td data-label={t('model_plaza.model')}>
                       <div className="ag-model-id-spine">
                         <div><code>{model.id}</code>{model.name ? <p>{model.name}</p> : <span className="sr-only">{t('model_plaza.name_missing')}</span>}</div>

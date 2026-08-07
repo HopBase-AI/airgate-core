@@ -30,6 +30,12 @@ export interface PublicPricingModel {
   capabilities?: string[];
   // 厂商标识(如 google/openai):平台是接入协议,vendor 是模型出品方;缺省=展示端回退平台名。
   vendor?: string;
+  // 系列标识(如 gpt-5/claude-opus/kling-3):模型广场据此把同系列多版本折叠成一张卡。
+  // 与调度侧 family(账号家族冷却)无关;缺省=不折叠、单独成行。
+  series?: string;
+  // 一级大类:video/image/audio/embedding/chat。由 core 按能力统一推导下发，
+  // 控制台/主站/ToC 站群共用同一口径，展示端不要自行再推一遍;缺省=归"其他"。
+  category?: string;
   // input/cached_input/output 是计费基准价（余额单位 / 1M tokens，¥1=$1 平价；常规模型即官方美元价）。
   input: number;
   cached_input?: number;

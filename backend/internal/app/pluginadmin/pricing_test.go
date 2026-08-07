@@ -302,3 +302,182 @@ func TestPublicModelPricingImageBuckets(t *testing.T) {
 		})
 	}
 }
+
+// TestPublicModelPricingTaxonomy 分类三字段（vendor / series / capabilities）的来源与覆盖：
+// 内置侧读插件 metadata 约定键 vendor/series，能力来自 manifest；
+// 覆盖层可补插件漏标的三者，capabilities 是整体替换而非追加。
+func TestPublicModelPricingTaxonomy(t *testing.T) {
+	manager := &fakeCatalogManager{
+		metas: []plugin.PluginMeta{{Name: "airgate-openai", Type: "gateway", Platform: "openai"}},
+		models: map[string][]sdk.ModelInfo{
+			"openai": {
+				{
+					ID: "gpt-5.5", Name: "GPT 5.5",
+					Capabilities: []string{"chat"},
+					Metadata: map[string]string{
+						"price.input": "5", "price.output": "30",
+						"vendor": "openai", "series": "gpt-5",
+					},
+				},
+				{
+					ID: "no-taxonomy", Name: "插件未声明厂商与系列",
+					Metadata: map[string]string{"price.input": "1", "price.output": "2"},
+				},
+			},
+		},
+	}
+	svc := NewService(manager, nil)
+
+	byID := func(models []PublicPricingModel, id string) PublicPricingModel {
+		t.Helper()
+		for _, m := range models {
+			if m.ID == id {
+				return m
+			}
+		}
+		t.Fatalf("model %s not found in %+v", id, models)
+		return PublicPricingModel{}
+	}
+
+	cases := []struct {
+		name    string
+		overlay string
+		verify  func(t *testing.T, models []PublicPricingModel)
+	}{
+		{
+			name:    "内置 metadata 提供 vendor/series，未声明者留空",
+			overlay: "",
+			verify: func(t *testing.T, models []PublicPricingModel) {
+				got := byID(models, "gpt-5.5")
+				if got.Vendor != "openai" || got.Series != "gpt-5" {
+					t.Fatalf("vendor/series = %q/%q", got.Vendor, got.Series)
+				}
+				if bare := byID(models, "no-taxonomy"); bare.Vendor != "" || bare.Series != "" {
+					t.Fatalf("未声明模型应留空，got %q/%q", bare.Vendor, bare.Series)
+				}
+			},
+		},
+		{
+			name:    "覆盖层补齐插件漏标的 vendor/series/capabilities",
+			overlay: `[{"id":"no-taxonomy","vendor":"anthropic","series":"claude-opus","capabilities":["chat","reasoning"]}]`,
+			verify: func(t *testing.T, models []PublicPricingModel) {
+				got := byID(models, "no-taxonomy")
+				if got.Vendor != "anthropic" || got.Series != "claude-opus" {
+					t.Fatalf("vendor/series = %q/%q", got.Vendor, got.Series)
+				}
+				if len(got.Capabilities) != 2 || got.Capabilities[0] != "chat" || got.Capabilities[1] != "reasoning" {
+					t.Fatalf("capabilities = %v", got.Capabilities)
+				}
+			},
+		},
+		{
+			name:    "capabilities 是整体替换而非追加",
+			overlay: `[{"id":"gpt-5.5","capabilities":["image_generation"]}]`,
+			verify: func(t *testing.T, models []PublicPricingModel) {
+				got := byID(models, "gpt-5.5")
+				if len(got.Capabilities) != 1 || got.Capabilities[0] != "image_generation" {
+					t.Fatalf("capabilities = %v", got.Capabilities)
+				}
+			},
+		},
+		{
+			name:    "覆盖层不写这三者时保留内置值",
+			overlay: `[{"id":"gpt-5.5","name":"GPT 5.5 改名"}]`,
+			verify: func(t *testing.T, models []PublicPricingModel) {
+				got := byID(models, "gpt-5.5")
+				if got.Name != "GPT 5.5 改名" {
+					t.Fatalf("name = %q", got.Name)
+				}
+				if got.Vendor != "openai" || got.Series != "gpt-5" {
+					t.Fatalf("vendor/series 被覆盖成 %q/%q", got.Vendor, got.Series)
+				}
+				if len(got.Capabilities) != 1 || got.Capabilities[0] != "chat" {
+					t.Fatalf("capabilities = %v", got.Capabilities)
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc.SetModelOverlayReader(func(ctx context.Context, platform string) (string, error) {
+				return tc.overlay, nil
+			})
+			result := svc.PublicModelPricing(context.Background())
+			if len(result) != 1 || result[0].Platform != "openai" {
+				t.Fatalf("result = %+v", result)
+			}
+			tc.verify(t, result[0].Models)
+		})
+	}
+}
+
+// TestCategoryOf 一级大类推导：多能力时按 视频 > 图像 > 音频 > 嵌入 > 对话 取主用途。
+func TestCategoryOf(t *testing.T) {
+	cases := []struct {
+		name         string
+		capabilities []string
+		want         string
+	}{
+		{"纯对话", []string{"chat"}, CategoryChat},
+		{"推理归对话类", []string{"reasoning", "thinking"}, CategoryChat},
+		{"生图", []string{"image_generation"}, CategoryImage},
+		{"仅图片编辑也归图像", []string{"image_edit"}, CategoryImage},
+		{"生视频", []string{"video_generation"}, CategoryVideo},
+		{"视频优先于图像", []string{"image_generation", "video_generation"}, CategoryVideo},
+		{"图像优先于对话", []string{"chat", "image_generation"}, CategoryImage},
+		{"语音", []string{"tts"}, CategoryAudio},
+		{"嵌入", []string{"embedding"}, CategoryEmbedding},
+		{"大小写与空白容错", []string{" Video_Generation "}, CategoryVideo},
+		{"无能力", nil, ""},
+		{"未知能力", []string{"telepathy"}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := categoryOf(tc.capabilities); got != tc.want {
+				t.Fatalf("categoryOf(%v) = %q, want %q", tc.capabilities, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestPublicModelPricingCategory 大类随覆盖层改写的 capabilities 重算，
+// 覆盖层显式钉 category 时不再推导。
+func TestPublicModelPricingCategory(t *testing.T) {
+	manager := &fakeCatalogManager{
+		metas: []plugin.PluginMeta{{Name: "airgate-openai", Type: "gateway", Platform: "openai"}},
+		models: map[string][]sdk.ModelInfo{
+			"openai": {
+				{
+					ID: "gpt-5.5", Name: "GPT 5.5", Capabilities: []string{"chat"},
+					Metadata: map[string]string{"price.input": "5", "price.output": "30"},
+				},
+			},
+		},
+	}
+	svc := NewService(manager, nil)
+
+	cases := []struct {
+		name    string
+		overlay string
+		want    string
+	}{
+		{"内置能力推导", "", CategoryChat},
+		{"覆盖层改能力后重算", `[{"id":"gpt-5.5","capabilities":["video_generation"]}]`, CategoryVideo},
+		{"覆盖层钉死大类", `[{"id":"gpt-5.5","category":"embedding"}]`, CategoryEmbedding},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc.SetModelOverlayReader(func(ctx context.Context, platform string) (string, error) {
+				return tc.overlay, nil
+			})
+			result := svc.PublicModelPricing(context.Background())
+			if len(result) != 1 || len(result[0].Models) != 1 {
+				t.Fatalf("result = %+v", result)
+			}
+			if got := result[0].Models[0].Category; got != tc.want {
+				t.Fatalf("category = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
