@@ -24,13 +24,17 @@ type usageFailure struct {
 // failureFromOutcome 由转发判决推导失败信息。message 取判决 Reason（缺失时回退
 // 插件 error），status 优先取上游真实状态码，没有则按 Core 对外响应口径回退。
 func failureFromOutcome(execution forwardExecution) usageFailure {
+	status := recordedFailureStatus(execution)
 	code := execution.outcome.Kind.String()
 	if execution.err != nil && execution.outcome.Kind == sdk.OutcomeUnknown {
 		code = appusage.ErrorCodePluginError
 	}
+	if status == http.StatusGatewayTimeout {
+		code = appusage.ErrorCodeUpstreamTimeout
+	}
 	return usageFailure{
 		code:    code,
-		status:  recordedFailureStatus(execution),
+		status:  status,
 		message: judgmentReason(execution),
 	}
 }
