@@ -18,7 +18,13 @@ type PublicPricingModelResp struct {
 	ContextWindow int      `json:"context_window,omitempty"`
 	Capabilities  []string `json:"capabilities,omitempty"`
 	// Vendor 模型厂商标识(如 google/openai/anthropic);空=插件未声明,展示端回退平台名。
-	Vendor      string                     `json:"vendor,omitempty"`
+	Vendor string `json:"vendor,omitempty"`
+	// Series 模型系列标识(如 gpt-5/claude-opus/kling-3),供模型广场折叠同系列多版本。
+	// 与调度侧 family(账号家族冷却)语义无关,勿混用;空=不折叠。
+	Series string `json:"series,omitempty"`
+	// Category 一级大类:video/image/audio/embedding/chat。由 core 统一按能力推导下发,
+	// 模型广场、主站价格表、ToC 站群共用同一口径;空=能力未标注,展示端归"其他"。
+	Category    string                     `json:"category,omitempty"`
 	Input       float64                    `json:"input"`
 	CachedInput float64                    `json:"cached_input,omitempty"`
 	Output      float64                    `json:"output"`

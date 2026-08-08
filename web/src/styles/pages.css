@@ -87,6 +87,29 @@
   padding-left: 2.25rem !important;
 }
 
+/* L1 用途大类：占满一行做主轴，与其下的厂商/渠道次级筛选拉开层级。 */
+.ag-model-category-tabs {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+  padding-bottom: 0.5rem;
+}
+
+.ag-model-category-tabs .button {
+  min-height: 2.25rem;
+}
+
+.ag-model-tab-count {
+  margin-left: 0.375rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, currentColor 16%, transparent);
+  padding: 0 0.375rem;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .ag-model-filter-group {
   display: flex;
   min-width: 0;
@@ -719,4 +742,21 @@
 
 .ag-create-account-group-item [data-slot="checkbox-content"] {
   min-width: 0;
+}
+
+/* L3 系列折叠：系列行是导航而非数据行，弱化背景；展开的子行左侧留缩进轴。 */
+.ag-model-series-row > td {
+  background: color-mix(in oklab, var(--surface) 92%, var(--border));
+}
+
+.ag-model-series-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-weight: 600;
+}
+
+.ag-model-series-child > td:first-child {
+  box-shadow: inset 0.1875rem 0 0 color-mix(in oklab, var(--border) 80%, transparent);
+  padding-left: 1.25rem;
 }

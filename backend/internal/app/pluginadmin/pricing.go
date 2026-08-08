@@ -28,6 +28,17 @@ type PublicPricingModel struct {
 	// 网关平台是接入协议(如 gemini 系经 openai 协议转发),厂商是模型出品方;
 	// 空值表示插件未声明,展示端回退平台名。
 	Vendor string
+	// Series 模型系列标识(插件 metadata 约定键 "series",如 gpt-5/claude-opus/kling-3)。
+	// 纯展示用:模型广场据此把同系列的多个版本折叠成一张卡,避免长表淹没用户。
+	//
+	// ⚠️ 与调度侧 Metadata 约定键 "family" 语义不同——family 是账号家族冷却(scheduler),
+	// 两者不可互相复用。空值表示插件未声明,展示端不折叠、按单模型平铺。
+	Series string
+	// Category 展示用一级大类,由 Capabilities 推导(见 categoryOf),覆盖层可显式指定。
+	//
+	// 由 core 统一下发而非各展示端自行推导:模型广场/主站价格表/ToC 站群三处消费同一份
+	// 目录,分类逻辑分散会漂移。取值见 categoryOf 的枚举;能力缺失时为空,展示端归"其他"。
+	Category string
 	// 计费基准价：余额单位（¥1=$1 平价）/ 百万 token。绝大多数模型基准价即官方美元价；
 	// Currency=CNY 的模型（如 GLM）基准价是官方人民币牌价数字按 1:1 记账，展示端须按
 	// Currency 换算，不能直接当美元标注。
@@ -84,6 +95,13 @@ type overlayModel struct {
 	Vendor        string          `json:"vendor"`
 	Kind          string          `json:"kind"`
 	Pricing       json.RawMessage `json:"pricing"`
+	// Series 模型系列（展示折叠用，见 PublicPricingModel.Series）。
+	Series string `json:"series"`
+	// Category 一级大类，显式指定时不再由能力推导（供能力标注一时补不齐的模型救急）。
+	Category string `json:"category"`
+	// Capabilities 能力标签整体替换（非追加）。插件漏标能力时由运营侧补，
+	// 空数组不生效（要清空能力请显式写 ["none"] 之外的合法值或停用该条目）。
+	Capabilities []string `json:"capabilities"`
 	// Currency 基准价货币口径（"CNY" 表示官方人民币牌价按 1:1 记账），
 	// OfficialPricing 官方直付参考价（美元，键 input/cached_input/output）。
 	// 两者只影响展示换算，插件计费侧不读取。
@@ -136,6 +154,13 @@ func (s *Service) PublicModelPricing(ctx context.Context) []PublicPlatformPricin
 			models = append(models, parsed)
 		}
 		models = s.applyOverlay(ctx, item.Platform, models, index)
+		// 大类在覆盖层合并之后推导：覆盖层可能改写 capabilities，
+		// 也可能直接钉一个 category（此时不再推导）。
+		for i := range models {
+			if models[i].Category == "" {
+				models[i].Category = categoryOf(models[i].Capabilities)
+			}
+		}
 		if len(models) > 0 {
 			result = append(result, PublicPlatformPricing{Platform: item.Platform, Models: models})
 		}
@@ -192,13 +217,25 @@ func (s *Service) applyOverlay(ctx context.Context, platform string, models []Pu
 		if entry.Vendor != "" {
 			target.Vendor = entry.Vendor
 		}
+		if entry.Series != "" {
+			target.Series = entry.Series
+		}
+		if len(entry.Capabilities) > 0 {
+			target.Capabilities = append([]string(nil), entry.Capabilities...)
+		}
+		if entry.Category != "" {
+			target.Category = entry.Category
+		}
 		// 图片模型：基座已有按张桶价，或新增条目显式声明 kind=image。
 		// 桶价 map 逐桶覆盖（价>0 覆盖、=0 收回该桶），忽略 token/长上下文字段。
 		if target.Image != nil || strings.EqualFold(entry.Kind, "image") {
 			if len(pricing) > 0 {
 				if target.Image == nil {
 					target.Image = make(map[string]float64, len(pricing))
-					target.Capabilities = []string{"image_generation"}
+					// 新增图片条目的默认能力；覆盖层已显式声明 capabilities 时不覆写。
+					if len(target.Capabilities) == 0 {
+						target.Capabilities = []string{"image_generation"}
+					}
 				}
 				for bucket, price := range pricing {
 					bucket = strings.TrimPrefix(bucket, "image_")
@@ -263,6 +300,48 @@ func (s *Service) applyOverlay(ctx context.Context, platform string, models []Pu
 	return kept
 }
 
+// 一级大类枚举（对外契约，展示端按此值取文案，勿随意改字面量）。
+const (
+	CategoryVideo     = "video"
+	CategoryImage     = "image"
+	CategoryAudio     = "audio"
+	CategoryEmbedding = "embedding"
+	CategoryChat      = "chat"
+)
+
+// categoryCapabilities 大类 → 归属该类的能力标签。顺序即优先级：
+// 一个模型可同时具备多种能力（如生视频模型附带生图），取最靠前者作为主用途。
+// 视频/图像/音频这类生成型能力比通用对话更能代表模型定位，故排在 chat 之前。
+var categoryCapabilities = []struct {
+	category     string
+	capabilities []string
+}{
+	{CategoryVideo, []string{"video_generation"}},
+	{CategoryImage, []string{"image_generation", "image_edit"}},
+	{CategoryAudio, []string{"audio_generation", "tts", "stt"}},
+	{CategoryEmbedding, []string{"embedding"}},
+	{CategoryChat, []string{"chat", "reasoning", "thinking", "code_execution"}},
+}
+
+// categoryOf 由能力标签推导一级大类；无可识别能力返回空串（展示端归"其他"）。
+func categoryOf(capabilities []string) string {
+	if len(capabilities) == 0 {
+		return ""
+	}
+	owned := make(map[string]bool, len(capabilities))
+	for _, c := range capabilities {
+		owned[strings.ToLower(strings.TrimSpace(c))] = true
+	}
+	for _, group := range categoryCapabilities {
+		for _, c := range group.capabilities {
+			if owned[c] {
+				return group.category
+			}
+		}
+	}
+	return ""
+}
+
 // parseBuiltinPricing 把插件上报的 price.*/long_context.* metadata 解析为公开定价。
 // 无任何桶价且无 price.input/price.output 视为"无价格提示"（老插件），跳过。
 func parseBuiltinPricing(id, name string, contextWindow int, capabilities []string, metadata map[string]string) (PublicPricingModel, bool) {
@@ -274,6 +353,7 @@ func parseBuiltinPricing(id, name string, contextWindow int, capabilities []stri
 			ContextWindow: contextWindow,
 			Capabilities:  append([]string(nil), capabilities...),
 			Vendor:        metadata["vendor"],
+			Series:        metadata["series"],
 			Image:         buckets,
 		}, true
 	}
@@ -285,6 +365,7 @@ func parseBuiltinPricing(id, name string, contextWindow int, capabilities []stri
 			ContextWindow: contextWindow,
 			Capabilities:  append([]string(nil), capabilities...),
 			Vendor:        metadata["vendor"],
+			Series:        metadata["series"],
 			VideoTokens:   buckets,
 		}, true
 	}
@@ -300,6 +381,7 @@ func parseBuiltinPricing(id, name string, contextWindow int, capabilities []stri
 		ContextWindow: contextWindow,
 		Capabilities:  append([]string(nil), capabilities...),
 		Vendor:        metadata["vendor"],
+		Series:        metadata["series"],
 		Input:         input,
 		CachedInput:   cached,
 		Output:        output,
