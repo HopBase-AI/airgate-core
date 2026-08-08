@@ -1,9 +1,12 @@
 package plugin
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -95,6 +98,87 @@ func TestRelayParseTokenExpired(t *testing.T) {
 	token := relayTokenVersion + "." + encoded + "." + rs.sign(encoded)
 	if _, err := rs.parseToken(token); !errors.Is(err, errRelayTokenExpired) {
 		t.Fatalf("过期 token 应返回 errRelayTokenExpired, got %v", err)
+	}
+}
+
+func TestRelayTargetUsesCoreAccountAuthorization(t *testing.T) {
+	rs := newTestRelay(t)
+	var gotAccountID int64
+	var gotPlatform string
+	rs.loadAccountBearerAuth = func(_ context.Context, accountID int64, platform string) (string, error) {
+		gotAccountID = accountID
+		gotPlatform = platform
+		return "Bearer relay-test-key", nil
+	}
+
+	target, err := rs.targetFromResolvedURL(context.Background(), "https://upstream.example/v1/video/files/a/last-frame", 42, "seedance")
+	if err != nil {
+		t.Fatalf("targetFromResolvedURL: %v", err)
+	}
+	if target.url != "https://upstream.example/v1/video/files/a/last-frame" {
+		t.Fatalf("url=%q", target.url)
+	}
+	if target.authorization != "Bearer relay-test-key" {
+		t.Fatalf("authorization=%q", target.authorization)
+	}
+	if gotAccountID != 42 || gotPlatform != "seedance" {
+		t.Fatalf("credential lookup=(%d,%q)", gotAccountID, gotPlatform)
+	}
+
+	// The internal target must not be serializable into an HTTP response.
+	body, err := json.Marshal(target)
+	if err != nil {
+		t.Fatalf("marshal target: %v", err)
+	}
+	if strings.Contains(string(body), "relay-test-key") {
+		t.Fatalf("serialized target leaked authorization: %s", body)
+	}
+}
+
+func TestRelayTargetWithoutAccountDoesNotLoadCredentials(t *testing.T) {
+	rs := newTestRelay(t)
+	rs.loadAccountBearerAuth = func(context.Context, int64, string) (string, error) {
+		t.Fatal("public upstream URLs must not load account credentials")
+		return "", nil
+	}
+	target, err := rs.targetFromResolvedURL(context.Background(), "https://storage.example/video.mp4", 0, "seedance")
+	if err != nil {
+		t.Fatalf("targetFromResolvedURL: %v", err)
+	}
+	if target.authorization != "" {
+		t.Fatalf("unexpected authorization: %q", target.authorization)
+	}
+}
+
+func TestRelayServeHTTPForwardsAuthorizationOnlyUpstream(t *testing.T) {
+	var gotAuthorization string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuthorization = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write([]byte("frame-bytes"))
+	}))
+	defer upstream.Close()
+
+	rs := newTestRelay(t)
+	rs.resolveTarget = func(context.Context, relayTokenPayload) (relayUpstreamTarget, error) {
+		return relayUpstreamTarget{url: upstream.URL + "/last-frame", authorization: "Bearer relay-test-key"}, nil
+	}
+	path, _, err := rs.SignPath("gateway-seedance", "vt1/token/last-frame", "last-frame.jpg", time.Hour)
+	if err != nil {
+		t.Fatalf("SignPath: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://relay.example"+path, nil)
+	recorder := httptest.NewRecorder()
+	rs.ServeHTTP(recorder, req, strings.TrimPrefix(path, RelayPublicPrefix+"/"))
+
+	if gotAuthorization != "Bearer relay-test-key" {
+		t.Fatalf("upstream authorization=%q", gotAuthorization)
+	}
+	if recorder.Code != http.StatusOK || recorder.Body.String() != "frame-bytes" {
+		t.Fatalf("relay response status=%d body=%q", recorder.Code, recorder.Body.String())
+	}
+	if recorder.Header().Get("Authorization") != "" || strings.Contains(recorder.Body.String(), "relay-test-key") {
+		t.Fatalf("relay response leaked authorization: headers=%v body=%q", recorder.Header(), recorder.Body.String())
 	}
 }
 
