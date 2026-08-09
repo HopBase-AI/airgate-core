@@ -35,6 +35,17 @@ type taskProcessor interface {
 	ProcessTask(context.Context, *pb.ProcessTaskRequest) (*pb.ProcessTaskResponse, error)
 }
 
+func updateTaskWhileProcessing(ctx context.Context, db *ent.Client, taskID int, apply func(*ent.TaskUpdate)) (bool, error) {
+	update := db.Task.Update().
+		Where(
+			enttask.IDEQ(taskID),
+			enttask.StatusEQ(enttask.StatusProcessing),
+		)
+	apply(update)
+	affected, err := update.Save(ctx)
+	return affected > 0, err
+}
+
 func (c *taskTypesCache) get(pluginID string) ([]string, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -84,24 +95,26 @@ func (m *Manager) resetProcessingTasks(ctx context.Context) {
 	var recoveredCount, failedCount int
 	for _, st := range staleTasks {
 		if st.Attempts < st.MaxAttempts {
-			if err := db.Task.UpdateOneID(st.ID).
-				SetStatus(enttask.StatusRetrying).
-				SetStage("recovered_on_startup").
-				SetErrorMessage("recovered: service restarted").
-				Exec(ctx); err != nil {
+			updated, err := updateTaskWhileProcessing(ctx, db, st.ID, func(update *ent.TaskUpdate) {
+				update.SetStatus(enttask.StatusRetrying).
+					SetStage("recovered_on_startup").
+					SetErrorMessage("recovered: service restarted")
+			})
+			if err != nil {
 				slog.Error("task_startup_recover_failed", "task_id", st.ID, sdk.LogFieldError, err)
-			} else {
+			} else if updated {
 				recoveredCount++
 			}
 		} else {
-			if err := db.Task.UpdateOneID(st.ID).
-				SetStatus(enttask.StatusFailed).
-				SetStage("failed").
-				SetErrorMessage(fmt.Sprintf("service restarted after %d attempts", st.MaxAttempts)).
-				SetCompletedAt(now).
-				Exec(ctx); err != nil {
+			updated, err := updateTaskWhileProcessing(ctx, db, st.ID, func(update *ent.TaskUpdate) {
+				update.SetStatus(enttask.StatusFailed).
+					SetStage("failed").
+					SetErrorMessage(fmt.Sprintf("service restarted after %d attempts", st.MaxAttempts)).
+					SetCompletedAt(now)
+			})
+			if err != nil {
 				slog.Error("task_startup_fail_failed", "task_id", st.ID, sdk.LogFieldError, err)
-			} else {
+			} else if updated {
 				failedCount++
 			}
 		}
@@ -279,23 +292,21 @@ func (m *Manager) processOneTask(ctx context.Context, pluginName string, process
 
 		// t.Attempts is the pre-increment value; DB already has attempts+1
 		if t.Attempts+1 < t.MaxAttempts {
-			if _, err := db.Task.UpdateOneID(t.ID).
-				Where(enttask.StatusEQ(enttask.StatusProcessing)).
-				SetStatus(enttask.StatusRetrying).
-				SetStage("retrying").
-				SetErrorMessage(errMsg).
-				Save(ctx); err != nil && !ent.IsNotFound(err) {
+			if _, err := updateTaskWhileProcessing(ctx, db, t.ID, func(update *ent.TaskUpdate) {
+				update.SetStatus(enttask.StatusRetrying).
+					SetStage("retrying").
+					SetErrorMessage(errMsg)
+			}); err != nil {
 				slog.Error("task_retry_update_failed", "task_id", t.ID, sdk.LogFieldError, err)
 			}
 		} else {
 			now := time.Now()
-			if _, err := db.Task.UpdateOneID(t.ID).
-				Where(enttask.StatusEQ(enttask.StatusProcessing)).
-				SetStatus(enttask.StatusFailed).
-				SetStage("failed").
-				SetErrorMessage(errMsg).
-				SetCompletedAt(now).
-				Save(ctx); err != nil && !ent.IsNotFound(err) {
+			if _, err := updateTaskWhileProcessing(ctx, db, t.ID, func(update *ent.TaskUpdate) {
+				update.SetStatus(enttask.StatusFailed).
+					SetStage("failed").
+					SetErrorMessage(errMsg).
+					SetCompletedAt(now)
+			}); err != nil {
 				slog.Error("task_fail_update_failed", "task_id", t.ID, sdk.LogFieldError, err)
 			}
 		}
@@ -305,13 +316,12 @@ func (m *Manager) processOneTask(ctx context.Context, pluginName string, process
 	// Plugin reported success. If the plugin already called host.UpdateTask(completed),
 	// the task is already marked done. If not, mark it completed as a safety net.
 	now := time.Now()
-	if _, err := db.Task.UpdateOneID(t.ID).
-		Where(enttask.StatusEQ(enttask.StatusProcessing)).
-		SetStatus(enttask.StatusCompleted).
-		SetProgress(100).
-		SetStage("completed").
-		SetCompletedAt(now).
-		Save(ctx); err != nil && !ent.IsNotFound(err) {
+	if _, err := updateTaskWhileProcessing(ctx, db, t.ID, func(update *ent.TaskUpdate) {
+		update.SetStatus(enttask.StatusCompleted).
+			SetProgress(100).
+			SetStage("completed").
+			SetCompletedAt(now)
+	}); err != nil {
 		slog.Error("task_complete_update_failed", "task_id", t.ID, sdk.LogFieldError, err)
 	}
 
@@ -359,24 +369,21 @@ func (m *Manager) recoverStaleTasks(ctx context.Context) {
 	recoveredCount := 0
 	failedCount := 0
 	for _, st := range staleTasks {
-		if st.Attempts < st.MaxAttempts {
-			if err := db.Task.UpdateOneID(st.ID).
-				SetStatus(enttask.StatusRetrying).
-				SetStage("recovered_retrying").
-				SetErrorMessage("recovered: processing timeout").
-				Exec(ctx); err != nil {
-				slog.Error("task_recover_update_failed", "task_id", st.ID, sdk.LogFieldError, err)
+		targetStatus, updated, err := recoverStaleTask(ctx, db, st, now)
+		if err != nil {
+			event := "task_recover_update_failed"
+			if targetStatus == enttask.StatusFailed {
+				event = "task_fail_update_failed"
 			}
+			slog.Error(event, "task_id", st.ID, sdk.LogFieldError, err)
+			continue
+		}
+		if !updated {
+			continue
+		}
+		if targetStatus == enttask.StatusRetrying {
 			recoveredCount++
 		} else {
-			if err := db.Task.UpdateOneID(st.ID).
-				SetStatus(enttask.StatusFailed).
-				SetStage("failed").
-				SetErrorMessage(fmt.Sprintf("timed out after %d attempts", st.MaxAttempts)).
-				SetCompletedAt(now).
-				Exec(ctx); err != nil {
-				slog.Error("task_fail_update_failed", "task_id", st.ID, sdk.LogFieldError, err)
-			}
 			failedCount++
 		}
 	}
@@ -386,4 +393,23 @@ func (m *Manager) recoverStaleTasks(ctx context.Context) {
 	if failedCount > 0 {
 		slog.Warn("task_failed_timeout", "count", failedCount)
 	}
+}
+
+func recoverStaleTask(ctx context.Context, db *ent.Client, st *ent.Task, now time.Time) (enttask.Status, bool, error) {
+	if st.Attempts < st.MaxAttempts {
+		updated, err := updateTaskWhileProcessing(ctx, db, st.ID, func(update *ent.TaskUpdate) {
+			update.SetStatus(enttask.StatusRetrying).
+				SetStage("recovered_retrying").
+				SetErrorMessage("recovered: processing timeout")
+		})
+		return enttask.StatusRetrying, updated, err
+	}
+
+	updated, err := updateTaskWhileProcessing(ctx, db, st.ID, func(update *ent.TaskUpdate) {
+		update.SetStatus(enttask.StatusFailed).
+			SetStage("failed").
+			SetErrorMessage(fmt.Sprintf("timed out after %d attempts", st.MaxAttempts)).
+			SetCompletedAt(now)
+	})
+	return enttask.StatusFailed, updated, err
 }

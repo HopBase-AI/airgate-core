@@ -208,6 +208,44 @@ func TestProcessOneTaskSuccessFallbackCompletesProcessingTask(t *testing.T) {
 	}
 }
 
+func TestRecoverStaleTaskPreservesConcurrentCompletion(t *testing.T) {
+	ctx := context.Background()
+	db := openManagerTasksTestDB(t)
+	stale := createProcessingTask(t, db, 0, 3)
+	completedAt := time.Now().UTC().Truncate(time.Second)
+	if _, err := db.Task.UpdateOneID(stale.ID).
+		SetStatus(enttask.StatusCompleted).
+		SetStage("plugin_completed").
+		SetUsageID(84).
+		SetOutput(map[string]interface{}{"url": "https://example.com/recovered.mp4"}).
+		SetCompletedAt(completedAt).
+		Save(ctx); err != nil {
+		t.Fatalf("persist concurrent completion: %v", err)
+	}
+
+	targetStatus, updated, err := recoverStaleTask(ctx, db, stale, time.Now())
+	if err != nil {
+		t.Fatalf("recover stale task: %v", err)
+	}
+	if targetStatus != enttask.StatusRetrying {
+		t.Fatalf("target status = %q, want retrying", targetStatus)
+	}
+	if updated {
+		t.Fatal("recover stale task updated a task that was already completed")
+	}
+
+	got := db.Task.GetX(ctx, stale.ID)
+	if got.Status != enttask.StatusCompleted || got.Stage != "plugin_completed" {
+		t.Fatalf("task status/stage = %q/%q, want completed/plugin_completed", got.Status, got.Stage)
+	}
+	if got.UsageID == nil || *got.UsageID != 84 || got.Output["url"] != "https://example.com/recovered.mp4" {
+		t.Fatalf("completed task facts were overwritten: usage_id=%v output=%#v", got.UsageID, got.Output)
+	}
+	if got.CompletedAt == nil || !got.CompletedAt.Equal(completedAt) {
+		t.Fatalf("task completed_at = %v, want %v", got.CompletedAt, completedAt)
+	}
+}
+
 func openManagerTasksTestDB(t *testing.T) *ent.Client {
 	t.Helper()
 	name := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
