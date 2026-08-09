@@ -31,6 +31,10 @@ type taskTypesCache struct {
 	types map[string][]string // pluginID → task types
 }
 
+type taskProcessor interface {
+	ProcessTask(context.Context, *pb.ProcessTaskRequest) (*pb.ProcessTaskResponse, error)
+}
+
 func (c *taskTypesCache) get(pluginID string) ([]string, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -242,18 +246,18 @@ func (m *Manager) dispatchPluginTasks(ctx context.Context, pluginID string, task
 		go func(task *ent.Task) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			m.processOneTask(ctx, inst, task)
+			m.processOneTask(ctx, inst.Name, inst.Extension, task)
 		}(t)
 	}
 	wg.Wait()
 }
 
-func (m *Manager) processOneTask(ctx context.Context, inst *PluginInstance, t *ent.Task) {
+func (m *Manager) processOneTask(ctx context.Context, pluginName string, processor taskProcessor, t *ent.Task) {
 	taskCtx, cancel := context.WithTimeout(ctx, taskProcessTimeout)
 	defer cancel()
 
 	inputJSON, _ := json.Marshal(t.Input)
-	resp, err := inst.Extension.ProcessTask(taskCtx, &pb.ProcessTaskRequest{
+	resp, err := processor.ProcessTask(taskCtx, &pb.ProcessTaskRequest{
 		TaskId:   int64(t.ID),
 		TaskType: t.TaskType,
 		Input:    inputJSON,
@@ -271,25 +275,27 @@ func (m *Manager) processOneTask(ctx context.Context, inst *PluginInstance, t *e
 		}
 
 		slog.Error("task_process_failed",
-			"task_id", t.ID, sdk.LogFieldPluginID, inst.Name, sdk.LogFieldError, errMsg)
+			"task_id", t.ID, sdk.LogFieldPluginID, pluginName, sdk.LogFieldError, errMsg)
 
 		// t.Attempts is the pre-increment value; DB already has attempts+1
 		if t.Attempts+1 < t.MaxAttempts {
-			if err := db.Task.UpdateOneID(t.ID).
+			if _, err := db.Task.UpdateOneID(t.ID).
+				Where(enttask.StatusEQ(enttask.StatusProcessing)).
 				SetStatus(enttask.StatusRetrying).
 				SetStage("retrying").
 				SetErrorMessage(errMsg).
-				Exec(ctx); err != nil {
+				Save(ctx); err != nil && !ent.IsNotFound(err) {
 				slog.Error("task_retry_update_failed", "task_id", t.ID, sdk.LogFieldError, err)
 			}
 		} else {
 			now := time.Now()
-			if err := db.Task.UpdateOneID(t.ID).
+			if _, err := db.Task.UpdateOneID(t.ID).
+				Where(enttask.StatusEQ(enttask.StatusProcessing)).
 				SetStatus(enttask.StatusFailed).
 				SetStage("failed").
 				SetErrorMessage(errMsg).
 				SetCompletedAt(now).
-				Exec(ctx); err != nil {
+				Save(ctx); err != nil && !ent.IsNotFound(err) {
 				slog.Error("task_fail_update_failed", "task_id", t.ID, sdk.LogFieldError, err)
 			}
 		}
@@ -298,20 +304,18 @@ func (m *Manager) processOneTask(ctx context.Context, inst *PluginInstance, t *e
 
 	// Plugin reported success. If the plugin already called host.UpdateTask(completed),
 	// the task is already marked done. If not, mark it completed as a safety net.
-	current, err := db.Task.Get(ctx, t.ID)
-	if err == nil && current.Status == enttask.StatusProcessing {
-		now := time.Now()
-		if err := db.Task.UpdateOneID(t.ID).
-			SetStatus(enttask.StatusCompleted).
-			SetProgress(100).
-			SetStage("completed").
-			SetCompletedAt(now).
-			Exec(ctx); err != nil {
-			slog.Error("task_complete_update_failed", "task_id", t.ID, sdk.LogFieldError, err)
-		}
+	now := time.Now()
+	if _, err := db.Task.UpdateOneID(t.ID).
+		Where(enttask.StatusEQ(enttask.StatusProcessing)).
+		SetStatus(enttask.StatusCompleted).
+		SetProgress(100).
+		SetStage("completed").
+		SetCompletedAt(now).
+		Save(ctx); err != nil && !ent.IsNotFound(err) {
+		slog.Error("task_complete_update_failed", "task_id", t.ID, sdk.LogFieldError, err)
 	}
 
-	slog.Info("task_process_completed", "task_id", t.ID, sdk.LogFieldPluginID, inst.Name)
+	slog.Info("task_process_completed", "task_id", t.ID, sdk.LogFieldPluginID, pluginName)
 }
 
 // taskRecoverLoop 定期恢复僵尸任务（processing 超时未完成）。
