@@ -493,7 +493,10 @@ func classifyRoutedAccountTiers(accounts []*ent.Account, routing map[string][]in
 	if len(routed) == 0 {
 		return routedAccountTiers{}, ErrModelNotServed
 	}
-	fallback := poolFallbackAccounts(accounts, routed)
+	var fallback []*ent.Account
+	if model != "" {
+		fallback = poolFallbackAccounts(accounts, routed)
+	}
 	for _, acc := range appendAccountSlices(routed, fallback) {
 		if acc.State != account.StateDisabled {
 			return routedAccountTiers{primary: routed, poolFallback: fallback}, nil
@@ -612,7 +615,23 @@ func ModelRoutingServesAccounts(routing map[string][]int64, model string, accoun
 }
 
 // matchModelRouting 匹配模型路由规则，返回允许的账号 ID 列表。nil 或空表示不限制。
+// 空 model 表示模型无关操作，使用全部路由账号的并集，避免绕过 model_routing
+// 选中未登记账号。
 func matchModelRouting(routing map[string][]int64, model string) []int64 {
+	if model == "" {
+		seen := make(map[int64]struct{})
+		for _, ids := range routing {
+			for _, id := range ids {
+				seen[id] = struct{}{}
+			}
+		}
+		ids := make([]int64, 0, len(seen))
+		for id := range seen {
+			ids = append(ids, id)
+		}
+		sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+		return ids
+	}
 	if ids, ok := routing[model]; ok {
 		return ids
 	}

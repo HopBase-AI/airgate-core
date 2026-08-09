@@ -104,6 +104,47 @@ func TestUsageModel(t *testing.T) {
 	}
 }
 
+func TestAllowsModelLessAccountSelection(t *testing.T) {
+	mgr := &Manager{
+		routeCache: map[string][]sdk.RouteDefinition{
+			"kling-plugin": {
+				{Method: "POST", Path: "/v1/kling/faces", Metadata: map[string]string{"model_agnostic_account": "true"}},
+				{Method: "POST", Path: "/v1/model-less/tasks", Metadata: map[string]string{"model_agnostic_account": "prefix"}},
+				{Method: "POST", Path: "/v1/video/generate"},
+			},
+		},
+	}
+
+	if !mgr.AllowsModelLessAccountSelection("kling-plugin", "POST", "/v1/kling/faces") {
+		t.Fatal("declared model-less route was not enabled")
+	}
+	if mgr.AllowsModelLessAccountSelection("kling-plugin", "POST", "/v1/video/generate") {
+		t.Fatal("model-required route was enabled without a declaration")
+	}
+	if mgr.AllowsModelLessAccountSelection("kling-plugin", "PUT", "/v1/kling/faces") {
+		t.Fatal("undeclared HTTP method must fail closed")
+	}
+	if mgr.AllowsModelLessAccountSelection("kling-plugin", "POST", "/v1/kling/faces/child") {
+		t.Fatal("exact model-less declaration must not authorize child paths")
+	}
+	if !mgr.AllowsModelLessAccountSelection("kling-plugin", "POST", "/v1/model-less/tasks/123") {
+		t.Fatal("prefix model-less declaration did not authorize child path")
+	}
+	if mgr.AllowsModelLessAccountSelection("kling-plugin", "GET", "/v1/model-less/tasks/123") {
+		t.Fatal("prefix model-less declaration authorized the wrong HTTP method")
+	}
+	if mgr.AllowsModelLessAccountSelection("kling-plugin", "POST", "/v1/model-less/tasks-evil") {
+		t.Fatal("prefix model-less declaration authorized a sibling path")
+	}
+	if mgr.AllowsModelLessAccountSelection("kling-plugin", "POST", "/v1/unknown") {
+		t.Fatal("unknown route must fail closed")
+	}
+	var nilManager *Manager
+	if nilManager.AllowsModelLessAccountSelection("kling-plugin", "POST", "/v1/kling/faces") {
+		t.Fatal("nil manager must fail closed")
+	}
+}
+
 func TestNewPluginClientConfigSetsStartTimeout(t *testing.T) {
 	mgr := &Manager{}
 	cfg := mgr.newPluginClientConfig(exec.Command("sh", "-c", "exit 0"), false, nil)
