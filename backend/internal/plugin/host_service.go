@@ -24,6 +24,7 @@ import (
 	entusagelog "github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 	appreferral "github.com/DouDOU-start/airgate-core/internal/app/referral"
+	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
 	"github.com/DouDOU-start/airgate-core/internal/routing"
@@ -626,8 +627,10 @@ func (h *HostService) probeForward(ctx context.Context, req hostProbeForwardRequ
 	}
 	resp["model"] = model
 
-	// 调度选号
-	acc, err := h.scheduler.SelectAccount(ctx, g.Platform, model, 0, int(req.GroupID), "")
+	// 调度选号。probe token 只用于本次真实上游探测，避免 half-open 被只读遍历抢占。
+	probeToken := uuid.NewString()
+	selectionCtx := scheduler.WithFamilyProbeToken(ctx, probeToken)
+	acc, err := h.scheduler.SelectAccount(selectionCtx, g.Platform, model, 0, int(req.GroupID), "")
 	if err != nil {
 		if cerr := hostContextError(err); cerr != nil {
 			return nil, cerr
@@ -642,6 +645,7 @@ func (h *HostService) probeForward(ctx context.Context, req hostProbeForwardRequ
 		WithProxy().
 		Only(ctx)
 	if err != nil {
+		h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, probeToken)
 		if cerr := hostContextError(err); cerr != nil {
 			return nil, cerr
 		}
@@ -650,6 +654,7 @@ func (h *HostService) probeForward(ctx context.Context, req hostProbeForwardRequ
 
 	inst := h.manager.GetPluginByPlatform(g.Platform)
 	if inst == nil || inst.Gateway == nil {
+		h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, probeToken)
 		return errProbeResp("plugin_missing", "platform "+g.Platform+" 没有可用插件", start), nil
 	}
 
@@ -683,13 +688,37 @@ func (h *HostService) probeForward(ctx context.Context, req hostProbeForwardRequ
 	fwdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	gate, err := h.scheduler.ClaimAccountGate(fwdCtx, acc.ID, acc.Platform, model, probeToken)
+	if err != nil {
+		h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, probeToken)
+		if cerr := hostContextError(err); cerr != nil {
+			return nil, cerr
+		}
+		return errProbeResp("internal", "账号准入检查失败: "+err.Error(), start), nil
+	}
+	if !gate.Allowed() {
+		h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, probeToken)
+		return errProbeResp("no_account", "账号当前不可用: "+string(gate.Reason), start), nil
+	}
+	stopProbeLease := func() {}
+	if gate.ProbeClaimed {
+		stopProbeLease = h.scheduler.MaintainFamilyProbe(fwdCtx, acc.ID, acc.Platform, model, probeToken)
+	}
 	outcome, fwdErr := inst.Gateway.Forward(fwdCtx, fwdReq)
+	stopProbeLease()
+	h.persistHostUpdatedCredentials(acc.ID, outcome.UpdatedCredentials)
 	latency := time.Since(start)
 	resp["latency_ms"] = latency.Milliseconds()
 	resp["status_code"] = int64(outcome.Upstream.StatusCode)
 
+	if cerr := hostForwardContextError(fwdCtx, fwdErr); cerr != nil {
+		h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, probeToken)
+		return nil, cerr
+	}
+
 	// 插件自身故障（进程异常等）—— 不经过状态机，仅记录。
 	if fwdErr != nil {
+		h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, probeToken)
 		resp["success"] = false
 		resp["error_kind"] = "plugin_error"
 		resp["error_msg"] = truncateProbeErr(fwdErr.Error())
@@ -700,12 +729,11 @@ func (h *HostService) probeForward(ctx context.Context, req hostProbeForwardRequ
 	// 避免探测模型不可用（如上游缺通道）误伤整个账号的可调度性。
 	// 失败信号由 health 插件自行记录到 group_health_probes，不经过账号状态机。
 	if outcome.Kind.IsSuccess() {
-		h.scheduler.Apply(ctx, acc.ID, scheduler.Judgment{
-			Kind:     outcome.Kind,
-			Duration: latency,
-			IsPool:   accFull.UpstreamIsPool,
-			Family:   h.resolveModelFamily(accFull.Platform, model),
-		})
+		if !h.applyHostOutcome(fwdCtx, acc.ID, accFull, model, outcome, latency, probeToken, nil, false) {
+			return nil, hostForwardContextError(fwdCtx, nil)
+		}
+	} else {
+		h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, probeToken)
 	}
 
 	switch outcome.Kind {
@@ -961,6 +989,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 	hardExclude := make([]int, 0, maxHostForwardAttempts*len(routes))
 	var lastUpstream sdk.UpstreamResponse
 	hasLastUpstream := false
+	failureSummary := allRoutesFailureSummary{}
 	for _, route := range routes {
 		model := h.resolveHostModel(route.Platform, req.Model)
 		if model == "" {
@@ -984,12 +1013,16 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 			exclude := make([]int, 0, len(hardExclude)+len(softExclude))
 			exclude = append(exclude, hardExclude...)
 			exclude = append(exclude, softExclude...)
-			acc, err := h.scheduler.SelectAccountWithRequirements(ctx, route.Platform, model, 0, route.GroupID, "", hostAccountRequirements(h.manager, req), exclude...)
+			probeToken := uuid.NewString()
+			selectionCtx := scheduler.WithFamilyProbeToken(fwdCtx, probeToken)
+			acc, err := h.scheduler.SelectAccountWithRequirements(selectionCtx, route.Platform, model, 0, route.GroupID, "", hostAccountRequirements(h.manager, req), exclude...)
 			if err != nil {
 				if cerr := hostContextError(err); cerr != nil {
 					return nil, cerr
 				}
-				if (attempt == 0 || waitingForLocalCapacity) && isTransientHostSelectionError(err) {
+				failureSummary.recordPickAccountErrorAfterExclusions(err, len(exclude) > 0)
+				localSoftExcluded := waitingForLocalCapacity && len(softExclude) > 0
+				if shouldWaitForLocalCapacity(err, localSoftExcluded) {
 					softExclude = softExclude[:0]
 					if waitForHostCapacity(ctx, queueDeadline, &queuePollDelay) {
 						continue
@@ -1010,6 +1043,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 
 			accFull, err := h.db.Account.Query().Where(account.IDEQ(acc.ID)).WithProxy().Only(ctx)
 			if err != nil {
+				h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, probeToken)
 				if cerr := hostContextError(err); cerr != nil {
 					return nil, cerr
 				}
@@ -1020,12 +1054,32 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 
 			releaseAccountSlot, ok := h.acquireHostAccountSlot(ctx, accFull)
 			if !ok {
+				h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, probeToken)
+				failureSummary.recordLocalCapacityFailure()
 				waitingForLocalCapacity = true
 				softExclude = append(softExclude, acc.ID)
 				continue
 			}
 			waitingForLocalCapacity = false
 			queuePollDelay = hostForwardCapacityPollInterval
+			gate, gateErr := h.scheduler.ClaimAccountGate(fwdCtx, acc.ID, acc.Platform, model, probeToken)
+			if gateErr != nil || !gate.Allowed() {
+				releaseAccountSlot()
+				h.scheduler.DecrementRPM(context.Background(), acc.ID)
+				h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, probeToken)
+				if gateErr != nil {
+					failureSummary.recordPickAccountError(gateErr)
+				} else {
+					failureSummary.recordAccountGateDecision(gate)
+				}
+				hardExclude = append(hardExclude, acc.ID)
+				slog.Warn("host_forward_account_gate_rejected",
+					sdk.LogFieldAccountID, acc.ID,
+					"reason", gate.Reason,
+					sdk.LogFieldError, gateErr,
+				)
+				continue
+			}
 
 			headers := hostForwardHeaders(req, route)
 			applyAccountCapabilityHeaders(headers, accFull)
@@ -1038,11 +1092,20 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 			}
 
 			start := time.Now()
+			stopProbeLease := func() {}
+			if gate.ProbeClaimed {
+				stopProbeLease = h.scheduler.MaintainFamilyProbe(fwdCtx, acc.ID, acc.Platform, model, probeToken)
+			}
 			outcome, fwdErr := inst.Gateway.Forward(fwdCtx, fwdReq)
+			stopProbeLease()
+			h.persistHostUpdatedCredentials(acc.ID, outcome.UpdatedCredentials)
 			attempt++
 			duration := time.Since(start)
 			releaseAccountSlot()
-			h.applyHostOutcome(finalizeRequestContext(ctx), acc.ID, accFull, model, outcome, duration)
+			if !h.applyHostOutcome(fwdCtx, acc.ID, accFull, model, outcome, duration, probeToken, fwdErr, true) {
+				h.recordCanceledHostForwardUsage(req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration, hostCanceledRequestStatus(fwdCtx, fwdErr))
+				return nil, hostForwardContextError(fwdCtx, fwdErr)
+			}
 			if returnableUpstream(outcome.Upstream) {
 				lastUpstream = outcome.Upstream
 				hasLastUpstream = true
@@ -1052,6 +1115,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 			}
 
 			if fwdErr != nil || outcome.Kind.ShouldFailover() {
+				failureSummary.recordExecution(forwardExecution{outcome: outcome, err: fwdErr, duration: duration})
 				slog.Warn("host_forward_attempt_failed",
 					sdk.LogFieldGroupID, route.GroupID,
 					"effective_rate", route.EffectiveRate,
@@ -1109,10 +1173,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 		}
 	}
 
-	if hasLastUpstream {
-		return hostForwardPayload(sdk.ForwardOutcome{Upstream: lastUpstream}), nil
-	}
-	return nil, hostForwardGenericError()
+	return hostAllRoutesFailurePayload(failureSummary, lastUpstream, hasLastUpstream), nil
 }
 
 // forwardPinned 钉选账号转发：异步任务型平台（提交任务后必须回到同一账号查询/取产物）
@@ -1175,6 +1236,30 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 		)
 		return nil, hostForwardGenericError()
 	}
+	probeToken := uuid.NewString()
+	gate, err := h.scheduler.ClaimAccountGate(fwdCtx, accFull.ID, accFull.Platform, model, probeToken)
+	if err != nil {
+		releaseAccountSlot()
+		h.scheduler.DecrementRPM(context.Background(), accFull.ID)
+		h.releaseHostFamilyProbe(accFull.ID, accFull.Platform, model, probeToken)
+		if cerr := hostContextError(err); cerr != nil {
+			return nil, cerr
+		}
+		slog.Error("host_forward_pinned_gate_failed",
+			sdk.LogFieldAccountID, accFull.ID, sdk.LogFieldError, err)
+		return nil, hostForwardGenericError()
+	}
+	if !gate.Allowed() {
+		releaseAccountSlot()
+		h.scheduler.DecrementRPM(context.Background(), accFull.ID)
+		return hostAccountGatePayload(gate), nil
+	}
+	claimedProbeToken := ""
+	stopProbeLease := func() {}
+	if gate.ProbeClaimed {
+		claimedProbeToken = probeToken
+		stopProbeLease = h.scheduler.MaintainFamilyProbe(fwdCtx, accFull.ID, accFull.Platform, model, claimedProbeToken)
+	}
 
 	headers := hostForwardHeaders(req, route)
 	applyAccountCapabilityHeaders(headers, accFull)
@@ -1188,16 +1273,21 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 
 	start := time.Now()
 	outcome, fwdErr := inst.Gateway.Forward(fwdCtx, fwdReq)
+	stopProbeLease()
+	h.persistHostUpdatedCredentials(accFull.ID, outcome.UpdatedCredentials)
 	duration := time.Since(start)
 	releaseAccountSlot()
-	h.applyHostOutcome(finalizeRequestContext(ctx), accFull.ID, accFull, model, outcome, duration)
-	if cerr := hostContextError(fwdErr); cerr != nil {
-		return nil, cerr
+	if !h.applyHostOutcome(fwdCtx, accFull.ID, accFull, model, outcome, duration, claimedProbeToken, fwdErr, true) {
+		h.recordCanceledHostForwardUsage(req, route, accFull.ID, route.Platform, model, accFull, userEmail, outcome, duration, hostCanceledRequestStatus(fwdCtx, fwdErr))
+		return nil, hostForwardContextError(fwdCtx, fwdErr)
 	}
 	if fwdErr != nil {
-		slog.Warn("host_forward_pinned_failed",
-			sdk.LogFieldAccountID, accFull.ID, sdk.LogFieldError, fwdErr)
-		return nil, hostForwardGenericError()
+		payload, terminalErr := hostPinnedGatewayError(outcome, fwdErr)
+		if terminalErr != nil {
+			slog.Warn("host_forward_pinned_failed",
+				sdk.LogFieldAccountID, accFull.ID, sdk.LogFieldError, fwdErr)
+		}
+		return payload, terminalErr
 	}
 	if outcome.Kind != sdk.OutcomeSuccess && !returnableUpstream(outcome.Upstream) {
 		slog.Warn("host_forward_pinned_outcome_failed",
@@ -1261,6 +1351,7 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 
 	sw := &hostStreamWriter{stream: stream}
 	hardExclude := make([]int, 0, maxHostForwardAttempts*len(routes))
+	failureSummary := allRoutesFailureSummary{}
 
 	for _, route := range routes {
 		model := h.resolveHostModel(route.Platform, req.Model)
@@ -1285,12 +1376,16 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 			exclude := make([]int, 0, len(hardExclude)+len(softExclude))
 			exclude = append(exclude, hardExclude...)
 			exclude = append(exclude, softExclude...)
-			acc, err := h.scheduler.SelectAccountWithRequirements(ctx, route.Platform, model, 0, route.GroupID, "", hostAccountRequirements(h.manager, req), exclude...)
+			probeToken := uuid.NewString()
+			selectionCtx := scheduler.WithFamilyProbeToken(fwdCtx, probeToken)
+			acc, err := h.scheduler.SelectAccountWithRequirements(selectionCtx, route.Platform, model, 0, route.GroupID, "", hostAccountRequirements(h.manager, req), exclude...)
 			if err != nil {
 				if cerr := hostContextError(err); cerr != nil {
 					return cerr
 				}
-				if (attempt == 0 || waitingForLocalCapacity) && isTransientHostSelectionError(err) {
+				failureSummary.recordPickAccountErrorAfterExclusions(err, len(exclude) > 0)
+				localSoftExcluded := waitingForLocalCapacity && len(softExclude) > 0
+				if shouldWaitForLocalCapacity(err, localSoftExcluded) {
 					softExclude = softExclude[:0]
 					if waitForHostCapacity(fwdCtx, queueDeadline, &queuePollDelay) {
 						continue
@@ -1311,6 +1406,7 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 
 			accFull, err := h.db.Account.Query().Where(account.IDEQ(acc.ID)).WithProxy().Only(ctx)
 			if err != nil {
+				h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, probeToken)
 				if cerr := hostContextError(err); cerr != nil {
 					return cerr
 				}
@@ -1321,12 +1417,32 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 
 			releaseAccountSlot, ok := h.acquireHostAccountSlot(fwdCtx, accFull)
 			if !ok {
+				h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, probeToken)
+				failureSummary.recordLocalCapacityFailure()
 				waitingForLocalCapacity = true
 				softExclude = append(softExclude, acc.ID)
 				continue
 			}
 			waitingForLocalCapacity = false
 			queuePollDelay = hostForwardCapacityPollInterval
+			gate, gateErr := h.scheduler.ClaimAccountGate(fwdCtx, acc.ID, acc.Platform, model, probeToken)
+			if gateErr != nil || !gate.Allowed() {
+				releaseAccountSlot()
+				h.scheduler.DecrementRPM(context.Background(), acc.ID)
+				h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, probeToken)
+				if gateErr != nil {
+					failureSummary.recordPickAccountError(gateErr)
+				} else {
+					failureSummary.recordAccountGateDecision(gate)
+				}
+				hardExclude = append(hardExclude, acc.ID)
+				slog.Warn("host_forward_stream_account_gate_rejected",
+					sdk.LogFieldAccountID, acc.ID,
+					"reason", gate.Reason,
+					sdk.LogFieldError, gateErr,
+				)
+				continue
+			}
 
 			fw := &failoverStreamWriter{target: sw}
 			headers := hostForwardHeaders(req, route)
@@ -1341,17 +1457,24 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 			}
 
 			start := time.Now()
+			stopProbeLease := func() {}
+			if gate.ProbeClaimed {
+				stopProbeLease = h.scheduler.MaintainFamilyProbe(fwdCtx, acc.ID, acc.Platform, model, probeToken)
+			}
 			outcome, fwdErr := inst.Gateway.Forward(fwdCtx, fwdReq)
+			stopProbeLease()
+			h.persistHostUpdatedCredentials(acc.ID, outcome.UpdatedCredentials)
 			attempt++
 			duration := time.Since(start)
 			releaseAccountSlot()
-			h.applyHostOutcome(finalizeRequestContext(ctx), acc.ID, accFull, model, outcome, duration)
-			if cerr := hostContextError(fwdErr); cerr != nil {
-				return cerr
+			if !h.applyHostOutcome(fwdCtx, acc.ID, accFull, model, outcome, duration, probeToken, fwdErr, true) {
+				h.recordCanceledHostForwardUsage(req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration, hostCanceledRequestStatus(fwdCtx, fwdErr))
+				return hostForwardContextError(fwdCtx, fwdErr)
 			}
 
 			canRetry := !fw.committed && (fwdErr != nil || outcome.Kind.ShouldFailover())
 			if canRetry {
+				failureSummary.recordExecution(forwardExecution{outcome: outcome, err: fwdErr, duration: duration})
 				slog.Warn("host_forward_stream_attempt_failed",
 					sdk.LogFieldGroupID, route.GroupID,
 					"effective_rate", route.EffectiveRate,
@@ -1423,7 +1546,7 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 		}
 	}
 
-	return hostForwardGenericError()
+	return sendHostStreamFailure(stream, failureSummary)
 }
 
 // maxHostForwardAttempts 最大 failover 次数，与 Forwarder 保持一致。
@@ -1490,10 +1613,103 @@ func (h *HostService) waitForHostAccountSlot(ctx context.Context, acc *ent.Accou
 	}
 }
 
-func isTransientHostSelectionError(err error) bool {
-	return errors.Is(err, scheduler.ErrNoAvailableAccount) &&
-		!errors.Is(err, scheduler.ErrGroupOffline) &&
-		!errors.Is(err, scheduler.ErrModelNotServed)
+func hostAllRoutesFailurePayload(summary allRoutesFailureSummary, lastUpstream sdk.UpstreamResponse, hasLastUpstream bool) map[string]interface{} {
+	if !summary.allViableRoutesRateLimited() && hasLastUpstream && lastUpstream.StatusCode != http.StatusTooManyRequests {
+		return hostForwardPayload(sdk.ForwardOutcome{Upstream: lastUpstream})
+	}
+	response := selectAllRoutesFailureResponse(summary)
+	return hostForwardPayload(hostStructuredFailureOutcome(response.status, response.code, response.message, response.retryAfter))
+}
+
+func hostAccountGatePayload(decision scheduler.AccountGateDecision) map[string]interface{} {
+	statusCode := http.StatusServiceUnavailable
+	code := appusage.ErrorCodeNoAvailableAccount
+	message := "指定上游账号暂不可用，请稍后重试"
+	if decision.Reason == scheduler.AccountGateRateLimited {
+		statusCode = http.StatusTooManyRequests
+		code = appusage.ErrorCodeAllRoutesRateLimited
+		message = "指定上游账号当前被限流，请稍后重试"
+	}
+	retryAfter := time.Until(decision.RetryAt)
+	if retryAfter < 0 {
+		retryAfter = 0
+	}
+	return hostForwardPayload(hostStructuredFailureOutcome(statusCode, code, message, retryAfter))
+}
+
+func hostPinnedGatewayError(outcome sdk.ForwardOutcome, forwardErr error) (map[string]interface{}, error) {
+	if forwardErr == nil {
+		return nil, nil
+	}
+	if returnableUpstream(outcome.Upstream) {
+		return hostForwardPayload(outcome), nil
+	}
+	return nil, hostForwardGenericError()
+}
+
+func hostStructuredFailureOutcome(statusCode int, code, message string, retryAfter time.Duration) sdk.ForwardOutcome {
+	headers := make(http.Header)
+	headers.Set("Content-Type", "application/json; charset=utf-8")
+	if retryAfter > 0 {
+		seconds := int64((retryAfter + time.Second - 1) / time.Second)
+		if seconds < 1 {
+			seconds = 1
+		}
+		headers.Set("Retry-After", strconv.FormatInt(seconds, 10))
+		headers.Set("Retry-After-Ms", strconv.FormatInt(retryAfter.Milliseconds(), 10))
+	}
+	body, _ := json.Marshal(map[string]interface{}{
+		"error": map[string]interface{}{
+			"message": message,
+			"type":    hostFailureType(statusCode),
+			"code":    code,
+		},
+	})
+	return sdk.ForwardOutcome{Upstream: sdk.UpstreamResponse{
+		StatusCode: statusCode,
+		Headers:    headers,
+		Body:       body,
+	}}
+}
+
+func hostFailureType(statusCode int) string {
+	if statusCode == http.StatusTooManyRequests {
+		return "rate_limit_error"
+	}
+	return "server_error"
+}
+
+func sendHostStreamFailure(stream pb.CoreInvokeService_InvokeStreamServer, summary allRoutesFailureSummary) error {
+	response := selectAllRoutesFailureResponse(summary)
+	outcome := hostStructuredFailureOutcome(response.status, response.code, response.message, response.retryAfter)
+	if err := stream.Send(&pb.HostStreamFrame{
+		Event:  "headers",
+		Status: "ok",
+		Payload: mustHostPayload(map[string]interface{}{
+			"status_code": outcome.Upstream.StatusCode,
+			"headers":     httpHeadersToProtoHost(outcome.Upstream.Headers),
+		}),
+	}); err != nil {
+		return err
+	}
+	if len(outcome.Upstream.Body) > 0 {
+		if err := stream.Send(&pb.HostStreamFrame{
+			Event: "chunk",
+			Payload: mustHostPayload(map[string]interface{}{
+				"data": string(outcome.Upstream.Body),
+			}),
+		}); err != nil {
+			return err
+		}
+	}
+	return stream.Send(&pb.HostStreamFrame{
+		Event:  "done",
+		Status: "ok",
+		Payload: mustHostPayload(map[string]interface{}{
+			"usage": nil,
+		}),
+		Done: true,
+	})
 }
 
 func waitForHostCapacity(ctx context.Context, deadline time.Time, pollDelay *time.Duration) bool {
@@ -1681,6 +1897,21 @@ func (h *HostService) recordHostForwardUsage(
 	outcome sdk.ForwardOutcome,
 	duration time.Duration,
 ) (int, error) {
+	return h.recordHostForwardUsageWithFailure(ctx, req, route, accountID, platform, model, accFull, userEmail, outcome, duration, nil)
+}
+
+func (h *HostService) recordHostForwardUsageWithFailure(
+	ctx context.Context,
+	req hostForwardRequest,
+	route routing.Candidate,
+	accountID int,
+	platform, model string,
+	accFull *ent.Account,
+	userEmail string,
+	outcome sdk.ForwardOutcome,
+	duration time.Duration,
+	failureOverride *usageFailure,
+) (int, error) {
 	usage := outcome.Usage
 	if usage == nil {
 		return 0, nil
@@ -1718,6 +1949,10 @@ func (h *HostService) recordHostForwardUsage(
 		return usageID, nil
 	}
 
+	var failure usageFailure
+	if failureOverride != nil {
+		failure = *failureOverride
+	}
 	record := billing.UsageRecord{
 		UserID:                       int(req.UserID),
 		UserEmail:                    userEmail,
@@ -1763,6 +1998,9 @@ func (h *HostService) recordHostForwardUsage(
 		UsageMetrics:                 usage.Metrics,
 		UsageCostDetails:             usage.CostDetails,
 		UsageMetadata:                usage.Metadata,
+		ErrorCode:                    failure.code,
+		ErrorStatus:                  failure.status,
+		ErrorMessage:                 sanitizeFailureMessage(failure.message),
 	}
 	if h.recorder == nil {
 		return 0, nil
@@ -2528,7 +2766,14 @@ func hostSDKAccount(acc *ent.Account) *sdk.Account {
 	}
 }
 
-func (h *HostService) applyHostOutcome(ctx context.Context, accountID int, accFull *ent.Account, model string, outcome sdk.ForwardOutcome, duration time.Duration) {
+func (h *HostService) applyHostOutcome(ctx context.Context, accountID int, accFull *ent.Account, model string, outcome sdk.ForwardOutcome, duration time.Duration, probeToken string, forwardErr error, rpmReserved bool) bool {
+	if hostForwardContextError(ctx, forwardErr) != nil {
+		if rpmReserved {
+			h.scheduler.DecrementRPM(context.Background(), accountID)
+		}
+		h.releaseHostFamilyProbe(accountID, accFull.Platform, model, probeToken)
+		return false
+	}
 	reason := outcome.Reason
 	if outcome.Kind.IsAccountFault() && model != "" {
 		reason = "[" + model + "] " + reason
@@ -2541,7 +2786,72 @@ func (h *HostService) applyHostOutcome(ctx context.Context, accountID int, accFu
 		IsPool:         accFull.UpstreamIsPool,
 		UpstreamStatus: outcome.Upstream.StatusCode,
 		Family:         h.resolveModelFamily(accFull.Platform, model),
+		ProbeToken:     probeToken,
 	})
+	return true
+}
+
+func (h *HostService) releaseHostFamilyProbe(accountID int, platform, model, probeToken string) {
+	if h == nil || h.scheduler == nil || accountID <= 0 || probeToken == "" {
+		return
+	}
+	h.scheduler.ReleaseFamilyProbe(context.Background(), accountID, platform, model, probeToken)
+}
+
+func (h *HostService) recordCanceledHostForwardUsage(
+	req hostForwardRequest,
+	route routing.Candidate,
+	accountID int,
+	platform, model string,
+	accFull *ent.Account,
+	userEmail string,
+	outcome sdk.ForwardOutcome,
+	duration time.Duration,
+	status int,
+) {
+	if outcome.Usage == nil || h == nil || h.calculator == nil || h.recorder == nil {
+		return
+	}
+	settleCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	failure := canceledRequestFailure(status)
+	if _, err := h.recordHostForwardUsageWithFailure(settleCtx, req, route, accountID, platform, model, accFull, userEmail, outcome, duration, &failure); err != nil {
+		slog.Error("host_forward_record_canceled_usage_failed",
+			sdk.LogFieldUserID, req.UserID,
+			sdk.LogFieldAccountID, accountID,
+			sdk.LogFieldError, err,
+		)
+	}
+}
+
+func (h *HostService) persistHostUpdatedCredentials(accountID int, updated map[string]string) {
+	if h == nil || h.db == nil || accountID <= 0 || len(updated) == 0 {
+		return
+	}
+	credentials := cloneStringMapHost(updated)
+	go h.updateHostAccountCredentials(accountID, credentials)
+}
+
+func (h *HostService) updateHostAccountCredentials(accountID int, updated map[string]string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	acc, err := h.db.Account.Query().Where(account.IDEQ(accountID)).Only(ctx)
+	if err != nil {
+		slog.Error("host_forward_update_credentials_lookup_failed",
+			sdk.LogFieldAccountID, accountID, sdk.LogFieldError, err)
+		return
+	}
+	merged := cloneStringMapHost(acc.Credentials)
+	if merged == nil {
+		merged = make(map[string]string, len(updated))
+	}
+	for key, value := range updated {
+		merged[key] = value
+	}
+	if err := h.db.Account.UpdateOneID(accountID).SetCredentials(merged).Exec(ctx); err != nil {
+		slog.Error("host_forward_update_credentials_failed",
+			sdk.LogFieldAccountID, accountID, sdk.LogFieldError, err)
+	}
 }
 
 // resolveModelFamily 从插件目录优先获取家族键，未命中时回退到硬编码规则。
@@ -2603,6 +2913,26 @@ func hostContextError(err error) error {
 	default:
 		return nil
 	}
+}
+
+func hostForwardContextError(ctx context.Context, forwardErr error) error {
+	if cerr := hostContextError(forwardErr); cerr != nil {
+		return cerr
+	}
+	if ctx == nil {
+		return nil
+	}
+	return hostContextError(ctx.Err())
+}
+
+func hostCanceledRequestStatus(ctx context.Context, forwardErr error) int {
+	if status := canceledRequestStatus(forwardErr); status != 0 {
+		return status
+	}
+	if ctx != nil {
+		return canceledRequestStatus(ctx.Err())
+	}
+	return 0
 }
 
 func hostForwardClientError(outcome sdk.ForwardOutcome) error {

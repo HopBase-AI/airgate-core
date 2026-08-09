@@ -7,6 +7,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/redis/go-redis/v9"
 
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 
@@ -117,6 +118,421 @@ func TestSelectAccountStickyReuseWhenSlotAvailable(t *testing.T) {
 	// 复用时已重新登记并发槽，计数补回为 1。
 	if cnt, _ := s.session.GetActiveSessionCount(ctx, acc.ID, defaultSessionIdleTimeout); cnt != 1 {
 		t.Fatalf("sticky 复用应重新登记并发槽，活跃会话 = %d，want 1", cnt)
+	}
+}
+
+func TestSelectAccountPriorityFailoverAndStickyRecovery(t *testing.T) {
+	ctx := context.Background()
+	db := enttestOpenScheduler(t)
+	rdb, redisServer := newTestRedis(t)
+	s := NewScheduler(db, rdb)
+
+	grp := mustGroup(t, ctx, db)
+	extra := map[string]interface{}{"max_sessions": 2}
+	primary := mustAccount(t, ctx, db, grp, "primary-500", extra)
+	primary = db.Account.UpdateOneID(primary.ID).SetPriority(500).SaveX(ctx)
+	standby := mustAccount(t, ctx, db, grp, "standby-300", extra)
+	standby = db.Account.UpdateOneID(standby.ID).SetPriority(300).SaveX(ctx)
+	db.Group.UpdateOneID(grp.ID).
+		SetModelRouting(map[string][]int64{itModel: {int64(primary.ID), int64(standby.ID)}}).
+		ExecX(ctx)
+	s.InvalidateRouteCache(grp.ID)
+
+	for i := 0; i < 25; i++ {
+		got, err := s.SelectAccount(ctx, itPlatform, itModel, 1, grp.ID, "")
+		if err != nil || got == nil || got.ID != primary.ID {
+			t.Fatalf("healthy selection %d = %v, err=%v; want primary %d", i, got, err, primary.ID)
+		}
+	}
+
+	family := s.resolveModelFamily(itPlatform, itModel)
+	s.Apply(ctx, primary.ID, Judgment{
+		Kind:       sdk.OutcomeAccountRateLimited,
+		RetryAfter: 30 * time.Second,
+		Reason:     "upstream overloaded",
+		Family:     family,
+	})
+	const sessionID = "standby-session"
+	got, err := s.SelectAccount(ctx, itPlatform, itModel, 1, grp.ID, sessionID)
+	if err != nil || got == nil || got.ID != standby.ID {
+		t.Fatalf("selection during primary cooldown = %v, err=%v; want standby %d", got, err, standby.ID)
+	}
+	if accountID, found := s.sticky.Get(ctx, 1, itPlatform, sessionID); !found || accountID != standby.ID {
+		t.Fatalf("sticky during cooldown = %d/%v, want standby %d", accountID, found, standby.ID)
+	}
+	if count, _ := s.session.GetActiveSessionCount(ctx, standby.ID, defaultSessionIdleTimeout); count != 1 {
+		t.Fatalf("standby session count during failover = %d, want 1", count)
+	}
+
+	redisServer.FastForward(31 * time.Second)
+	const recoveryToken = "primary-recovery-probe"
+	probeCtx := WithFamilyProbeToken(ctx, recoveryToken)
+	got, err = s.SelectAccount(probeCtx, itPlatform, itModel, 1, grp.ID, sessionID)
+	if err != nil || got == nil || got.ID != primary.ID {
+		t.Fatalf("half-open selection after cooldown = %v, err=%v; want primary %d", got, err, primary.ID)
+	}
+	if accountID, found := s.sticky.Get(ctx, 1, itPlatform, sessionID); !found || accountID != primary.ID {
+		t.Fatalf("sticky after recovery = %d/%v, want primary %d", accountID, found, primary.ID)
+	}
+	if count, _ := s.session.GetActiveSessionCount(ctx, standby.ID, defaultSessionIdleTimeout); count != 0 {
+		t.Fatalf("standby slot leaked after migration to primary: %d", count)
+	}
+	if count, _ := s.session.GetActiveSessionCount(ctx, primary.ID, defaultSessionIdleTimeout); count != 1 {
+		t.Fatalf("primary slot after recovery migration = %d, want 1", count)
+	}
+
+	s.Apply(ctx, primary.ID, Judgment{
+		Kind:       sdk.OutcomeSuccess,
+		Family:     family,
+		ProbeToken: recoveryToken,
+	})
+	for i := 0; i < 10; i++ {
+		selected, selectErr := s.SelectAccount(ctx, itPlatform, itModel, 1, grp.ID, "")
+		if selectErr != nil || selected == nil || selected.ID != primary.ID {
+			t.Fatalf("post-recovery selection %d = %v, err=%v; want primary %d", i, selected, selectErr, primary.ID)
+		}
+	}
+
+	s.Apply(ctx, primary.ID, Judgment{
+		Kind:       sdk.OutcomeAccountRateLimited,
+		RetryAfter: 30 * time.Second,
+		Reason:     "primary failed again",
+		Family:     family,
+	})
+	got, err = s.SelectAccount(ctx, itPlatform, itModel, 1, grp.ID, sessionID)
+	if err != nil || got == nil || got.ID != standby.ID {
+		t.Fatalf("selection after primary failed again = %v, err=%v; want reusable standby %d", got, err, standby.ID)
+	}
+	if count, _ := s.session.GetActiveSessionCount(ctx, primary.ID, defaultSessionIdleTimeout); count != 0 {
+		t.Fatalf("primary slot leaked after second failover: %d", count)
+	}
+	if count, _ := s.session.GetActiveSessionCount(ctx, standby.ID, defaultSessionIdleTimeout); count != 1 {
+		t.Fatalf("standby slot after second failover = %d, want 1", count)
+	}
+}
+
+func TestSelectAccountNonChatFamilyClaimsOnlyWinningProbe(t *testing.T) {
+	ctx := context.Background()
+	db := enttestOpenScheduler(t)
+	rdb, redisServer := newTestRedis(t)
+	s := NewScheduler(db, rdb)
+
+	const videoModel = "seedance-2.5-pro"
+	grp := mustGroup(t, ctx, db)
+	primary := mustAccount(t, ctx, db, grp, "video-primary-500", nil)
+	primary = db.Account.UpdateOneID(primary.ID).SetPriority(500).SaveX(ctx)
+	standby := mustAccount(t, ctx, db, grp, "video-standby-300", nil)
+	standby = db.Account.UpdateOneID(standby.ID).SetPriority(300).SaveX(ctx)
+	db.Group.UpdateOneID(grp.ID).
+		SetModelRouting(map[string][]int64{videoModel: {int64(primary.ID), int64(standby.ID)}}).
+		ExecX(ctx)
+	s.InvalidateRouteCache(grp.ID)
+
+	family := s.resolveModelFamily(itPlatform, videoModel)
+	s.familyCooldown.MarkTransient(ctx, primary.ID, family, time.Now().Add(time.Second), "primary 503")
+	s.familyCooldown.MarkTransient(ctx, standby.ID, family, time.Now().Add(time.Second), "standby 503")
+	redisServer.FastForward(2 * time.Second)
+
+	const token = "video-probe"
+	got, err := s.SelectAccount(WithFamilyProbeToken(ctx, token), itPlatform, videoModel, 1, grp.ID, "")
+	if err != nil || got == nil || got.ID != primary.ID {
+		t.Fatalf("non-chat half-open selection = %v, err=%v; want primary %d", got, err, primary.ID)
+	}
+	if owner, err := rdb.Get(ctx, familyProbeKey(primary.ID, family)).Result(); err != nil || owner != token {
+		t.Fatalf("winning probe owner = %q, err=%v; want %q", owner, err, token)
+	}
+	if exists, err := rdb.Exists(ctx, familyProbeKey(standby.ID, family)).Result(); err != nil || exists != 0 {
+		t.Fatalf("standby probe was claimed during candidate scan: exists=%d err=%v", exists, err)
+	}
+	decision, err := s.ClaimAccountGate(ctx, primary.ID, primary.Platform, videoModel, token)
+	if err != nil || !decision.Allowed() || !decision.ProbeClaimed {
+		t.Fatalf("same-token pre-upstream gate = %+v, err=%v; want idempotent probe ownership", decision, err)
+	}
+	competitor, err := s.ClaimAccountGate(ctx, primary.ID, primary.Platform, videoModel, "other-video-probe")
+	if err != nil || competitor.Allowed() {
+		t.Fatalf("competing pre-upstream gate = %+v, err=%v; want blocked", competitor, err)
+	}
+}
+
+func TestSelectAccountTransientCircuitsNeverMasqueradeAsRateLimit(t *testing.T) {
+	ctx := context.Background()
+	db := enttestOpenScheduler(t)
+	rdb, _ := newTestRedis(t)
+	s := NewScheduler(db, rdb)
+
+	grp := mustGroup(t, ctx, db)
+	first := mustAccount(t, ctx, db, grp, "transient-first", nil)
+	second := mustAccount(t, ctx, db, grp, "transient-second", nil)
+	db.Group.UpdateOneID(grp.ID).
+		SetModelRouting(map[string][]int64{itModel: {int64(first.ID), int64(second.ID)}}).
+		ExecX(ctx)
+	s.InvalidateRouteCache(grp.ID)
+	family := s.resolveModelFamily(itPlatform, itModel)
+	s.familyCooldown.Mark(ctx, first.ID, family, time.Now().Add(8*time.Second), "first rate limited")
+	s.familyCooldown.MarkTransient(ctx, second.ID, family, time.Now().Add(8*time.Second), "second upstream 503")
+
+	got, err := s.SelectAccount(ctx, itPlatform, itModel, 1, grp.ID, "")
+	if got != nil || !errors.Is(err, ErrNoAvailableAccount) {
+		t.Fatalf("mixed rate/transient selection = %v, err=%v; want unavailable", got, err)
+	}
+	if _, ok := RateLimitedRetryAt(err); ok {
+		t.Fatalf("mixed rate/transient circuits returned 429 classification: %v", err)
+	}
+	if !errors.Is(err, ErrTransientCandidatesUnavailable) {
+		t.Fatalf("mixed rate/transient error = %v, want transient classification", err)
+	}
+}
+
+func TestSelectedAccountGateRechecksCircuitAfterHealthyScan(t *testing.T) {
+	ctx := context.Background()
+	db := enttestOpenScheduler(t)
+	rdb, _ := newTestRedis(t)
+	s := NewScheduler(db, rdb)
+	grp := mustGroup(t, ctx, db)
+	acc := mustAccount(t, ctx, db, grp, "gate-race", nil)
+
+	decision := s.evaluateSchedulabilityWithLoad(ctx, acc, itModel, time.Now(), 0)
+	if decision.state != Normal {
+		t.Fatalf("initial schedulability = %v, want Normal", decision.state)
+	}
+	family := s.resolveModelFamily(acc.Platform, itModel)
+	s.familyCooldown.MarkTransient(ctx, acc.ID, family, time.Now().Add(3*time.Second), "concurrent 503")
+
+	unavailable := unavailabilitySummary{}
+	allowed := s.claimSelectedAccountGate(WithFamilyProbeToken(ctx, "gate-race-token"), acc, itModel, &unavailable)
+	if allowed {
+		t.Fatal("selected account passed after a circuit opened between scan and final gate")
+	}
+	if !unavailable.transientSeen {
+		t.Fatalf("gate rejection summary = %+v, want transient", unavailable)
+	}
+}
+
+func TestClaimAccountGateDistinguishesCircuitOutcomes(t *testing.T) {
+	ctx := context.Background()
+	db := enttestOpenScheduler(t)
+	rdb, redisServer := newTestRedis(t)
+	s := NewScheduler(db, rdb)
+	grp := mustGroup(t, ctx, db)
+	acc := mustAccount(t, ctx, db, grp, "pinned", nil)
+	const model = "gpt-image-1.5"
+	family := s.resolveModelFamily(itPlatform, model)
+
+	decision, err := s.ClaimAccountGate(ctx, acc.ID, itPlatform, model, "healthy")
+	if err != nil || !decision.Allowed() || decision.ProbeClaimed {
+		t.Fatalf("healthy gate = %+v, err=%v", decision, err)
+	}
+
+	s.familyCooldown.Mark(ctx, acc.ID, family, time.Now().Add(2*time.Second), "limited")
+	decision, err = s.ClaimAccountGate(ctx, acc.ID, itPlatform, model, "cooling")
+	if err != nil || decision.Reason != AccountGateRateLimited || decision.RetryAt.IsZero() {
+		t.Fatalf("active rate-limit gate = %+v, err=%v", decision, err)
+	}
+
+	redisServer.FastForward(3 * time.Second)
+	decision, err = s.ClaimAccountGate(ctx, acc.ID, itPlatform, model, "owner")
+	if err != nil || !decision.Allowed() || !decision.ProbeClaimed {
+		t.Fatalf("half-open owner gate = %+v, err=%v", decision, err)
+	}
+	decision, err = s.ClaimAccountGate(ctx, acc.ID, itPlatform, model, "competitor")
+	if err != nil || decision.Reason != AccountGateRateLimited || decision.RetryAt.IsZero() {
+		t.Fatalf("competing half-open gate = %+v, err=%v", decision, err)
+	}
+	s.ReleaseFamilyProbe(ctx, acc.ID, itPlatform, model, "owner")
+
+	until := time.Now().Add(20 * time.Second)
+	acc = db.Account.UpdateOneID(acc.ID).
+		SetState(account.StateRateLimited).
+		SetStateUntil(until).
+		SaveX(ctx)
+	s.familyCooldown.MarkTransient(ctx, acc.ID, family, time.Now().Add(3*time.Second), "upstream 503")
+	decision, err = s.ClaimAccountGate(ctx, acc.ID, itPlatform, model, "overlap")
+	if err != nil || decision.Reason != AccountGateTransient || decision.RetryAt.Before(until.Add(-time.Second)) {
+		t.Fatalf("overlapping DB rate/transient gate = %+v, err=%v", decision, err)
+	}
+
+	db.Account.UpdateOneID(acc.ID).SetState(account.StateDisabled).ClearStateUntil().ExecX(ctx)
+	decision, err = s.ClaimAccountGate(ctx, acc.ID, itPlatform, model, "disabled")
+	if err != nil || decision.Reason != AccountGateUnavailable {
+		t.Fatalf("disabled account gate = %+v, err=%v", decision, err)
+	}
+}
+
+func TestClaimAccountGateDoesNotInventLeaseForDBRateLimit(t *testing.T) {
+	ctx := context.Background()
+	db := enttestOpenScheduler(t)
+	rdb, redisServer := newTestRedis(t)
+	s := NewScheduler(db, rdb)
+	grp := mustGroup(t, ctx, db)
+	acc := mustAccount(t, ctx, db, grp, "db-rate-half-open", nil)
+	family := s.resolveModelFamily(acc.Platform, itModel)
+	s.familyCooldown.Mark(ctx, acc.ID, family, time.Now().Add(time.Second), "family cooldown")
+	redisServer.FastForward(2 * time.Second)
+
+	dbRetryAt := time.Now().Add(2 * time.Second)
+	db.Account.UpdateOneID(acc.ID).
+		SetState(account.StateRateLimited).
+		SetStateUntil(dbRetryAt).
+		ExecX(ctx)
+	decision, err := s.ClaimAccountGate(ctx, acc.ID, acc.Platform, itModel, "blocked-token")
+	if err != nil || decision.Reason != AccountGateRateLimited {
+		t.Fatalf("DB rate-limit gate = %+v, err=%v", decision, err)
+	}
+	if remaining := time.Until(decision.RetryAt); remaining <= 0 || remaining > 3*time.Second {
+		t.Fatalf("DB retry remaining = %v; idle half-open must not invent a 45s lease", remaining)
+	}
+	if exists, err := rdb.Exists(ctx, familyProbeKey(acc.ID, family)).Result(); err != nil || exists != 0 {
+		t.Fatalf("blocked DB state claimed a probe: exists=%d err=%v", exists, err)
+	}
+}
+
+func TestSelectAccountHighPriorityStickyOnlyKeepsExistingSession(t *testing.T) {
+	ctx := context.Background()
+	db := enttestOpenScheduler(t)
+	rdb, _ := newTestRedis(t)
+	s := NewScheduler(db, rdb)
+
+	grp := mustGroup(t, ctx, db)
+	primary := mustAccount(t, ctx, db, grp, "sticky-primary-500", nil)
+	primary = db.Account.UpdateOneID(primary.ID).
+		SetPriority(500).
+		SetState(account.StateDegraded).
+		SetStateUntil(time.Now().Add(time.Minute)).
+		SaveX(ctx)
+	standby := mustAccount(t, ctx, db, grp, "normal-standby-300", nil)
+	standby = db.Account.UpdateOneID(standby.ID).SetPriority(300).SaveX(ctx)
+	db.Group.UpdateOneID(grp.ID).
+		SetModelRouting(map[string][]int64{itModel: {int64(primary.ID), int64(standby.ID)}}).
+		ExecX(ctx)
+	s.InvalidateRouteCache(grp.ID)
+
+	const existingSession = "existing-primary-session"
+	s.sticky.Set(ctx, 1, itPlatform, existingSession, primary.ID, defaultStickyTTL)
+	got, err := s.SelectAccount(ctx, itPlatform, itModel, 1, grp.ID, existingSession)
+	if err != nil || got == nil || got.ID != primary.ID {
+		t.Fatalf("existing sticky session = %v, err=%v; want high-priority primary %d", got, err, primary.ID)
+	}
+
+	got, err = s.SelectAccount(ctx, itPlatform, itModel, 1, grp.ID, "new-session")
+	if err != nil || got == nil || got.ID != standby.ID {
+		t.Fatalf("new session = %v, err=%v; want normal standby %d", got, err, standby.ID)
+	}
+}
+
+func TestSelectAccountAllCooldownReturnsEarliestRetry(t *testing.T) {
+	ctx := context.Background()
+	db := enttestOpenScheduler(t)
+	rdb, _ := newTestRedis(t)
+	s := NewScheduler(db, rdb)
+
+	grp := mustGroup(t, ctx, db)
+	first := mustAccount(t, ctx, db, grp, "cooldown-first", nil)
+	second := mustAccount(t, ctx, db, grp, "cooldown-second", nil)
+	db.Group.UpdateOneID(grp.ID).
+		SetModelRouting(map[string][]int64{itModel: {int64(first.ID), int64(second.ID)}}).
+		ExecX(ctx)
+	s.InvalidateRouteCache(grp.ID)
+	family := s.resolveModelFamily(itPlatform, itModel)
+	s.familyCooldown.Mark(ctx, first.ID, family, time.Now().Add(8*time.Second), "first")
+	s.familyCooldown.Mark(ctx, second.ID, family, time.Now().Add(3*time.Second), "second")
+
+	got, err := s.SelectAccount(ctx, itPlatform, itModel, 1, grp.ID, "")
+	if got != nil {
+		t.Fatalf("all cooldown selection = %v, want nil", got)
+	}
+	retryAt, ok := RateLimitedRetryAt(err)
+	if !ok {
+		t.Fatalf("all cooldown error = %v, want AccountsRateLimitedError", err)
+	}
+	if remaining := time.Until(retryAt); remaining <= 0 || remaining > 4*time.Second {
+		t.Fatalf("earliest retry remaining = %v, want about 3s", remaining)
+	}
+}
+
+func TestSelectAccountCooldownMixedWithDisabledIsNotAllRateLimited(t *testing.T) {
+	ctx := context.Background()
+	db := enttestOpenScheduler(t)
+	rdb, _ := newTestRedis(t)
+	s := NewScheduler(db, rdb)
+
+	grp := mustGroup(t, ctx, db)
+	cooling := mustAccount(t, ctx, db, grp, "cooling", nil)
+	disabled := mustAccount(t, ctx, db, grp, "disabled", nil)
+	disabled = db.Account.UpdateOneID(disabled.ID).SetState(account.StateDisabled).SaveX(ctx)
+	db.Group.UpdateOneID(grp.ID).
+		SetModelRouting(map[string][]int64{itModel: {int64(cooling.ID), int64(disabled.ID)}}).
+		ExecX(ctx)
+	s.InvalidateRouteCache(grp.ID)
+	family := s.resolveModelFamily(itPlatform, itModel)
+	s.familyCooldown.Mark(ctx, cooling.ID, family, time.Now().Add(5*time.Second), "cooling")
+
+	got, err := s.SelectAccount(ctx, itPlatform, itModel, 1, grp.ID, "")
+	if got != nil || !errors.Is(err, ErrNoAvailableAccount) {
+		t.Fatalf("mixed cooldown/disabled selection = %v, err=%v; want no available", got, err)
+	}
+	if _, ok := RateLimitedRetryAt(err); ok {
+		t.Fatalf("mixed cooldown/disabled returned typed rate limit: %v", err)
+	}
+}
+
+func TestSelectAccountLocalCapacityHasTypedError(t *testing.T) {
+	ctx := context.Background()
+	db := enttestOpenScheduler(t)
+	rdb, _ := newTestRedis(t)
+	s := NewScheduler(db, rdb)
+
+	grp := mustGroup(t, ctx, db)
+	acc := mustAccount(t, ctx, db, grp, "capacity-full", nil)
+	acc = db.Account.UpdateOneID(acc.ID).SetMaxConcurrency(1).SaveX(ctx)
+	db.Group.UpdateOneID(grp.ID).
+		SetModelRouting(map[string][]int64{itModel: {int64(acc.ID)}}).
+		ExecX(ctx)
+	s.InvalidateRouteCache(grp.ID)
+	if err := rdb.ZAdd(ctx, concurrencyKey(acc.ID), redis.Z{
+		Score:  float64(time.Now().Unix()),
+		Member: "occupied",
+	}).Err(); err != nil {
+		t.Fatalf("occupy account capacity: %v", err)
+	}
+
+	got, err := s.SelectAccount(ctx, itPlatform, itModel, 1, grp.ID, "")
+	if got != nil || !errors.Is(err, ErrLocalCapacityUnavailable) {
+		t.Fatalf("full-capacity selection = %v, err=%v; want typed local capacity", got, err)
+	}
+	if errors.Is(err, ErrTransientCandidatesUnavailable) {
+		t.Fatalf("local capacity was classified as upstream transient: %v", err)
+	}
+	if _, ok := RateLimitedRetryAt(err); ok {
+		t.Fatalf("local capacity returned typed rate limit: %v", err)
+	}
+}
+
+func TestSelectAccountUsesLaterAccountAndFamilyCooldown(t *testing.T) {
+	ctx := context.Background()
+	db := enttestOpenScheduler(t)
+	rdb, _ := newTestRedis(t)
+	s := NewScheduler(db, rdb)
+
+	grp := mustGroup(t, ctx, db)
+	acc := mustAccount(t, ctx, db, grp, "overlapping-cooldown", nil)
+	acc = db.Account.UpdateOneID(acc.ID).
+		SetState(account.StateRateLimited).
+		SetStateUntil(time.Now().Add(2 * time.Second)).
+		SaveX(ctx)
+	db.Group.UpdateOneID(grp.ID).
+		SetModelRouting(map[string][]int64{itModel: {int64(acc.ID)}}).
+		ExecX(ctx)
+	s.InvalidateRouteCache(grp.ID)
+	family := s.resolveModelFamily(itPlatform, itModel)
+	s.familyCooldown.Mark(ctx, acc.ID, family, time.Now().Add(8*time.Second), "longer family cooldown")
+
+	_, err := s.SelectAccount(ctx, itPlatform, itModel, 1, grp.ID, "")
+	retryAt, ok := RateLimitedRetryAt(err)
+	if !ok {
+		t.Fatalf("overlapping cooldown error = %v, want AccountsRateLimitedError", err)
+	}
+	if remaining := time.Until(retryAt); remaining < 6*time.Second || remaining > 9*time.Second {
+		t.Fatalf("retry remaining = %v, want later family cooldown around 8s", remaining)
 	}
 }
 

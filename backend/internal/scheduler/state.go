@@ -30,6 +30,13 @@ const (
 	degradedDefault = 60 * time.Second
 	// degradedMax 池账号最长降级窗口。
 	degradedMax = 10 * time.Minute
+	// transientCircuitDefault 把通用上游 5xx/传输故障短暂隔离到账号 × family。
+	// 3 秒足以让并发请求切到备用，同时通过 token half-open 快速验证恢复。
+	transientCircuitDefault = 3 * time.Second
+	// Explicit overload responses may ask for a slightly longer retry window,
+	// but transient circuits must remain short and must never enter the 429 path.
+	transientCircuitMin = time.Second
+	transientCircuitMax = 30 * time.Second
 
 	// poolDeadStreakThreshold 池账号透传死信（非 401 的 AccountDead）连击升级阈值。
 	// 单次 403 多是上游池内某个子账号被封，不动状态是对的；但欠费/封禁类故障会连续
@@ -54,6 +61,7 @@ type Judgment struct {
 	UpstreamStatus int           // 上游 HTTP 状态码，用于池账号区分 401（自身凭证无效）和 403（透传上游错误）。
 	UserID         int           // 触发本次判决请求的终端用户 ID（API Key 归属），无用户上下文为 0。
 	APIKeyID       int           // 触发本次判决请求所用的 API Key ID，无则为 0。
+	ProbeToken     string        // 选号阶段抢到的 half-open lease token；只有匹配 token 的 Success 才能关闸。
 }
 
 // StateMachine 账号状态机。所有状态转移必须通过 Apply 入口。
@@ -110,6 +118,9 @@ func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 		if j.IsPool {
 			sm.resetPoolDeadStreak(accountID)
 		}
+		if j.Family != "" && j.ProbeToken != "" && sm.familyCooldown != nil {
+			sm.familyCooldown.Recover(ctx, accountID, j.Family, j.ProbeToken)
+		}
 		sm.transitionActive(ctx, accountID, eventSourceForward)
 
 	case sdk.OutcomeAccountRateLimited:
@@ -165,8 +176,16 @@ func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 		// 账号本身没问题——不动 state，让 failover 切到下一账号就够了。
 		// 但事件要留痕：异常监控靠它回答"是不是上游不稳定"。
 		//
-		// 池账号（IsPool）保留软降级：pool 资源共享，一个账号抖起来可能拖垮整个 pool，
-		// 短时间 degraded 让调度器优先选其它账号，到期自动恢复。
+		// 有 family 时统一走短时 hard circuit：普通账号与 pool 都会在后续请求中
+		// 完全切到备用，不能让 pool 的 StickyOnly 会话绕过故障隔离。circuit 类型是
+		// transient，所有账号都在此状态时上层保持 5xx，绝不生成 429。
+		if j.Family != "" && sm.familyCooldown != nil {
+			until := time.Now().Add(transientCircuitDuration(j.RetryAfter))
+			sm.familyCooldown.MarkTransient(ctx, accountID, j.Family, until, j.Reason)
+			sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeUpstreamError, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, &until)
+			return
+		}
+		// 老调用方没有 family 时保留原降级策略。
 		if j.IsPool {
 			sm.applyDegraded(ctx, accountID, j)
 		} else {
@@ -174,8 +193,27 @@ func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 		}
 
 	case sdk.OutcomeClientError, sdk.OutcomeStreamAborted, sdk.OutcomeUnknown:
-		// 账号无辜，不改状态。
+		// 账号无辜，不改状态；若本次是 half-open probe，则精确释放自己的
+		// lease，让下一个请求立即验证，不必空等 lease TTL。
+		if j.Family != "" && j.ProbeToken != "" && sm.familyCooldown != nil {
+			releaseCtx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+			sm.familyCooldown.ReleaseProbe(releaseCtx, accountID, j.Family, j.ProbeToken)
+			cancel()
+		}
 	}
+}
+
+func transientCircuitDuration(retryAfter time.Duration) time.Duration {
+	if retryAfter <= 0 {
+		return transientCircuitDefault
+	}
+	if retryAfter < transientCircuitMin {
+		return transientCircuitMin
+	}
+	if retryAfter > transientCircuitMax {
+		return transientCircuitMax
+	}
+	return retryAfter
 }
 
 // applyDegraded 池账号软降级。state_until 到期后调度器看到就恢复 active。

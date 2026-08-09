@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
@@ -99,6 +101,73 @@ func TestCanceledRequestStatus(t *testing.T) {
 	}
 }
 
+func TestForwardCancellationStatus(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		ctx        context.Context
+		forwardErr error
+		want       int
+	}{
+		{
+			name:       "wrapped cancel before context propagation",
+			ctx:        context.Background(),
+			forwardErr: fmt.Errorf("gateway forward: %w", context.Canceled),
+			want:       statusClientClosedRequest,
+		},
+		{
+			name:       "wrapped grpc cancel before context propagation",
+			ctx:        context.Background(),
+			forwardErr: fmt.Errorf("gRPC Forward call failed: %w", status.Error(codes.Canceled, "context canceled")),
+			want:       statusClientClosedRequest,
+		},
+		{
+			name:       "independent upstream timeout",
+			ctx:        context.Background(),
+			forwardErr: fmt.Errorf("upstream request: %w", context.DeadlineExceeded),
+			want:       0,
+		},
+		{
+			name:       "upstream timeout before request deadline",
+			ctx:        contextWithDeadlineOnly{Context: context.Background(), deadline: time.Now().Add(time.Minute)},
+			forwardErr: fmt.Errorf("upstream request: %w", context.DeadlineExceeded),
+			want:       0,
+		},
+		{
+			name:       "wrapped deadline before context propagation",
+			ctx:        contextWithDeadlineOnly{Context: context.Background(), deadline: time.Now().Add(-time.Second)},
+			forwardErr: fmt.Errorf("gateway forward: %w", context.DeadlineExceeded),
+			want:       http.StatusGatewayTimeout,
+		},
+		{
+			name:       "wrapped grpc deadline before context propagation",
+			ctx:        contextWithDeadlineOnly{Context: context.Background(), deadline: time.Now().Add(-time.Second)},
+			forwardErr: fmt.Errorf("gRPC Forward call failed: %w", status.Error(codes.DeadlineExceeded, "context deadline exceeded")),
+			want:       http.StatusGatewayTimeout,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := forwardCancellationStatus(tt.ctx, tt.forwardErr); got != tt.want {
+				t.Fatalf("forwardCancellationStatus() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+type contextWithDeadlineOnly struct {
+	context.Context
+	deadline time.Time
+}
+
+func (c contextWithDeadlineOnly) Deadline() (time.Time, bool) {
+	return c.deadline, true
+}
+
 func TestFinalizeRequestContextUsesBackgroundForCanceled(t *testing.T) {
 	t.Parallel()
 
@@ -151,6 +220,36 @@ func TestHasForwardResult(t *testing.T) {
 				t.Fatalf("hasForwardResult() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNeutralizeCanceledExecutionDoesNotPenalizeAccount(t *testing.T) {
+	t.Parallel()
+
+	for _, kind := range []sdk.OutcomeKind{
+		sdk.OutcomeAccountRateLimited,
+		sdk.OutcomeAccountDead,
+		sdk.OutcomeUpstreamTransient,
+		sdk.OutcomeUnknown,
+	} {
+		execution := neutralizeCanceledExecution(forwardExecution{
+			outcome: sdk.ForwardOutcome{Kind: kind},
+			err:     context.Canceled,
+		})
+		if execution.err != nil {
+			t.Fatalf("kind %v: err = %v, want nil", kind, execution.err)
+		}
+		if execution.outcome.Kind != sdk.OutcomeStreamAborted {
+			t.Fatalf("kind %v became %v, want StreamAborted", kind, execution.outcome.Kind)
+		}
+	}
+
+	success := neutralizeCanceledExecution(forwardExecution{
+		outcome: sdk.ForwardOutcome{Kind: sdk.OutcomeSuccess},
+		err:     context.Canceled,
+	})
+	if success.outcome.Kind != sdk.OutcomeStreamAborted {
+		t.Fatalf("completed success became %v, want StreamAborted for canceled request", success.outcome.Kind)
 	}
 }
 
@@ -389,16 +488,36 @@ func TestSelectAllRoutesFailureResponse(t *testing.T) {
 		summary    allRoutesFailureSummary
 		wantStatus int
 		wantCode   string
+		wantRetry  time.Duration
 	}{
 		{
 			name: "upstream rate limited",
 			summary: allRoutesFailureSummary{
 				rateLimitedSeen:       true,
 				rateLimitedRetryAfter: 3 * time.Second,
-				upstreamFailureSeen:   true,
 			},
 			wantStatus: http.StatusTooManyRequests,
 			wantCode:   "all_routes_rate_limited",
+			wantRetry:  3 * time.Second,
+		},
+		{
+			name: "upstream rate limit without hint uses scheduler cooldown",
+			summary: allRoutesFailureSummary{
+				rateLimitedSeen: true,
+			},
+			wantStatus: http.StatusTooManyRequests,
+			wantCode:   "all_routes_rate_limited",
+			wantRetry:  60 * time.Second,
+		},
+		{
+			name: "scheduler cooldown without upstream call is rate limited",
+			summary: allRoutesFailureSummary{
+				schedulerRateLimitedSeen: true,
+				rateLimitedRetryAfter:    3 * time.Second,
+			},
+			wantStatus: http.StatusTooManyRequests,
+			wantCode:   "all_routes_rate_limited",
+			wantRetry:  3 * time.Second,
 		},
 		{
 			name: "local capacity exhausted",
@@ -486,6 +605,44 @@ func TestSelectAllRoutesFailureResponse(t *testing.T) {
 			},
 			wantStatus: http.StatusTooManyRequests,
 			wantCode:   "all_routes_rate_limited",
+			wantRetry:  time.Second,
+		},
+		{
+			name: "rate limit alongside local capacity stays 503",
+			summary: allRoutesFailureSummary{
+				rateLimitedSeen:   true,
+				localCapacitySeen: true,
+			},
+			wantStatus: http.StatusServiceUnavailable,
+			wantCode:   "all_routes_failed",
+		},
+		{
+			name: "scheduler cooldown alongside transient pick stays 503",
+			summary: allRoutesFailureSummary{
+				schedulerRateLimitedSeen: true,
+				accountUnavailable:       true,
+				transientPickFailureSeen: true,
+			},
+			wantStatus: http.StatusServiceUnavailable,
+			wantCode:   "no_available_account",
+		},
+		{
+			name: "scheduler cooldown after upstream failure stays 502",
+			summary: allRoutesFailureSummary{
+				schedulerRateLimitedSeen: true,
+				upstreamFailureSeen:      true,
+			},
+			wantStatus: http.StatusBadGateway,
+			wantCode:   "upstream_error",
+		},
+		{
+			name: "rate limit alongside account dead stays 503",
+			summary: allRoutesFailureSummary{
+				rateLimitedSeen: true,
+				accountDeadSeen: true,
+			},
+			wantStatus: http.StatusServiceUnavailable,
+			wantCode:   "no_available_account",
 		},
 	}
 
@@ -500,6 +657,9 @@ func TestSelectAllRoutesFailureResponse(t *testing.T) {
 			}
 			if got.code != tt.wantCode {
 				t.Fatalf("code = %q, want %q", got.code, tt.wantCode)
+			}
+			if got.retryAfter != tt.wantRetry {
+				t.Fatalf("retryAfter = %v, want %v", got.retryAfter, tt.wantRetry)
 			}
 		})
 	}
@@ -526,9 +686,19 @@ func TestRecordPickAccountErrorClassifies(t *testing.T) {
 			wantNotServed: true,
 		},
 		{
-			name:          "plain capacity failure",
-			err:           scheduler.ErrNoAvailableAccount,
+			name: "plain exhausted selection",
+			err:  scheduler.ErrNoAvailableAccount,
+		},
+		{
+			name:          "explicit non-rate-limited candidate failure",
+			err:           scheduler.ErrNonRateLimitedCandidatesUnavailable,
 			wantTransient: true,
+		},
+		{
+			name: "all candidates in known cooldown",
+			err: &scheduler.AccountsRateLimitedError{
+				RetryAt: time.Now().Add(3 * time.Second),
+			},
 		},
 		{
 			// scheduler 会把分类错误再包一层上下文，errors.Is 必须仍然穿透。
@@ -557,6 +727,85 @@ func TestRecordPickAccountErrorClassifies(t *testing.T) {
 			}
 			if summary.transientPickFailureSeen != tt.wantTransient {
 				t.Fatalf("transientPickFailureSeen = %v, want %v", summary.transientPickFailureSeen, tt.wantTransient)
+			}
+			if tt.name == "all candidates in known cooldown" {
+				if !summary.schedulerRateLimitedSeen {
+					t.Fatal("schedulerRateLimitedSeen = false, want true")
+				}
+				if summary.rateLimitedRetryAfter <= 0 {
+					t.Fatalf("rateLimitedRetryAfter = %v, want > 0", summary.rateLimitedRetryAfter)
+				}
+			}
+		})
+	}
+}
+
+func TestSelectionExhaustionAfterKnownRateLimitDoesNotDilute429(t *testing.T) {
+	t.Parallel()
+
+	summary := allRoutesFailureSummary{
+		rateLimitedSeen:       true,
+		rateLimitedRetryAfter: time.Second,
+	}
+	summary.recordPickAccountErrorAfterExclusions(scheduler.ErrNoAvailableAccount, true)
+
+	response := selectAllRoutesFailureResponse(summary)
+	if response.status != http.StatusTooManyRequests || response.code != "all_routes_rate_limited" {
+		t.Fatalf("response = %+v, want all-routes 429", response)
+	}
+}
+
+func TestShouldWaitForLocalCapacityDoesNotCarryAcrossNewFailureKinds(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		err               error
+		localSoftExcluded bool
+		want              bool
+	}{
+		{
+			name: "current typed local capacity waits",
+			err:  scheduler.ErrLocalCapacityUnavailable,
+			want: true,
+		},
+		{
+			name:              "pure exhaustion after local slot exclusion waits",
+			err:               scheduler.ErrNoAvailableAccount,
+			localSoftExcluded: true,
+			want:              true,
+		},
+		{
+			name: "plain exhaustion without local exclusion returns",
+			err:  scheduler.ErrNoAvailableAccount,
+		},
+		{
+			name:              "rate limit after local slot exclusion returns",
+			err:               &scheduler.AccountsRateLimitedError{RetryAt: time.Now().Add(time.Second)},
+			localSoftExcluded: true,
+		},
+		{
+			name:              "transient circuit after local slot exclusion returns",
+			err:               scheduler.ErrTransientCandidatesUnavailable,
+			localSoftExcluded: true,
+		},
+		{
+			name:              "disabled or terminal after local slot exclusion returns",
+			err:               scheduler.ErrNonRateLimitedCandidatesUnavailable,
+			localSoftExcluded: true,
+		},
+		{
+			name:              "structural failure after local slot exclusion returns",
+			err:               scheduler.ErrGroupOffline,
+			localSoftExcluded: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := shouldWaitForLocalCapacity(tt.err, tt.localSoftExcluded); got != tt.want {
+				t.Fatalf("shouldWaitForLocalCapacity(%v, %v) = %v, want %v", tt.err, tt.localSoftExcluded, got, tt.want)
 			}
 		})
 	}

@@ -15,10 +15,11 @@ const CtxKeyRequestID = "request_id"
 // 业务层往 gin.Context 写入的"访问日志富化字段"。RequestLogger 在收尾时读取这些键
 // 把它们合并进 http_request 那一行，避免再单独打 forward_request_completed 重复信息。
 const (
-	CtxKeyAccessModel     = "access_log_model"
-	CtxKeyAccessPlatform  = "access_log_platform"
-	CtxKeyAccessAccountID = "access_log_account_id"
-	CtxKeyAccessAttempts  = "access_log_attempts"
+	CtxKeyAccessModel          = "access_log_model"
+	CtxKeyAccessPlatform       = "access_log_platform"
+	CtxKeyAccessAccountID      = "access_log_account_id"
+	CtxKeyAccessAttempts       = "access_log_attempts"
+	CtxKeyAccessStatusOverride = "access_log_status_override"
 )
 
 // healthPaths 记录健康检查路径，避免污染访问日志。
@@ -46,7 +47,7 @@ func RequestLogger() gin.HandlerFunc {
 		c.Next()
 
 		duration := time.Since(start)
-		status := c.Writer.Status()
+		status := requestLogStatus(c)
 		path := c.Request.URL.Path
 
 		// 根据 path/状态码挑选日志级别
@@ -103,6 +104,20 @@ func RequestLogger() gin.HandlerFunc {
 		}
 		slog.Default().Log(c.Request.Context(), level, "http_request", attrs...)
 	}
+}
+
+func requestLogStatus(c *gin.Context) int {
+	if c != nil {
+		if value, ok := c.Get(CtxKeyAccessStatusOverride); ok {
+			if status, ok := value.(int); ok && status >= 100 && status <= 599 {
+				return status
+			}
+		}
+		if c.Writer != nil {
+			return c.Writer.Status()
+		}
+	}
+	return 0
 }
 
 // RequestIDFromGinContext 从 gin.Context 读取 request_id，便于其它中间件复用。

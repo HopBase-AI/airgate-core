@@ -67,6 +67,42 @@ var registerSessionScript = redis.NewScript(`
 	return 1
 `)
 
+// migrateSessionScript atomically secures the target account's slot before
+// releasing the previous sticky account's slot. A full target leaves the old
+// slot untouched. Accounts without max_sessions do not need a target ZSET
+// member, but still release a stale slot held on the previous account.
+var migrateSessionScript = redis.NewScript(`
+	local targetKey = KEYS[1]
+	local previousKey = KEYS[2]
+	local sessionUUID = ARGV[1]
+	local maxSessions = tonumber(ARGV[2])
+	local idleTimeout = tonumber(ARGV[3])
+
+	if maxSessions <= 0 then
+		-- Also remove a member on the same account when max_sessions was
+		-- disabled after the session had already been registered.
+		redis.call('ZREM', previousKey, sessionUUID)
+		return 1
+	end
+
+	local now = redis.call('TIME')
+	local nowSec = tonumber(now[1])
+	local expireBefore = nowSec - idleTimeout
+	redis.call('ZREMRANGEBYSCORE', targetKey, '-inf', expireBefore)
+
+	local score = redis.call('ZSCORE', targetKey, sessionUUID)
+	if not score and redis.call('ZCARD', targetKey) >= maxSessions then
+		return 0
+	end
+
+	redis.call('ZADD', targetKey, nowSec, sessionUUID)
+	redis.call('EXPIRE', targetKey, idleTimeout + 60)
+	if previousKey ~= targetKey then
+		redis.call('ZREM', previousKey, sessionUUID)
+	end
+	return 1
+`)
+
 // refreshSessionScript Lua 脚本：刷新会话时间戳（仅当会话已存在时续期）。
 //
 // 不做 upsert：会话已被空闲清理后不在此重新登记，以免绕过 max_sessions。
@@ -116,6 +152,31 @@ func (s *SessionManager) RegisterSession(ctx context.Context, accountID int, ses
 
 	if err != nil {
 		return true, nil // fail-open
+	}
+	return result == 1, nil
+}
+
+// MigrateSession moves sessionUUID from previousAccountID to targetAccountID in
+// one Redis transaction. previousAccountID <= 0 means this is a new session.
+func (s *SessionManager) MigrateSession(ctx context.Context, previousAccountID, targetAccountID int, sessionUUID string, maxSessions int, idleTimeout time.Duration) (bool, error) {
+	if s.rdb == nil || sessionUUID == "" {
+		return true, nil
+	}
+	if idleTimeout <= 0 {
+		idleTimeout = defaultSessionIdleTimeout
+	}
+	targetKey := sessionLimitKey(targetAccountID)
+	previousKey := targetKey
+	if previousAccountID > 0 && previousAccountID != targetAccountID {
+		previousKey = sessionLimitKey(previousAccountID)
+	}
+	result, err := migrateSessionScript.Run(ctx, s.rdb, []string{targetKey, previousKey},
+		sessionUUID,
+		maxSessions,
+		int(idleTimeout.Seconds()),
+	).Int()
+	if err != nil {
+		return true, err // preserve the existing fail-open availability contract
 	}
 	return result == 1, nil
 }

@@ -214,6 +214,11 @@ func TestWriteClientErrorResponse_StreamBeforeResponseStarts(t *testing.T) {
 		Kind: sdk.OutcomeClientError,
 		Upstream: sdk.UpstreamResponse{
 			StatusCode: http.StatusBadRequest,
+			Headers: http.Header{
+				"X-Upstream-Request-ID": []string{"req-empty-400"},
+				"Content-Length":        []string{"0"},
+				"Content-Encoding":      []string{"gzip"},
+			},
 		},
 		Reason: "模型不支持",
 	})
@@ -223,6 +228,18 @@ func TestWriteClientErrorResponse_StreamBeforeResponseStarts(t *testing.T) {
 	}
 	if body := recorder.Body.String(); !strings.Contains(body, "模型不支持") {
 		t.Fatalf("body = %q, want contain '模型不支持'", body)
+	}
+	if got := recorder.Header().Get("X-Upstream-Request-ID"); got != "req-empty-400" {
+		t.Fatalf("X-Upstream-Request-ID = %q, want req-empty-400", got)
+	}
+	if got := recorder.Header().Get("Content-Length"); got != "" {
+		t.Fatalf("Content-Length = %q, want empty for generated body", got)
+	}
+	if got := recorder.Header().Get("Content-Encoding"); got != "" {
+		t.Fatalf("Content-Encoding = %q, want empty for generated body", got)
+	}
+	if got := recorder.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("Content-Type = %q, want application/json", got)
 	}
 }
 
@@ -248,6 +265,39 @@ func TestWriteClientErrorResponse_PassesThroughUpstreamBody(t *testing.T) {
 	}
 	if got := recorder.Body.String(); got != body {
 		t.Fatalf("body = %q, want upstream body", got)
+	}
+}
+
+func TestWriteUpstreamIfPresentPreservesEmptyBodyStatusAndHeaders(t *testing.T) {
+	t.Parallel()
+
+	for _, statusCode := range []int{http.StatusTooManyRequests, http.StatusServiceUnavailable} {
+		statusCode := statusCode
+		t.Run(http.StatusText(statusCode), func(t *testing.T) {
+			t.Parallel()
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			upstream := sdk.UpstreamResponse{
+				StatusCode: statusCode,
+				Headers:    http.Header{"Retry-After": []string{"7"}},
+			}
+
+			if !returnableUpstream(upstream) {
+				t.Fatal("returnableUpstream = false, want true for status-only response")
+			}
+			if !writeUpstreamIfPresent(c, upstream) {
+				t.Fatal("writeUpstreamIfPresent = false, want true")
+			}
+			if recorder.Code != statusCode {
+				t.Fatalf("status = %d, want %d", recorder.Code, statusCode)
+			}
+			if got := recorder.Header().Get("Retry-After"); got != "7" {
+				t.Fatalf("Retry-After = %q, want 7", got)
+			}
+			if recorder.Body.Len() != 0 {
+				t.Fatalf("body = %q, want empty", recorder.Body.String())
+			}
+		})
 	}
 }
 

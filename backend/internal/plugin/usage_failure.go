@@ -138,6 +138,25 @@ func (f *Forwarder) recordCanceledRequest(c *gin.Context, state *forwardState, s
 	f.recordFailureUsage(c, state, canceledRequestFailure(status))
 }
 
+// writeCanceledResult finalizes a request whose context was canceled after the
+// plugin returned a real result. Account health is deliberately untouched, but
+// refreshed credentials and chargeable usage must not be lost.
+func (f *Forwarder) writeCanceledResult(c *gin.Context, state *forwardState, execution forwardExecution, status int) {
+	markCanceledRequest(c, status)
+	// The account RPM reservation belongs to the canceled attempt. The no-result
+	// path rolls it back in Forward directly; every caller reaching this helper
+	// has a real plugin result and must release its reservation exactly once.
+	f.scheduler.DecrementRPM(context.Background(), state.account.ID)
+	f.releaseFamilyProbe(state)
+	f.persistUpdatedCredentials(state.account.ID, execution.outcome.UpdatedCredentials)
+	failure := canceledRequestFailure(status)
+	if execution.outcome.Usage != nil {
+		f.recordUsageWithFailureOverride(c, state, execution, &failure)
+		return
+	}
+	f.recordFailureUsage(c, state, failure)
+}
+
 // failureRecordPlatform / failureRecordModel 兜底 usage_log 的两个 NotEmpty 列。
 // 失败请求可能在解析出平台/模型之前就中断。无真实模型的元数据路由可声明
 // usage_model 作为操作标识；仍为空时由 recorder 最终回退 unknown。

@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
@@ -26,6 +28,7 @@ const (
 	ginCtxKeyPlatform  = middleware.CtxKeyAccessPlatform
 	ginCtxKeyAccountID = middleware.CtxKeyAccessAccountID
 	ginCtxKeyAttempts  = middleware.CtxKeyAccessAttempts
+	ginCtxKeyStatus    = middleware.CtxKeyAccessStatusOverride
 )
 
 // Forwarder 请求转发器：认证 → 余额预检 → 调度 → 并发闸门 → 转发 → 判决 → 计费 → 记录。
@@ -83,8 +86,8 @@ const queueMaxPollInterval = 2 * time.Second
 const statusClientClosedRequest = 499
 
 // allRoutesFailedDefaultRetryAfter 客户端最终因真实上游限流被拒时，若没有任何上游 RetryAfter 可参考，
-// 给客户端一个保守的退避建议。1s 既能避免雪崩，又比 60s 更贴合"瞬时限流"的真实恢复节奏。
-const allRoutesFailedDefaultRetryAfter = time.Second
+// 与 scheduler 首次无提示限流的默认冷却保持一致，避免客户端在账号仍冷却时过早重试。
+const allRoutesFailedDefaultRetryAfter = 60 * time.Second
 
 // Forward 入口。失败时自动 failover 到其它账号，最多 maxFailoverAttempts 次。
 //
@@ -192,6 +195,7 @@ func (f *Forwarder) Forward(c *gin.Context) {
 		attempt := 0
 		queueDeadline := time.Now().Add(queueWaitTimeout)
 		queuePollDelay := queuePollInterval
+		waitingForLocalCapacity := false
 
 		for attempt < maxFailoverAttempts {
 			if status := canceledRequestStatus(ctx.Err()); status != 0 {
@@ -216,8 +220,9 @@ func (f *Forwarder) Forward(c *gin.Context) {
 					)
 					return
 				}
-				failureSummary.recordPickAccountError(err)
-				if len(softExclude) > 0 && time.Now().Before(queueDeadline) {
+				failureSummary.recordPickAccountErrorAfterExclusions(err, len(exclude) > 0)
+				localSoftExcluded := waitingForLocalCapacity && len(softExclude) > 0
+				if shouldWaitForLocalCapacity(err, localSoftExcluded) && time.Now().Before(queueDeadline) {
 					softExclude = softExclude[:0]
 					wait := queuePollDelay
 					if remaining := time.Until(queueDeadline); remaining < wait {
@@ -274,7 +279,33 @@ func (f *Forwarder) Forward(c *gin.Context) {
 			releaseAccountSlot, ok := f.acquireAccountSlot(c, state)
 			if !ok {
 				failureSummary.recordLocalCapacityFailure()
+				waitingForLocalCapacity = true
 				softExclude = append(softExclude, accountID)
+				continue
+			}
+			waitingForLocalCapacity = false
+
+			gate, gateErr := f.scheduler.ClaimAccountGate(
+				ctx,
+				accountID,
+				state.account.Platform,
+				state.modelForScheduling(),
+				state.requestID,
+			)
+			if gateErr != nil || !gate.Allowed() {
+				releaseAccountSlot()
+				f.scheduler.DecrementRPM(context.Background(), accountID)
+				f.releaseFamilyProbe(state)
+				if gateErr != nil {
+					failureSummary.recordPickAccountError(gateErr)
+				} else {
+					failureSummary.recordAccountGateDecision(gate)
+				}
+				hardExclude = append(hardExclude, accountID)
+				attemptLogger.Warn("forward_account_gate_rejected",
+					"reason", gate.Reason,
+					sdk.LogFieldError, gateErr,
+				)
 				continue
 			}
 
@@ -283,34 +314,67 @@ func (f *Forwarder) Forward(c *gin.Context) {
 				beginCalled = true
 				if !allowed {
 					f.scheduler.DecrementRPM(ctx, accountID)
+					f.releaseFamilyProbe(state)
 					releaseAccountSlot()
 					return
 				}
 				mwBag = bag
 			}
 
+			stopProbeLease := func() {}
+			if gate.ProbeClaimed {
+				stopProbeLease = f.scheduler.MaintainFamilyProbe(
+					ctx,
+					accountID,
+					state.account.Platform,
+					state.modelForScheduling(),
+					state.requestID,
+				)
+			}
 			execution := f.callPlugin(c, state)
+			stopProbeLease()
 			attempt++
 			totalAttempts++
-
-			requestCanceled := canceledRequestStatus(ctx.Err())
-			if requestCanceled != 0 {
-				if !hasForwardResult(execution) {
-					releaseAccountSlot()
-					f.scheduler.DecrementRPM(context.Background(), accountID)
-					c.Set(ginCtxKeyAccountID, accountID)
-					c.Set(ginCtxKeyAttempts, totalAttempts)
-					f.recordCanceledRequest(c, state, requestCanceled, true)
-					logger.Debug("forward_request_canceled",
-						"status_code", requestCanceled,
-						"attempts", totalAttempts,
-					)
+			slotReleased := false
+			endCalled := false
+			releaseSlot := func() {
+				if slotReleased {
 					return
 				}
-				execution.err = nil
+				slotReleased = true
+				releaseAccountSlot()
+			}
+			finishCanceled := func(status int) {
+				if !hasForwardResult(execution) {
+					releaseSlot()
+					f.scheduler.DecrementRPM(context.Background(), accountID)
+					f.releaseFamilyProbe(state)
+					c.Set(ginCtxKeyAccountID, accountID)
+					c.Set(ginCtxKeyAttempts, totalAttempts)
+					f.recordCanceledRequest(c, state, status, true)
+				} else {
+					if !endCalled {
+						endCalled = true
+						f.runForwardEndChain(c, state, neutralizeCanceledExecution(execution), mwBag)
+					}
+					f.writeCanceledResult(c, state, execution, status)
+					releaseSlot()
+					c.Set(ginCtxKeyAccountID, accountID)
+					c.Set(ginCtxKeyAttempts, totalAttempts)
+				}
+				logger.Debug("forward_request_canceled",
+					"status_code", status,
+					"attempts", totalAttempts,
+				)
 			}
 
-			if requestCanceled == 0 && f.canFailover(c, state, execution) {
+			requestCanceled := forwardCancellationStatus(ctx, execution.err)
+			if requestCanceled != 0 {
+				finishCanceled(requestCanceled)
+				return
+			}
+
+			if f.canFailover(c, state, execution) {
 				failureSummary.recordExecution(execution)
 				attrs := []any{
 					"attempt", attempt,
@@ -325,8 +389,11 @@ func (f *Forwarder) Forward(c *gin.Context) {
 					attrs = append(attrs, sdk.LogFieldError, execution.err)
 				}
 				attemptLogger.Warn("forward_attempt_failed", attrs...)
-				releaseAccountSlot()
-				f.applyOutcome(ctx, state, execution)
+				releaseSlot()
+				if !f.applyOutcome(ctx, state, execution) {
+					finishCanceled(canceledRequestStatus(ctx.Err()))
+					return
+				}
 
 				if execution.outcome.Kind.IsAccountFault() {
 					hardExclude = append(hardExclude, accountID)
@@ -336,9 +403,18 @@ func (f *Forwarder) Forward(c *gin.Context) {
 				continue
 			}
 
+			if requestCanceled := canceledRequestStatus(ctx.Err()); requestCanceled != 0 {
+				finishCanceled(requestCanceled)
+				return
+			}
+			endCalled = true
 			f.runForwardEndChain(c, state, execution, mwBag)
+			if requestCanceled := canceledRequestStatus(ctx.Err()); requestCanceled != 0 {
+				finishCanceled(requestCanceled)
+				return
+			}
 			f.writeResult(c, state, execution)
-			releaseAccountSlot()
+			releaseSlot()
 			// 总览写回 gin ctx，由 http_request 中间件统一输出，避免双行重复。
 			c.Set(ginCtxKeyAccountID, accountID)
 			c.Set(ginCtxKeyAttempts, totalAttempts)
@@ -411,8 +487,36 @@ func canceledRequestStatus(err error) int {
 	}
 }
 
+// forwardCancellationStatus closes the small race between a gateway returning
+// a context error and that cancellation becoming visible through ctx.Err(). A
+// wrapped Canceled always identifies a client-side cancellation. DeadlineExceeded
+// is only request-owned when the request context is canceled or its own deadline
+// has elapsed; an independent upstream timeout must remain eligible for failover.
+func forwardCancellationStatus(ctx context.Context, forwardErr error) int {
+	if ctx != nil {
+		if status := canceledRequestStatus(ctx.Err()); status != 0 {
+			return status
+		}
+	}
+	forwardCode := status.Code(forwardErr)
+	if errors.Is(forwardErr, context.Canceled) || forwardCode == codes.Canceled {
+		return statusClientClosedRequest
+	}
+	if (!errors.Is(forwardErr, context.DeadlineExceeded) && forwardCode != codes.DeadlineExceeded) || ctx == nil {
+		return 0
+	}
+	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		return http.StatusGatewayTimeout
+	}
+	return 0
+}
+
 func markCanceledRequest(c *gin.Context, status int) {
-	if c == nil || status == 0 || c.Writer.Written() {
+	if c == nil || status == 0 {
+		return
+	}
+	c.Set(ginCtxKeyStatus, status)
+	if c.Writer.Written() {
 		return
 	}
 	c.Status(status)
@@ -435,19 +539,38 @@ func hasForwardResult(execution forwardExecution) bool {
 	return execution.outcome.Usage != nil || len(execution.outcome.UpdatedCredentials) > 0
 }
 
+// neutralizeCanceledExecution prevents a client-side cancellation from changing
+// account health when the plugin happens to return a failure at the same time.
+// The original execution is retained separately for usage and credential
+// persistence. This copy is only sent to middleware, so every canceled attempt
+// is represented as account-neutral regardless of a racing upstream result.
+func neutralizeCanceledExecution(execution forwardExecution) forwardExecution {
+	execution.err = nil
+	execution.outcome.Kind = sdk.OutcomeStreamAborted
+	if execution.outcome.Reason == "" {
+		execution.outcome.Reason = "客户端已取消请求"
+	}
+	return execution
+}
+
 type allRoutesFailureSummary struct {
 	rateLimitedSeen       bool
 	rateLimitedRetryAfter time.Duration
-	localCapacitySeen     bool
-	accountUnavailable    bool
-	accountDeadSeen       bool
-	upstreamTimeoutSeen   bool
-	upstreamFailureSeen   bool
+	// schedulerRateLimitedSeen covers the case where every routed account was
+	// already in a family cooldown and no upstream call was made on this request.
+	// It must use the same 429 response contract as an upstream 429.
+	schedulerRateLimitedSeen    bool
+	localCapacitySeen           bool
+	accountUnavailable          bool
+	accountDeadSeen             bool
+	upstreamTimeoutSeen         bool
+	upstreamFailureSeen         bool
+	unclassifiedPickFailureSeen bool
 
 	// 结构性选号失败：重试不会恢复，最终响应要用 4xx 让客户端立刻停手。
 	groupOfflineSeen   bool
 	modelNotServedSeen bool
-	// transientPickFailureSeen 记录"容量型"选号失败（并发/RPM/window/session/failover 耗尽）。
+	// transientPickFailureSeen 记录明确的非限流不可用（并发/RPM/window/session/disabled）。
 	// 只要出现过一次，就说明还有路线只是暂时不可用，此时不能降级成 4xx。
 	transientPickFailureSeen bool
 }
@@ -485,14 +608,67 @@ func (s *allRoutesFailureSummary) recordRetryAfter(retryAfter time.Duration) {
 // 三类互斥：分组已下线 / 分组不供该模型 / 容量型暂时不可用。
 func (s *allRoutesFailureSummary) recordPickAccountError(err error) {
 	s.accountUnavailable = true
+	if retryAt, ok := scheduler.RateLimitedRetryAt(err); ok {
+		s.schedulerRateLimitedSeen = true
+		if retryAfter := time.Until(retryAt); retryAfter > 0 && (s.rateLimitedRetryAfter <= 0 || retryAfter < s.rateLimitedRetryAfter) {
+			s.rateLimitedRetryAfter = retryAfter
+		}
+		return
+	}
 	switch {
 	case errors.Is(err, scheduler.ErrGroupOffline):
 		s.groupOfflineSeen = true
 	case errors.Is(err, scheduler.ErrModelNotServed):
 		s.modelNotServedSeen = true
-	default:
+	case errors.Is(err, scheduler.ErrLocalCapacityUnavailable):
+		s.localCapacitySeen = true
+	case errors.Is(err, scheduler.ErrTransientCandidatesUnavailable),
+		errors.Is(err, scheduler.ErrNonRateLimitedCandidatesUnavailable):
 		s.transientPickFailureSeen = true
+	default:
+		s.unclassifiedPickFailureSeen = true
 	}
+}
+
+func (s *allRoutesFailureSummary) recordPickAccountErrorAfterExclusions(err error, hadExclusions bool) {
+	if hadExclusions && isUnclassifiedSelectionExhaustion(err) {
+		return
+	}
+	s.recordPickAccountError(err)
+}
+
+func isUnclassifiedSelectionExhaustion(err error) bool {
+	if !errors.Is(err, scheduler.ErrNoAvailableAccount) {
+		return false
+	}
+	if _, ok := scheduler.RateLimitedRetryAt(err); ok {
+		return false
+	}
+	return !errors.Is(err, scheduler.ErrGroupOffline) &&
+		!errors.Is(err, scheduler.ErrModelNotServed) &&
+		!errors.Is(err, scheduler.ErrNonRateLimitedCandidatesUnavailable)
+}
+
+func shouldWaitForLocalCapacity(err error, localSoftExcluded bool) bool {
+	if errors.Is(err, scheduler.ErrLocalCapacityUnavailable) {
+		return true
+	}
+	return localSoftExcluded && isUnclassifiedSelectionExhaustion(err)
+}
+
+func (s *allRoutesFailureSummary) recordAccountGateDecision(decision scheduler.AccountGateDecision) {
+	if decision.Allowed() {
+		return
+	}
+	s.accountUnavailable = true
+	if decision.Reason == scheduler.AccountGateRateLimited {
+		s.schedulerRateLimitedSeen = true
+		if retryAfter := time.Until(decision.RetryAt); retryAfter > 0 {
+			s.recordRetryAfter(retryAfter)
+		}
+		return
+	}
+	s.transientPickFailureSeen = true
 }
 
 func (s *allRoutesFailureSummary) recordLocalCapacityFailure() {
@@ -521,7 +697,7 @@ func writeAllRoutesFailed(c *gin.Context, summary allRoutesFailureSummary) {
 }
 
 func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFailureResponse {
-	if summary.rateLimitedSeen {
+	if summary.allViableRoutesRateLimited() {
 		retryAfter := summary.rateLimitedRetryAfter
 		if retryAfter <= 0 {
 			retryAfter = allRoutesFailedDefaultRetryAfter
@@ -599,8 +775,23 @@ func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFa
 	}
 }
 
+func (s allRoutesFailureSummary) allViableRoutesRateLimited() bool {
+	if !s.rateLimitedSeen && !s.schedulerRateLimitedSeen {
+		return false
+	}
+	// Structural route failures (offline / model not served) are not viable and
+	// therefore do not dilute a genuine all-cooldown result. Every recoverable
+	// non-cooldown signal must keep the final response out of the 429 contract.
+	return !s.localCapacitySeen &&
+		!s.transientPickFailureSeen &&
+		!s.accountDeadSeen &&
+		!s.upstreamTimeoutSeen &&
+		!s.upstreamFailureSeen &&
+		!s.unclassifiedPickFailureSeen
+}
+
 func returnableUpstream(up sdk.UpstreamResponse) bool {
-	return up.StatusCode > 0 && len(up.Body) > 0
+	return up.StatusCode > 0
 }
 
 func isTimeoutFailure(execution forwardExecution) bool {
