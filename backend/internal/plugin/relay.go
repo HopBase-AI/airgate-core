@@ -40,6 +40,12 @@ type RelayService struct {
 	manager *Manager
 	hmacKey []byte
 	client  *http.Client
+
+	// loadAccountBearerAuth keeps credential lookup inside Core. Plugins may
+	// identify the account that owns a protected relay resource, but never
+	// receive or return the credential through the relay contract.
+	loadAccountBearerAuth func(context.Context, int64, string) (string, error)
+	resolveTarget         func(context.Context, relayTokenPayload) (relayUpstreamTarget, error)
 }
 
 const (
@@ -85,12 +91,15 @@ func NewRelayService(manager *Manager, secretHex string) (*RelayService, error) 
 	key := mac.Sum(nil)
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.ResponseHeaderTimeout = 60 * time.Second
-	return &RelayService{
+	service := &RelayService{
 		manager: manager,
 		hmacKey: key,
 		// 不设整体 Timeout：大文件流式拷贝时长不可预估，取消交由请求 context。
 		client: &http.Client{Transport: transport},
-	}, nil
+	}
+	service.loadAccountBearerAuth = service.defaultAccountBearerAuth
+	service.resolveTarget = service.resolveUpstreamURL
+	return service, nil
 }
 
 // SignPath 为 (plugin, ref) 签发中继路径（不含 host），返回路径与过期时间（unix 秒）。
@@ -155,11 +164,18 @@ func (s *RelayService) parseToken(token string) (relayTokenPayload, error) {
 	return payload, nil
 }
 
-// resolveUpstreamURL 请插件把 ref 解析成当前可用的上游直链。
-func (s *RelayService) resolveUpstreamURL(ctx context.Context, payload relayTokenPayload) (string, error) {
+type relayUpstreamTarget struct {
+	url           string
+	authorization string
+}
+
+// resolveUpstreamURL 请插件把 ref 解析成当前可用的上游直链。受保护资源可以
+// 返回所属 account_id；Core 从本地账户读取 api_key，并只在回源请求中附加 Bearer
+// 授权。凭证不会经过插件响应、任务记录或公开 HTTP 响应。
+func (s *RelayService) resolveUpstreamURL(ctx context.Context, payload relayTokenPayload) (relayUpstreamTarget, error) {
 	inst := s.manager.GetGatewayInstance(payload.Plugin)
 	if inst == nil {
-		return "", fmt.Errorf("插件 %s 未运行", payload.Plugin)
+		return relayUpstreamTarget{}, fmt.Errorf("插件 %s 未运行", payload.Plugin)
 	}
 	body, _ := json.Marshal(map[string]string{"ref": payload.Ref})
 	req := &sdk.ForwardRequest{
@@ -177,19 +193,63 @@ func (s *RelayService) resolveUpstreamURL(ctx context.Context, payload relayToke
 	defer cancel()
 	outcome, err := inst.Gateway.Forward(resolveCtx, req)
 	if err != nil {
-		return "", fmt.Errorf("插件解析失败: %w", err)
+		return relayUpstreamTarget{}, fmt.Errorf("插件解析失败: %w", err)
 	}
 	if outcome.Upstream.StatusCode < 200 || outcome.Upstream.StatusCode >= 300 {
-		return "", fmt.Errorf("插件拒绝解析(status=%d): %s",
+		return relayUpstreamTarget{}, fmt.Errorf("插件拒绝解析(status=%d): %s",
 			outcome.Upstream.StatusCode, extractErrorMessage(outcome.Upstream.Body))
 	}
 	var resolved struct {
-		URL string `json:"url"`
+		URL       string `json:"url"`
+		AccountID int64  `json:"account_id,omitempty"`
 	}
 	if err := json.Unmarshal(outcome.Upstream.Body, &resolved); err != nil || strings.TrimSpace(resolved.URL) == "" {
-		return "", fmt.Errorf("插件解析响应缺少 url")
+		return relayUpstreamTarget{}, fmt.Errorf("插件解析响应缺少 url")
 	}
-	return resolved.URL, nil
+	return s.targetFromResolvedURL(ctx, resolved.URL, resolved.AccountID, inst.Platform)
+}
+
+func (s *RelayService) targetFromResolvedURL(ctx context.Context, rawURL string, accountID int64, platform string) (relayUpstreamTarget, error) {
+	target := relayUpstreamTarget{url: strings.TrimSpace(rawURL)}
+	if target.url == "" {
+		return relayUpstreamTarget{}, fmt.Errorf("插件解析响应缺少 url")
+	}
+	if accountID == 0 {
+		return target, nil
+	}
+	if accountID < 0 {
+		return relayUpstreamTarget{}, fmt.Errorf("插件返回的 account_id 非法")
+	}
+	if s.loadAccountBearerAuth == nil {
+		return relayUpstreamTarget{}, fmt.Errorf("中继账户凭证解析不可用")
+	}
+	authorization, err := s.loadAccountBearerAuth(ctx, accountID, platform)
+	if err != nil {
+		return relayUpstreamTarget{}, fmt.Errorf("中继账户凭证解析失败: %w", err)
+	}
+	target.authorization = authorization
+	return target, nil
+}
+
+func (s *RelayService) defaultAccountBearerAuth(ctx context.Context, accountID int64, platform string) (string, error) {
+	if s.manager == nil || s.manager.db == nil {
+		return "", fmt.Errorf("账户存储不可用")
+	}
+	if accountID > int64(^uint(0)>>1) {
+		return "", fmt.Errorf("account_id 超出范围")
+	}
+	item, err := s.manager.db.Account.Get(ctx, int(accountID))
+	if err != nil {
+		return "", err
+	}
+	if !strings.EqualFold(strings.TrimSpace(item.Platform), strings.TrimSpace(platform)) {
+		return "", fmt.Errorf("账户平台不匹配")
+	}
+	apiKey := strings.TrimSpace(item.Credentials["api_key"])
+	if apiKey == "" {
+		return "", fmt.Errorf("账户缺少 api_key")
+	}
+	return "Bearer " + apiKey, nil
 }
 
 // relayPassthroughRequestHeaders 回源时透传的条件/范围请求头。
@@ -221,7 +281,11 @@ func (s *RelayService) ServeHTTP(w http.ResponseWriter, r *http.Request, token s
 		return
 	}
 
-	upstreamURL, err := s.resolveUpstreamURL(r.Context(), payload)
+	resolveTarget := s.resolveTarget
+	if resolveTarget == nil {
+		resolveTarget = s.resolveUpstreamURL
+	}
+	target, err := resolveTarget(r.Context(), payload)
 	if err != nil {
 		slog.Warn("relay_resolve_failed",
 			sdk.LogFieldPluginID, payload.Plugin, "ref", payload.Ref, sdk.LogFieldError, err)
@@ -229,7 +293,7 @@ func (s *RelayService) ServeHTTP(w http.ResponseWriter, r *http.Request, token s
 		return
 	}
 
-	upstreamReq, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, nil)
+	upstreamReq, err := http.NewRequestWithContext(r.Context(), r.Method, target.url, nil)
 	if err != nil {
 		relayError(w, http.StatusBadGateway, "回源地址无效")
 		return
@@ -238,6 +302,9 @@ func (s *RelayService) ServeHTTP(w http.ResponseWriter, r *http.Request, token s
 		if v := r.Header.Get(key); v != "" {
 			upstreamReq.Header.Set(key, v)
 		}
+	}
+	if target.authorization != "" {
+		upstreamReq.Header.Set("Authorization", target.authorization)
 	}
 
 	resp, err := s.client.Do(upstreamReq)
