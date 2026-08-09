@@ -54,78 +54,114 @@ func (s *Scheduler) SelectAccountWithRequirements(ctx context.Context, platform,
 		loadCache[acc.ID] = s.getCurrentLoad(ctx, acc.ID)
 	}
 
-	primaryNormal, primaryStickyOnly := s.partitionSchedulable(ctx, primaryCandidates, model, now, loadCache)
-	fallbackNormal, fallbackStickyOnly := s.partitionSchedulable(ctx, fallbackCandidates, model, now, loadCache)
-	primarySticky := appendAccountSlices(primaryNormal, primaryStickyOnly)
-	fallbackSticky := appendAccountSlices(fallbackNormal, fallbackStickyOnly)
-	stickyCandidates := appendAccountSlices(primarySticky, fallbackSticky)
+	primaryNormal, primaryStickyOnly, primaryUnavailable := s.partitionSchedulableDetailed(ctx, primaryCandidates, model, now, loadCache)
+	fallbackNormal, fallbackStickyOnly, fallbackUnavailable := s.partitionSchedulableDetailed(ctx, fallbackCandidates, model, now, loadCache)
+	unavailable := primaryUnavailable.merge(fallbackUnavailable)
+	sessionCapacityExhausted := false
+	previousStickyAccountID := 0
 
-	// 粘性会话优先（可命中 StickyOnly + Normal）
-	if sessionID != "" {
-		if accountID, found := s.sticky.Get(ctx, userID, platform, sessionID); found {
-			for _, acc := range stickyCandidates {
-				if acc.ID == accountID {
-					// 复用前重新登记并发槽：
-					// - 槽仍在/重新登记成功/账号未设 max_sessions（RegisterSession 直接放行且不写 Redis）
-					//   → 续期 sticky 并复用，既补回因 sticky TTL 长于 session idle 而过期的并发计数，
-					//     又不绕过上限；
-					// - 账号已满 → 放弃此 sticky，break 落正常负载均衡（满账号会被 maybeRegisterSession 排除）。
-					if s.RegisterSession(ctx, acc.ID, sessionID, acc.Extra) {
-						s.sticky.Set(ctx, userID, platform, sessionID, accountID, s.sticky.stickyTTLFromExtra(acc.Extra))
-						return acc, nil
-					}
-					break
-				}
-			}
-		}
-	}
-
-	type candidateTier struct {
-		accounts     []*ent.Account
-		poolFallback bool
-		degraded     bool
-	}
-	selectionOrder := []candidateTier{
+	selectionGroups := []candidateTier{
 		{accounts: primaryNormal},
 		{accounts: fallbackNormal, poolFallback: true},
 		{accounts: primaryStickyOnly, degraded: true},
 		{accounts: fallbackStickyOnly, poolFallback: true, degraded: true},
 	}
+	selectionOrder := make([]candidateTier, 0, len(selectionGroups))
+	for _, group := range selectionGroups {
+		for _, accounts := range accountPriorityTiers(group.accounts) {
+			selectionOrder = append(selectionOrder, candidateTier{
+				accounts:     accounts,
+				poolFallback: group.poolFallback,
+				degraded:     group.degraded,
+			})
+		}
+	}
+
+	// Normal sticky 只能命中当前最优健康层：当高优先级主账号恢复后，之前临时切到备用账号的会话会回迁，
+	// 避免 sticky 续期让备用账号变成永久流量源。StickyOnly 会话则保留其软容量豁免，除非出现同路由下更优的 Normal 层。
+	if sessionID != "" {
+		if accountID, found := s.sticky.Get(ctx, userID, platform, sessionID); found {
+			previousStickyAccountID = accountID
+			binding := findStickyCandidate(accountID, primaryNormal, fallbackNormal, primaryStickyOnly, fallbackStickyOnly)
+			winningNormal := firstNormalCandidateTier(selectionOrder)
+			if canReuseStickyCandidate(binding, winningNormal) {
+				acc := binding.account
+				if !s.claimSelectedAccountGate(ctx, acc, model, &unavailable) {
+					// 另一个请求已抢到 half-open probe；当前请求继续走备用。
+				} else if s.registerSelectedSession(ctx, previousStickyAccountID, acc, userID, platform, sessionID) {
+					return acc, nil
+				} else {
+					s.ReleaseFamilyProbe(ctx, acc.ID, acc.Platform, model, familyProbeTokenFromContext(ctx))
+					sessionCapacityExhausted = true
+				}
+			}
+		}
+	}
 	for _, tier := range selectionOrder {
-		if len(tier.accounts) == 0 {
-			continue
+		remaining := append([]*ent.Account(nil), tier.accounts...)
+		for len(remaining) > 0 {
+			selected := s.selectByLoadBalanceWithCache(ctx, remaining, now, loadCache)
+			if selected == nil {
+				break
+			}
+			remaining = removeAccountByID(remaining, selected.ID)
+			if !s.claimSelectedAccountGate(ctx, selected, model, &unavailable) {
+				continue
+			}
+			if !s.registerSelectedSession(ctx, previousStickyAccountID, selected, userID, platform, sessionID) {
+				s.ReleaseFamilyProbe(ctx, selected.ID, selected.Platform, model, familyProbeTokenFromContext(ctx))
+				sessionCapacityExhausted = true
+				continue
+			}
+			if tier.poolFallback {
+				slog.Warn("scheduler_pool_failover_account",
+					sdk.LogFieldAccountID, selected.ID,
+					sdk.LogFieldGroupID, groupID,
+					sdk.LogFieldPlatform, platform,
+					sdk.LogFieldModel, model,
+				)
+			}
+			if tier.degraded {
+				slog.Warn("scheduler_fallback_degraded_account",
+					sdk.LogFieldAccountID, selected.ID,
+					sdk.LogFieldPlatform, platform,
+					sdk.LogFieldModel, model,
+				)
+			}
+			return selected, nil
 		}
-		selected := s.selectByLoadBalanceWithCache(ctx, tier.accounts, now, loadCache)
-		if selected == nil {
-			continue
-		}
-		selected, err = s.maybeRegisterSession(ctx, selected, userID, platform, sessionID, tier.accounts, now)
-		if errors.Is(err, ErrNoAvailableAccount) {
-			// Session capacity can change after schedulability was checked. Exhaust
-			// this tier before moving to the next primary/fallback tier.
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		if tier.poolFallback {
-			slog.Warn("scheduler_pool_failover_account",
-				sdk.LogFieldAccountID, selected.ID,
-				sdk.LogFieldGroupID, groupID,
-				sdk.LogFieldPlatform, platform,
-				sdk.LogFieldModel, model,
-			)
-		}
-		if tier.degraded {
-			slog.Warn("scheduler_fallback_degraded_account",
-				sdk.LogFieldAccountID, selected.ID,
-				sdk.LogFieldPlatform, platform,
-				sdk.LogFieldModel, model,
-			)
-		}
-		return selected, nil
+	}
+	if !sessionCapacityExhausted && unavailable.allRecoverableAccountsRateLimited() {
+		return nil, &AccountsRateLimitedError{RetryAt: unavailable.earliestRateLimit}
+	}
+	if unavailable.transientSeen {
+		return nil, ErrTransientCandidatesUnavailable
+	}
+	if sessionCapacityExhausted || unavailable.localCapacitySeen {
+		return nil, ErrLocalCapacityUnavailable
+	}
+	if unavailable.terminalSeen || len(selectionOrder) > 0 {
+		return nil, ErrNonRateLimitedCandidatesUnavailable
 	}
 	return nil, ErrNoAvailableAccount
+}
+
+func firstNonEmptyCandidateTier(tiers []candidateTier) candidateTier {
+	for _, tier := range tiers {
+		if len(tier.accounts) > 0 {
+			return tier
+		}
+	}
+	return candidateTier{}
+}
+
+func firstNormalCandidateTier(tiers []candidateTier) candidateTier {
+	for _, tier := range tiers {
+		if len(tier.accounts) > 0 && !tier.degraded {
+			return tier
+		}
+	}
+	return candidateTier{}
 }
 
 func appendAccountSlices(first, second []*ent.Account) []*ent.Account {
@@ -136,17 +172,226 @@ func appendAccountSlices(first, second []*ent.Account) []*ent.Account {
 }
 
 func (s *Scheduler) partitionSchedulable(ctx context.Context, candidates []*ent.Account, model string, now time.Time, loadCache map[int]int) (normal, stickyOnly []*ent.Account) {
+	normal, stickyOnly, _ = s.partitionSchedulableDetailed(ctx, candidates, model, now, loadCache)
+	return normal, stickyOnly
+}
+
+type schedulabilityDecision struct {
+	state            Schedulability
+	unavailableUntil time.Time
+	circuitKind      familyCircuitKind
+	cause            candidateUnavailabilityCause
+}
+
+type candidateUnavailabilityCause uint8
+
+const (
+	candidateUnavailableNone candidateUnavailabilityCause = iota
+	candidateUnavailableLocalCapacity
+	candidateUnavailableTerminal
+)
+
+type unavailabilitySummary struct {
+	rateLimitedSeen   bool
+	transientSeen     bool
+	localCapacitySeen bool
+	terminalSeen      bool
+	earliestRateLimit time.Time
+}
+
+type candidateTier struct {
+	accounts     []*ent.Account
+	poolFallback bool
+	degraded     bool
+}
+
+type stickyCandidate struct {
+	account        *ent.Account
+	schedulability Schedulability
+	poolFallback   bool
+}
+
+func findStickyCandidate(accountID int, primaryNormal, fallbackNormal, primaryStickyOnly, fallbackStickyOnly []*ent.Account) stickyCandidate {
+	groups := []stickyCandidate{
+		{schedulability: Normal},
+		{schedulability: Normal, poolFallback: true},
+		{schedulability: StickyOnly},
+		{schedulability: StickyOnly, poolFallback: true},
+	}
+	accounts := [][]*ent.Account{primaryNormal, fallbackNormal, primaryStickyOnly, fallbackStickyOnly}
+	for i, candidates := range accounts {
+		for _, acc := range candidates {
+			if acc.ID == accountID {
+				groups[i].account = acc
+				return groups[i]
+			}
+		}
+	}
+	return stickyCandidate{}
+}
+
+func canReuseStickyCandidate(binding stickyCandidate, winningNormal candidateTier) bool {
+	if binding.account == nil {
+		return false
+	}
+	if len(winningNormal.accounts) == 0 {
+		return true
+	}
+	if binding.schedulability == Normal {
+		for _, acc := range winningNormal.accounts {
+			if acc.ID == binding.account.ID {
+				return true
+			}
+		}
+		return false
+	}
+
+	// 既有 StickyOnly 会话可以留在显式主 route，不被 pool fallback 的新流量策略迁走。
+	if binding.poolFallback != winningNormal.poolFallback {
+		return !binding.poolFallback
+	}
+	return binding.account.Priority >= winningNormal.accounts[0].Priority
+}
+
+func (s unavailabilitySummary) merge(other unavailabilitySummary) unavailabilitySummary {
+	merged := unavailabilitySummary{
+		rateLimitedSeen:   s.rateLimitedSeen || other.rateLimitedSeen,
+		transientSeen:     s.transientSeen || other.transientSeen,
+		localCapacitySeen: s.localCapacitySeen || other.localCapacitySeen,
+		terminalSeen:      s.terminalSeen || other.terminalSeen,
+		earliestRateLimit: s.earliestRateLimit,
+	}
+	if !other.earliestRateLimit.IsZero() && (merged.earliestRateLimit.IsZero() || other.earliestRateLimit.Before(merged.earliestRateLimit)) {
+		merged.earliestRateLimit = other.earliestRateLimit
+	}
+	return merged
+}
+
+func (s unavailabilitySummary) allRecoverableAccountsRateLimited() bool {
+	return s.rateLimitedSeen && !s.transientSeen && !s.localCapacitySeen && !s.terminalSeen && !s.earliestRateLimit.IsZero()
+}
+
+func (s *unavailabilitySummary) addCircuit(kind familyCircuitKind, until time.Time) {
+	if kind != familyCircuitRateLimit {
+		s.transientSeen = true
+		return
+	}
+	s.rateLimitedSeen = true
+	if !until.IsZero() && (s.earliestRateLimit.IsZero() || until.Before(s.earliestRateLimit)) {
+		s.earliestRateLimit = until
+	}
+}
+
+func (s *unavailabilitySummary) addCause(cause candidateUnavailabilityCause) {
+	switch cause {
+	case candidateUnavailableLocalCapacity:
+		s.localCapacitySeen = true
+	case candidateUnavailableTerminal:
+		s.terminalSeen = true
+	}
+}
+
+// claimSelectedAccountGate is deliberately unconditional. Candidate scanning is
+// read-only, so a concurrent failure may open a circuit before the selected
+// account reaches this point. ClaimProbe atomically rechecks healthy/active/
+// half-open state and claims the single recovery token when needed.
+func (s *Scheduler) claimSelectedAccountGate(ctx context.Context, acc *ent.Account, model string, unavailable *unavailabilitySummary) bool {
+	if acc == nil || s.familyCooldown == nil {
+		return true
+	}
+	family := s.resolveModelFamily(acc.Platform, model)
+	if family == "" {
+		return true
+	}
+	status := s.familyCooldown.ClaimProbe(ctx, acc.ID, family, familyProbeTokenFromContext(ctx))
+	if !status.blocked {
+		return true
+	}
+	unavailable.addCircuit(status.kind, status.until)
+	return false
+}
+
+// registerSelectedSession atomically moves a sticky session's capacity slot to
+// the selected account. The sticky binding is updated only after the target slot
+// is secured, so a failed migration leaves both the old binding and slot intact.
+func (s *Scheduler) registerSelectedSession(ctx context.Context, previousAccountID int, selected *ent.Account, userID int, platform, sessionID string) bool {
+	if sessionID == "" {
+		return true
+	}
+	maxSessions := ExtraInt(selected.Extra, "max_sessions")
+	idleTimeout := time.Duration(ExtraInt(selected.Extra, "session_idle_timeout")) * time.Second
+	if idleTimeout <= 0 {
+		idleTimeout = defaultSessionIdleTimeout
+	}
+	allowed, err := s.session.MigrateSession(ctx, previousAccountID, selected.ID, sessionID, maxSessions, idleTimeout)
+	if err != nil {
+		slog.Debug("迁移会话并发槽失败",
+			"previous_account_id", previousAccountID,
+			sdk.LogFieldAccountID, selected.ID,
+			"session_id", sessionID,
+			sdk.LogFieldError, err,
+		)
+		return true // Redis 不可用时与现有会话限制一致，失败开放。
+	}
+	if !allowed {
+		return false
+	}
+	s.sticky.Set(ctx, userID, platform, sessionID, selected.ID, s.sticky.stickyTTLFromExtra(selected.Extra))
+	return true
+}
+
+func (s *Scheduler) partitionSchedulableDetailed(ctx context.Context, candidates []*ent.Account, model string, now time.Time, loadCache map[int]int) (normal, stickyOnly []*ent.Account, unavailable unavailabilitySummary) {
 	normal = make([]*ent.Account, 0, len(candidates))
 	stickyOnly = make([]*ent.Account, 0, len(candidates))
 	for _, acc := range candidates {
-		switch s.checkSchedulabilityWithLoad(ctx, acc, model, now, loadCache[acc.ID]) {
+		decision := s.evaluateSchedulabilityWithLoad(ctx, acc, model, now, loadCache[acc.ID])
+		switch decision.state {
 		case Normal:
 			normal = append(normal, acc)
 		case StickyOnly:
 			stickyOnly = append(stickyOnly, acc)
+		case NotSchedulable:
+			if decision.circuitKind != "" {
+				unavailable.addCircuit(decision.circuitKind, decision.unavailableUntil)
+			} else {
+				unavailable.addCause(decision.cause)
+			}
 		}
 	}
-	return normal, stickyOnly
+	return normal, stickyOnly, unavailable
+}
+
+func removeAccountByID(accounts []*ent.Account, accountID int) []*ent.Account {
+	filtered := accounts[:0]
+	for _, acc := range accounts {
+		if acc.ID != accountID {
+			filtered = append(filtered, acc)
+		}
+	}
+	return filtered
+}
+
+// accountPriorityTiers 把已通过 route / requirements / schedulability 的候选按 priority
+// 降序分层。调度器必须耗尽当前层后才能降级到下一层，避免低质量备用
+// 账号在主账号健康时分走新请求。
+func accountPriorityTiers(candidates []*ent.Account) [][]*ent.Account {
+	if len(candidates) == 0 {
+		return nil
+	}
+	byPriority := make(map[int][]*ent.Account)
+	priorities := make([]int, 0)
+	for _, acc := range candidates {
+		if _, exists := byPriority[acc.Priority]; !exists {
+			priorities = append(priorities, acc.Priority)
+		}
+		byPriority[acc.Priority] = append(byPriority[acc.Priority], acc)
+	}
+	sort.Sort(sort.Reverse(sort.IntSlice(priorities)))
+	tiers := make([][]*ent.Account, 0, len(priorities))
+	for _, priority := range priorities {
+		tiers = append(tiers, byPriority[priority])
+	}
+	return tiers
 }
 
 // excludeAccounts 过滤掉 excludeIDs 中的账号（failover 已尝试过的）。
@@ -407,42 +652,77 @@ func modelRoutingPatternPrecedes(left, right string) bool {
 // 冷却时才把账号当作 NotSchedulable —— 别的家族不受影响。
 // 使用预获取的并发负载值，避免重复查 Redis。
 func (s *Scheduler) checkSchedulabilityWithLoad(ctx context.Context, acc *ent.Account, model string, now time.Time, load int) Schedulability {
+	return s.evaluateSchedulabilityWithLoad(ctx, acc, model, now, load).state
+}
+
+// evaluateSchedulabilityWithLoad 在三态结果之外保留“为什么不可调度”。只有账号级
+// rate_limited 和 family cooldown 携带可信的恢复时间；并发/RPM/window/session
+// 等本地容量约束不能被误报为上游 429。
+func (s *Scheduler) evaluateSchedulabilityWithLoad(ctx context.Context, acc *ent.Account, model string, now time.Time, load int) schedulabilityDecision {
+	family := s.resolveModelFamily(acc.Platform, model)
+	circuit := familyCircuitStatus{}
+	if family != "" && s.familyCooldown != nil {
+		// Candidate enumeration is read-only. A half-open lease is claimed only
+		// after this account wins priority/load/session selection.
+		circuit = s.familyCooldown.peekCircuitStatus(ctx, acc.ID, family)
+	}
+
 	base := SchedulabilityOf(acc, now)
 	if base == NotSchedulable {
-		return NotSchedulable
+		decision := schedulabilityDecision{state: NotSchedulable, cause: candidateUnavailableTerminal}
+		if acc.State == account.StateRateLimited && acc.StateUntil != nil && acc.StateUntil.After(now) {
+			decision.circuitKind = familyCircuitRateLimit
+			decision.unavailableUntil = *acc.StateUntil
+			if circuit.blocked || circuit.halfOpen {
+				// A transient family circuit takes precedence over an overlapping
+				// account-level 429, otherwise a mixed outage can be misreported as
+				// "all accounts rate limited".
+				if circuit.kind == familyCircuitTransient {
+					decision.circuitKind = familyCircuitTransient
+				}
+				if circuit.until.After(decision.unavailableUntil) {
+					decision.unavailableUntil = circuit.until
+				}
+			}
+		}
+		return decision
 	}
 	worst := base
-
 	// 家族级冷却：撞过这个 family 的账号在冷却期内对该 family 不可调度，
-	// 但对其它 family 仍可用。Redis 不可用时退化为不冷却，不阻断主链路。
-	if family := s.resolveModelFamily(acc.Platform, model); family != "" && s.familyCooldown != nil {
-		if _, inCooldown := s.familyCooldown.Until(ctx, acc.ID, family); inCooldown {
-			return NotSchedulable
+	// 但对其它 family 仍可用。冷却到期后仅放出一个 half-open probe；Redis
+	// 不可用时退化为不冷却，不阻断主链路。
+	if circuit.blocked {
+		return schedulabilityDecision{
+			state:            NotSchedulable,
+			unavailableUntil: circuit.until,
+			circuitKind:      circuit.kind,
 		}
 	}
-
 	if sched := concurrencySchedulabilityFromLoad(acc, load); sched > worst {
 		worst = sched
 	}
 	if worst == NotSchedulable {
-		return worst
+		return schedulabilityDecision{state: worst, cause: candidateUnavailableLocalCapacity}
 	}
 	if sched := s.windowCost.GetSchedulability(ctx, acc.ID, acc.Extra); sched > worst {
 		worst = sched
 	}
 	if worst == NotSchedulable {
-		return worst
+		return schedulabilityDecision{state: worst, cause: candidateUnavailableLocalCapacity}
 	}
 	if sched := s.rpm.GetSchedulability(ctx, acc.ID, ExtraInt(acc.Extra, "max_rpm")); sched > worst {
 		worst = sched
 	}
 	if worst == NotSchedulable {
-		return worst
+		return schedulabilityDecision{state: worst, cause: candidateUnavailableLocalCapacity}
 	}
 	if sched := s.session.GetSchedulability(ctx, acc.ID, acc.Extra); sched > worst {
 		worst = sched
 	}
-	return worst
+	if worst == NotSchedulable {
+		return schedulabilityDecision{state: worst, cause: candidateUnavailableLocalCapacity}
+	}
+	return schedulabilityDecision{state: worst}
 }
 
 // concurrencySchedulabilityFromLoad 根据当前并发用量返回调度约束：

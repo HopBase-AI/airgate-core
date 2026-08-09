@@ -24,9 +24,16 @@ import (
 //	ClientError               → 透传插件回传的上游响应，可选计费
 //	账号级 / 上游抖动 / 流中断 → 未触发 failover 或最终失败时，返回脱敏失败响应
 func (f *Forwarder) writeResult(c *gin.Context, state *forwardState, execution forwardExecution) {
-	ctx := finalizeRequestContext(c.Request.Context())
+	ctx := c.Request.Context()
+	if status := canceledRequestStatus(ctx.Err()); status != 0 {
+		f.writeCanceledResult(c, state, execution, status)
+		return
+	}
 
-	f.applyOutcome(ctx, state, execution)
+	if !f.applyOutcome(ctx, state, execution) {
+		f.writeCanceledResult(c, state, execution, canceledRequestStatus(ctx.Err()))
+		return
+	}
 	f.persistUpdatedCredentials(state.account.ID, execution.outcome.UpdatedCredentials)
 
 	if execution.err != nil {
@@ -89,9 +96,10 @@ func sanitizedClientErrorStatus(outcome sdk.ForwardOutcome) int {
 }
 
 func writeClientErrorResponse(c *gin.Context, outcome sdk.ForwardOutcome) {
-	if writeUpstreamIfPresent(c, outcome.Upstream) {
+	if len(outcome.Upstream.Body) > 0 && writeUpstreamIfPresent(c, outcome.Upstream) {
 		return
 	}
+	copyUpstreamHeadersForGeneratedBody(c, outcome.Upstream.Headers)
 	statusCode := sanitizedClientErrorStatus(outcome)
 	protocolError(c, statusCode, "invalid_request_error", "invalid_request", sanitizedClientErrorMessage(outcome))
 }
@@ -198,7 +206,11 @@ func sanitizedMessage(kind sdk.OutcomeKind) string {
 
 // applyOutcome 把本次判决交给 scheduler.Apply，由状态机统一处理。
 // forwarder 不再关心 MarkOverloaded / MarkDegraded / ReportAccountError 等内部方法。
-func (f *Forwarder) applyOutcome(ctx context.Context, state *forwardState, execution forwardExecution) {
+func (f *Forwarder) applyOutcome(ctx context.Context, state *forwardState, execution forwardExecution) bool {
+	if canceledRequestStatus(ctx.Err()) != 0 {
+		f.releaseFamilyProbe(state)
+		return false
+	}
 	reason := judgmentReason(execution)
 	outcomeModel := state.modelForScheduling()
 	if execution.outcome.Kind.IsAccountFault() && outcomeModel != "" {
@@ -217,7 +229,8 @@ func (f *Forwarder) applyOutcome(ctx context.Context, state *forwardState, execu
 		// Family 让限流冷却落到 (account, family) 维度。撞 gpt-image 4000/min
 		// 时账号上 chat 模型仍可调用，避免单模型限流误伤整账号。
 		// 优先从插件目录查 Metadata["family"]，未声明时回退到硬编码规则。
-		Family: f.resolveModelFamily(state.requestedPlatform, outcomeModel),
+		Family:     f.resolveModelFamily(state.requestedPlatform, outcomeModel),
+		ProbeToken: state.requestID,
 	}
 	f.scheduler.Apply(ctx, state.account.ID, j)
 
@@ -231,6 +244,7 @@ func (f *Forwarder) applyOutcome(ctx context.Context, state *forwardState, execu
 			"account_id", state.account.ID,
 			"error", execution.err)
 	}
+	return true
 }
 
 // forwardStateUserID / forwardStateKeyID 从转发状态提取触发者，鉴权信息缺失时为 0。
@@ -269,6 +283,13 @@ func (f *Forwarder) persistUpdatedCredentials(accountID int, updated map[string]
 
 // recordUsage 写 usage_log 并更新 scheduler 的窗口费用。调用前 outcome.Usage 必须非 nil。
 func (f *Forwarder) recordUsage(c *gin.Context, state *forwardState, execution forwardExecution) {
+	f.recordUsageWithFailureOverride(c, state, execution, nil)
+}
+
+// recordUsageWithFailureOverride preserves the plugin's measured usage and all
+// charges while allowing the client-visible terminal state (for example 499 or
+// 504 cancellation) to be recorded independently from the upstream outcome.
+func (f *Forwarder) recordUsageWithFailureOverride(c *gin.Context, state *forwardState, execution forwardExecution, failureOverride *usageFailure) {
 	ctx := finalizeRequestContext(c.Request.Context())
 	usage := execution.outcome.Usage
 	if usage == nil {
@@ -314,7 +335,9 @@ func (f *Forwarder) recordUsage(c *gin.Context, state *forwardState, execution f
 	// 上游对失败请求（多为 4xx）也计费时走的是这条计费路径：status 仍是 success
 	// （费用真实发生、必须与扣款一致），但带上错误码让用户能认出这是一次失败请求。
 	var failure usageFailure
-	if execution.outcome.Kind != sdk.OutcomeSuccess {
+	if failureOverride != nil {
+		failure = *failureOverride
+	} else if execution.outcome.Kind != sdk.OutcomeSuccess {
 		failure = failureFromOutcome(execution)
 	}
 
@@ -440,11 +463,7 @@ func resolveReasoningEffort(fromRequest string, usage *sdk.Usage) string {
 
 // writeUpstream 把上游原始响应透传给客户端。
 func writeUpstream(c *gin.Context, up sdk.UpstreamResponse) {
-	for k, vals := range up.Headers {
-		for _, v := range vals {
-			c.Writer.Header().Set(k, v)
-		}
-	}
+	copyUpstreamHeaders(c, up.Headers)
 	status := up.StatusCode
 	if status == 0 {
 		status = http.StatusOK
@@ -453,8 +472,25 @@ func writeUpstream(c *gin.Context, up sdk.UpstreamResponse) {
 	_, _ = c.Writer.Write(up.Body)
 }
 
+func copyUpstreamHeaders(c *gin.Context, headers http.Header) {
+	for k, vals := range headers {
+		for _, v := range vals {
+			c.Writer.Header().Set(k, v)
+		}
+	}
+}
+
+func copyUpstreamHeadersForGeneratedBody(c *gin.Context, headers http.Header) {
+	copyUpstreamHeaders(c, headers)
+	// The upstream representation was empty; these headers no longer describe
+	// the protocol JSON body generated below. Keep retry and tracing metadata.
+	for _, name := range []string{"Content-Length", "Content-Encoding", "Content-Type", "Transfer-Encoding"} {
+		c.Writer.Header().Del(name)
+	}
+}
+
 func writeUpstreamIfPresent(c *gin.Context, up sdk.UpstreamResponse) bool {
-	if up.StatusCode == 0 || len(up.Body) == 0 {
+	if up.StatusCode == 0 {
 		return false
 	}
 	writeUpstream(c, up)

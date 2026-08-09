@@ -25,7 +25,49 @@ var (
 	// ErrModelNotServed 分组的 model_routing 规则把候选账号过滤空了：分组本身还在服务，
 	// 只是不提供所请求的模型。同样是结构性错误，换模型才有救，重试无用。
 	ErrModelNotServed = fmt.Errorf("%w: 分组不支持该模型", ErrNoAvailableAccount)
+
+	// ErrNonRateLimitedCandidatesUnavailable 表示候选账号存在本地容量、disabled、
+	// unknown 等非上游冷却原因。它仍兼容 ErrNoAvailableAccount，但会阻止 Forwarder
+	// 把混合失败误报成“全部账号限流”。
+	ErrNonRateLimitedCandidatesUnavailable = fmt.Errorf("%w: 候选账号存在非限流不可用状态", ErrNoAvailableAccount)
+
+	// ErrLocalCapacityUnavailable 表示至少一个可行账号仅被本地并发、RPM、窗口费用
+	// 或 session 容量挡住。Host 可以只对这一类错误做有界排队等待。
+	ErrLocalCapacityUnavailable = fmt.Errorf("%w: 候选账号本地容量暂时耗尽", ErrNonRateLimitedCandidatesUnavailable)
+
+	// ErrTransientCandidatesUnavailable 表示至少一个可行账号处于短时上游故障
+	// circuit。调用方应快速返回 5xx，而不是把它当本地容量排队。
+	ErrTransientCandidatesUnavailable = fmt.Errorf("%w: 候选账号处于上游故障冷却", ErrNonRateLimitedCandidatesUnavailable)
 )
+
+// AccountsRateLimitedError 表示本次路由下所有仍可自动恢复的候选账号都处于
+// 上游限流冷却。RetryAt 是最早恢复时间，供 forwarder 生成 429 + Retry-After。
+//
+// Unwrap 保留 ErrNoAvailableAccount 兼容性：现有 failover、HostService 和插件调用方依然可以
+// 用 errors.Is(err, ErrNoAvailableAccount) 识别它。
+type AccountsRateLimitedError struct {
+	RetryAt time.Time
+}
+
+func (e *AccountsRateLimitedError) Error() string {
+	if e == nil || e.RetryAt.IsZero() {
+		return ErrNoAvailableAccount.Error() + ": 上游账号正在限流冷却"
+	}
+	return fmt.Sprintf("%s: 上游账号正在限流冷却，最早恢复时间 %s", ErrNoAvailableAccount, e.RetryAt.UTC().Format(time.RFC3339Nano))
+}
+
+func (e *AccountsRateLimitedError) Unwrap() error {
+	return ErrNoAvailableAccount
+}
+
+// RateLimitedRetryAt 从可能包装过的 scheduler error 中提取最早恢复时间。
+func RateLimitedRetryAt(err error) (time.Time, bool) {
+	var rateLimitedErr *AccountsRateLimitedError
+	if !errors.As(err, &rateLimitedErr) || rateLimitedErr == nil {
+		return time.Time{}, false
+	}
+	return rateLimitedErr.RetryAt, true
+}
 
 // dbTimeout 后台 DB 操作超时，防止 goroutine 泄漏。
 const dbTimeout = 10 * time.Second

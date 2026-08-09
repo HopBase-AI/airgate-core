@@ -110,3 +110,73 @@ func TestSessionManagerNilRedisFailOpen(t *testing.T) {
 		t.Fatalf("nil redis 计数应为 0，cnt=%d err=%v", cnt, err)
 	}
 }
+
+func TestMigrateSessionMovesSlotOnlyAfterTargetAdmission(t *testing.T) {
+	rdb, _ := newTestRedis(t)
+	sm := NewSessionManager(rdb)
+	ctx := context.Background()
+
+	if ok, err := sm.RegisterSession(ctx, 1, "conversation", 1, testIdle); err != nil || !ok {
+		t.Fatalf("register source session: ok=%v err=%v", ok, err)
+	}
+	if ok, err := sm.MigrateSession(ctx, 1, 2, "conversation", 1, testIdle); err != nil || !ok {
+		t.Fatalf("migrate source to target: ok=%v err=%v", ok, err)
+	}
+	if count, _ := sm.GetActiveSessionCount(ctx, 1, testIdle); count != 0 {
+		t.Fatalf("source count after migration = %d, want 0", count)
+	}
+	if count, _ := sm.GetActiveSessionCount(ctx, 2, testIdle); count != 1 {
+		t.Fatalf("target count after migration = %d, want 1", count)
+	}
+}
+
+func TestMigrateSessionKeepsSourceWhenTargetFull(t *testing.T) {
+	rdb, _ := newTestRedis(t)
+	sm := NewSessionManager(rdb)
+	ctx := context.Background()
+
+	if ok, _ := sm.RegisterSession(ctx, 1, "conversation", 1, testIdle); !ok {
+		t.Fatal("register source session")
+	}
+	if ok, _ := sm.RegisterSession(ctx, 2, "occupied", 1, testIdle); !ok {
+		t.Fatal("occupy target")
+	}
+	if ok, err := sm.MigrateSession(ctx, 1, 2, "conversation", 1, testIdle); err != nil || ok {
+		t.Fatalf("migration to full target: ok=%v err=%v; want rejected", ok, err)
+	}
+	if count, _ := sm.GetActiveSessionCount(ctx, 1, testIdle); count != 1 {
+		t.Fatalf("source slot was lost after rejected migration: %d", count)
+	}
+	if count, _ := sm.GetActiveSessionCount(ctx, 2, testIdle); count != 1 {
+		t.Fatalf("target count after rejected migration = %d, want 1", count)
+	}
+}
+
+func TestMigrateSessionToUnlimitedAccountReleasesSource(t *testing.T) {
+	rdb, _ := newTestRedis(t)
+	sm := NewSessionManager(rdb)
+	ctx := context.Background()
+
+	if ok, _ := sm.RegisterSession(ctx, 1, "conversation", 1, testIdle); !ok {
+		t.Fatal("register source session")
+	}
+	if ok, err := sm.MigrateSession(ctx, 1, 2, "conversation", 0, testIdle); err != nil || !ok {
+		t.Fatalf("migrate to unlimited target: ok=%v err=%v", ok, err)
+	}
+	if count, _ := sm.GetActiveSessionCount(ctx, 1, testIdle); count != 0 {
+		t.Fatalf("source count after unlimited migration = %d, want 0", count)
+	}
+	if count, _ := sm.GetActiveSessionCount(ctx, 2, testIdle); count != 0 {
+		t.Fatalf("unlimited target should not hold a limiter member: %d", count)
+	}
+
+	if ok, _ := sm.RegisterSession(ctx, 3, "same-account", 1, testIdle); !ok {
+		t.Fatal("register session before disabling same-account limit")
+	}
+	if ok, err := sm.MigrateSession(ctx, 3, 3, "same-account", 0, testIdle); err != nil || !ok {
+		t.Fatalf("disable same-account session limit: ok=%v err=%v", ok, err)
+	}
+	if count, _ := sm.GetActiveSessionCount(ctx, 3, testIdle); count != 0 {
+		t.Fatalf("same-account stale limiter member = %d, want 0", count)
+	}
+}

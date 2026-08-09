@@ -112,9 +112,14 @@ func (f *Forwarder) acquireClientQuota(c *gin.Context, state *forwardState) func
 // （例如主循环可以根据 softExclude 是否非空决定排队等待还是直接写 503）。
 func (f *Forwarder) pickAccount(c *gin.Context, state *forwardState, excludeIDs ...int) error {
 	var lastErr error
+	var earliestRateLimitedErr error
+	var nonRateLimitedUnavailableErr error
+	var unclassifiedUnavailableErr error
+	state.requestID = uuid.New().String()
+	selectionCtx := scheduler.WithFamilyProbeToken(c.Request.Context(), state.requestID)
 	for _, model := range state.schedulingModelCandidates() {
 		account, err := f.scheduler.SelectAccountWithRequirements(
-			c.Request.Context(),
+			selectionCtx,
 			state.requestedPlatform,
 			model,
 			state.keyInfo.UserID,
@@ -132,6 +137,32 @@ func (f *Forwarder) pickAccount(c *gin.Context, state *forwardState, excludeIDs 
 		if !errors.Is(err, scheduler.ErrNoAvailableAccount) {
 			return err
 		}
+		if retryAt, ok := scheduler.RateLimitedRetryAt(err); ok {
+			if earliestRateLimitedErr == nil {
+				earliestRateLimitedErr = err
+			} else if earliest, found := scheduler.RateLimitedRetryAt(earliestRateLimitedErr); found && retryAt.Before(earliest) {
+				earliestRateLimitedErr = err
+			}
+			continue
+		}
+		if errors.Is(err, scheduler.ErrNonRateLimitedCandidatesUnavailable) && nonRateLimitedUnavailableErr == nil {
+			nonRateLimitedUnavailableErr = err
+			continue
+		}
+		if !errors.Is(err, scheduler.ErrGroupOffline) && !errors.Is(err, scheduler.ErrModelNotServed) && unclassifiedUnavailableErr == nil {
+			unclassifiedUnavailableErr = err
+		}
+	}
+	if nonRateLimitedUnavailableErr != nil {
+		return nonRateLimitedUnavailableErr
+	}
+	if unclassifiedUnavailableErr != nil {
+		return unclassifiedUnavailableErr
+	}
+	// 空候选、离线路由和不支持模型都不是本请求的可行账号，不会稀释已知 cooldown。
+	// 只有明确的非限流不可用错误才会在上面优先返回 503。
+	if earliestRateLimitedErr != nil {
+		return earliestRateLimitedErr
 	}
 	if lastErr != nil {
 		return lastErr
@@ -148,11 +179,11 @@ func (f *Forwarder) pickAccount(c *gin.Context, state *forwardState, excludeIDs 
 func (f *Forwarder) acquireAccountSlot(c *gin.Context, state *forwardState) (func(), bool) {
 	ctx := c.Request.Context()
 	releaseCtx := context.Background()
-	state.requestID = uuid.New().String()
 
 	// 1. RPM 原子检查并递增
 	maxRPM := scheduler.ExtraInt(state.account.Extra, "max_rpm")
 	if !f.scheduler.TryIncrementRPM(ctx, state.account.ID, maxRPM) {
+		f.releaseFamilyProbe(state)
 		slog.Info("账号 RPM 已达上限，尝试 failover",
 			"account_id", state.account.ID, "max_rpm", maxRPM)
 		return nil, false
@@ -167,6 +198,7 @@ func (f *Forwarder) acquireAccountSlot(c *gin.Context, state *forwardState) (fun
 
 	if err := f.concurrency.AcquireSlot(ctx, state.account.ID, state.requestID, maxConc, slotTTL); err != nil {
 		f.scheduler.DecrementRPM(ctx, state.account.ID)
+		f.releaseFamilyProbe(state)
 		slog.Info("账号并发已满，尝试 failover",
 			"account_id", state.account.ID, "max_concurrency", maxConc)
 		return nil, false
@@ -177,6 +209,19 @@ func (f *Forwarder) acquireAccountSlot(c *gin.Context, state *forwardState) (fun
 	return func() {
 		f.concurrency.ReleaseSlot(releaseCtx, state.account.ID, state.requestID)
 	}, true
+}
+
+func (f *Forwarder) releaseFamilyProbe(state *forwardState) {
+	if f == nil || f.scheduler == nil || state == nil || state.account == nil || state.requestID == "" {
+		return
+	}
+	f.scheduler.ReleaseFamilyProbe(
+		context.Background(),
+		state.account.ID,
+		state.account.Platform,
+		state.modelForScheduling(),
+		state.requestID,
+	)
 }
 
 // forwardMetadataOnly 处理只读元信息请求（/v1/models 等）。
