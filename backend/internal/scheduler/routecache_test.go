@@ -1,10 +1,12 @@
 package scheduler
 
 import (
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/DouDOU-start/airgate-core/ent"
+	"github.com/DouDOU-start/airgate-core/ent/account"
 )
 
 // TestRouteCache_HitMiss 基础命中 / 未命中行为。
@@ -101,6 +103,11 @@ func TestApplyModelRouting_PassThrough(t *testing.T) {
 	if len(got) != 2 {
 		t.Errorf("routing 为空 map 时应原样返回，got=%+v", got)
 	}
+
+	got = applyModelRouting(accounts, nil, "")
+	if len(got) != 2 {
+		t.Errorf("routing 为空时模型无关操作应使用组内账号，got=%+v", got)
+	}
 }
 
 // TestApplyModelRouting_Filter 命中 routing 时按 ID 过滤。
@@ -133,6 +140,66 @@ func TestApplyModelRouting_EmptyRoute(t *testing.T) {
 	got := applyModelRouting(accounts, routing, "gpt-4o")
 	if len(got) != 0 {
 		t.Errorf("空路由不应返回候选: %+v", got)
+	}
+}
+
+func TestApplyModelRouting_ModelLessUsesRoutedAccountUnion(t *testing.T) {
+	accounts := []*ent.Account{{ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}}
+	routing := map[string][]int64{
+		"kling-image-v1": {1, 2},
+		"kling-video-v1": {2, 3},
+	}
+
+	got := applyModelRouting(accounts, routing, "")
+	if len(got) != 3 || got[0].ID != 1 || got[1].ID != 2 || got[2].ID != 3 {
+		t.Fatalf("model-less routing = %+v, want routed union [1 2 3] in account order", got)
+	}
+}
+
+func TestApplyModelRouting_ModelLessRejectsAllEmptyRoutes(t *testing.T) {
+	accounts := []*ent.Account{{ID: 1}, {ID: 2}}
+	routing := map[string][]int64{
+		"kling-image-v1": {},
+		"kling-video-v1": {},
+	}
+	if got := applyModelRouting(accounts, routing, ""); len(got) != 0 {
+		t.Fatalf("all-empty model routes returned accounts %+v", got)
+	}
+}
+
+func TestClassifyRoutedAccountTiers_ModelLessDoesNotUsePoolFallback(t *testing.T) {
+	accounts := []*ent.Account{
+		{ID: 1, UpstreamIsPool: true},
+		{ID: 2, UpstreamIsPool: true},
+	}
+	tiers, err := classifyRoutedAccountTiers(
+		accounts,
+		map[string][]int64{"kling-image-v1": {1}},
+		"",
+	)
+	if err != nil {
+		t.Fatalf("classifyRoutedAccountTiers() error = %v", err)
+	}
+	if len(tiers.primary) != 1 || tiers.primary[0].ID != 1 {
+		t.Fatalf("model-less primary = %+v, want routed account 1", tiers.primary)
+	}
+	if len(tiers.poolFallback) != 0 {
+		t.Fatalf("model-less routing leaked to pool fallback %+v", tiers.poolFallback)
+	}
+}
+
+func TestClassifyRoutedAccountTiers_ModelLessRejectsDisabledRoutedAccount(t *testing.T) {
+	accounts := []*ent.Account{
+		{ID: 1, State: account.StateDisabled},
+		{ID: 2, State: account.StateActive},
+	}
+	_, err := classifyRoutedAccountTiers(
+		accounts,
+		map[string][]int64{"kling-image-v1": {1}},
+		"",
+	)
+	if !errors.Is(err, ErrGroupOffline) {
+		t.Fatalf("disabled routed account error = %v, want ErrGroupOffline", err)
 	}
 }
 

@@ -236,6 +236,38 @@ func (m *Manager) UsageModel(pluginName, path string) string {
 	return prefixModel
 }
 
+// AllowsModelLessAccountSelection reports whether a route explicitly declares
+// that it needs an upstream account despite not carrying a model in its body.
+// "true" matches one exact method/path; "prefix" also matches child paths.
+// Missing declarations fail closed so model-required routes cannot reach an
+// upstream account through an omitted model.
+func (m *Manager) AllowsModelLessAccountSelection(pluginName, method, path string) bool {
+	if m == nil {
+		return false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	name := m.resolveNameLocked(pluginName)
+	method = strings.ToUpper(strings.TrimSpace(method))
+	for _, route := range m.routeCache[name] {
+		if strings.ToUpper(strings.TrimSpace(route.Method)) != method {
+			continue
+		}
+		switch route.Metadata["model_agnostic_account"] {
+		case "true":
+			if route.Path == path {
+				return true
+			}
+		case "prefix":
+			prefix := strings.TrimRight(route.Path, "/")
+			if path == prefix || strings.HasPrefix(path, prefix+"/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // SchedulingModelMap 查询插件路由声明的 Metadata["scheduling_model_map"]（tech-debt #5 治理）。
 // 值为 JSON 对象：键是模型 ID 前缀（大小写不敏感、最长前缀优先），值是调度候选模型列表（按优先级）。
 // 用于协议翻译路由（如 openai 插件的 /v1/messages）声明"请求模型 → 调度模型"映射，

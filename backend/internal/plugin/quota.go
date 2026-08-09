@@ -117,7 +117,18 @@ func (f *Forwarder) pickAccount(c *gin.Context, state *forwardState, excludeIDs 
 	var unclassifiedUnavailableErr error
 	state.requestID = uuid.New().String()
 	selectionCtx := scheduler.WithFamilyProbeToken(c.Request.Context(), state.requestID)
-	for _, model := range state.schedulingModelCandidates() {
+	models := state.schedulingModelCandidates()
+	if len(models) == 0 {
+		if f.manager == nil || state.plugin == nil ||
+			!f.manager.AllowsModelLessAccountSelection(state.plugin.Name, c.Request.Method, state.requestPath) {
+			return scheduler.ErrNoAvailableAccount
+		}
+		// Declared model-less operations still need an upstream credential. The
+		// empty model is an explicit scheduler sentinel; model_routing constrains
+		// it to the union of accounts already routed by the group.
+		models = []string{""}
+	}
+	for _, model := range models {
 		account, err := f.scheduler.SelectAccountWithRequirements(
 			selectionCtx,
 			state.requestedPlatform,
