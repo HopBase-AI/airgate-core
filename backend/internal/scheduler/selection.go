@@ -146,15 +146,6 @@ func (s *Scheduler) SelectAccountWithRequirements(ctx context.Context, platform,
 	return nil, ErrNoAvailableAccount
 }
 
-func firstNonEmptyCandidateTier(tiers []candidateTier) candidateTier {
-	for _, tier := range tiers {
-		if len(tier.accounts) > 0 {
-			return tier
-		}
-	}
-	return candidateTier{}
-}
-
 func firstNormalCandidateTier(tiers []candidateTier) candidateTier {
 	for _, tier := range tiers {
 		if len(tier.accounts) > 0 && !tier.degraded {
@@ -645,14 +636,6 @@ func modelRoutingPatternPrecedes(left, right string) bool {
 		return len(left) > len(right)
 	}
 	return left < right
-}
-
-// checkSchedulabilityWithLoad 先看状态（state + state_until），再叠加软约束（并发 / windowCost / RPM / session），取最严格者。
-// model 用于推导请求所属的家族（gpt-image / chat 各算一个池），仅当该家族正在
-// 冷却时才把账号当作 NotSchedulable —— 别的家族不受影响。
-// 使用预获取的并发负载值，避免重复查 Redis。
-func (s *Scheduler) checkSchedulabilityWithLoad(ctx context.Context, acc *ent.Account, model string, now time.Time, load int) Schedulability {
-	return s.evaluateSchedulabilityWithLoad(ctx, acc, model, now, load).state
 }
 
 // evaluateSchedulabilityWithLoad 在三态结果之外保留“为什么不可调度”。只有账号级

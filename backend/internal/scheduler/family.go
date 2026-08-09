@@ -413,7 +413,7 @@ func (s *Scheduler) ClaimAccountGate(ctx context.Context, accountID int, platfor
 
 	now := time.Now()
 	base := SchedulabilityOf(acc, now)
-	if base == NotSchedulable && !(acc.State == account.StateRateLimited && acc.StateUntil != nil && acc.StateUntil.After(now)) {
+	if base == NotSchedulable && (acc.State != account.StateRateLimited || acc.StateUntil == nil || !acc.StateUntil.After(now)) {
 		return unavailable, nil
 	}
 
