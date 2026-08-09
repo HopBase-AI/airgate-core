@@ -11,8 +11,9 @@ import { useDebouncedValue } from '../../shared/hooks/useDebouncedValue';
 import { useDeferredActivation } from '../../shared/hooks/useDeferredActivation';
 import { queryKeys } from '../../shared/queryKeys';
 import { Activity, CircleX, Coins, Hash, DollarSign, Search } from 'lucide-react';
-import { useUsageColumns, fmtNum, type UsageColumnConfig } from '../../shared/columns/usageColumns';
+import { ERROR_CODE_META, useUsageColumns, fmtNum, type UsageColumnConfig } from '../../shared/columns/usageColumns';
 import type { APIKeyResp, UsageLogResp, UsageQuery, UsageTrendBucket } from '../../shared/types';
+import { failureSourceLabelKey, usageFailureSource } from '../../shared/failureDiagnostics';
 import { CompactDataTable } from '../../shared/components/CompactDataTable';
 import { UsageRecordsTable } from '../../shared/components/UsageRecordsTable';
 import { UsageDateRangeFilter } from '../../shared/components/UsageDateRangeFilter';
@@ -108,6 +109,56 @@ const groupByHeaderKeys: Record<string, string> = {
 const ADMIN_USAGE_STATS_GROUP_BY = 'model,group,account,user';
 const USAGE_PAGE_ACTIVATION_DELAY_MS = 180;
 const ADMIN_USAGE_AUTO_UPDATE_STORAGE_KEY = 'airgate.admin.usage.auto_update';
+
+function UsageFailureDiagnostics({ row }: { row: UsageLogResp }) {
+  const { t } = useTranslation();
+  if (!row.error_code) {
+    return <span className="text-text-tertiary">-</span>;
+  }
+
+  const source = usageFailureSource(row);
+  const sourceLabel = t(failureSourceLabelKey(source));
+  const meta = ERROR_CODE_META[row.error_code];
+  const message = row.error_message?.trim() || (meta ? t(meta.labelKey, row.error_code) : '');
+  const traceID = row.usage_metadata?.trace_id?.trim();
+  const requestID = row.request_id?.trim();
+  const account = [
+    row.account_name?.trim(),
+    row.account_email?.trim(),
+    row.account_id ? `#${row.account_id}` : '',
+  ].filter(Boolean).join(' / ');
+  const evidence = [
+    account
+      ? `${t('usage.upstream_credential', '上游凭证')}: ${account}`
+      : source === 'scheduler'
+        ? `${t('usage.upstream_credential', '上游凭证')}: ${t('usage.account_not_selected')}`
+        : '',
+    requestID ? `Req: ${requestID}` : '',
+    traceID ? `Trace: ${traceID}` : '',
+  ].filter(Boolean);
+  const title = [
+    `${sourceLabel} · ${row.error_code}`,
+    message,
+    ...evidence,
+  ].filter(Boolean).join('\n');
+
+  return (
+    <div className="flex w-full min-w-0 flex-col justify-center gap-1 text-left" title={title}>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span className="shrink-0 rounded bg-info-subtle px-1.5 py-0.5 text-[10px] font-semibold leading-none text-info">
+          {sourceLabel}
+        </span>
+        <span className="shrink-0 rounded bg-danger-subtle px-1.5 py-0.5 font-mono text-[11px] font-semibold leading-none text-danger">
+          {row.error_code}
+        </span>
+        <span className="min-w-0 truncate text-xs leading-none text-text">{message || sourceLabel}</span>
+      </div>
+      <div className="flex min-w-0 items-center gap-2 overflow-hidden font-mono text-[10px] leading-none text-text-tertiary">
+        {evidence.map((item) => <span className="min-w-0 shrink truncate" key={item}>{item}</span>)}
+      </div>
+    </div>
+  );
+}
 
 // ==================== 分布饼图卡片 ====================
 
@@ -706,9 +757,18 @@ export default function UsagePage() {
         return <span className="block max-w-full truncate font-mono text-xs text-text-secondary" title={title}>{value}</span>;
       },
     };
+    const failureDiagnosticsColumn: UsageColumnConfig<UsageLogResp> = {
+      key: 'error_diagnostics',
+      title: t('usage.error_diagnostics', '错误诊断'),
+      width: '380px',
+      render: (row) => <UsageFailureDiagnostics row={row} />,
+    };
+    const leadingSharedColumns = sharedColumns.slice(0, modelIdx + 1).flatMap((column) => (
+      column.key === 'status' ? [column, failureDiagnosticsColumn] : [column]
+    ));
     return [
       ...adminColumns,
-      ...sharedColumns.slice(0, modelIdx + 1),
+      ...leadingSharedColumns,
       ...(streamColumn ? [streamColumn] : []),
       ...timingColumns,
       ...sharedColumnsAfterModel,

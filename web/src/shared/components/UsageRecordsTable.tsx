@@ -6,8 +6,8 @@ import { getTotalPages } from '../utils/pagination';
 import { TableLoadingRow } from './TableLoadingRow';
 import { TablePaginationFooter } from './TablePaginationFooter';
 
-const FULL_CELL_CONTENT_COLUMNS = new Set(['cost', 'tokens']);
-const LEFT_ALIGNED_CONTENT_COLUMNS = new Set<string>(['model']);
+const FULL_CELL_CONTENT_COLUMNS = new Set(['cost', 'error_diagnostics', 'tokens']);
+const LEFT_ALIGNED_CONTENT_COLUMNS = new Set<string>(['error_diagnostics', 'model']);
 const NEW_ROW_ANIMATION_NAME = 'ag-usage-row-new-enter';
 
 function cx(...classes: Array<string | false | null | undefined>) {
