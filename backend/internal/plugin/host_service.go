@@ -943,7 +943,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 	if req.UserID <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "user_id 必须 > 0")
 	}
-	if err := h.checkHostForwardBalance(ctx, req.UserID); err != nil {
+	if err := h.checkHostForwardBalanceOrReplay(ctx, req); err != nil {
 		return nil, err
 	}
 
@@ -1669,7 +1669,7 @@ func (w *hostStreamWriter) Write(data []byte) (int, error) {
 func (w *hostStreamWriter) Flush() {}
 
 // recordHostForwardUsage 为 Host gateway.forward 调用发起的请求记录 usage_log 并扣费。
-// 与 forwarder.recordUsage 的区别：没有 APIKeyInfo，APIKeyID=0。
+// 与 forwarder.recordUsage 的区别：调用方只传 APIKeyID 快照，不要求 Key 在异步结算时仍存在。
 func (h *HostService) recordHostForwardUsage(
 	ctx context.Context,
 	req hostForwardRequest,
@@ -1685,6 +1685,7 @@ func (h *HostService) recordHostForwardUsage(
 	if usage == nil {
 		return 0, nil
 	}
+	req.RequestID = strings.TrimSpace(req.RequestID)
 	usageValues := usageSnapshotFromSDK(usage)
 
 	calcInput := billing.CalculateInput{
@@ -1707,11 +1708,14 @@ func (h *HostService) recordHostForwardUsage(
 	applyHostForwardBilling(usage, calc)
 	applyHostForwardTrace(usage, req.TraceID)
 
-	h.scheduler.AddWindowCost(ctx, accountID, calc.AccountCost)
-
 	actualModel := usage.Model
 	if actualModel == "" {
 		actualModel = model
+	}
+	if usageID, found, err := h.existingHostForwardUsageID(ctx, req, platform, actualModel); err != nil {
+		return 0, err
+	} else if found {
+		return usageID, nil
 	}
 
 	record := billing.UsageRecord{
@@ -1763,7 +1767,48 @@ func (h *HostService) recordHostForwardUsage(
 	if h.recorder == nil {
 		return 0, nil
 	}
-	return h.recorder.RecordSync(ctx, record)
+	usageID, err := h.recorder.RecordSync(ctx, record)
+	if err != nil {
+		// A concurrent retry can win the unique request_id insert after our first
+		// lookup. Resolve that race to the committed row instead of reporting a
+		// zero usage ID and leaving an async task stranded.
+		if existingID, found, lookupErr := h.existingHostForwardUsageID(ctx, req, platform, actualModel); lookupErr != nil {
+			return 0, lookupErr
+		} else if found {
+			return existingID, nil
+		}
+		return 0, err
+	}
+	h.scheduler.AddWindowCost(ctx, accountID, calc.AccountCost)
+	return usageID, nil
+}
+
+func (h *HostService) existingHostForwardUsageID(
+	ctx context.Context,
+	req hostForwardRequest,
+	platform, model string,
+) (int, bool, error) {
+	requestID := strings.TrimSpace(req.RequestID)
+	if requestID == "" {
+		return 0, false, nil
+	}
+	row, err := h.db.UsageLog.Query().
+		Where(entusagelog.RequestIDEQ(requestID)).
+		WithAccount().
+		WithGroup().
+		Only(ctx)
+	if ent.IsNotFound(err) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("查询 gateway.forward 幂等 usage 失败: %w", err)
+	}
+	accountMismatch := req.AccountID > 0 && (row.Edges.Account == nil || row.Edges.Account.ID != int(req.AccountID))
+	groupMismatch := req.GroupID > 0 && (row.Edges.Group == nil || row.Edges.Group.ID != int(req.GroupID))
+	if row.UserIDSnapshot != int(req.UserID) || accountMismatch || groupMismatch || row.Platform != platform || row.Model != model || row.Endpoint != req.Path || row.Status != billing.UsageStatusSuccess {
+		return 0, false, status.Errorf(codes.FailedPrecondition, "request_id %q 已用于其他计费上下文", requestID)
+	}
+	return row.ID, true, nil
 }
 
 // applyHostForwardBilling 将 Core 最终采用的用户计费口径回填给调用插件。
@@ -2526,6 +2571,23 @@ func (h *HostService) checkHostForwardBalance(ctx context.Context, userID int64)
 		return hostForwardInsufficientQuotaError()
 	}
 	return nil
+}
+
+// checkHostForwardBalanceOrReplay lets an already-recorded non-stream request
+// finish its recovery path even if the original charge exhausted the balance.
+// The full context check prevents a reused request ID from bypassing quota.
+func (h *HostService) checkHostForwardBalanceOrReplay(ctx context.Context, req hostForwardRequest) error {
+	requestID := strings.TrimSpace(req.RequestID)
+	platform := h.hostForwardRequestPlatform(req)
+	if requestID != "" && req.AccountID > 0 && platform != "" && strings.TrimSpace(req.Model) != "" {
+		req.RequestID = requestID
+		if _, found, err := h.existingHostForwardUsageID(ctx, req, platform, req.Model); err != nil {
+			return err
+		} else if found {
+			return nil
+		}
+	}
+	return h.checkHostForwardBalance(ctx, req.UserID)
 }
 
 func hostForwardGenericError() error {
