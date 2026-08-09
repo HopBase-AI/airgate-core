@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -125,13 +126,13 @@ func TestRelayTargetUsesCoreAccountAuthorization(t *testing.T) {
 		t.Fatalf("credential lookup=(%d,%q)", gotAccountID, gotPlatform)
 	}
 
-	// The internal target must not be serializable into an HTTP response.
-	body, err := json.Marshal(target)
-	if err != nil {
-		t.Fatalf("marshal target: %v", err)
-	}
-	if strings.Contains(string(body), "relay-test-key") {
-		t.Fatalf("serialized target leaked authorization: %s", body)
+	// Keep every target field private so generic response serialization cannot
+	// expose upstream credentials.
+	targetType := reflect.TypeOf(target)
+	for i := 0; i < targetType.NumField(); i++ {
+		if field := targetType.Field(i); field.IsExported() {
+			t.Fatalf("relay target field %q must remain unexported", field.Name)
+		}
 	}
 }
 
