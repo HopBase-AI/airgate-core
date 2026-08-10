@@ -45,7 +45,7 @@ func (s *Scheduler) resolveModelFamily(platform, model string) string {
 	return ModelFamily(platform, model)
 }
 
-// FamilyCooldown 维护"账号 × 模型家族"的 circuit。active cooldown 按 TTL
+// FamilyCooldown 维护"账号 × 模型家族"的限流 circuit。active cooldown 按 TTL
 // 进入 half-open；recovery marker 会一直保留到 token 所有者成功或管理员清除。
 //
 // 与 DB 上的 Account.State 区别：
@@ -74,6 +74,8 @@ type familyCircuitKind string
 
 const (
 	familyCircuitRateLimit familyCircuitKind = "rate_limit"
+	// familyCircuitTransient 仅用于识别并惰性清理 2026-08-09 至 2026-08-11
+	// 写入的旧 transient circuit。通用上游故障不再创建跨请求 circuit。
 	familyCircuitTransient familyCircuitKind = "transient"
 )
 
@@ -171,12 +173,6 @@ func (fc *FamilyCooldown) Mark(ctx context.Context, accountID int, family string
 	fc.markCircuit(ctx, accountID, family, until, reason, familyCircuitRateLimit)
 }
 
-// MarkTransient opens a short family-scoped circuit for generic upstream 5xx or
-// transport failures. Transient circuits never participate in the 429 contract.
-func (fc *FamilyCooldown) MarkTransient(ctx context.Context, accountID int, family string, until time.Time, reason string) {
-	fc.markCircuit(ctx, accountID, family, until, reason, familyCircuitTransient)
-}
-
 func (fc *FamilyCooldown) markCircuit(ctx context.Context, accountID int, family string, until time.Time, reason string, kind familyCircuitKind) {
 	if fc == nil || fc.rdb == nil || family == "" {
 		return
@@ -189,9 +185,9 @@ func (fc *FamilyCooldown) markCircuit(ctx context.Context, accountID int, family
 	if ttlMilliseconds < 1 {
 		ttlMilliseconds = 1
 	}
-	// 后到的短窗口不能缩短已有保护。transient 在同一未恢复 circuit 中优先于
-	// rate_limit 分类，确保混合故障永远不会被误报为“所有账号限流”。每次 Mark
-	// 都删除旧 probe token，使旧在飞请求无法关闭新 circuit。
+	// 后到的短窗口不能缩短已有保护。旧 transient marker 可能合并过真实 429 的
+	// 更长 TTL，因此新的 rate-limit mark 会保留最长 TTL、但把标签改回 rate-limit。
+	// 每次 Mark 都删除旧 probe token，使旧在飞请求无法关闭新 circuit。
 	const keepLongestCooldown = `
 		local current = redis.call('PTTL', KEYS[1])
 		local current_value = redis.call('GET', KEYS[1])
@@ -199,7 +195,6 @@ func (fc *FamilyCooldown) markCircuit(ctx context.Context, accountID int, family
 			current_value = redis.call('GET', KEYS[2])
 		end
 		local incoming = tonumber(ARGV[2])
-		local incoming_kind = ARGV[3]
 		local effective = incoming
 		local permanent = current == -1
 		if not permanent and current > effective then
@@ -207,9 +202,7 @@ func (fc *FamilyCooldown) markCircuit(ctx context.Context, accountID int, family
 		end
 		local value = ARGV[1]
 		local current_is_transient = current_value and string.sub(current_value, 1, 10) == 'transient' .. string.char(10)
-		if current_is_transient and (incoming_kind ~= 'transient' or permanent or current > incoming) then
-			value = current_value
-		elseif incoming_kind ~= 'transient' and (permanent or current > incoming) and current_value then
+		if not current_is_transient and (permanent or current > incoming) and current_value then
 			value = current_value
 		end
 		if permanent then
@@ -229,7 +222,7 @@ func (fc *FamilyCooldown) markCircuit(ctx context.Context, accountID int, family
 		familyProbeKey(accountID, family),
 	}
 	value := encodeFamilyCircuitValue(kind, reason)
-	if _, err := fc.rdb.Eval(ctx, keepLongestCooldown, keys, value, ttlMilliseconds, string(kind)).Result(); err != nil {
+	if _, err := fc.rdb.Eval(ctx, keepLongestCooldown, keys, value, ttlMilliseconds).Result(); err != nil {
 		slog.Debug("写入家族冷却失败",
 			"account_id", accountID, "family", family, "kind", kind, "ttl_ms", ttlMilliseconds, "error", err)
 	}
@@ -249,17 +242,22 @@ func (fc *FamilyCooldown) peekCircuitStatus(ctx context.Context, accountID int, 
 	}
 	const peekCircuit = `
 		local cooldown = redis.call('PTTL', KEYS[1])
-		local value = redis.call('GET', KEYS[1])
-		if not value then
-			value = redis.call('GET', KEYS[2]) or ''
-		end
+		local value = redis.call('GET', KEYS[1]) or ''
 		if cooldown == -1 then
 			return {1, 0, value}
 		end
-		if cooldown > 0 then
+		if cooldown >= 0 then
+			if cooldown == 0 then
+				cooldown = 1
+			end
 			return {1, cooldown, value}
 		end
-		if redis.call('EXISTS', KEYS[2]) == 0 then
+		value = redis.call('GET', KEYS[2])
+		if not value then
+			return {0, 0, ''}
+		end
+		if string.sub(value, 1, 10) == 'transient' .. string.char(10) then
+			redis.call('DEL', KEYS[2], KEYS[3])
 			return {0, 0, ''}
 		end
 		return {2, 0, value}
@@ -267,6 +265,7 @@ func (fc *FamilyCooldown) peekCircuitStatus(ctx context.Context, accountID int, 
 	keys := []string{
 		familyCooldownKey(accountID, family),
 		familyRecoveryKey(accountID, family),
+		familyProbeKey(accountID, family),
 	}
 	values, err := fc.rdb.Eval(ctx, peekCircuit, keys).Slice()
 	if err != nil || len(values) < 3 {
@@ -295,17 +294,22 @@ func (fc *FamilyCooldown) ClaimProbe(ctx context.Context, accountID int, family,
 		local cooldown = redis.call('PTTL', KEYS[1])
 		local lease = tonumber(ARGV[1])
 		local token = ARGV[2]
-			local value = redis.call('GET', KEYS[1])
-			if not value then
-				value = redis.call('GET', KEYS[2]) or ''
-			end
-			if cooldown == -1 then
-				return {1, 0, value, 0}
+		local value = redis.call('GET', KEYS[1]) or ''
+		if cooldown == -1 then
+			return {1, 0, value, 0}
 		end
-		if cooldown > 0 then
+		if cooldown >= 0 then
+			if cooldown == 0 then
+				cooldown = 1
+			end
 			return {1, cooldown, value, 0}
 		end
-		if redis.call('EXISTS', KEYS[2]) == 0 then
+		value = redis.call('GET', KEYS[2])
+		if not value then
+			return {0, 0, '', 0}
+		end
+		if string.sub(value, 1, 10) == 'transient' .. string.char(10) then
+			redis.call('DEL', KEYS[2], KEYS[3])
 			return {0, 0, '', 0}
 		end
 		if token == '' then
