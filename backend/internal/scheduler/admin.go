@@ -21,7 +21,7 @@ func (s *Scheduler) ManualRecover(ctx context.Context, accountID int) error {
 		SetErrorMsg("").
 		Exec(dbCtx)
 	if err == nil {
-		s.state.resetPoolDeadStreak(accountID)
+		s.state.resetPoolDeadStreak(accountID, time.Time{})
 		_ = s.reconcileModelRoutingForAccount(ctx, accountID)
 		s.routeCache.InvalidateAll()
 		s.state.recordEvent(accountID, 0, 0, accountevent.EventTypeManualRecovered, "", "", eventSourceManual, 0, nil)
@@ -50,15 +50,14 @@ func (s *Scheduler) ManualDisable(ctx context.Context, accountID int, reason str
 // 若每轮都落事件，持续限流的账号会把异常监控刷成同一条记录的重复噪声。
 func (s *Scheduler) MarkRateLimited(ctx context.Context, accountID int, until time.Time, reason string) {
 	alreadyIn := s.accountInState(ctx, accountID, account.StateRateLimited)
-	s.state.transition(ctx, accountID, account.StateRateLimited, &until, reason)
-	if !alreadyIn {
+	if applied := s.state.transition(ctx, accountID, account.StateRateLimited, &until, reason); applied && !alreadyIn {
 		s.state.recordEvent(accountID, 0, 0, accountevent.EventTypeRateLimited, reason, "", eventSourceProbe, 0, &until)
 	}
 }
 
 // ClearRateLimited 配额巡检发现已恢复时清限流态回到 active。
 func (s *Scheduler) ClearRateLimited(ctx context.Context, accountID int) {
-	s.state.resetPoolDeadStreak(accountID)
+	s.state.resetPoolDeadStreak(accountID, time.Time{})
 	s.state.transitionActive(ctx, accountID, eventSourceProbe)
 }
 
@@ -72,7 +71,7 @@ func (s *Scheduler) ClearRateLimitMarkers(ctx context.Context, accountID int) in
 		return cleared
 	}
 	if item.State == account.StateRateLimited || item.State == account.StateDegraded {
-		s.state.resetPoolDeadStreak(accountID)
+		s.state.resetPoolDeadStreak(accountID, time.Time{})
 		s.state.transitionActive(ctx, accountID, eventSourceManual)
 		cleared++
 	}
@@ -83,8 +82,7 @@ func (s *Scheduler) ClearRateLimitMarkers(ctx context.Context, accountID int) in
 // 与 MarkRateLimited 同理，只在进入 disabled 时落事件。
 func (s *Scheduler) MarkDisabled(ctx context.Context, accountID int, reason string) {
 	alreadyIn := s.accountInState(ctx, accountID, account.StateDisabled)
-	s.state.transition(ctx, accountID, account.StateDisabled, nil, reason)
-	if !alreadyIn {
+	if applied := s.state.transition(ctx, accountID, account.StateDisabled, nil, reason); applied && !alreadyIn {
 		s.state.recordEvent(accountID, 0, 0, accountevent.EventTypeDisabled, reason, "", eventSourceProbe, 0, nil)
 	}
 	s.routeCache.InvalidateAll()

@@ -301,6 +301,30 @@ func TestWriteUpstreamIfPresentPreservesEmptyBodyStatusAndHeaders(t *testing.T) 
 	}
 }
 
+func TestWriteUpstreamIfPresentCapsRawRetryAfterHeaders(t *testing.T) {
+	t.Parallel()
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	upstream := sdk.UpstreamResponse{
+		StatusCode: http.StatusTooManyRequests,
+		Headers: http.Header{
+			"Retry-After":    []string{"691200"},
+			"Retry-After-Ms": []string{"691200000"},
+		},
+	}
+
+	if !writeUpstreamIfPresent(c, upstream) {
+		t.Fatal("writeUpstreamIfPresent = false, want true")
+	}
+	if got := recorder.Header().Get("Retry-After"); got != "604800" {
+		t.Fatalf("Retry-After = %q, want 604800", got)
+	}
+	if got := recorder.Header().Get("Retry-After-Ms"); got != "604800000" {
+		t.Fatalf("Retry-After-Ms = %q, want 604800000", got)
+	}
+}
+
 func TestWriteFailureResponse_NonStreamAlwaysWrites(t *testing.T) {
 	t.Parallel()
 

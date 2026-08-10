@@ -41,20 +41,38 @@ const (
 	// poolDeadStreakTTL 连击计数的滑动窗口：每次连击续期，安静该时长后自动清零，
 	// 给上游自愈（充值/解封）留机会。须大于 degradedMax，否则降级到期前计数先过期。
 	poolDeadStreakTTL = 30 * time.Minute
+	// probeReleaseTimeout bounds best-effort Redis cleanup on the request path.
+	// A failed release only leaves the lease to expire naturally; it must never
+	// hold a customer request behind the general DB timeout.
+	probeReleaseTimeout = 750 * time.Millisecond
 )
+
+// ClampRateLimitRetryAfter keeps a client-visible rate-limit delay within the
+// same upper bound used by the account state machine. It deliberately has no
+// minimum: response formatting must preserve a valid sub-second upstream hint.
+func ClampRateLimitRetryAfter(retryAfter time.Duration) time.Duration {
+	if retryAfter <= 0 {
+		return 0
+	}
+	if retryAfter > rateLimitedMax {
+		return rateLimitedMax
+	}
+	return retryAfter
+}
 
 // Judgment forwarder 对一次调用的判决，交给状态机做状态转移。
 type Judgment struct {
-	Kind           sdk.OutcomeKind
-	RetryAfter     time.Duration
-	Reason         string
-	Duration       time.Duration // 仅用于日志 / 指标
-	IsPool         bool          // 池账号（upstream_is_pool）走豁免路径
-	Family         string        // 模型家族键（见 ModelFamily）。非空时 RateLimited 走 Redis 家族冷却而非账号级 DB state，避免 gpt-image 限流误伤 chat。
-	UpstreamStatus int           // 上游 HTTP 状态码，用于池账号区分 401（自身凭证无效）和 403（透传上游错误）。
-	UserID         int           // 触发本次判决请求的终端用户 ID（API Key 归属），无用户上下文为 0。
-	APIKeyID       int           // 触发本次判决请求所用的 API Key ID，无则为 0。
-	ProbeToken     string        // 选号阶段抢到的 half-open lease token；只有匹配 token 的 Success 才能关闸。
+	Kind             sdk.OutcomeKind
+	RetryAfter       time.Duration
+	Reason           string
+	Duration         time.Duration // 仅用于日志 / 指标
+	IsPool           bool          // 池账号（upstream_is_pool）走豁免路径
+	Family           string        // 模型家族键（见 ModelFamily）。非空时 RateLimited 走 Redis 家族冷却而非账号级 DB state，避免 gpt-image 限流误伤 chat。
+	UpstreamStatus   int           // 上游 HTTP 状态码，用于池账号区分 401（自身凭证无效）和 403（透传上游错误）。
+	UserID           int           // 触发本次判决请求的终端用户 ID（API Key 归属），无用户上下文为 0。
+	APIKeyID         int           // 触发本次判决请求所用的 API Key ID，无则为 0。
+	ProbeToken       string        // 选号阶段抢到的 half-open lease token；只有匹配 token 的 Success 才能关闸。
+	AttemptStartedAt time.Time     // 实际 Gateway.Forward 开始前的时间；用于防止旧成功清除后来池账号死信连击。零值保留 report 兼容语义。
 }
 
 // StateMachine 账号状态机。所有状态转移必须通过 Apply 入口。
@@ -108,13 +126,16 @@ func (sm *StateMachine) notifyCritical() {
 func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 	switch j.Kind {
 	case sdk.OutcomeSuccess:
-		if j.IsPool {
-			sm.resetPoolDeadStreak(accountID)
-		}
 		if j.Family != "" && j.ProbeToken != "" && sm.familyCooldown != nil {
 			sm.familyCooldown.Recover(ctx, accountID, j.Family, j.ProbeToken)
 		}
 		sm.transitionActive(ctx, accountID, eventSourceForward)
+		// The Redis marker compares this attempt's start time to the latest pool
+		// failure, so it is safe to reset a recovered pool's streak even while a
+		// live degraded TTL remains conservatively in place.
+		if j.IsPool {
+			sm.resetPoolDeadStreak(accountID, j.AttemptStartedAt)
+		}
 
 	case sdk.OutcomeAccountRateLimited:
 		dur := j.RetryAfter
@@ -124,9 +145,7 @@ func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 		if dur < rateLimitedMin {
 			dur = rateLimitedMin
 		}
-		if dur > rateLimitedMax {
-			dur = rateLimitedMax
-		}
+		dur = ClampRateLimitRetryAfter(dur)
 		until := time.Now().Add(dur)
 		// 有 Family 信息时走家族级冷却：撞 gpt-image 4000/min 不会让同账号 chat 被跳过。
 		// 无 Family（admin 巡检 / 老插件）保留账号级 rate_limited 兜底，行为与改造前一致。
@@ -141,8 +160,9 @@ func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 			sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeRateLimited, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, &until)
 			return
 		}
-		sm.transition(ctx, accountID, account.StateRateLimited, &until, j.Reason)
-		sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeRateLimited, j.Reason, "", eventSourceForward, j.UpstreamStatus, &until)
+		if sm.transition(ctx, accountID, account.StateRateLimited, &until, j.Reason) {
+			sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeRateLimited, j.Reason, "", eventSourceForward, j.UpstreamStatus, &until)
+		}
 
 	case sdk.OutcomeAccountDead:
 		if j.IsPool && j.UpstreamStatus != 401 {
@@ -156,13 +176,17 @@ func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 				dj := j
 				dj.Reason = fmt.Sprintf("连续 %d 次上游透传错误：%s", streak, j.Reason)
 				sm.applyDegradedFor(ctx, accountID, dj, poolDeadDegradeWindow(streak))
+				sm.releaseOwnedProbe(accountID, j)
 				return
 			}
 			sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeUpstreamError, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, nil)
+			sm.releaseOwnedProbe(accountID, j)
 			return
 		}
-		sm.transition(ctx, accountID, account.StateDisabled, nil, j.Reason)
-		sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeDisabled, j.Reason, "", eventSourceForward, j.UpstreamStatus, nil)
+		if sm.transition(ctx, accountID, account.StateDisabled, nil, j.Reason) {
+			sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeDisabled, j.Reason, "", eventSourceForward, j.UpstreamStatus, nil)
+		}
+		sm.releaseOwnedProbe(accountID, j)
 
 	case sdk.OutcomeUpstreamTransient:
 		// 按定义，UpstreamTransient 是"上游侧瞬时故障"（SSE 提前断流、网络抖动、上游 5xx 等），
@@ -176,16 +200,29 @@ func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 		} else {
 			sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeUpstreamError, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, nil)
 		}
+		sm.releaseOwnedProbe(accountID, j)
 
 	case sdk.OutcomeClientError, sdk.OutcomeStreamAborted, sdk.OutcomeUnknown:
 		// 账号无辜，不改状态；若本次是 half-open probe，则精确释放自己的
 		// lease，让下一个请求立即验证，不必空等 lease TTL。
-		if j.Family != "" && j.ProbeToken != "" && sm.familyCooldown != nil {
-			releaseCtx, cancel := context.WithTimeout(context.Background(), dbTimeout)
-			sm.familyCooldown.ReleaseProbe(releaseCtx, accountID, j.Family, j.ProbeToken)
-			cancel()
-		}
+		sm.releaseOwnedProbe(accountID, j)
 	}
+}
+
+// releaseOwnedProbe releases only the half-open lease owned by this attempt.
+// A transient probe cannot prove recovery, but it also must not block every
+// later request for the full lease after its upstream call has already ended.
+func (sm *StateMachine) releaseOwnedProbe(accountID int, j Judgment) {
+	if j.Family == "" || j.ProbeToken == "" || sm.familyCooldown == nil {
+		return
+	}
+	releaseCtx, cancel := probeCleanupContext()
+	defer cancel()
+	sm.familyCooldown.ReleaseProbe(releaseCtx, accountID, j.Family, j.ProbeToken)
+}
+
+func probeCleanupContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), probeReleaseTimeout)
 }
 
 // applyDegraded 池账号软降级。state_until 到期后调度器看到就恢复 active。
@@ -209,13 +246,25 @@ func (sm *StateMachine) applyDegradedFor(ctx context.Context, accountID int, j J
 		dur = degradedMax
 	}
 	until := time.Now().Add(dur)
-	sm.transition(ctx, accountID, account.StateDegraded, &until, j.Reason)
-	sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeDegraded, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, &until)
+	if sm.transition(ctx, accountID, account.StateDegraded, &until, j.Reason) {
+		sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeDegraded, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, &until)
+	}
 }
 
 // poolDeadStreakKey 命名沿用 family-cooldown 的 `<purpose>:v<version>:<id>` 风格。
 func poolDeadStreakKey(accountID int) string {
 	return fmt.Sprintf("pool-dead-streak:v1:%d", accountID)
+}
+
+// poolDeadStreakMarkerKey records when the numeric streak was last advanced.
+// It lets a late success clear only streaks that existed before its upstream
+// attempt began, rather than deleting a newer failure's evidence.
+func poolDeadStreakMarkerKey(accountID int) string {
+	return fmt.Sprintf("pool-dead-streak-at:v1:%d", accountID)
+}
+
+func poolDeadStreakTimestamp(t time.Time) string {
+	return fmt.Sprintf("%019d", t.UnixNano())
 }
 
 // bumpPoolDeadStreak 连击 +1 并返回当前连击数。
@@ -224,30 +273,52 @@ func (sm *StateMachine) bumpPoolDeadStreak(ctx context.Context, accountID int) i
 	if sm.rdb == nil {
 		return 0
 	}
-	key := poolDeadStreakKey(accountID)
-	n, err := sm.rdb.Incr(ctx, key).Result()
+	const bump = `
+		local n = redis.call('INCR', KEYS[1])
+		redis.call('PEXPIRE', KEYS[1], ARGV[1])
+		redis.call('SET', KEYS[2], ARGV[2], 'PX', ARGV[1])
+		return n
+	`
+	n, err := sm.rdb.Eval(
+		ctx,
+		bump,
+		[]string{poolDeadStreakKey(accountID), poolDeadStreakMarkerKey(accountID)},
+		poolDeadStreakTTL.Milliseconds(),
+		poolDeadStreakTimestamp(time.Now()),
+	).Int()
 	if err != nil {
 		slog.Warn("scheduler_pool_dead_streak_incr_failed",
 			sdk.LogFieldAccountID, accountID, sdk.LogFieldError, err)
 		return 0
 	}
-	// 滑动窗口：每次连击都续期，安静 poolDeadStreakTTL 后自动清零。
-	if err := sm.rdb.Expire(ctx, key, poolDeadStreakTTL).Err(); err != nil {
-		slog.Warn("scheduler_pool_dead_streak_expire_failed",
-			sdk.LogFieldAccountID, accountID, sdk.LogFieldError, err)
-	}
 	return int(n)
 }
 
-// resetPoolDeadStreak 成功判决后清零连击。用独立超时 ctx：请求 ctx 可能已取消，
-// 不能让清零失败把一个健康账号留在升级路径上。
-func (sm *StateMachine) resetPoolDeadStreak(accountID int) {
+// resetPoolDeadStreak clears a pool streak after success. A zero attempt time
+// is an admin/report compatibility path and preserves the historical
+// unconditional reset. Forward success uses its start time so an old response
+// cannot delete a dead-streak that was advanced by a later request.
+func (sm *StateMachine) resetPoolDeadStreak(accountID int, attemptStartedAt time.Time) {
 	if sm.rdb == nil {
 		return
 	}
-	rctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	rctx, cancel := probeCleanupContext()
 	defer cancel()
-	if err := sm.rdb.Del(rctx, poolDeadStreakKey(accountID)).Err(); err != nil {
+	keys := []string{poolDeadStreakKey(accountID), poolDeadStreakMarkerKey(accountID)}
+	var err error
+	if attemptStartedAt.IsZero() {
+		err = sm.rdb.Del(rctx, keys...).Err()
+	} else {
+		const resetIfNotNewer = `
+			local marker = redis.call('GET', KEYS[2])
+			if not marker or marker <= ARGV[1] then
+				return redis.call('DEL', KEYS[1], KEYS[2])
+			end
+			return 0
+		`
+		err = sm.rdb.Eval(rctx, resetIfNotNewer, keys, poolDeadStreakTimestamp(attemptStartedAt)).Err()
+	}
+	if err != nil {
 		slog.Warn("scheduler_pool_dead_streak_reset_failed",
 			sdk.LogFieldAccountID, accountID, sdk.LogFieldError, err)
 	}
@@ -271,33 +342,51 @@ func poolDeadDegradeWindow(streak int) time.Duration {
 //
 // disabled 状态受保护：只有管理员操作（ManualRecover / ToggleScheduling）才能解除，
 // forwarder 的 Success 判决不会覆盖它——防止在飞请求的成功回调把手动禁用的账号重新激活。
-func (sm *StateMachine) transitionActive(ctx context.Context, accountID int, source string) {
+// 对 forward 成功，仍生效的 rate_limited / degraded 都保留到 TTL 到期，避免一条
+// 并发成功把刚写入的保护状态提前清掉。管理员和健康巡检仍通过显式 source 恢复。
+func (sm *StateMachine) transitionActive(ctx context.Context, accountID int, source string) bool {
 	now := time.Now()
 	dbCtx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
-	prevState := account.StateActive
-	if existing, err := sm.db.Account.Get(dbCtx, accountID); err == nil {
-		prevState = existing.State
+	existing, err := sm.db.Account.Get(dbCtx, accountID)
+	if err != nil {
+		slog.Warn("scheduler_state_active_read_failed",
+			sdk.LogFieldAccountID, accountID, sdk.LogFieldError, err)
+		return false
 	}
+	prevState := existing.State
 
 	if prevState == account.StateDisabled {
-		_ = sm.db.Account.UpdateOneID(accountID).
-			SetLastUsedAt(now).
-			Exec(dbCtx)
-		return
+		return false
 	}
 
-	err := sm.db.Account.UpdateOneID(accountID).
+	upd := sm.db.Account.Update().
+		Where(account.IDEQ(accountID), account.StateNEQ(account.StateDisabled)).
 		SetState(account.StateActive).
 		ClearStateUntil().
 		SetErrorMsg("").
-		SetLastUsedAt(now).
-		Exec(dbCtx)
+		SetLastUsedAt(now)
+	if source == eventSourceForward {
+		upd.Where(account.Or(
+			account.StateEQ(account.StateActive),
+			account.And(
+				account.StateIn(account.StateRateLimited, account.StateDegraded),
+				account.Or(account.StateUntilIsNil(), account.StateUntilLTE(now)),
+			),
+		))
+	}
+	affected, err := upd.Save(dbCtx)
 	if err != nil {
 		slog.Warn("scheduler_state_active_failed",
 			sdk.LogFieldAccountID, accountID, sdk.LogFieldError, err)
-		return
+		return false
+	}
+	if affected == 0 {
+		// A live rate limit, newer degraded state, or manual disable won the
+		// race. This is normal for overlapping forwards and preserves the
+		// account protection until it is safe to recover.
+		return false
 	}
 	if prevState != account.StateActive {
 		sm.notifyCritical()
@@ -307,29 +396,40 @@ func (sm *StateMachine) transitionActive(ctx context.Context, accountID int, sou
 	if prevState == account.StateRateLimited || prevState == account.StateDegraded {
 		sm.recordEvent(accountID, 0, 0, accountevent.EventTypeRecovered, "", "", source, 0, nil)
 	}
+	return true
 }
 
 // transition 把账号转到指定状态。stateUntil=nil 表示无到期（disabled）或清空。
-func (sm *StateMachine) transition(ctx context.Context, accountID int, newState account.State, stateUntil *time.Time, reason string) {
+func (sm *StateMachine) transition(ctx context.Context, accountID int, newState account.State, stateUntil *time.Time, reason string) bool {
 	dbCtx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
-	upd := sm.db.Account.UpdateOneID(accountID).
+	upd := sm.db.Account.Update().
+		Where(account.IDEQ(accountID)).
 		SetState(newState).
 		SetErrorMsg(truncateReason(reason))
+	if newState != account.StateDisabled {
+		// Automatic rate-limit/degraded transitions must never make an account
+		// schedulable again after an operator has disabled it.
+		upd.Where(account.StateNEQ(account.StateDisabled))
+	}
 	if stateUntil == nil {
 		upd = upd.ClearStateUntil()
 	} else {
 		upd = upd.SetStateUntil(*stateUntil)
 	}
 
-	if err := upd.Exec(dbCtx); err != nil {
+	affected, err := upd.Save(dbCtx)
+	if err != nil {
 		slog.Error("scheduler_state_transition_failed",
 			sdk.LogFieldAccountID, accountID,
 			"target_state", newState,
 			sdk.LogFieldError, err,
 		)
-		return
+		return false
+	}
+	if affected == 0 {
+		return false
 	}
 	slog.Info("scheduler_state_transition",
 		sdk.LogFieldAccountID, accountID,
@@ -343,6 +443,7 @@ func (sm *StateMachine) transition(ctx context.Context, accountID int, newState 
 	if newState == account.StateDisabled {
 		sm.notifyCritical()
 	}
+	return true
 }
 
 // SchedulabilityOf 根据当前状态 + 到期时间判断账号是否可调度。

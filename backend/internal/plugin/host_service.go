@@ -701,24 +701,28 @@ func (h *HostService) probeForward(ctx context.Context, req hostProbeForwardRequ
 		return errProbeResp("no_account", "账号当前不可用: "+string(gate.Reason), start), nil
 	}
 	stopProbeLease := func() {}
+	claimedProbeToken := ""
 	if gate.ProbeClaimed {
-		stopProbeLease = h.scheduler.MaintainFamilyProbe(fwdCtx, acc.ID, acc.Platform, model, probeToken)
+		claimedProbeToken = probeToken
+		stopProbeLease = h.scheduler.MaintainFamilyProbe(fwdCtx, acc.ID, acc.Platform, model, claimedProbeToken)
 	}
+	attemptStartedAt := time.Now()
 	outcome, fwdErr := inst.Gateway.Forward(fwdCtx, fwdReq)
 	stopProbeLease()
-	h.persistHostUpdatedCredentials(acc.ID, outcome.UpdatedCredentials)
 	latency := time.Since(start)
 	resp["latency_ms"] = latency.Milliseconds()
 	resp["status_code"] = int64(outcome.Upstream.StatusCode)
 
 	if cerr := hostForwardContextError(fwdCtx, fwdErr); cerr != nil {
-		h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, probeToken)
+		h.persistHostUpdatedCredentials(acc.ID, outcome.UpdatedCredentials)
+		h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, claimedProbeToken)
 		return nil, cerr
 	}
 
 	// 插件自身故障（进程异常等）—— 不经过状态机，仅记录。
 	if fwdErr != nil {
-		h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, probeToken)
+		h.persistHostUpdatedCredentials(acc.ID, outcome.UpdatedCredentials)
+		h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, claimedProbeToken)
 		resp["success"] = false
 		resp["error_kind"] = "plugin_error"
 		resp["error_msg"] = truncateProbeErr(fwdErr.Error())
@@ -729,11 +733,12 @@ func (h *HostService) probeForward(ctx context.Context, req hostProbeForwardRequ
 	// 避免探测模型不可用（如上游缺通道）误伤整个账号的可调度性。
 	// 失败信号由 health 插件自行记录到 group_health_probes，不经过账号状态机。
 	if outcome.Kind.IsSuccess() {
-		if !h.applyHostOutcome(fwdCtx, acc.ID, accFull, model, outcome, latency, probeToken, nil, false) {
+		if !h.applyHostOutcomeThenPersist(fwdCtx, acc.ID, accFull, model, outcome, latency, attemptStartedAt, claimedProbeToken, nil, false) {
 			return nil, hostForwardContextError(fwdCtx, nil)
 		}
 	} else {
-		h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, probeToken)
+		h.persistHostUpdatedCredentials(acc.ID, outcome.UpdatedCredentials)
+		h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, claimedProbeToken)
 	}
 
 	switch outcome.Kind {
@@ -1093,16 +1098,18 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 
 			start := time.Now()
 			stopProbeLease := func() {}
+			claimedProbeToken := ""
 			if gate.ProbeClaimed {
-				stopProbeLease = h.scheduler.MaintainFamilyProbe(fwdCtx, acc.ID, acc.Platform, model, probeToken)
+				claimedProbeToken = probeToken
+				stopProbeLease = h.scheduler.MaintainFamilyProbe(fwdCtx, acc.ID, acc.Platform, model, claimedProbeToken)
 			}
+			attemptStartedAt := time.Now()
 			outcome, fwdErr := inst.Gateway.Forward(fwdCtx, fwdReq)
 			stopProbeLease()
-			h.persistHostUpdatedCredentials(acc.ID, outcome.UpdatedCredentials)
 			attempt++
 			duration := time.Since(start)
 			releaseAccountSlot()
-			if !h.applyHostOutcome(fwdCtx, acc.ID, accFull, model, outcome, duration, probeToken, fwdErr, true) {
+			if !h.applyHostOutcomeThenPersist(fwdCtx, acc.ID, accFull, model, outcome, duration, attemptStartedAt, claimedProbeToken, fwdErr, true) {
 				h.recordCanceledHostForwardUsage(req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration, hostCanceledRequestStatus(fwdCtx, fwdErr))
 				return nil, hostForwardContextError(fwdCtx, fwdErr)
 			}
@@ -1272,12 +1279,12 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 	}
 
 	start := time.Now()
+	attemptStartedAt := time.Now()
 	outcome, fwdErr := inst.Gateway.Forward(fwdCtx, fwdReq)
 	stopProbeLease()
-	h.persistHostUpdatedCredentials(accFull.ID, outcome.UpdatedCredentials)
 	duration := time.Since(start)
 	releaseAccountSlot()
-	if !h.applyHostOutcome(fwdCtx, accFull.ID, accFull, model, outcome, duration, claimedProbeToken, fwdErr, true) {
+	if !h.applyHostOutcomeThenPersist(fwdCtx, accFull.ID, accFull, model, outcome, duration, attemptStartedAt, claimedProbeToken, fwdErr, true) {
 		h.recordCanceledHostForwardUsage(req, route, accFull.ID, route.Platform, model, accFull, userEmail, outcome, duration, hostCanceledRequestStatus(fwdCtx, fwdErr))
 		return nil, hostForwardContextError(fwdCtx, fwdErr)
 	}
@@ -1458,16 +1465,18 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 
 			start := time.Now()
 			stopProbeLease := func() {}
+			claimedProbeToken := ""
 			if gate.ProbeClaimed {
-				stopProbeLease = h.scheduler.MaintainFamilyProbe(fwdCtx, acc.ID, acc.Platform, model, probeToken)
+				claimedProbeToken = probeToken
+				stopProbeLease = h.scheduler.MaintainFamilyProbe(fwdCtx, acc.ID, acc.Platform, model, claimedProbeToken)
 			}
+			attemptStartedAt := time.Now()
 			outcome, fwdErr := inst.Gateway.Forward(fwdCtx, fwdReq)
 			stopProbeLease()
-			h.persistHostUpdatedCredentials(acc.ID, outcome.UpdatedCredentials)
 			attempt++
 			duration := time.Since(start)
 			releaseAccountSlot()
-			if !h.applyHostOutcome(fwdCtx, acc.ID, accFull, model, outcome, duration, probeToken, fwdErr, true) {
+			if !h.applyHostOutcomeThenPersist(fwdCtx, acc.ID, accFull, model, outcome, duration, attemptStartedAt, claimedProbeToken, fwdErr, true) {
 				h.recordCanceledHostForwardUsage(req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration, hostCanceledRequestStatus(fwdCtx, fwdErr))
 				return hostForwardContextError(fwdCtx, fwdErr)
 			}
@@ -1650,6 +1659,7 @@ func hostPinnedGatewayError(outcome sdk.ForwardOutcome, forwardErr error) (map[s
 func hostStructuredFailureOutcome(statusCode int, code, message string, retryAfter time.Duration) sdk.ForwardOutcome {
 	headers := make(http.Header)
 	headers.Set("Content-Type", "application/json; charset=utf-8")
+	retryAfter = scheduler.ClampRateLimitRetryAfter(retryAfter)
 	if retryAfter > 0 {
 		seconds := int64((retryAfter + time.Second - 1) / time.Second)
 		if seconds < 1 {
@@ -1857,7 +1867,7 @@ func (w *hostStreamWriter) WriteHeader(statusCode int) {
 		Status: "ok",
 		Payload: mustHostPayload(map[string]interface{}{
 			"status_code": statusCode,
-			"headers":     httpHeadersToProtoHost(w.header),
+			"headers":     httpHeadersToProtoHost(normalizeUpstreamRetryAfterHeaders(w.header)),
 		}),
 	})
 }
@@ -2766,7 +2776,7 @@ func hostSDKAccount(acc *ent.Account) *sdk.Account {
 	}
 }
 
-func (h *HostService) applyHostOutcome(ctx context.Context, accountID int, accFull *ent.Account, model string, outcome sdk.ForwardOutcome, duration time.Duration, probeToken string, forwardErr error, rpmReserved bool) bool {
+func (h *HostService) applyHostOutcome(ctx context.Context, accountID int, accFull *ent.Account, model string, outcome sdk.ForwardOutcome, duration time.Duration, attemptStartedAt time.Time, probeToken string, forwardErr error, rpmReserved bool) bool {
 	if hostForwardContextError(ctx, forwardErr) != nil {
 		if rpmReserved {
 			h.scheduler.DecrementRPM(context.Background(), accountID)
@@ -2779,16 +2789,26 @@ func (h *HostService) applyHostOutcome(ctx context.Context, accountID int, accFu
 		reason = "[" + model + "] " + reason
 	}
 	h.scheduler.Apply(ctx, accountID, scheduler.Judgment{
-		Kind:           outcome.Kind,
-		RetryAfter:     outcome.RetryAfter,
-		Reason:         reason,
-		Duration:       duration,
-		IsPool:         accFull.UpstreamIsPool,
-		UpstreamStatus: outcome.Upstream.StatusCode,
-		Family:         h.resolveModelFamily(accFull.Platform, model),
-		ProbeToken:     probeToken,
+		Kind:             outcome.Kind,
+		RetryAfter:       outcome.RetryAfter,
+		Reason:           reason,
+		Duration:         duration,
+		IsPool:           accFull.UpstreamIsPool,
+		UpstreamStatus:   outcome.Upstream.StatusCode,
+		Family:           h.resolveModelFamily(accFull.Platform, model),
+		ProbeToken:       probeToken,
+		AttemptStartedAt: attemptStartedAt,
 	})
 	return true
+}
+
+// applyHostOutcomeThenPersist keeps the canonical scheduler judgment ahead of
+// asynchronous OAuth credential persistence. The credential write is best
+// effort and must not decide or delay the state transition for this request.
+func (h *HostService) applyHostOutcomeThenPersist(ctx context.Context, accountID int, accFull *ent.Account, model string, outcome sdk.ForwardOutcome, duration time.Duration, attemptStartedAt time.Time, probeToken string, forwardErr error, rpmReserved bool) bool {
+	applied := h.applyHostOutcome(ctx, accountID, accFull, model, outcome, duration, attemptStartedAt, probeToken, forwardErr, rpmReserved)
+	h.persistHostUpdatedCredentials(accountID, outcome.UpdatedCredentials)
+	return applied
 }
 
 func (h *HostService) releaseHostFamilyProbe(accountID int, platform, model, probeToken string) {
@@ -2942,7 +2962,7 @@ func hostForwardClientError(outcome sdk.ForwardOutcome) error {
 func hostForwardPayload(outcome sdk.ForwardOutcome) map[string]interface{} {
 	return map[string]interface{}{
 		"status_code": outcome.Upstream.StatusCode,
-		"headers":     httpHeadersToProtoHost(outcome.Upstream.Headers),
+		"headers":     httpHeadersToProtoHost(normalizeUpstreamRetryAfterHeaders(outcome.Upstream.Headers)),
 		"body":        string(outcome.Upstream.Body),
 	}
 }

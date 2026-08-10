@@ -157,6 +157,36 @@ func TestPoolDeadStreakResetOnSuccess(t *testing.T) {
 	}
 }
 
+func TestPoolDeadStreakLateSuccessKeepsNewerFailure(t *testing.T) {
+	db := enttestOpenEvents(t)
+	rdb, _ := newTestRedis(t)
+	ctx := context.Background()
+	acc := createEventTestAccount(t, db, entaccount.StateActive)
+	sm := NewStateMachine(db, rdb, nil)
+
+	oldAttemptStartedAt := time.Now().Add(-time.Hour)
+	sm.Apply(ctx, acc.ID, poolDeadJudgment())
+	sm.Apply(ctx, acc.ID, Judgment{
+		Kind:             sdk.OutcomeSuccess,
+		IsPool:           true,
+		AttemptStartedAt: oldAttemptStartedAt,
+	})
+
+	if streak, err := rdb.Get(ctx, poolDeadStreakKey(acc.ID)).Int(); err != nil || streak != 1 {
+		t.Fatalf("streak after late success = %d, err=%v; want retained 1", streak, err)
+	}
+
+	freshAttemptStartedAt := time.Now()
+	sm.Apply(ctx, acc.ID, Judgment{
+		Kind:             sdk.OutcomeSuccess,
+		IsPool:           true,
+		AttemptStartedAt: freshAttemptStartedAt,
+	})
+	if _, err := rdb.Get(ctx, poolDeadStreakKey(acc.ID)).Result(); err == nil {
+		t.Fatal("fresh success left pool dead streak behind")
+	}
+}
+
 // TestPoolDeadStreakNonPoolSuccessLeavesKeyAlone 非池成功不应在热路径访问池账号连击键。
 func TestPoolDeadStreakNonPoolSuccessLeavesKeyAlone(t *testing.T) {
 	db := enttestOpenEvents(t)
@@ -258,5 +288,102 @@ func TestPoolDeadStreakNilRedisFailOpen(t *testing.T) {
 	}
 	if got.State != entaccount.StateActive {
 		t.Fatalf("state = %s, want active（无 Redis 维持旧行为）", got.State)
+	}
+}
+
+func TestForwardSuccessCannotClearLiveTemporaryOrManualState(t *testing.T) {
+	tests := []struct {
+		name       string
+		state      entaccount.State
+		stateUntil bool
+	}{
+		{name: "rate limited", state: entaccount.StateRateLimited, stateUntil: true},
+		{name: "degraded", state: entaccount.StateDegraded, stateUntil: true},
+		{name: "manual disabled", state: entaccount.StateDisabled},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			db := enttestOpenEvents(t)
+			ctx := context.Background()
+			acc := createEventTestAccount(t, db, entaccount.StateActive)
+			sm := NewStateMachine(db, nil, nil)
+
+			attemptStartedAt := time.Now()
+			updatedAt := attemptStartedAt.Add(time.Second)
+			upd := db.Account.UpdateOneID(acc.ID).
+				SetState(tt.state).
+				SetErrorMsg("live protection").
+				SetUpdatedAt(updatedAt)
+			if tt.stateUntil {
+				upd.SetStateUntil(updatedAt.Add(time.Hour))
+			} else {
+				upd.ClearStateUntil()
+			}
+			if err := upd.Exec(ctx); err != nil {
+				t.Fatalf("set newer %s state: %v", tt.state, err)
+			}
+
+			sm.Apply(ctx, acc.ID, Judgment{
+				Kind:             sdk.OutcomeSuccess,
+				AttemptStartedAt: attemptStartedAt,
+			})
+
+			got, err := db.Account.Get(ctx, acc.ID)
+			if err != nil {
+				t.Fatalf("get account: %v", err)
+			}
+			if got.State != tt.state {
+				t.Fatalf("state after late success = %s, want protected %s", got.State, tt.state)
+			}
+			if got.ErrorMsg != "live protection" {
+				t.Fatalf("error_msg after late success = %q, want preserved protection", got.ErrorMsg)
+			}
+		})
+	}
+}
+
+func TestForwardSuccessRecoversExpiredTemporaryState(t *testing.T) {
+	for _, state := range []entaccount.State{entaccount.StateRateLimited, entaccount.StateDegraded} {
+		state := state
+		t.Run(string(state), func(t *testing.T) {
+			db := enttestOpenEvents(t)
+			ctx := context.Background()
+			acc := createEventTestAccount(t, db, entaccount.StateActive)
+			sm := NewStateMachine(db, nil, nil)
+			if err := db.Account.UpdateOneID(acc.ID).
+				SetState(state).
+				SetStateUntil(time.Now().Add(-time.Minute)).
+				SetErrorMsg("expired protection").
+				Exec(ctx); err != nil {
+				t.Fatalf("set expired %s: %v", state, err)
+			}
+
+			sm.Apply(ctx, acc.ID, Judgment{Kind: sdk.OutcomeSuccess})
+
+			got := db.Account.GetX(ctx, acc.ID)
+			if got.State != entaccount.StateActive || got.StateUntil != nil || got.ErrorMsg != "" {
+				t.Fatalf("success state=%s until=%v reason=%q, want active/cleared", got.State, got.StateUntil, got.ErrorMsg)
+			}
+		})
+	}
+}
+
+func TestAutomaticTemporaryStateDoesNotReviveManualDisable(t *testing.T) {
+	db := enttestOpenEvents(t)
+	ctx := context.Background()
+	acc := createEventTestAccount(t, db, entaccount.StateDisabled)
+	sm := NewStateMachine(db, nil, nil)
+
+	sm.Apply(ctx, acc.ID, Judgment{Kind: sdk.OutcomeAccountRateLimited, RetryAfter: time.Minute})
+	sm.Apply(ctx, acc.ID, Judgment{Kind: sdk.OutcomeUpstreamTransient, IsPool: true, RetryAfter: time.Minute})
+
+	got, err := db.Account.Get(ctx, acc.ID)
+	if err != nil {
+		t.Fatalf("get account: %v", err)
+	}
+	if got.State != entaccount.StateDisabled {
+		t.Fatalf("automatic state transition revived account to %s, want disabled", got.State)
 	}
 }

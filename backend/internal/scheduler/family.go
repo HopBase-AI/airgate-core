@@ -458,7 +458,7 @@ func accountGateCircuitDecision(status familyCircuitStatus) AccountGateDecision 
 }
 
 // ReleaseFamilyProbe releases an unused half-open lease for a selected attempt.
-func (s *Scheduler) ReleaseFamilyProbe(ctx context.Context, accountID int, platform, model, probeToken string) {
+func (s *Scheduler) ReleaseFamilyProbe(_ context.Context, accountID int, platform, model, probeToken string) {
 	if s == nil || s.familyCooldown == nil || probeToken == "" {
 		return
 	}
@@ -466,7 +466,12 @@ func (s *Scheduler) ReleaseFamilyProbe(ctx context.Context, accountID int, platf
 	if family == "" {
 		return
 	}
-	s.familyCooldown.ReleaseProbe(ctx, accountID, family, probeToken)
+	// A probe release is best-effort cleanup. Never let a stalled Redis server
+	// extend a customer request (including cancellation/error tails); a missed
+	// release simply expires with its lease.
+	releaseCtx, cancel := probeCleanupContext()
+	defer cancel()
+	s.familyCooldown.ReleaseProbe(releaseCtx, accountID, family, probeToken)
 }
 
 // MaintainFamilyProbe keeps a selected half-open request exclusive while it is

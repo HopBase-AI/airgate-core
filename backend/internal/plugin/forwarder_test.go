@@ -755,6 +755,24 @@ func TestSelectionExhaustionAfterKnownRateLimitDoesNotDilute429(t *testing.T) {
 	}
 }
 
+func TestAllRoutesRateLimitRetryAfterIsCapped(t *testing.T) {
+	t.Parallel()
+
+	summary := allRoutesFailureSummary{
+		rateLimitedSeen:       true,
+		rateLimitedRetryAfter: 8 * 24 * time.Hour,
+	}
+	if response := selectAllRoutesFailureResponse(summary); response.retryAfter != 7*24*time.Hour {
+		t.Fatalf("direct retryAfter = %v, want 7d", response.retryAfter)
+	}
+
+	var fromScheduler allRoutesFailureSummary
+	fromScheduler.recordPickAccountError(&scheduler.AccountsRateLimitedError{RetryAt: time.Now().Add(8 * 24 * time.Hour)})
+	if response := selectAllRoutesFailureResponse(fromScheduler); response.retryAfter != 7*24*time.Hour {
+		t.Fatalf("scheduler retryAfter = %v, want 7d", response.retryAfter)
+	}
+}
+
 func TestShouldWaitForLocalCapacityDoesNotCarryAcrossNewFailureKinds(t *testing.T) {
 	t.Parallel()
 

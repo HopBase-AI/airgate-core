@@ -54,9 +54,11 @@ type forwardState struct {
 // forwardExecution 一次 plugin.Forward 调用的结果。
 // err 仅表示"插件自身崩了"；业务判决全在 outcome.Kind。
 type forwardExecution struct {
-	outcome  sdk.ForwardOutcome
-	err      error
-	duration time.Duration
+	outcome          sdk.ForwardOutcome
+	err              error
+	duration         time.Duration
+	attemptStartedAt time.Time
+	probeToken       string // non-empty only when this attempt owns a half-open lease
 }
 
 // parsedRequest 从 JSON body 提取的请求元信息。

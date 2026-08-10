@@ -2,9 +2,79 @@ package scheduler
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
+
+type blockingProbeReleaseHook struct {
+	started chan struct{}
+	unblock <-chan struct{}
+}
+
+func (h *blockingProbeReleaseHook) DialHook(next redis.DialHook) redis.DialHook {
+	return next
+}
+
+func (h *blockingProbeReleaseHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
+	return func(ctx context.Context, cmd redis.Cmder) error {
+		if cmd.Name() == "eval" {
+			for _, arg := range cmd.Args() {
+				key, ok := arg.(string)
+				if !ok || !strings.HasPrefix(key, "family-probe:v1:") {
+					continue
+				}
+				select {
+				case h.started <- struct{}{}:
+				default:
+				}
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-h.unblock:
+					return context.Canceled
+				}
+			}
+		}
+		return next(ctx, cmd)
+	}
+}
+
+func (h *blockingProbeReleaseHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return next
+}
+
+func TestReleaseFamilyProbeUsesBoundedCleanupContext(t *testing.T) {
+	rdb, _ := newTestRedis(t)
+	unblock := make(chan struct{})
+	defer close(unblock)
+	hook := &blockingProbeReleaseHook{started: make(chan struct{}, 1), unblock: unblock}
+	rdb.AddHook(hook)
+
+	s := &Scheduler{familyCooldown: NewFamilyCooldown(rdb)}
+	done := make(chan struct{})
+	start := time.Now()
+	go func() {
+		s.ReleaseFamilyProbe(context.Background(), 7, "openai", "gpt-5", "probe-token")
+		close(done)
+	}()
+
+	select {
+	case <-hook.started:
+	case <-time.After(time.Second):
+		t.Fatal("probe release did not reach Redis hook")
+	}
+	select {
+	case <-done:
+		if elapsed := time.Since(start); elapsed > probeReleaseTimeout+500*time.Millisecond {
+			t.Fatalf("probe release took %v, want bounded near %v", elapsed, probeReleaseTimeout)
+		}
+	case <-time.After(probeReleaseTimeout + 750*time.Millisecond):
+		t.Fatal("probe release ignored bounded cleanup timeout")
+	}
+}
 
 func TestFamilyCooldownMarkPreservesLongestTTL(t *testing.T) {
 	t.Parallel()

@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -45,6 +47,33 @@ type hostStabilityFixture struct {
 	scheduler   *scheduler.Scheduler
 	concurrency *scheduler.ConcurrencyManager
 	host        *HostService
+}
+
+type redisProbeEvalCounter struct {
+	count atomic.Int64
+}
+
+func (h *redisProbeEvalCounter) DialHook(next redis.DialHook) redis.DialHook {
+	return next
+}
+
+func (h *redisProbeEvalCounter) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
+	return func(ctx context.Context, cmd redis.Cmder) error {
+		if cmd.Name() == "eval" {
+			for _, arg := range cmd.Args() {
+				key, ok := arg.(string)
+				if ok && strings.HasPrefix(key, "family-probe:v1:") {
+					h.count.Add(1)
+					break
+				}
+			}
+		}
+		return next(ctx, cmd)
+	}
+}
+
+func (h *redisProbeEvalCounter) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return next
 }
 
 func newHostStabilityFixture(t *testing.T, accountCount int, forward func(int32, *sdk.ForwardRequest) (sdk.ForwardOutcome, error)) *hostStabilityFixture {
@@ -359,6 +388,79 @@ func TestHostPinnedGatewayErrorPreservesStatusHeadersAndEmptyBody(t *testing.T) 
 	}
 }
 
+func TestHostPinnedGatewayErrorCapsRawRetryAfterHeaders(t *testing.T) {
+	t.Parallel()
+
+	payload, err := hostPinnedGatewayError(sdk.ForwardOutcome{
+		Kind: sdk.OutcomeUnknown,
+		Upstream: sdk.UpstreamResponse{
+			StatusCode: http.StatusTooManyRequests,
+			Headers: http.Header{
+				"Retry-After":    []string{"691200"},
+				"Retry-After-Ms": []string{"691200000"},
+			},
+		},
+	}, errors.New("gateway transport error"))
+	if err != nil {
+		t.Fatalf("hostPinnedGatewayError: %v", err)
+	}
+	if got := hostPayloadHeaderValues(t, payload, "Retry-After"); len(got) != 1 || got[0] != "604800" {
+		t.Fatalf("Retry-After = %v, want [604800]", got)
+	}
+	if got := hostPayloadHeaderValues(t, payload, "Retry-After-Ms"); len(got) != 1 || got[0] != "604800000" {
+		t.Fatalf("Retry-After-Ms = %v, want [604800000]", got)
+	}
+}
+
+func TestHostStreamWriterCapsRawRetryAfterHeaders(t *testing.T) {
+	stream := &recordingHostStream{ctx: context.Background()}
+	writer := &hostStreamWriter{stream: stream}
+	writer.Header().Set("Retry-After", "691200")
+	writer.Header().Set("Retry-After-Ms", "691200000")
+	writer.WriteHeader(http.StatusTooManyRequests)
+	if len(stream.frames) != 1 {
+		t.Fatalf("header frames = %d, want 1", len(stream.frames))
+	}
+
+	var payload struct {
+		Headers map[string][]string `json:"headers"`
+	}
+	if err := json.Unmarshal(stream.frames[0].Payload, &payload); err != nil {
+		t.Fatalf("decode headers frame: %v", err)
+	}
+	if got := payload.Headers["Retry-After"]; len(got) != 1 || got[0] != "604800" {
+		t.Fatalf("Retry-After = %v, want [604800]", got)
+	}
+	if got := payload.Headers["Retry-After-Ms"]; len(got) != 1 || got[0] != "604800000" {
+		t.Fatalf("Retry-After-Ms = %v, want [604800000]", got)
+	}
+}
+
+func TestHostRateLimitPayloadCapsRetryAfter(t *testing.T) {
+	t.Parallel()
+
+	payload := hostForwardPayload(hostStructuredFailureOutcome(
+		http.StatusTooManyRequests,
+		appusage.ErrorCodeAllRoutesRateLimited,
+		"账号当前被限流",
+		8*24*time.Hour,
+	))
+	if got := hostPayloadHeaderValues(t, payload, "Retry-After"); len(got) != 1 || got[0] != "604800" {
+		t.Fatalf("Retry-After = %v, want [604800]", got)
+	}
+	if got := hostPayloadHeaderValues(t, payload, "Retry-After-Ms"); len(got) != 1 || got[0] != "604800000" {
+		t.Fatalf("Retry-After-Ms = %v, want [604800000]", got)
+	}
+
+	gatePayload := hostAccountGatePayload(scheduler.AccountGateDecision{
+		Reason:  scheduler.AccountGateRateLimited,
+		RetryAt: time.Now().Add(8 * 24 * time.Hour),
+	})
+	if got := hostPayloadHeaderValues(t, gatePayload, "Retry-After"); len(got) != 1 || got[0] != "604800" {
+		t.Fatalf("gate Retry-After = %v, want [604800]", got)
+	}
+}
+
 func TestProbeForwardFailureReleasesHalfOpenToken(t *testing.T) {
 	fixture := newHostStabilityFixture(t, 1, func(_ int32, _ *sdk.ForwardRequest) (sdk.ForwardOutcome, error) {
 		return sdk.ForwardOutcome{
@@ -402,6 +504,163 @@ func TestProbeForwardFailureReleasesHalfOpenToken(t *testing.T) {
 	fixture.scheduler.ReleaseFamilyProbe(fixture.ctx, acc.ID, acc.Platform, hostStabilityModel, "next-probe")
 }
 
+func TestPublicTransientOutcomeReleasesHalfOpenToken(t *testing.T) {
+	fixture := newHostStabilityFixture(t, 1, nil)
+	acc := fixture.accounts[0]
+	fixture.markCooldown(acc.ID, time.Second)
+	fixture.redisServer.FastForward(2 * time.Second)
+
+	const firstProbe = "public-transient-probe"
+	decision, err := fixture.scheduler.ClaimAccountGate(
+		fixture.ctx,
+		acc.ID,
+		acc.Platform,
+		hostStabilityModel,
+		firstProbe,
+	)
+	if err != nil {
+		t.Fatalf("claim public half-open probe: %v", err)
+	}
+	if !decision.Allowed() || !decision.ProbeClaimed {
+		t.Fatalf("public half-open decision = %+v, want claimed probe", decision)
+	}
+
+	forwarder := &Forwarder{scheduler: fixture.scheduler}
+	applied := forwarder.applyOutcome(fixture.ctx, &forwardState{
+		account:           acc,
+		requestedPlatform: acc.Platform,
+		model:             hostStabilityModel,
+		schedulingModel:   hostStabilityModel,
+		requestID:         firstProbe,
+	}, forwardExecution{
+		probeToken: firstProbe,
+		outcome: sdk.ForwardOutcome{
+			Kind:     sdk.OutcomeUpstreamTransient,
+			Reason:   "half-open request received upstream 502",
+			Upstream: sdk.UpstreamResponse{StatusCode: http.StatusBadGateway},
+		},
+	})
+	if !applied {
+		t.Fatal("public transient outcome was not applied")
+	}
+
+	const nextProbe = "public-next-probe"
+	decision, err = fixture.scheduler.ClaimAccountGate(
+		fixture.ctx,
+		acc.ID,
+		acc.Platform,
+		hostStabilityModel,
+		nextProbe,
+	)
+	if err != nil {
+		t.Fatalf("claim next public probe: %v", err)
+	}
+	if !decision.Allowed() || !decision.ProbeClaimed {
+		t.Fatalf("next public probe decision = %+v, want immediate claimed probe", decision)
+	}
+	fixture.scheduler.ReleaseFamilyProbe(fixture.ctx, acc.ID, acc.Platform, hostStabilityModel, nextProbe)
+}
+
+func TestPublicOrdinaryTransientSkipsProbeRedisRelease(t *testing.T) {
+	fixture := newHostStabilityFixture(t, 1, nil)
+	acc := fixture.accounts[0]
+	forwarder := &Forwarder{scheduler: fixture.scheduler}
+	evalCounter := &redisProbeEvalCounter{}
+	fixture.rdb.AddHook(evalCounter)
+
+	applied := forwarder.applyOutcome(fixture.ctx, &forwardState{
+		account:           acc,
+		requestedPlatform: acc.Platform,
+		model:             hostStabilityModel,
+		schedulingModel:   hostStabilityModel,
+		requestID:         "ordinary-transient-request",
+	}, forwardExecution{
+		outcome: sdk.ForwardOutcome{
+			Kind:     sdk.OutcomeUpstreamTransient,
+			Reason:   "ordinary request received upstream 502",
+			Upstream: sdk.UpstreamResponse{StatusCode: http.StatusBadGateway},
+		},
+	})
+	if !applied {
+		t.Fatal("ordinary transient outcome was not applied")
+	}
+	if evals := evalCounter.count.Load(); evals != 0 {
+		t.Fatalf("ordinary transient probe Redis EVAL commands = %d, want 0", evals)
+	}
+}
+
+func TestPublicApplyOutcomePassesAttemptStartToPoolDeadStreak(t *testing.T) {
+	fixture := newHostStabilityFixture(t, 1, nil)
+	acc := fixture.accounts[0]
+	poolAcc := *acc
+	poolAcc.UpstreamIsPool = true
+	oldAttemptStartedAt := time.Now().Add(-time.Hour)
+	poolDead := scheduler.Judgment{
+		Kind:           sdk.OutcomeAccountDead,
+		IsPool:         true,
+		UpstreamStatus: http.StatusForbidden,
+		Reason:         "upstream pool failure",
+	}
+	fixture.scheduler.Apply(fixture.ctx, acc.ID, poolDead)
+
+	forwarder := &Forwarder{scheduler: fixture.scheduler}
+	if !forwarder.applyOutcome(fixture.ctx, &forwardState{
+		account:           &poolAcc,
+		requestedPlatform: acc.Platform,
+		model:             hostStabilityModel,
+		schedulingModel:   hostStabilityModel,
+	}, forwardExecution{
+		attemptStartedAt: oldAttemptStartedAt,
+		outcome:          sdk.ForwardOutcome{Kind: sdk.OutcomeSuccess},
+	}) {
+		t.Fatal("public outcome was not applied")
+	}
+	fixture.scheduler.Apply(fixture.ctx, acc.ID, poolDead)
+	fixture.scheduler.Apply(fixture.ctx, acc.ID, poolDead)
+
+	fresh := fixture.db.Account.GetX(fixture.ctx, acc.ID)
+	if fresh.State != entaccount.StateDegraded {
+		t.Fatalf("public late success cleared newer pool failures: state=%s, want degraded", fresh.State)
+	}
+}
+
+func TestHostApplyOutcomePassesAttemptStartToPoolDeadStreak(t *testing.T) {
+	fixture := newHostStabilityFixture(t, 1, nil)
+	acc := fixture.accounts[0]
+	poolAcc := *acc
+	poolAcc.UpstreamIsPool = true
+	oldAttemptStartedAt := time.Now().Add(-time.Hour)
+	poolDead := scheduler.Judgment{
+		Kind:           sdk.OutcomeAccountDead,
+		IsPool:         true,
+		UpstreamStatus: http.StatusForbidden,
+		Reason:         "upstream pool failure",
+	}
+	fixture.scheduler.Apply(fixture.ctx, acc.ID, poolDead)
+
+	if !fixture.host.applyHostOutcome(
+		fixture.ctx,
+		acc.ID,
+		&poolAcc,
+		hostStabilityModel,
+		sdk.ForwardOutcome{Kind: sdk.OutcomeSuccess},
+		time.Millisecond,
+		oldAttemptStartedAt,
+		"",
+		nil,
+		false,
+	) {
+		t.Fatal("host outcome was not applied")
+	}
+	fixture.scheduler.Apply(fixture.ctx, acc.ID, poolDead)
+	fixture.scheduler.Apply(fixture.ctx, acc.ID, poolDead)
+
+	fresh := fixture.db.Account.GetX(fixture.ctx, acc.ID)
+	if fresh.State != entaccount.StateDegraded {
+		t.Fatalf("host late success cleared newer pool failures: state=%s, want degraded", fresh.State)
+	}
+}
+
 func TestCanceledHostOutcomeRollsBackRPMAndKeepsAccountActive(t *testing.T) {
 	fixture := newHostStabilityFixture(t, 1, nil)
 	acc := fixture.accounts[0]
@@ -418,6 +677,7 @@ func TestCanceledHostOutcomeRollsBackRPMAndKeepsAccountActive(t *testing.T) {
 		hostStabilityModel,
 		sdk.ForwardOutcome{Kind: sdk.OutcomeAccountDead, Reason: "racing account failure"},
 		time.Millisecond,
+		time.Time{},
 		"canceled-host-probe",
 		context.Canceled,
 		true,

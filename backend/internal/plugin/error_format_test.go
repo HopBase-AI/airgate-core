@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -102,5 +103,21 @@ func TestProtocolRateLimitErrorRetryAfter(t *testing.T) {
 	}
 	if got := w.Header().Get("Retry-After-Ms"); got != "1500" {
 		t.Fatalf("Retry-After-Ms 应为 1500，got %q", got)
+	}
+}
+
+func TestProtocolRateLimitErrorCapsRetryAfter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	protocolRateLimitError(c, http.StatusTooManyRequests, "upstream_rate_limit", "限流", 8*24*time.Hour)
+
+	if got := w.Header().Get("Retry-After"); got != "604800" {
+		t.Fatalf("Retry-After = %q, want 604800", got)
+	}
+	if got := w.Header().Get("Retry-After-Ms"); got != "604800000" {
+		t.Fatalf("Retry-After-Ms = %q, want 604800000", got)
 	}
 }

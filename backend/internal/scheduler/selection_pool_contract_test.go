@@ -411,7 +411,7 @@ func TestPoolFailoverOrdersHealthyAndSessionCapacityTiers(t *testing.T) {
 	})
 }
 
-func TestPoolRetrySuccessRecoversOnlySelectedAccount(t *testing.T) {
+func TestPoolRetrySuccessPreservesLiveDegradedWindows(t *testing.T) {
 	ctx := context.Background()
 	db := enttestOpenScheduler(t)
 	rdb, _ := newTestRedis(t)
@@ -438,7 +438,7 @@ func TestPoolRetrySuccessRecoversOnlySelectedAccount(t *testing.T) {
 	if err != nil || selected == nil || selected.ID != standby.ID {
 		t.Fatalf("selected account = %v, err = %v; want standby %d", selected, err, standby.ID)
 	}
-	s.Apply(ctx, selected.ID, Judgment{Kind: sdk.OutcomeSuccess, IsPool: true})
+	s.Apply(ctx, selected.ID, Judgment{Kind: sdk.OutcomeSuccess, IsPool: true, AttemptStartedAt: time.Now()})
 	s.state.waitEvents()
 
 	gotPrimary := db.Account.GetX(ctx, primary.ID)
@@ -446,8 +446,8 @@ func TestPoolRetrySuccessRecoversOnlySelectedAccount(t *testing.T) {
 	if gotPrimary.State != account.StateDegraded || gotPrimary.StateUntil == nil {
 		t.Fatalf("primary state = %s until=%v; want unchanged degraded state", gotPrimary.State, gotPrimary.StateUntil)
 	}
-	if gotStandby.State != account.StateActive || gotStandby.StateUntil != nil {
-		t.Fatalf("standby state = %s until=%v; want recovered active state", gotStandby.State, gotStandby.StateUntil)
+	if gotStandby.State != account.StateDegraded || gotStandby.StateUntil == nil {
+		t.Fatalf("standby state = %s until=%v; want live degraded window preserved", gotStandby.State, gotStandby.StateUntil)
 	}
 }
 

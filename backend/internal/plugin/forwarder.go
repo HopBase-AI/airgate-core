@@ -332,6 +332,9 @@ func (f *Forwarder) Forward(c *gin.Context) {
 				)
 			}
 			execution := f.callPlugin(c, state)
+			if gate.ProbeClaimed {
+				execution.probeToken = state.requestID
+			}
 			stopProbeLease()
 			attempt++
 			totalAttempts++
@@ -596,7 +599,8 @@ func (s *allRoutesFailureSummary) recordExecution(execution forwardExecution) {
 }
 
 func (s *allRoutesFailureSummary) recordRetryAfter(retryAfter time.Duration) {
-	if retryAfter <= 0 {
+	retryAfter = scheduler.ClampRateLimitRetryAfter(retryAfter)
+	if retryAfter == 0 {
 		return
 	}
 	if s.rateLimitedRetryAfter == 0 || retryAfter < s.rateLimitedRetryAfter {
@@ -610,9 +614,7 @@ func (s *allRoutesFailureSummary) recordPickAccountError(err error) {
 	s.accountUnavailable = true
 	if retryAt, ok := scheduler.RateLimitedRetryAt(err); ok {
 		s.schedulerRateLimitedSeen = true
-		if retryAfter := time.Until(retryAt); retryAfter > 0 && (s.rateLimitedRetryAfter <= 0 || retryAfter < s.rateLimitedRetryAfter) {
-			s.rateLimitedRetryAfter = retryAfter
-		}
+		s.recordRetryAfter(time.Until(retryAt))
 		return
 	}
 	switch {
@@ -702,6 +704,7 @@ func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFa
 		if retryAfter <= 0 {
 			retryAfter = allRoutesFailedDefaultRetryAfter
 		}
+		retryAfter = scheduler.ClampRateLimitRetryAfter(retryAfter)
 		return allRoutesFailureResponse{
 			status:     http.StatusTooManyRequests,
 			errType:    "rate_limit_error",
@@ -915,11 +918,14 @@ func (f *Forwarder) canFailover(c *gin.Context, state *forwardState, execution f
 
 // callPlugin 把请求发给插件。
 func (f *Forwarder) callPlugin(c *gin.Context, state *forwardState) forwardExecution {
-	state.grpcCallAt = time.Now()
-	outcome, err := state.plugin.Gateway.Forward(c.Request.Context(), buildPluginRequest(c, state))
+	request := buildPluginRequest(c, state)
+	attemptStartedAt := time.Now()
+	state.grpcCallAt = attemptStartedAt
+	outcome, err := state.plugin.Gateway.Forward(c.Request.Context(), request)
 	return forwardExecution{
-		outcome:  outcome,
-		err:      err,
-		duration: time.Since(state.startedAt),
+		outcome:          outcome,
+		err:              err,
+		duration:         time.Since(state.startedAt),
+		attemptStartedAt: attemptStartedAt,
 	}
 }

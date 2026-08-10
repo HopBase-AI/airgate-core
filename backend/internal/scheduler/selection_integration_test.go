@@ -392,6 +392,168 @@ func TestNonPoolTransientFamilyFailureDoesNotOpenCrossRequestCircuit(t *testing.
 	}
 }
 
+func TestTransientHalfOpenProbeReleasesLeaseForNextRequest(t *testing.T) {
+	ctx := context.Background()
+	db := enttestOpenScheduler(t)
+	rdb, redisServer := newTestRedis(t)
+	s := NewScheduler(db, rdb)
+
+	grp := mustGroup(t, ctx, db)
+	acc := mustAccount(t, ctx, db, grp, "transient-half-open", nil)
+	family := s.resolveModelFamily(acc.Platform, itModel)
+	s.Apply(ctx, acc.ID, Judgment{
+		Kind:       sdk.OutcomeAccountRateLimited,
+		RetryAfter: time.Second,
+		Reason:     "initial upstream 429",
+		Family:     family,
+	})
+	redisServer.FastForward(2 * time.Second)
+
+	const firstProbe = "first-transient-probe"
+	selected, err := s.SelectAccount(
+		WithFamilyProbeToken(ctx, firstProbe),
+		acc.Platform,
+		itModel,
+		0,
+		grp.ID,
+		"",
+	)
+	if err != nil || selected == nil || selected.ID != acc.ID {
+		t.Fatalf("select first half-open probe = %v, err=%v; want account %d", selected, err, acc.ID)
+	}
+
+	s.Apply(ctx, acc.ID, Judgment{
+		Kind:           sdk.OutcomeUpstreamTransient,
+		Reason:         "probe received upstream 502",
+		Family:         family,
+		ProbeToken:     firstProbe,
+		UpstreamStatus: http.StatusBadGateway,
+	})
+
+	const nextProbe = "next-probe"
+	decision, err := s.ClaimAccountGate(ctx, acc.ID, acc.Platform, itModel, nextProbe)
+	if err != nil {
+		t.Fatalf("claim next probe: %v", err)
+	}
+	if !decision.Allowed() || !decision.ProbeClaimed {
+		t.Fatalf("next probe decision = %+v, want immediate claimed probe", decision)
+	}
+	s.ReleaseFamilyProbe(ctx, acc.ID, acc.Platform, itModel, nextProbe)
+	s.state.waitEvents()
+}
+
+func TestLateTransientProbeCannotDisturbNewRateLimitState(t *testing.T) {
+	t.Run("new probe owner", func(t *testing.T) {
+		ctx := context.Background()
+		db := enttestOpenScheduler(t)
+		rdb, redisServer := newTestRedis(t)
+		s := NewScheduler(db, rdb)
+		grp := mustGroup(t, ctx, db)
+		acc := mustAccount(t, ctx, db, grp, "late-transient-new-owner", nil)
+		family := s.resolveModelFamily(acc.Platform, itModel)
+
+		s.Apply(ctx, acc.ID, Judgment{Kind: sdk.OutcomeAccountRateLimited, RetryAfter: time.Second, Family: family})
+		redisServer.FastForward(2 * time.Second)
+		const staleProbe = "stale-transient-probe"
+		first, err := s.ClaimAccountGate(ctx, acc.ID, acc.Platform, itModel, staleProbe)
+		if err != nil || !first.Allowed() || !first.ProbeClaimed {
+			t.Fatalf("claim stale probe = %+v, err=%v", first, err)
+		}
+
+		redisServer.FastForward(familyProbeLease + time.Second)
+		const currentProbe = "current-transient-probe"
+		current, err := s.ClaimAccountGate(ctx, acc.ID, acc.Platform, itModel, currentProbe)
+		if err != nil || !current.Allowed() || !current.ProbeClaimed {
+			t.Fatalf("claim current probe = %+v, err=%v", current, err)
+		}
+
+		s.Apply(ctx, acc.ID, Judgment{
+			Kind:       sdk.OutcomeUpstreamTransient,
+			Family:     family,
+			ProbeToken: staleProbe,
+		})
+		if owner, err := rdb.Get(ctx, familyProbeKey(acc.ID, family)).Result(); err != nil || owner != currentProbe {
+			t.Fatalf("current probe owner = %q, err=%v; want %q", owner, err, currentProbe)
+		}
+		s.ReleaseFamilyProbe(ctx, acc.ID, acc.Platform, itModel, currentProbe)
+		s.state.waitEvents()
+	})
+
+	t.Run("renewed cooldown", func(t *testing.T) {
+		ctx := context.Background()
+		db := enttestOpenScheduler(t)
+		rdb, redisServer := newTestRedis(t)
+		s := NewScheduler(db, rdb)
+		grp := mustGroup(t, ctx, db)
+		acc := mustAccount(t, ctx, db, grp, "late-transient-new-cooldown", nil)
+		family := s.resolveModelFamily(acc.Platform, itModel)
+
+		s.Apply(ctx, acc.ID, Judgment{Kind: sdk.OutcomeAccountRateLimited, RetryAfter: time.Second, Family: family})
+		redisServer.FastForward(2 * time.Second)
+		const staleProbe = "stale-probe-before-new-429"
+		first, err := s.ClaimAccountGate(ctx, acc.ID, acc.Platform, itModel, staleProbe)
+		if err != nil || !first.Allowed() || !first.ProbeClaimed {
+			t.Fatalf("claim stale probe = %+v, err=%v", first, err)
+		}
+
+		s.Apply(ctx, acc.ID, Judgment{
+			Kind:       sdk.OutcomeAccountRateLimited,
+			RetryAfter: 30 * time.Second,
+			Reason:     "new upstream 429",
+			Family:     family,
+		})
+		s.Apply(ctx, acc.ID, Judgment{
+			Kind:       sdk.OutcomeUpstreamTransient,
+			Family:     family,
+			ProbeToken: staleProbe,
+		})
+
+		if ttl, err := rdb.PTTL(ctx, familyCooldownKey(acc.ID, family)).Result(); err != nil || ttl < 29*time.Second || ttl > 30*time.Second {
+			t.Fatalf("renewed cooldown TTL = %v, err=%v; want about 30s", ttl, err)
+		}
+		if exists, err := rdb.Exists(ctx, familyRecoveryKey(acc.ID, family)).Result(); err != nil || exists != 1 {
+			t.Fatalf("renewed recovery marker exists = %d, err=%v; want 1", exists, err)
+		}
+		if exists, err := rdb.Exists(ctx, familyProbeKey(acc.ID, family)).Result(); err != nil || exists != 0 {
+			t.Fatalf("stale probe remains after new 429 = %d, err=%v; want 0", exists, err)
+		}
+		s.state.waitEvents()
+	})
+}
+
+func TestPoolAccountDeadHalfOpenProbeReleasesLease(t *testing.T) {
+	ctx := context.Background()
+	db := enttestOpenScheduler(t)
+	rdb, redisServer := newTestRedis(t)
+	s := NewScheduler(db, rdb)
+	grp := mustGroup(t, ctx, db)
+	acc := mustPoolAccount(t, ctx, db, grp, "pool-account-dead-probe")
+	family := s.resolveModelFamily(acc.Platform, itModel)
+
+	s.Apply(ctx, acc.ID, Judgment{Kind: sdk.OutcomeAccountRateLimited, RetryAfter: time.Second, Family: family})
+	redisServer.FastForward(2 * time.Second)
+	const firstProbe = "pool-account-dead-owner"
+	first, err := s.ClaimAccountGate(ctx, acc.ID, acc.Platform, itModel, firstProbe)
+	if err != nil || !first.Allowed() || !first.ProbeClaimed {
+		t.Fatalf("claim pool probe = %+v, err=%v", first, err)
+	}
+
+	s.Apply(ctx, acc.ID, Judgment{
+		Kind:           sdk.OutcomeAccountDead,
+		IsPool:         true,
+		Family:         family,
+		ProbeToken:     firstProbe,
+		UpstreamStatus: http.StatusForbidden,
+	})
+	const nextProbe = "pool-account-dead-next-owner"
+	next, err := s.ClaimAccountGate(ctx, acc.ID, acc.Platform, itModel, nextProbe)
+	if err != nil || !next.Allowed() || !next.ProbeClaimed {
+		t.Fatalf("claim next pool probe = %+v, err=%v", next, err)
+	}
+	s.ReleaseFamilyProbe(ctx, acc.ID, acc.Platform, itModel, nextProbe)
+	s.state.waitEvents()
+}
+
 func TestLegacyTransientCircuitIsIgnoredAndRemoved(t *testing.T) {
 	setup := func(t *testing.T) (context.Context, *Scheduler, *ent.Account, int, string, *redis.Client) {
 		t.Helper()

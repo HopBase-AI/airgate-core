@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 )
 
 // error_format.go：对外错误体格式选择（tech-debt #1 治理）。
@@ -166,9 +168,7 @@ func responsesFailedStreamPayload(c *gin.Context, status int, errType, code, mes
 // retryAfter < 1s 一律向上取整到 1s（客户端 SDK 普遍按整数秒读 Retry-After）。
 // 同时输出 retry-after-ms 头，便于精度敏感的客户端做更细粒度的退避。
 func protocolRateLimitError(c *gin.Context, status int, code, message string, retryAfter time.Duration) {
-	if retryAfter < 0 {
-		retryAfter = 0
-	}
+	retryAfter = scheduler.ClampRateLimitRetryAfter(retryAfter)
 	if retryAfter > 0 {
 		secs := int64((retryAfter + time.Second - 1) / time.Second)
 		if secs < 1 {

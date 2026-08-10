@@ -229,8 +229,9 @@ func (f *Forwarder) applyOutcome(ctx context.Context, state *forwardState, execu
 		// Family 让限流冷却落到 (account, family) 维度。撞 gpt-image 4000/min
 		// 时账号上 chat 模型仍可调用，避免单模型限流误伤整账号。
 		// 优先从插件目录查 Metadata["family"]，未声明时回退到硬编码规则。
-		Family:     f.resolveModelFamily(state.requestedPlatform, outcomeModel),
-		ProbeToken: state.requestID,
+		Family:           f.resolveModelFamily(state.requestedPlatform, outcomeModel),
+		ProbeToken:       execution.probeToken,
+		AttemptStartedAt: execution.attemptStartedAt,
 	}
 	f.scheduler.Apply(ctx, state.account.ID, j)
 
@@ -473,11 +474,84 @@ func writeUpstream(c *gin.Context, up sdk.UpstreamResponse) {
 }
 
 func copyUpstreamHeaders(c *gin.Context, headers http.Header) {
-	for k, vals := range headers {
+	for k, vals := range normalizeUpstreamRetryAfterHeaders(headers) {
 		for _, v := range vals {
 			c.Writer.Header().Set(k, v)
 		}
 	}
+}
+
+// normalizeUpstreamRetryAfterHeaders preserves ordinary upstream retry hints
+// while keeping an invalidly long hint consistent with the scheduler's maximum
+// account cooldown. This is a final client-visible boundary: Gateway outcomes
+// are already capped, but a raw passthrough response can retain its original
+// headers (notably in pinned Host forwarding).
+func normalizeUpstreamRetryAfterHeaders(headers http.Header) http.Header {
+	if len(headers) == 0 {
+		return headers
+	}
+	normalized := headers.Clone()
+	for name, values := range normalized {
+		switch {
+		case strings.EqualFold(name, "Retry-After"):
+			normalized[name] = normalizeRetryAfterSecondsValues(values)
+		case strings.EqualFold(name, "Retry-After-Ms"):
+			normalized[name] = normalizeRetryAfterMillisecondsValues(values)
+		}
+	}
+	return normalized
+}
+
+func normalizeRetryAfterSecondsValues(values []string) []string {
+	maxDelay := scheduler.ClampRateLimitRetryAfter(time.Duration(1<<63 - 1))
+	maxSeconds := int64(maxDelay / time.Second)
+	normalized := append([]string(nil), values...)
+	for i, value := range normalized {
+		raw := strings.TrimSpace(value)
+		if raw == "" || raw[0] == '-' {
+			continue
+		}
+		if allASCIIDigits(raw) {
+			seconds, err := strconv.ParseInt(raw, 10, 64)
+			if err != nil || seconds > maxSeconds {
+				normalized[i] = strconv.FormatInt(maxSeconds, 10)
+			}
+			continue
+		}
+		retryAt, err := http.ParseTime(raw)
+		if err == nil && time.Until(retryAt) > maxDelay {
+			normalized[i] = strconv.FormatInt(maxSeconds, 10)
+		}
+	}
+	return normalized
+}
+
+func normalizeRetryAfterMillisecondsValues(values []string) []string {
+	maxMilliseconds := scheduler.ClampRateLimitRetryAfter(time.Duration(1<<63 - 1)).Milliseconds()
+	normalized := append([]string(nil), values...)
+	for i, value := range normalized {
+		raw := strings.TrimSpace(value)
+		if raw == "" || raw[0] == '-' {
+			continue
+		}
+		milliseconds, err := strconv.ParseInt(raw, 10, 64)
+		if (err != nil && allASCIIDigits(raw)) || milliseconds > maxMilliseconds {
+			normalized[i] = strconv.FormatInt(maxMilliseconds, 10)
+		}
+	}
+	return normalized
+}
+
+func allASCIIDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, ch := range value {
+		if ch < '0' || ch > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func copyUpstreamHeadersForGeneratedBody(c *gin.Context, headers http.Header) {
