@@ -998,6 +998,7 @@
     "result_failed": "Failed",
     "failed_requests": "Failed requests",
     "error_detail": "Failure details",
+    "view_error_details": "View error details",
     "error_diagnostics": "Error diagnostics",
     "error_source": "Error source",
     "error_source_upstream": "Upstream error",

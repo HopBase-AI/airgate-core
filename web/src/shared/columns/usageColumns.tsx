@@ -196,8 +196,9 @@ function errorToneColor(tone: 'danger' | 'warning'): string {
   return tone === 'danger' ? 'var(--ag-danger)' : 'var(--ag-warning)';
 }
 
-/** 失败原因面板：HTTP 状态码 + 分类 + （可展示时的）原文。 */
-function ErrorDetail({ adminView, row, t }: { adminView: boolean; row: UsageRow; t: TFunction }) {
+/** 失败详情字段：HTTP 状态码 + 分类 + （可展示时的）原文。 */
+export function UsageFailureDetailContent({ adminView, row }: { adminView: boolean; row: UsageRow }) {
+  const { t } = useTranslation();
   const code = row.error_code ?? '';
   const meta = ERROR_CODE_META[code];
   const label = meta ? t(meta.labelKey, code) : code;
@@ -216,7 +217,7 @@ function ErrorDetail({ adminView, row, t }: { adminView: boolean; row: UsageRow;
   const model = resolvedUsageModel(row);
 
   return (
-    <TooltipPanel title={t('usage.error_detail', '失败详情')} subtitle={[row.platform, model].filter(Boolean).join(' / ')}>
+    <>
       <TooltipRow label={t('usage.error_type', '类型')} value={label} tone={meta?.tone === 'danger' ? 'warning' : 'accent'} />
       <TooltipRow label={t('usage.error_code', '错误码')} value={code || '-'} tone="strong" />
       {row.error_status ? (
@@ -244,6 +245,17 @@ function ErrorDetail({ adminView, row, t }: { adminView: boolean; row: UsageRow;
           </div>
         </>
       ) : null}
+    </>
+  );
+}
+
+/** 失败原因浮层：在结果列悬停时提供快速诊断。 */
+function ErrorDetail({ adminView, row, t }: { adminView: boolean; row: UsageRow; t: TFunction }) {
+  const model = resolvedUsageModel(row);
+
+  return (
+    <TooltipPanel title={t('usage.error_detail', '失败详情')} subtitle={[row.platform, model].filter(Boolean).join(' / ')}>
+      <UsageFailureDetailContent adminView={adminView} row={row} />
     </TooltipPanel>
   );
 }

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Card, ComboBox, Input, ListBox, Select, Tabs } from '@heroui/react';
+import { Card, ComboBox, Input, ListBox, Select, Tabs, Tooltip, useOverlayState } from '@heroui/react';
 import { usageApi } from '../../shared/api/usage';
 import { usersApi } from '../../shared/api/users';
 import { apikeysApi } from '../../shared/api/apikeys';
@@ -10,10 +10,9 @@ import { usePlatforms } from '../../shared/hooks/usePlatforms';
 import { useDebouncedValue } from '../../shared/hooks/useDebouncedValue';
 import { useDeferredActivation } from '../../shared/hooks/useDeferredActivation';
 import { queryKeys } from '../../shared/queryKeys';
-import { Activity, CircleX, Coins, Hash, DollarSign, Search } from 'lucide-react';
-import { ERROR_CODE_META, useUsageColumns, fmtNum, type UsageColumnConfig } from '../../shared/columns/usageColumns';
+import { Activity, CircleAlert, CircleX, Coins, Hash, DollarSign, Search } from 'lucide-react';
+import { ERROR_CODE_META, UsageFailureDetailContent, useUsageColumns, fmtNum, type UsageColumnConfig } from '../../shared/columns/usageColumns';
 import type { APIKeyResp, UsageLogResp, UsageQuery, UsageTrendBucket } from '../../shared/types';
-import { failureSourceLabelKey, usageFailureSource } from '../../shared/failureDiagnostics';
 import { CompactDataTable } from '../../shared/components/CompactDataTable';
 import { UsageRecordsTable } from '../../shared/components/UsageRecordsTable';
 import { UsageDateRangeFilter } from '../../shared/components/UsageDateRangeFilter';
@@ -21,6 +20,7 @@ import { UsageModelFilterInput } from '../../shared/components/UsageModelFilterI
 import { PIE_CHART_COLORS } from '../../shared/constants';
 import { CostValue } from '../../shared/components/CostValue';
 import { AutoRefreshControl } from '../../shared/components/AutoRefreshControl';
+import { CommonModal } from '../../shared/components/CommonModal';
 import { ADMIN_AUTO_REFRESH_OPTIONS, usePersistentAutoRefresh } from '../../shared/hooks/usePersistentAutoRefresh';
 
 const UsagePieChart = lazy(() =>
@@ -110,53 +110,30 @@ const ADMIN_USAGE_STATS_GROUP_BY = 'model,group,account,user';
 const USAGE_PAGE_ACTIVATION_DELAY_MS = 180;
 const ADMIN_USAGE_AUTO_UPDATE_STORAGE_KEY = 'airgate.admin.usage.auto_update';
 
-function UsageFailureDiagnostics({ row }: { row: UsageLogResp }) {
+function UsageFailureDiagnostics({ onOpen, row }: { onOpen: (row: UsageLogResp) => void; row: UsageLogResp }) {
   const { t } = useTranslation();
   if (!row.error_code) {
     return <span className="text-text-tertiary">-</span>;
   }
 
-  const source = usageFailureSource(row);
-  const sourceLabel = t(failureSourceLabelKey(source));
   const meta = ERROR_CODE_META[row.error_code];
-  const message = row.error_message?.trim() || (meta ? t(meta.labelKey, row.error_code) : '');
-  const traceID = row.usage_metadata?.trace_id?.trim();
-  const requestID = row.request_id?.trim();
-  const account = [
-    row.account_name?.trim(),
-    row.account_email?.trim(),
-    row.account_id ? `#${row.account_id}` : '',
-  ].filter(Boolean).join(' / ');
-  const evidence = [
-    account
-      ? `${t('usage.upstream_credential', '上游凭证')}: ${account}`
-      : source === 'scheduler'
-        ? `${t('usage.upstream_credential', '上游凭证')}: ${t('usage.account_not_selected')}`
-        : '',
-    requestID ? `Req: ${requestID}` : '',
-    traceID ? `Trace: ${traceID}` : '',
-  ].filter(Boolean);
-  const title = [
-    `${sourceLabel} · ${row.error_code}`,
-    message,
-    ...evidence,
-  ].filter(Boolean).join('\n');
+  const detailsLabel = t('usage.view_error_details', '查看错误详情');
+  const iconTone = meta?.tone === 'warning' ? 'text-warning' : 'text-danger';
 
   return (
-    <div className="flex w-full min-w-0 flex-col justify-center gap-1 text-left" title={title}>
-      <div className="flex min-w-0 items-center gap-1.5">
-        <span className="shrink-0 rounded bg-info-subtle px-1.5 py-0.5 text-[10px] font-semibold leading-none text-info">
-          {sourceLabel}
-        </span>
-        <span className="shrink-0 rounded bg-danger-subtle px-1.5 py-0.5 font-mono text-[11px] font-semibold leading-none text-danger">
-          {row.error_code}
-        </span>
-        <span className="min-w-0 truncate text-xs leading-none text-text">{message || sourceLabel}</span>
-      </div>
-      <div className="flex min-w-0 items-center gap-2 overflow-hidden font-mono text-[10px] leading-none text-text-tertiary">
-        {evidence.map((item) => <span className="min-w-0 shrink truncate" key={item}>{item}</span>)}
-      </div>
-    </div>
+    <Tooltip delay={140} closeDelay={0}>
+      <Tooltip.Trigger>
+        <button
+          aria-label={detailsLabel}
+          className={`flex h-7 w-7 items-center justify-center rounded-[var(--radius)] bg-transparent transition-colors hover:bg-danger-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger ${iconTone}`}
+          onClick={() => onOpen(row)}
+          type="button"
+        >
+          <CircleAlert aria-hidden="true" className="h-4 w-4" />
+        </button>
+      </Tooltip.Trigger>
+      <Tooltip.Content placement="left">{detailsLabel}</Tooltip.Content>
+    </Tooltip>
   );
 }
 
@@ -647,6 +624,17 @@ export default function UsagePage() {
   }, [activeStats, statsGroupBy, t]);
 
   const sharedColumns = useUsageColumns();
+  const [selectedError, setSelectedError] = useState<UsageLogResp | null>(null);
+  const errorDetailsModal = useOverlayState({
+    isOpen: selectedError !== null,
+    onOpenChange: (isOpen) => {
+      if (!isOpen) setSelectedError(null);
+    },
+  });
+  const openErrorDetails = useCallback((row: UsageLogResp) => setSelectedError(row), []);
+  const errorDetailDescription = selectedError
+    ? [selectedError.platform, selectedError.model].filter(Boolean).join(' / ')
+    : undefined;
 
   const platformOptions = [
     { id: '', label: t('common.all') },
@@ -759,9 +747,14 @@ export default function UsagePage() {
     };
     const failureDiagnosticsColumn: UsageColumnConfig<UsageLogResp> = {
       key: 'error_diagnostics',
-      title: t('usage.error_diagnostics', '错误诊断'),
-      width: '380px',
-      render: (row) => <UsageFailureDiagnostics row={row} />,
+      title: (
+        <span title={t('usage.error_diagnostics', '错误诊断')}>
+          <CircleAlert aria-hidden="true" className="h-4 w-4" />
+          <span className="sr-only">{t('usage.error_diagnostics', '错误诊断')}</span>
+        </span>
+      ),
+      width: '56px',
+      render: (row) => <UsageFailureDiagnostics onOpen={openErrorDetails} row={row} />,
     };
     const leadingSharedColumns = sharedColumns.slice(0, modelIdx + 1).flatMap((column) => (
       column.key === 'status' ? [column, failureDiagnosticsColumn] : [column]
@@ -777,7 +770,7 @@ export default function UsagePage() {
       apiKeyColumn,
       accountColumn,
     ] as UsageColumnConfig<UsageLogResp>[];
-  }, [sharedColumns, t]);
+  }, [openErrorDetails, sharedColumns, t]);
   const total = data?.total ?? 0;
 
   return (
@@ -1070,6 +1063,18 @@ export default function UsagePage() {
         suppressHighlight={!pageActive || isPlaceholderData}
         total={pageActive ? total : 0}
       />
+      <CommonModal
+        bodyClassName="!p-3"
+        description={errorDetailDescription}
+        size="md"
+        state={errorDetailsModal}
+        surface={false}
+        title={t('usage.error_detail', '失败详情')}
+      >
+        <div className="max-h-[min(70vh,36rem)] space-y-0.5 overflow-y-auto">
+          {selectedError ? <UsageFailureDetailContent adminView row={selectedError} /> : null}
+        </div>
+      </CommonModal>
     </div>
   );
 }
