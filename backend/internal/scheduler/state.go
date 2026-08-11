@@ -31,16 +31,18 @@ const (
 	// degradedMax 池账号最长降级窗口。
 	degradedMax = 10 * time.Minute
 
-	// poolDeadStreakThreshold 池账号透传死信（非 401 的 AccountDead）连击升级阈值。
-	// 单次 403 多是上游池内某个子账号被封，不动状态是对的；但欠费/封禁类故障会连续
-	// 出现——不改状态时每个新请求都先撞一次死信再 failover，白白多一跳延迟，直到
-	// 人工禁用（2026-07-25 lin-pro 欠费 403 四分钟连撞 42 次即此案）。连续达到阈值
-	// 后软降级，窗口逐次翻倍（60s → 2m → 4m → … → degradedMax 封顶），期间账号仅作
-	// StickyOnly 兜底；任何一次成功判决清零连击。
-	poolDeadStreakThreshold = 3
-	// poolDeadStreakTTL 连击计数的滑动窗口：每次连击续期，安静该时长后自动清零，
+	// poolFailureStreakThreshold 池账号连续失败的连击升级阈值。透传死信（非 401 的
+	// AccountDead）与上游瞬时故障（UpstreamTransient）共用同一个计数：单次 403 多是
+	// 上游池内某个子账号被封、单次 5xx 多是一次抖动，轻处置是对的；但欠费/封禁/长时间
+	// 过载会连续出现——死信不改状态时每个新请求都先撞一次再 failover（2026-07-25
+	// lin-pro 欠费 403 四分钟连撞 42 次），瞬时故障固定 60s 降级则每次到期都牺牲一个
+	// 真实请求去"发现它还病着"（2026-08-08 ndplaygames 503 全天 211 次降级↔恢复来回抖）。
+	// 连击达到阈值后软降级，窗口逐次翻倍（60s → 2m → 4m → … → degradedMax 封顶），
+	// 期间账号仅作 StickyOnly 兜底；任何一次成功判决清零连击。
+	poolFailureStreakThreshold = 3
+	// poolFailureStreakTTL 连击计数的滑动窗口：每次连击续期，安静该时长后自动清零，
 	// 给上游自愈（充值/解封）留机会。须大于 degradedMax，否则降级到期前计数先过期。
-	poolDeadStreakTTL = 30 * time.Minute
+	poolFailureStreakTTL = 30 * time.Minute
 )
 
 // Judgment forwarder 对一次调用的判决，交给状态机做状态转移。
@@ -102,14 +104,15 @@ func (sm *StateMachine) notifyCritical() {
 //	Success             → state=active，清 state_until，last_used_at=now
 //	AccountRateLimited  → state=rate_limited，state_until=now+RetryAfter
 //	AccountDead         → state=disabled（凭证失效，需人工介入）；
-//	                      池账号非 401 只留痕不动状态，连击达阈值后软降级（见 poolDeadStreakThreshold）
-//	UpstreamTransient   → 非池：**不动状态**（上游抖动不扣账号分，靠当前请求 failover）；池：state=degraded
+//	                      池账号非 401 只留痕不动状态，连击达阈值后软降级（见 poolFailureStreakThreshold）
+//	UpstreamTransient   → 非池：**不动状态**（上游抖动不扣账号分，靠当前请求 failover）；
+//	                      池：state=degraded，连击达阈值后窗口逐次翻倍（见 poolFailureStreakThreshold）
 //	ClientError / StreamAborted / Unknown → 不改状态（账号无辜）
 func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 	switch j.Kind {
 	case sdk.OutcomeSuccess:
 		if j.IsPool {
-			sm.resetPoolDeadStreak(accountID)
+			sm.resetPoolFailureStreak(accountID)
 		}
 		if j.Family != "" && j.ProbeToken != "" && sm.familyCooldown != nil {
 			sm.familyCooldown.Recover(ctx, accountID, j.Family, j.ProbeToken)
@@ -151,11 +154,11 @@ func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 			// 401 表示池子自身的凭证无效，仍需禁用并说明原因。
 			//
 			// 例外：连击达到阈值说明不是偶发（欠费/封禁类持续故障），升级为软降级，
-			// 避免后续每个请求都先撞一次死信才 failover（见 poolDeadStreakThreshold）。
-			if streak := sm.bumpPoolDeadStreak(ctx, accountID); streak >= poolDeadStreakThreshold {
+			// 避免后续每个请求都先撞一次死信才 failover（见 poolFailureStreakThreshold）。
+			if streak := sm.bumpPoolFailureStreak(ctx, accountID); streak >= poolFailureStreakThreshold {
 				dj := j
 				dj.Reason = fmt.Sprintf("连续 %d 次上游透传错误：%s", streak, j.Reason)
-				sm.applyDegradedFor(ctx, accountID, dj, poolDeadDegradeWindow(streak))
+				sm.applyDegradedFor(ctx, accountID, dj, poolFailureDegradeWindow(streak))
 				return
 			}
 			sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeUpstreamError, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, nil)
@@ -169,10 +172,19 @@ func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 		// 账号本身没问题——只在当前请求内 failover，不能把一次上游抖动放大为跨请求硬封。
 		// 但事件要留痕：异常监控靠它回答"是不是上游不稳定"。
 		//
-		// Pool 保留稳定版本的固定窗口软降级：健康账号优先；若全池都降级，
-		// StickyOnly 仍保留最后的受控尝试。
+		// Pool 保留软降级：健康账号优先；若全池都降级，StickyOnly 仍保留最后的受控尝试。
+		// 窗口默认 60s；连续失败（与死信共用连击计数，无成功间隔）达阈值后逐次翻倍——
+		// 上游病几个小时时，固定短窗口意味着每次到期都放全量流量回去撞墙再降级，
+		// 全天来回抖；翻倍窗口把探底频率从每分钟一次收敛到最多每 10 分钟一次。
+		// 注意这只是延长自身账号的降级窗口，不引入任何跨请求闸门（2026-08-09 transient
+		// 熔断放大事故的教训：瞬时故障绝不能变成拦住别的请求的记忆）。
 		if j.IsPool {
-			sm.applyDegraded(ctx, accountID, j)
+			streak := sm.bumpPoolFailureStreak(ctx, accountID)
+			dj := j
+			if streak >= poolFailureStreakThreshold {
+				dj.Reason = fmt.Sprintf("连续 %d 次上游瞬时故障：%s", streak, j.Reason)
+			}
+			sm.applyDegradedFor(ctx, accountID, dj, poolFailureDegradeWindow(streak))
 		} else {
 			sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeUpstreamError, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, nil)
 		}
@@ -188,11 +200,6 @@ func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 	}
 }
 
-// applyDegraded 池账号软降级。state_until 到期后调度器看到就恢复 active。
-func (sm *StateMachine) applyDegraded(ctx context.Context, accountID int, j Judgment) {
-	sm.applyDegradedFor(ctx, accountID, j, degradedDefault)
-}
-
 // applyDegradedFor 以指定窗口软降级，窗口封顶 degradedMax。
 func (sm *StateMachine) applyDegradedFor(ctx context.Context, accountID int, j Judgment, dur time.Duration) {
 	if dur > degradedMax {
@@ -203,51 +210,51 @@ func (sm *StateMachine) applyDegradedFor(ctx context.Context, accountID int, j J
 	sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeDegraded, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, &until)
 }
 
-// poolDeadStreakKey 命名沿用 family-cooldown 的 `<purpose>:v<version>:<id>` 风格。
-func poolDeadStreakKey(accountID int) string {
-	return fmt.Sprintf("pool-dead-streak:v1:%d", accountID)
+// poolFailureStreakKey 命名沿用 family-cooldown 的 `<purpose>:v<version>:<id>` 风格。
+func poolFailureStreakKey(accountID int) string {
+	return fmt.Sprintf("pool-failure-streak:v1:%d", accountID)
 }
 
-// bumpPoolDeadStreak 连击 +1 并返回当前连击数。
+// bumpPoolFailureStreak 连击 +1 并返回当前连击数。
 // Redis 不可用时返回 0（fail-open：维持"只留痕不动状态"的旧行为），保证主链路可用性。
-func (sm *StateMachine) bumpPoolDeadStreak(ctx context.Context, accountID int) int {
+func (sm *StateMachine) bumpPoolFailureStreak(ctx context.Context, accountID int) int {
 	if sm.rdb == nil {
 		return 0
 	}
-	key := poolDeadStreakKey(accountID)
+	key := poolFailureStreakKey(accountID)
 	n, err := sm.rdb.Incr(ctx, key).Result()
 	if err != nil {
-		slog.Warn("scheduler_pool_dead_streak_incr_failed",
+		slog.Warn("scheduler_pool_failure_streak_incr_failed",
 			sdk.LogFieldAccountID, accountID, sdk.LogFieldError, err)
 		return 0
 	}
-	// 滑动窗口：每次连击都续期，安静 poolDeadStreakTTL 后自动清零。
-	if err := sm.rdb.Expire(ctx, key, poolDeadStreakTTL).Err(); err != nil {
-		slog.Warn("scheduler_pool_dead_streak_expire_failed",
+	// 滑动窗口：每次连击都续期，安静 poolFailureStreakTTL 后自动清零。
+	if err := sm.rdb.Expire(ctx, key, poolFailureStreakTTL).Err(); err != nil {
+		slog.Warn("scheduler_pool_failure_streak_expire_failed",
 			sdk.LogFieldAccountID, accountID, sdk.LogFieldError, err)
 	}
 	return int(n)
 }
 
-// resetPoolDeadStreak 成功判决后清零连击。用独立超时 ctx：请求 ctx 可能已取消，
+// resetPoolFailureStreak 成功判决后清零连击。用独立超时 ctx：请求 ctx 可能已取消，
 // 不能让清零失败把一个健康账号留在升级路径上。
-func (sm *StateMachine) resetPoolDeadStreak(accountID int) {
+func (sm *StateMachine) resetPoolFailureStreak(accountID int) {
 	if sm.rdb == nil {
 		return
 	}
 	rctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
-	if err := sm.rdb.Del(rctx, poolDeadStreakKey(accountID)).Err(); err != nil {
-		slog.Warn("scheduler_pool_dead_streak_reset_failed",
+	if err := sm.rdb.Del(rctx, poolFailureStreakKey(accountID)).Err(); err != nil {
+		slog.Warn("scheduler_pool_failure_streak_reset_failed",
 			sdk.LogFieldAccountID, accountID, sdk.LogFieldError, err)
 	}
 }
 
-// poolDeadDegradeWindow 连击第 streak 次（>= 阈值）对应的软降级窗口：
+// poolFailureDegradeWindow 连击第 streak 次（>= 阈值）对应的软降级窗口：
 // 阈值次 60s 起步，此后逐次翻倍，degradedMax 封顶。
-func poolDeadDegradeWindow(streak int) time.Duration {
+func poolFailureDegradeWindow(streak int) time.Duration {
 	dur := degradedDefault
-	for i := poolDeadStreakThreshold; i < streak && dur < degradedMax; i++ {
+	for i := poolFailureStreakThreshold; i < streak && dur < degradedMax; i++ {
 		dur *= 2
 	}
 	if dur > degradedMax {
