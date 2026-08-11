@@ -62,59 +62,181 @@ func TestFamilyCooldownMarkPreservesPermanentCircuit(t *testing.T) {
 	}
 }
 
-func TestFamilyCooldownTransientKindWinsRegardlessOfMarkOrder(t *testing.T) {
+func TestFamilyCooldownMarkReplacesLegacyTransientCircuit(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	rdb, _ := newTestRedis(t)
 	cooldown := NewFamilyCooldown(rdb)
+	const accountID = 44
+	const family = "gpt-5"
+	legacy := encodeFamilyCircuitValue(familyCircuitTransient, "legacy upstream 503")
+	if err := rdb.Set(ctx, familyCooldownKey(accountID, family), legacy, time.Minute).Err(); err != nil {
+		t.Fatalf("seed legacy cooldown: %v", err)
+	}
+	if err := rdb.Set(ctx, familyRecoveryKey(accountID, family), legacy, 0).Err(); err != nil {
+		t.Fatalf("seed legacy recovery: %v", err)
+	}
+	if err := rdb.Set(ctx, familyProbeKey(accountID, family), "legacy-probe", time.Minute).Err(); err != nil {
+		t.Fatalf("seed legacy probe: %v", err)
+	}
 
-	cooldown.Mark(ctx, 44, "gpt-5", time.Now().Add(30*time.Second), "rate first")
-	cooldown.MarkTransient(ctx, 44, "gpt-5", time.Now().Add(2*time.Second), "503 second")
-	value, err := rdb.Get(ctx, familyCooldownKey(44, "gpt-5")).Result()
+	cooldown.Mark(ctx, accountID, family, time.Now().Add(17*time.Second), "real upstream 429")
+	value, err := rdb.Get(ctx, familyCooldownKey(accountID, family)).Result()
 	if err != nil {
-		t.Fatalf("read rate-then-transient circuit: %v", err)
+		t.Fatalf("read replacement rate-limit circuit: %v", err)
 	}
-	if kind, _ := decodeFamilyCircuitValue(value); kind != familyCircuitTransient {
-		t.Fatalf("rate-then-transient kind = %q, want transient", kind)
+	if kind, reason := decodeFamilyCircuitValue(value); kind != familyCircuitRateLimit || reason != "real upstream 429" {
+		t.Fatalf("replacement circuit = %q/%q, want rate_limit/real upstream 429", kind, reason)
 	}
-	if ttl, _ := rdb.PTTL(ctx, familyCooldownKey(44, "gpt-5")).Result(); ttl < 25*time.Second {
-		t.Fatalf("short transient reduced longer rate-limit TTL: %v", ttl)
+	if ttl, err := rdb.PTTL(ctx, familyCooldownKey(accountID, family)).Result(); err != nil || ttl < 55*time.Second || ttl > time.Minute {
+		t.Fatalf("replacement rate-limit TTL = %v, err=%v; want legacy longest TTL preserved", ttl, err)
 	}
-
-	cooldown.MarkTransient(ctx, 45, "gpt-5", time.Now().Add(2*time.Second), "503 first")
-	cooldown.Mark(ctx, 45, "gpt-5", time.Now().Add(30*time.Second), "rate second")
-	value, err = rdb.Get(ctx, familyCooldownKey(45, "gpt-5")).Result()
+	recoveryValue, err := rdb.Get(ctx, familyRecoveryKey(accountID, family)).Result()
 	if err != nil {
-		t.Fatalf("read transient-then-rate circuit: %v", err)
+		t.Fatalf("read replacement recovery marker: %v", err)
 	}
-	if kind, _ := decodeFamilyCircuitValue(value); kind != familyCircuitTransient {
-		t.Fatalf("transient-then-rate kind = %q, want transient", kind)
+	if kind, reason := decodeFamilyCircuitValue(recoveryValue); kind != familyCircuitRateLimit || reason != "real upstream 429" {
+		t.Fatalf("replacement recovery = %q/%q, want rate_limit/real upstream 429", kind, reason)
 	}
-	if ttl, _ := rdb.PTTL(ctx, familyCooldownKey(45, "gpt-5")).Result(); ttl < 25*time.Second {
-		t.Fatalf("longer rate-limit did not extend transient TTL: %v", ttl)
+	if exists, err := rdb.Exists(ctx, familyProbeKey(accountID, family)).Result(); err != nil || exists != 0 {
+		t.Fatalf("legacy probe remaining = %d, err=%v", exists, err)
 	}
 }
 
-func TestTransientCircuitDurationUsesBoundedRetryAfter(t *testing.T) {
+func TestFamilyCooldownLegacyTransientWaitsForActiveTTLBeforeCleanup(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	rdb, redisServer := newTestRedis(t)
+	cooldown := NewFamilyCooldown(rdb)
+	const accountID = 45
+	const family = "gpt-5"
+	legacy := encodeFamilyCircuitValue(familyCircuitTransient, "legacy mixed outage")
+	if err := rdb.Set(ctx, familyCooldownKey(accountID, family), legacy, 2*time.Second).Err(); err != nil {
+		t.Fatalf("seed active legacy cooldown: %v", err)
+	}
+	if err := rdb.Set(ctx, familyRecoveryKey(accountID, family), legacy, 0).Err(); err != nil {
+		t.Fatalf("seed active legacy recovery: %v", err)
+	}
+	if err := rdb.Set(ctx, familyProbeKey(accountID, family), "legacy-probe", time.Minute).Err(); err != nil {
+		t.Fatalf("seed active legacy probe: %v", err)
+	}
+
+	if status := cooldown.peekCircuitStatus(ctx, accountID, family); !status.blocked || status.kind != familyCircuitTransient {
+		t.Fatalf("active legacy circuit = %+v, want temporarily preserved", status)
+	}
+	if status := cooldown.ClaimProbe(ctx, accountID, family, ""); !status.blocked || status.kind != familyCircuitTransient {
+		t.Fatalf("active legacy no-token gate = %+v, want blocked", status)
+	}
+	if n, err := rdb.Exists(ctx, familyCooldownKey(accountID, family), familyRecoveryKey(accountID, family), familyProbeKey(accountID, family)).Result(); err != nil || n != 3 {
+		t.Fatalf("active legacy keys = %d, err=%v; want all preserved", n, err)
+	}
+
+	redisServer.FastForward(3 * time.Second)
+	if status := cooldown.peekCircuitStatus(ctx, accountID, family); status.blocked || status.halfOpen {
+		t.Fatalf("expired legacy circuit = %+v, want ignored", status)
+	}
+	if n, err := rdb.Exists(ctx, familyCooldownKey(accountID, family), familyRecoveryKey(accountID, family), familyProbeKey(accountID, family)).Result(); err != nil || n != 0 {
+		t.Fatalf("expired legacy keys = %d, err=%v; want removed", n, err)
+	}
+}
+
+func TestFamilyCooldownKeepsRateLimitRecoveryMarkers(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		retryAfter time.Duration
-		want       time.Duration
+		name  string
+		value string
 	}{
-		{name: "default", want: transientCircuitDefault},
-		{name: "minimum", retryAfter: 100 * time.Millisecond, want: transientCircuitMin},
-		{name: "explicit overload", retryAfter: 5 * time.Second, want: 5 * time.Second},
-		{name: "maximum", retryAfter: 2 * time.Minute, want: transientCircuitMax},
+		{name: "typed", value: encodeFamilyCircuitValue(familyCircuitRateLimit, "upstream 429")},
+		{name: "pre-kind format", value: "legacy upstream 429"},
 	}
 	for _, tt := range tests {
+		tc := tt
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			rdb, _ := newTestRedis(t)
+			cooldown := NewFamilyCooldown(rdb)
+			if err := rdb.Set(ctx, familyRecoveryKey(46, "gpt-5"), tc.value, 0).Err(); err != nil {
+				t.Fatalf("seed rate-limit recovery: %v", err)
+			}
+
+			status := cooldown.peekCircuitStatus(ctx, 46, "gpt-5")
+			if status.blocked || !status.halfOpen || status.kind != familyCircuitRateLimit {
+				t.Fatalf("rate-limit recovery = %+v, want preserved half-open", status)
+			}
+			if exists, err := rdb.Exists(ctx, familyRecoveryKey(46, "gpt-5")).Result(); err != nil || exists != 1 {
+				t.Fatalf("rate-limit recovery marker exists = %d, err=%v; want 1", exists, err)
+			}
+		})
+	}
+}
+
+func TestFamilyCooldownEmptyPreKindRecoveryRemainsRateLimited(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	rdb, _ := newTestRedis(t)
+	cooldown := NewFamilyCooldown(rdb)
+	const accountID = 46
+	const family = "gpt-5"
+	if err := rdb.Set(ctx, familyRecoveryKey(accountID, family), "", 0).Err(); err != nil {
+		t.Fatalf("seed empty pre-kind recovery: %v", err)
+	}
+
+	status := cooldown.ClaimProbe(ctx, accountID, family, "")
+	if !status.blocked || status.kind != familyCircuitRateLimit {
+		t.Fatalf("empty pre-kind recovery gate = %+v, want rate-limit block", status)
+	}
+	if exists, err := rdb.Exists(ctx, familyRecoveryKey(accountID, family)).Result(); err != nil || exists != 1 {
+		t.Fatalf("empty pre-kind recovery exists = %d, err=%v; want preserved", exists, err)
+	}
+}
+
+func TestFamilyCooldownZeroPTTLStillReturnsRetryAt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		read func(*FamilyCooldown, context.Context, int, string) familyCircuitStatus
+	}{
+		{
+			name: "peek",
+			read: func(cooldown *FamilyCooldown, ctx context.Context, accountID int, family string) familyCircuitStatus {
+				return cooldown.peekCircuitStatus(ctx, accountID, family)
+			},
+		},
+		{
+			name: "claim",
+			read: func(cooldown *FamilyCooldown, ctx context.Context, accountID int, family string) familyCircuitStatus {
+				return cooldown.ClaimProbe(ctx, accountID, family, "probe-token")
+			},
+		},
+	}
+	for i, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := transientCircuitDuration(tt.retryAfter); got != tt.want {
-				t.Fatalf("transientCircuitDuration(%s) = %s, want %s", tt.retryAfter, got, tt.want)
+			ctx := context.Background()
+			rdb, redisServer := newTestRedis(t)
+			cooldown := NewFamilyCooldown(rdb)
+			accountID := 50 + i
+			const family = "gpt-5"
+			key := familyCooldownKey(accountID, family)
+			value := encodeFamilyCircuitValue(familyCircuitRateLimit, "upstream 429")
+			if err := rdb.Set(ctx, key, value, 0).Err(); err != nil {
+				t.Fatalf("seed rate-limit cooldown: %v", err)
+			}
+			redisServer.SetTTL(key, 500*time.Microsecond)
+			if ttl, err := rdb.PTTL(ctx, key).Result(); err != nil || ttl != 0 {
+				t.Fatalf("seed PTTL = %v, err=%v; want exact zero", ttl, err)
+			}
+
+			status := tt.read(cooldown, ctx, accountID, family)
+			if !status.blocked || status.kind != familyCircuitRateLimit || status.until.IsZero() {
+				t.Fatalf("zero-PTTL circuit = %+v, want blocked rate-limit with RetryAt", status)
 			}
 		})
 	}
@@ -192,7 +314,7 @@ func TestFamilyCooldownProbeRenewalAndTokenIsolation(t *testing.T) {
 	ctx := context.Background()
 	rdb, redisServer := newTestRedis(t)
 	cooldown := NewFamilyCooldown(rdb)
-	cooldown.MarkTransient(ctx, 9, "video-generation", time.Now().Add(2*time.Second), "upstream 503")
+	cooldown.Mark(ctx, 9, "video-generation", time.Now().Add(2*time.Second), "upstream limited")
 	redisServer.FastForward(3 * time.Second)
 
 	if claimed := cooldown.ClaimProbe(ctx, 9, "video-generation", "long-probe"); claimed.blocked {
@@ -210,7 +332,7 @@ func TestFamilyCooldownProbeRenewalAndTokenIsolation(t *testing.T) {
 		t.Fatal("renewed long probe allowed a concurrent probe")
 	}
 
-	cooldown.MarkTransient(ctx, 9, "video-generation", time.Now().Add(2*time.Second), "new failure")
+	cooldown.Mark(ctx, 9, "video-generation", time.Now().Add(2*time.Second), "new limit")
 	if renewed, err := cooldown.RenewProbe(ctx, 9, "video-generation", "long-probe"); err != nil || renewed {
 		t.Fatal("new circuit mark did not invalidate old renewal token")
 	}

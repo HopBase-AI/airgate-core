@@ -25,12 +25,16 @@ func TestGenerationTaskStoreListAndSummary(t *testing.T) {
 
 	createTask := func(taskType string, status enttask.Status, createdAt, updatedAt time.Time) int {
 		t.Helper()
+		input := map[string]interface{}{"model": "seedance-test"}
+		if taskType == "asset.attempt" {
+			input = map[string]interface{}{"asset_type": "image", "source_host": "cdn.example.com"}
+		}
 		builder := db.Task.Create().
 			SetPluginID("airgate-seedance").
 			SetTaskType(taskType).
 			SetStatus(status).
 			SetUserID(user.ID).
-			SetInput(map[string]interface{}{"model": "seedance-test"}).
+			SetInput(input).
 			SetCreatedAt(createdAt).
 			SetUpdatedAt(updatedAt)
 		if status == enttask.StatusCompleted || status == enttask.StatusFailed || status == enttask.StatusCancelled {
@@ -69,6 +73,7 @@ func TestGenerationTaskStoreListAndSummary(t *testing.T) {
 	createTask("image.generate", enttask.StatusCompleted, now.Add(-2*time.Hour), now.Add(-time.Hour))
 	failedID := createTask("image.generate", enttask.StatusFailed, now.Add(-3*time.Hour), now.Add(-2*time.Hour))
 	assetAttemptID := createTask("asset.attempt", enttask.StatusFailed, now.Add(-90*time.Minute), now.Add(-89*time.Minute))
+	videoAttemptID := createTask("video.attempt", enttask.StatusFailed, now.Add(-80*time.Minute), now.Add(-79*time.Minute))
 	createTask("image.generate", enttask.StatusFailed, now.Add(-48*time.Hour), now.Add(-47*time.Hour))
 	createTask("document.generate", enttask.StatusCompleted, now.Add(-48*time.Hour), now.Add(-47*time.Hour))
 	createTask("relay_detection", enttask.StatusPending, now.Add(-24*time.Hour), now.Add(-24*time.Hour))
@@ -98,9 +103,21 @@ func TestGenerationTaskStoreListAndSummary(t *testing.T) {
 		t.Fatalf("asset attempts = %+v total = %d", assetAttempts, assetTotal)
 	}
 	asset := assetAttempts[0]
+	if asset.Model != "" {
+		t.Fatalf("asset.attempt model = %q, want empty because asset operations are model-independent", asset.Model)
+	}
 	if asset.RequestID != "request-asset-502" || asset.GroupID != 21 || asset.APIKeyID != 206 ||
 		asset.AccountID != 33 || asset.UpstreamStatus != 502 || asset.UpstreamErrorCode != "account_unavailable" {
 		t.Fatalf("asset attempt diagnostics = %+v", asset)
+	}
+	videoAttempts, videoTotal, err := store.List(ctx, appgenerationtask.ListFilter{
+		Page: 1, PageSize: 20, Status: failedStatus, TaskType: "video.attempt",
+	})
+	if err != nil {
+		t.Fatalf("List video attempts: %v", err)
+	}
+	if videoTotal != 1 || len(videoAttempts) != 1 || videoAttempts[0].ID != videoAttemptID || videoAttempts[0].Model != "seedance-test" {
+		t.Fatalf("video attempt model projection = %+v total = %d", videoAttempts, videoTotal)
 	}
 
 	summary, err := store.Summary(ctx, now.Add(-24*time.Hour), now.Add(-5*time.Minute), now.Add(-15*time.Minute))
@@ -110,7 +127,7 @@ func TestGenerationTaskStoreListAndSummary(t *testing.T) {
 	if summary.Pending != 2 || summary.Retrying != 1 || summary.Processing != 1 {
 		t.Fatalf("active summary = %+v", summary)
 	}
-	if summary.Backlog != 2 || summary.StaleProcessing != 1 || summary.CompletedRecent != 1 || summary.FailedRecent != 2 {
+	if summary.Backlog != 2 || summary.StaleProcessing != 1 || summary.CompletedRecent != 1 || summary.FailedRecent != 3 {
 		t.Fatalf("health summary = %+v", summary)
 	}
 	if summary.OldestQueuedAt == nil || !summary.OldestQueuedAt.Equal(now.Add(-10*time.Minute)) {
@@ -119,7 +136,7 @@ func TestGenerationTaskStoreListAndSummary(t *testing.T) {
 	if len(summary.Plugins) != 1 || summary.Plugins[0] != "airgate-seedance" {
 		t.Fatalf("plugins = %v", summary.Plugins)
 	}
-	if len(summary.TaskTypes) != 6 {
+	if len(summary.TaskTypes) != 7 {
 		t.Fatalf("task types = %v", summary.TaskTypes)
 	}
 }

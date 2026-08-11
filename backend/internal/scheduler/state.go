@@ -30,13 +30,6 @@ const (
 	degradedDefault = 60 * time.Second
 	// degradedMax 池账号最长降级窗口。
 	degradedMax = 10 * time.Minute
-	// transientCircuitDefault 把通用上游 5xx/传输故障短暂隔离到账号 × family。
-	// 3 秒足以让并发请求切到备用，同时通过 token half-open 快速验证恢复。
-	transientCircuitDefault = 3 * time.Second
-	// Explicit overload responses may ask for a slightly longer retry window,
-	// but transient circuits must remain short and must never enter the 429 path.
-	transientCircuitMin = time.Second
-	transientCircuitMax = 30 * time.Second
 
 	// poolDeadStreakThreshold 池账号透传死信（非 401 的 AccountDead）连击升级阈值。
 	// 单次 403 多是上游池内某个子账号被封，不动状态是对的；但欠费/封禁类故障会连续
@@ -110,7 +103,7 @@ func (sm *StateMachine) notifyCritical() {
 //	AccountRateLimited  → state=rate_limited，state_until=now+RetryAfter
 //	AccountDead         → state=disabled（凭证失效，需人工介入）；
 //	                      池账号非 401 只留痕不动状态，连击达阈值后软降级（见 poolDeadStreakThreshold）
-//	UpstreamTransient   → 非池：**不动状态**（上游抖动不扣账号分，靠 failover 切走就行）；池：state=degraded
+//	UpstreamTransient   → 非池：**不动状态**（上游抖动不扣账号分，靠当前请求 failover）；池：state=degraded
 //	ClientError / StreamAborted / Unknown → 不改状态（账号无辜）
 func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 	switch j.Kind {
@@ -173,19 +166,11 @@ func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 
 	case sdk.OutcomeUpstreamTransient:
 		// 按定义，UpstreamTransient 是"上游侧瞬时故障"（SSE 提前断流、网络抖动、上游 5xx 等），
-		// 账号本身没问题——不动 state，让 failover 切到下一账号就够了。
+		// 账号本身没问题——只在当前请求内 failover，不能把一次上游抖动放大为跨请求硬封。
 		// 但事件要留痕：异常监控靠它回答"是不是上游不稳定"。
 		//
-		// 有 family 时统一走短时 hard circuit：普通账号与 pool 都会在后续请求中
-		// 完全切到备用，不能让 pool 的 StickyOnly 会话绕过故障隔离。circuit 类型是
-		// transient，所有账号都在此状态时上层保持 5xx，绝不生成 429。
-		if j.Family != "" && sm.familyCooldown != nil {
-			until := time.Now().Add(transientCircuitDuration(j.RetryAfter))
-			sm.familyCooldown.MarkTransient(ctx, accountID, j.Family, until, j.Reason)
-			sm.recordEvent(accountID, j.UserID, j.APIKeyID, accountevent.EventTypeUpstreamError, j.Reason, j.Family, eventSourceForward, j.UpstreamStatus, &until)
-			return
-		}
-		// 老调用方没有 family 时保留原降级策略。
+		// Pool 保留稳定版本的固定窗口软降级：健康账号优先；若全池都降级，
+		// StickyOnly 仍保留最后的受控尝试。
 		if j.IsPool {
 			sm.applyDegraded(ctx, accountID, j)
 		} else {
@@ -201,19 +186,6 @@ func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 			cancel()
 		}
 	}
-}
-
-func transientCircuitDuration(retryAfter time.Duration) time.Duration {
-	if retryAfter <= 0 {
-		return transientCircuitDefault
-	}
-	if retryAfter < transientCircuitMin {
-		return transientCircuitMin
-	}
-	if retryAfter > transientCircuitMax {
-		return transientCircuitMax
-	}
-	return retryAfter
 }
 
 // applyDegraded 池账号软降级。state_until 到期后调度器看到就恢复 active。

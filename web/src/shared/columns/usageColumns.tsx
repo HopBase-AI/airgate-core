@@ -17,6 +17,7 @@ import {
 import type { UsageLogResp, UserUsageLogResp, CustomerUsageLogResp, UsageAttribute, UsageMetric } from '../types';
 import { USAGE_TOKEN_COLORS } from '../constants';
 import { CostValue } from '../components/CostValue';
+import { failureSourceLabelKey, usageFailureSource } from '../failureDiagnostics';
 
 /**
  * 列定义统一使用一个宽松的行类型：管理端、普通用户与 API Key 登录用户
@@ -687,18 +688,26 @@ export function useUsageColumns(opts?: { customerScope?: boolean; adminView?: bo
 
         const meta = ERROR_CODE_META[row.error_code ?? ''];
         const color = errorToneColor(meta?.tone ?? 'danger');
+        const source = usageFailureSource(row);
 
         return (
           <RichTooltip placement="right" content={() => <ErrorDetail adminView={adminView} row={row} t={t} />}>
-            <span
-              className="inline-flex h-5 shrink-0 items-center justify-center gap-1 truncate rounded px-1.5 text-[12px] font-semibold leading-none whitespace-nowrap"
-              style={{
-                background: `color-mix(in srgb, ${color} 18%, transparent)`,
-                boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${color} 34%, transparent)`,
-                color,
-              }}
-            >
-              {row.error_status ? row.error_status : t('usage.result_failed', '失败')}
+            <span className="flex min-w-0 flex-col items-center justify-center gap-0.5">
+              <span
+                className="inline-flex h-5 shrink-0 items-center justify-center gap-1 truncate rounded px-1.5 text-[12px] font-semibold leading-none whitespace-nowrap"
+                style={{
+                  background: `color-mix(in srgb, ${color} 18%, transparent)`,
+                  boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${color} 34%, transparent)`,
+                  color,
+                }}
+              >
+                {row.error_status ? row.error_status : t('usage.result_failed', '失败')}
+              </span>
+              {adminView ? (
+                <span className="max-w-full truncate text-[10px] font-medium leading-none text-text-secondary">
+                  {t(failureSourceLabelKey(source))}
+                </span>
+              ) : null}
             </span>
           </RichTooltip>
         );

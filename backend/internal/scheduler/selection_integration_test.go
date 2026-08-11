@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -229,8 +230,8 @@ func TestSelectAccountNonChatFamilyClaimsOnlyWinningProbe(t *testing.T) {
 	s.InvalidateRouteCache(grp.ID)
 
 	family := s.resolveModelFamily(itPlatform, videoModel)
-	s.familyCooldown.MarkTransient(ctx, primary.ID, family, time.Now().Add(time.Second), "primary 503")
-	s.familyCooldown.MarkTransient(ctx, standby.ID, family, time.Now().Add(time.Second), "standby 503")
+	s.familyCooldown.Mark(ctx, primary.ID, family, time.Now().Add(time.Second), "primary limited")
+	s.familyCooldown.Mark(ctx, standby.ID, family, time.Now().Add(time.Second), "standby limited")
 	redisServer.FastForward(2 * time.Second)
 
 	const token = "video-probe"
@@ -254,7 +255,7 @@ func TestSelectAccountNonChatFamilyClaimsOnlyWinningProbe(t *testing.T) {
 	}
 }
 
-func TestSelectAccountTransientCircuitsNeverMasqueradeAsRateLimit(t *testing.T) {
+func TestSelectAccountExpiredLegacyTransientDoesNotMasqueradeAsRateLimit(t *testing.T) {
 	ctx := context.Background()
 	db := enttestOpenScheduler(t)
 	rdb, _ := newTestRedis(t)
@@ -269,18 +270,176 @@ func TestSelectAccountTransientCircuitsNeverMasqueradeAsRateLimit(t *testing.T) 
 	s.InvalidateRouteCache(grp.ID)
 	family := s.resolveModelFamily(itPlatform, itModel)
 	s.familyCooldown.Mark(ctx, first.ID, family, time.Now().Add(8*time.Second), "first rate limited")
-	s.familyCooldown.MarkTransient(ctx, second.ID, family, time.Now().Add(8*time.Second), "second upstream 503")
+	legacy := encodeFamilyCircuitValue(familyCircuitTransient, "expired upstream 503")
+	if err := rdb.Set(ctx, familyRecoveryKey(second.ID, family), legacy, 0).Err(); err != nil {
+		t.Fatalf("seed expired legacy transient: %v", err)
+	}
 
 	got, err := s.SelectAccount(ctx, itPlatform, itModel, 1, grp.ID, "")
-	if got != nil || !errors.Is(err, ErrNoAvailableAccount) {
-		t.Fatalf("mixed rate/transient selection = %v, err=%v; want unavailable", got, err)
+	if err != nil || got == nil || got.ID != second.ID {
+		t.Fatalf("rate-limit plus expired transient selection = %v, err=%v; want second account %d", got, err, second.ID)
 	}
-	if _, ok := RateLimitedRetryAt(err); ok {
-		t.Fatalf("mixed rate/transient circuits returned 429 classification: %v", err)
+	if exists, err := rdb.Exists(ctx, familyRecoveryKey(second.ID, family)).Result(); err != nil || exists != 0 {
+		t.Fatalf("expired legacy transient recovery remaining = %d, err=%v", exists, err)
 	}
-	if !errors.Is(err, ErrTransientCandidatesUnavailable) {
-		t.Fatalf("mixed rate/transient error = %v, want transient classification", err)
+}
+
+func TestPoolTransientFamilyFailureSoftDegradesWithoutExhaustingRoute(t *testing.T) {
+	ctx := context.Background()
+	db := enttestOpenScheduler(t)
+	rdb, _ := newTestRedis(t)
+	s := NewScheduler(db, rdb)
+
+	grp := mustGroup(t, ctx, db)
+	first := mustPoolAccount(t, ctx, db, grp, "pool-transient-first")
+	second := mustPoolAccount(t, ctx, db, grp, "pool-transient-second")
+	db.Group.UpdateOneID(grp.ID).
+		SetModelRouting(map[string][]int64{itModel: {int64(first.ID), int64(second.ID)}}).
+		ExecX(ctx)
+	s.InvalidateRouteCache(grp.ID)
+
+	const ignoredRetryAfter = 17 * time.Second
+	family := s.resolveModelFamily(itPlatform, itModel)
+	judgment := Judgment{
+		Kind:           sdk.OutcomeUpstreamTransient,
+		RetryAfter:     ignoredRetryAfter,
+		Reason:         "server_is_overloaded",
+		IsPool:         true,
+		Family:         family,
+		UpstreamStatus: http.StatusServiceUnavailable,
 	}
+
+	before := time.Now()
+	s.Apply(ctx, first.ID, judgment)
+	s.state.waitEvents()
+
+	degraded, err := db.Account.Get(ctx, first.ID)
+	if err != nil {
+		t.Fatalf("get degraded pool account: %v", err)
+	}
+	if degraded.State != account.StateDegraded || degraded.StateUntil == nil {
+		t.Fatalf("pool state = %s until=%v, want degraded with state_until", degraded.State, degraded.StateUntil)
+	}
+	wantUntil := before.Add(degradedDefault)
+	if degraded.StateUntil.Before(wantUntil.Add(-time.Second)) || degraded.StateUntil.After(wantUntil.Add(2*time.Second)) {
+		t.Fatalf("state_until = %v, want stable default near %v despite Retry-After %v", degraded.StateUntil, wantUntil, ignoredRetryAfter)
+	}
+	keys := []string{
+		familyCooldownKey(first.ID, family),
+		familyRecoveryKey(first.ID, family),
+		familyProbeKey(first.ID, family),
+	}
+	if n, err := rdb.Exists(ctx, keys...).Result(); err != nil || n != 0 {
+		t.Fatalf("pool transient family keys = %d, err=%v; want none", n, err)
+	}
+	if until, blocked := s.familyCooldown.Until(ctx, first.ID, family); blocked {
+		t.Fatalf("pool transient opened hard family circuit until %v", until)
+	}
+
+	got, err := s.SelectAccount(ctx, itPlatform, itModel, 1, grp.ID, "")
+	if err != nil || got == nil || got.ID != second.ID {
+		t.Fatalf("healthy pool route = %v, err=%v; want second account %d", got, err, second.ID)
+	}
+
+	s.Apply(ctx, second.ID, judgment)
+	s.state.waitEvents()
+	got, err = s.SelectAccount(ctx, itPlatform, itModel, 1, grp.ID, "")
+	if err != nil || got == nil {
+		t.Fatalf("all-degraded pool route = %v, err=%v; want a controlled fallback attempt", got, err)
+	}
+}
+
+func TestNonPoolTransientFamilyFailureDoesNotOpenCrossRequestCircuit(t *testing.T) {
+	ctx := context.Background()
+	db := enttestOpenScheduler(t)
+	rdb, _ := newTestRedis(t)
+	s := NewScheduler(db, rdb)
+
+	grp := mustGroup(t, ctx, db)
+	acc := mustAccount(t, ctx, db, grp, "regular-transient", nil)
+	family := s.resolveModelFamily(itPlatform, itModel)
+	s.Apply(ctx, acc.ID, Judgment{
+		Kind:           sdk.OutcomeUpstreamTransient,
+		RetryAfter:     23 * time.Second,
+		Reason:         "upstream connection closed before completion",
+		Family:         family,
+		UpstreamStatus: http.StatusBadGateway,
+	})
+	s.state.waitEvents()
+
+	gotState, err := db.Account.Get(ctx, acc.ID)
+	if err != nil {
+		t.Fatalf("get regular account: %v", err)
+	}
+	if gotState.State != account.StateActive || gotState.StateUntil != nil {
+		t.Fatalf("regular account state = %s until=%v, want unchanged active", gotState.State, gotState.StateUntil)
+	}
+	keys := []string{
+		familyCooldownKey(acc.ID, family),
+		familyRecoveryKey(acc.ID, family),
+		familyProbeKey(acc.ID, family),
+	}
+	if n, err := rdb.Exists(ctx, keys...).Result(); err != nil || n != 0 {
+		t.Fatalf("regular transient family keys = %d, err=%v; want none", n, err)
+	}
+	if until, blocked := s.familyCooldown.Until(ctx, acc.ID, family); blocked {
+		t.Fatalf("regular transient opened cross-request circuit until %v", until)
+	}
+
+	got, err := s.SelectAccount(ctx, itPlatform, itModel, 1, grp.ID, "")
+	if err != nil || got == nil || got.ID != acc.ID {
+		t.Fatalf("next request selection = %v, err=%v; want account %d to remain available", got, err, acc.ID)
+	}
+}
+
+func TestLegacyTransientCircuitIsIgnoredAndRemoved(t *testing.T) {
+	setup := func(t *testing.T) (context.Context, *Scheduler, *ent.Account, int, string, *redis.Client) {
+		t.Helper()
+		ctx := context.Background()
+		db := enttestOpenScheduler(t)
+		rdb, _ := newTestRedis(t)
+		s := NewScheduler(db, rdb)
+		grp := mustGroup(t, ctx, db)
+		acc := mustAccount(t, ctx, db, grp, "legacy-transient", nil)
+		family := s.resolveModelFamily(itPlatform, itModel)
+		value := encodeFamilyCircuitValue(familyCircuitTransient, "legacy upstream 503")
+		if err := rdb.Set(ctx, familyRecoveryKey(acc.ID, family), value, 0).Err(); err != nil {
+			t.Fatalf("seed legacy recovery: %v", err)
+		}
+		if err := rdb.Set(ctx, familyProbeKey(acc.ID, family), "legacy-probe", time.Minute).Err(); err != nil {
+			t.Fatalf("seed legacy probe: %v", err)
+		}
+		return ctx, s, acc, grp.ID, family, rdb
+	}
+	assertRemoved := func(t *testing.T, ctx context.Context, rdb *redis.Client, accountID int, family string) {
+		t.Helper()
+		keys := []string{
+			familyCooldownKey(accountID, family),
+			familyRecoveryKey(accountID, family),
+			familyProbeKey(accountID, family),
+		}
+		if n, err := rdb.Exists(ctx, keys...).Result(); err != nil || n != 0 {
+			t.Fatalf("legacy transient keys remaining = %d, err=%v", n, err)
+		}
+	}
+
+	t.Run("normal selection", func(t *testing.T) {
+		ctx, s, acc, groupID, family, rdb := setup(t)
+		got, err := s.SelectAccount(ctx, itPlatform, itModel, 1, groupID, "")
+		if err != nil || got == nil || got.ID != acc.ID {
+			t.Fatalf("selection = %v, err=%v; want legacy transient ignored", got, err)
+		}
+		assertRemoved(t, ctx, rdb, acc.ID, family)
+	})
+
+	t.Run("pinned account gate", func(t *testing.T) {
+		ctx, s, acc, _, family, rdb := setup(t)
+		decision, err := s.ClaimAccountGate(ctx, acc.ID, itPlatform, itModel, "")
+		if err != nil || !decision.Allowed() || decision.ProbeClaimed {
+			t.Fatalf("gate = %+v, err=%v; want legacy transient ignored", decision, err)
+		}
+		assertRemoved(t, ctx, rdb, acc.ID, family)
+	})
 }
 
 func TestSelectedAccountGateRechecksCircuitAfterHealthyScan(t *testing.T) {
@@ -296,15 +455,15 @@ func TestSelectedAccountGateRechecksCircuitAfterHealthyScan(t *testing.T) {
 		t.Fatalf("initial schedulability = %v, want Normal", decision.state)
 	}
 	family := s.resolveModelFamily(acc.Platform, itModel)
-	s.familyCooldown.MarkTransient(ctx, acc.ID, family, time.Now().Add(3*time.Second), "concurrent 503")
+	s.familyCooldown.Mark(ctx, acc.ID, family, time.Now().Add(3*time.Second), "concurrent 429")
 
 	unavailable := unavailabilitySummary{}
 	allowed := s.claimSelectedAccountGate(WithFamilyProbeToken(ctx, "gate-race-token"), acc, itModel, &unavailable)
 	if allowed {
 		t.Fatal("selected account passed after a circuit opened between scan and final gate")
 	}
-	if !unavailable.transientSeen {
-		t.Fatalf("gate rejection summary = %+v, want transient", unavailable)
+	if !unavailable.rateLimitedSeen {
+		t.Fatalf("gate rejection summary = %+v, want rate limit", unavailable)
 	}
 }
 
@@ -339,17 +498,6 @@ func TestClaimAccountGateDistinguishesCircuitOutcomes(t *testing.T) {
 		t.Fatalf("competing half-open gate = %+v, err=%v", decision, err)
 	}
 	s.ReleaseFamilyProbe(ctx, acc.ID, itPlatform, model, "owner")
-
-	until := time.Now().Add(20 * time.Second)
-	acc = db.Account.UpdateOneID(acc.ID).
-		SetState(account.StateRateLimited).
-		SetStateUntil(until).
-		SaveX(ctx)
-	s.familyCooldown.MarkTransient(ctx, acc.ID, family, time.Now().Add(3*time.Second), "upstream 503")
-	decision, err = s.ClaimAccountGate(ctx, acc.ID, itPlatform, model, "overlap")
-	if err != nil || decision.Reason != AccountGateTransient || decision.RetryAt.Before(until.Add(-time.Second)) {
-		t.Fatalf("overlapping DB rate/transient gate = %+v, err=%v", decision, err)
-	}
 
 	db.Account.UpdateOneID(acc.ID).SetState(account.StateDisabled).ClearStateUntil().ExecX(ctx)
 	decision, err = s.ClaimAccountGate(ctx, acc.ID, itPlatform, model, "disabled")

@@ -17,6 +17,11 @@ import { DEFAULT_PAGE_SIZE } from '../../shared/constants';
 import { getTotalPages } from '../../shared/utils/pagination';
 import { useClipboard } from '../../shared/hooks/useClipboard';
 import type { GenerationTaskResp, GenerationTaskStatus } from '../../shared/types';
+import {
+  failureSourceLabelKey,
+  generationTaskFailureSource,
+  taskModelNotApplicable,
+} from '../../shared/failureDiagnostics';
 
 const AUTO_REFRESH_STORAGE_KEY = 'airgate.admin.generation_tasks.auto_refresh';
 
@@ -176,24 +181,46 @@ function ErrorCell({
 }) {
   const { t } = useTranslation();
   const stale = task.status === 'processing' && elapsedSeconds(task.updated_at) >= staleThresholdSeconds;
-  const labels = [task.error_type, task.error_code].filter(Boolean);
+  const source = generationTaskFailureSource(task);
+  const sourceLabel = t(failureSourceLabelKey(source));
+  const sourceClass = source === 'upstream'
+    ? 'bg-danger-subtle text-danger'
+    : source === 'scheduler' || source === 'quota'
+      ? 'bg-warning-subtle text-warning'
+      : 'bg-info-subtle text-info';
+  const code = task.error_code?.trim();
   const message = task.error_message || (stale ? t('generation_tasks.stale_task') : '');
-  if (!message && labels.length === 0) {
+  const evidence = [
+    task.account_id
+      ? `${t('generation_tasks.account_id')} #${task.account_id}`
+      : source === 'scheduler' ? t('usage.account_not_selected') : '',
+    task.request_id ? `Req ${task.request_id}` : '',
+    task.upstream_status ? `HTTP ${task.upstream_status}` : '',
+  ].filter(Boolean);
+  if (!message && !code && !task.error_type) {
     return <span className="text-text-tertiary">-</span>;
   }
   return (
     <div className="flex min-w-0 items-start gap-1.5">
-      <div className="flex min-w-0 flex-1 flex-col gap-1" title={message || labels.join(' · ')}>
-        {labels.length > 0 ? (
-          <div className="flex min-w-0 gap-1 overflow-hidden">
-            {labels.map((label) => (
-              <Chip key={label} color="danger" size="sm" variant="soft" className="max-w-40 shrink truncate font-mono">
-                {label}
-              </Chip>
-            ))}
-          </div>
-        ) : null}
+      <div
+        className="flex min-w-0 flex-1 flex-col gap-1"
+        title={[sourceLabel, code, task.error_type, message, ...evidence].filter(Boolean).join('\n')}
+      >
+        <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+          <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none ${sourceClass}`}>
+            {sourceLabel}
+          </span>
+          {code ? (
+            <span className="min-w-0 truncate font-mono text-[11px] font-semibold leading-none text-danger">{code}</span>
+          ) : null}
+          {task.error_type && task.error_type !== code ? (
+            <span className="min-w-0 truncate font-mono text-[10px] leading-none text-text-tertiary">{task.error_type}</span>
+          ) : null}
+        </div>
         {message ? <span className={`line-clamp-2 break-words text-xs leading-4 ${stale ? 'text-warning' : 'text-text'}`}>{message}</span> : null}
+        {evidence.length > 0 ? (
+          <span className="truncate font-mono text-[10px] leading-none text-text-tertiary">{evidence.join(' · ')}</span>
+        ) : null}
       </div>
       <Tooltip>
         <Tooltip.Trigger>
@@ -226,7 +253,12 @@ function TaskErrorModal({ task, onClose }: { task: GenerationTaskResp | null; on
   if (!task) return null;
 
   const message = task.error_message || t('generation_tasks.stale_task');
+  const sourceLabel = t(failureSourceLabelKey(generationTaskFailureSource(task)));
+  const modelLabel = taskModelNotApplicable(task)
+    ? `${t('generation_tasks.asset_task')} / ${t('generation_tasks.model_not_applicable')}`
+    : task.model || '-';
   const diagnostics = [
+    { label: t('usage.error_source'), value: sourceLabel },
     { label: t('generation_tasks.request_id'), value: task.request_id || '-' },
     { label: t('generation_tasks.user'), value: `${task.user_email || '-'} (#${task.user_id})` },
     { label: t('generation_tasks.group_id'), value: task.group_id ? `#${task.group_id}` : '-' },
@@ -234,7 +266,7 @@ function TaskErrorModal({ task, onClose }: { task: GenerationTaskResp | null; on
     { label: t('generation_tasks.account_id'), value: task.account_id ? `#${task.account_id}` : '-' },
     { label: t('generation_tasks.plugin'), value: task.plugin_id || '-' },
     { label: t('generation_tasks.task_type'), value: task.task_type || '-' },
-    { label: t('generation_tasks.model'), value: task.model || '-' },
+    { label: t('generation_tasks.model'), value: modelLabel },
     { label: t('generation_tasks.stage'), value: task.stage || '-' },
     { label: t('generation_tasks.upstream_status'), value: task.upstream_status || '-' },
     { label: t('generation_tasks.upstream_error_code'), value: task.upstream_error_code || '-' },
@@ -471,17 +503,17 @@ export default function GenerationTasksPage() {
             totalPages={totalPages}
           />
         )}
-        minWidth={1280}
+        minWidth={1500}
       >
         <CommonTable.Header>
           <CommonTable.Column id="created_at" style={{ width: 150 }}>{t('generation_tasks.created_at')}</CommonTable.Column>
           <CommonTable.Column id="id" style={{ width: 205 }}>{t('generation_tasks.task')}</CommonTable.Column>
-          <CommonTable.Column id="model" style={{ width: 190 }}>{t('generation_tasks.model_plugin')}</CommonTable.Column>
+          <CommonTable.Column id="model" style={{ width: 210 }}>{t('generation_tasks.model_plugin')}</CommonTable.Column>
           <CommonTable.Column id="user" style={{ width: 210 }}>{t('generation_tasks.user')}</CommonTable.Column>
           <CommonTable.Column id="status" style={{ width: 160 }}>{t('generation_tasks.status')}</CommonTable.Column>
           <CommonTable.Column id="timing" style={{ width: 125 }}>{t('generation_tasks.timing')}</CommonTable.Column>
           <CommonTable.Column id="attempts" style={{ width: 82 }}>{t('generation_tasks.attempts')}</CommonTable.Column>
-          <CommonTable.Column id="error">{t('generation_tasks.error')}</CommonTable.Column>
+          <CommonTable.Column id="error" style={{ width: 380 }}>{t('generation_tasks.error')}</CommonTable.Column>
         </CommonTable.Header>
         <CommonTable.Body>
           {listQuery.isLoading ? (
@@ -508,10 +540,22 @@ export default function GenerationTasksPage() {
                 </div>
               </CommonTable.Cell>
               <CommonTable.Cell>
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="truncate font-mono text-text" title={task.model || undefined}>{task.model || '-'}</span>
-                  <span className="truncate text-[11px] text-text-tertiary" title={task.plugin_id}>{task.plugin_id}</span>
-                </div>
+                {taskModelNotApplicable(task) ? (
+                  <div
+                    className="flex min-w-0 flex-col gap-0.5"
+                    title={`${t('generation_tasks.asset_task')} / ${t('generation_tasks.model_not_applicable')}`}
+                  >
+                    <span className="truncate font-medium text-text">{t('generation_tasks.asset_task')}</span>
+                    <span className="truncate text-[11px] text-text-tertiary">
+                      {t('generation_tasks.model_not_applicable')} · {task.plugin_id}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <span className="truncate font-mono text-text" title={task.model || undefined}>{task.model || '-'}</span>
+                    <span className="truncate text-[11px] text-text-tertiary" title={task.plugin_id}>{task.plugin_id}</span>
+                  </div>
+                )}
               </CommonTable.Cell>
               <CommonTable.Cell>
                 <div
