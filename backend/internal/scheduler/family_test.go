@@ -242,30 +242,6 @@ func TestFamilyCooldownZeroPTTLStillReturnsRetryAt(t *testing.T) {
 	}
 }
 
-func TestPoolTransientDegradeDurationUsesBoundedRetryAfter(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name       string
-		retryAfter time.Duration
-		want       time.Duration
-	}{
-		{name: "default", want: degradedDefault},
-		{name: "small upstream value", retryAfter: 100 * time.Millisecond, want: 100 * time.Millisecond},
-		{name: "explicit overload", retryAfter: 5 * time.Second, want: 5 * time.Second},
-		{name: "maximum", retryAfter: 20 * time.Minute, want: degradedMax},
-	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if got := poolTransientDegradeDuration(tt.retryAfter); got != tt.want {
-				t.Fatalf("poolTransientDegradeDuration(%s) = %s, want %s", tt.retryAfter, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestFamilyCooldownHalfOpenAllowsOneProbe(t *testing.T) {
 	t.Parallel()
 

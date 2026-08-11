@@ -298,11 +298,11 @@ func TestPoolTransientFamilyFailureSoftDegradesWithoutExhaustingRoute(t *testing
 		ExecX(ctx)
 	s.InvalidateRouteCache(grp.ID)
 
-	const upstreamRetryAfter = 17 * time.Second
+	const ignoredRetryAfter = 17 * time.Second
 	family := s.resolveModelFamily(itPlatform, itModel)
 	judgment := Judgment{
 		Kind:           sdk.OutcomeUpstreamTransient,
-		RetryAfter:     upstreamRetryAfter,
+		RetryAfter:     ignoredRetryAfter,
 		Reason:         "server_is_overloaded",
 		IsPool:         true,
 		Family:         family,
@@ -320,9 +320,9 @@ func TestPoolTransientFamilyFailureSoftDegradesWithoutExhaustingRoute(t *testing
 	if degraded.State != account.StateDegraded || degraded.StateUntil == nil {
 		t.Fatalf("pool state = %s until=%v, want degraded with state_until", degraded.State, degraded.StateUntil)
 	}
-	wantUntil := before.Add(upstreamRetryAfter)
+	wantUntil := before.Add(degradedDefault)
 	if degraded.StateUntil.Before(wantUntil.Add(-time.Second)) || degraded.StateUntil.After(wantUntil.Add(2*time.Second)) {
-		t.Fatalf("state_until = %v, want approximately %v from upstream Retry-After", degraded.StateUntil, wantUntil)
+		t.Fatalf("state_until = %v, want stable default near %v despite Retry-After %v", degraded.StateUntil, wantUntil, ignoredRetryAfter)
 	}
 	keys := []string{
 		familyCooldownKey(first.ID, family),

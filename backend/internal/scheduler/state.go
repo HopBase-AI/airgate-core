@@ -103,7 +103,7 @@ func (sm *StateMachine) notifyCritical() {
 //	AccountRateLimited  → state=rate_limited，state_until=now+RetryAfter
 //	AccountDead         → state=disabled（凭证失效，需人工介入）；
 //	                      池账号非 401 只留痕不动状态，连击达阈值后软降级（见 poolDeadStreakThreshold）
-//	UpstreamTransient   → 非池：**不动状态**（上游抖动不扣账号分，靠当前请求 failover）；池：state=degraded，窗口优先使用 RetryAfter
+//	UpstreamTransient   → 非池：**不动状态**（上游抖动不扣账号分，靠当前请求 failover）；池：state=degraded
 //	ClientError / StreamAborted / Unknown → 不改状态（账号无辜）
 func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 	switch j.Kind {
@@ -169,8 +169,8 @@ func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 		// 账号本身没问题——只在当前请求内 failover，不能把一次上游抖动放大为跨请求硬封。
 		// 但事件要留痕：异常监控靠它回答"是不是上游不稳定"。
 		//
-		// Pool 保留稳定版本的软降级：健康账号优先；若全池都降级，StickyOnly
-		// 仍保留最后的受控尝试。窗口跟随上游 RetryAfter，缺失时用本地兜底。
+		// Pool 保留稳定版本的固定窗口软降级：健康账号优先；若全池都降级，
+		// StickyOnly 仍保留最后的受控尝试。
 		if j.IsPool {
 			sm.applyDegraded(ctx, accountID, j)
 		} else {
@@ -190,17 +190,7 @@ func (sm *StateMachine) Apply(ctx context.Context, accountID int, j Judgment) {
 
 // applyDegraded 池账号软降级。state_until 到期后调度器看到就恢复 active。
 func (sm *StateMachine) applyDegraded(ctx context.Context, accountID int, j Judgment) {
-	sm.applyDegradedFor(ctx, accountID, j, poolTransientDegradeDuration(j.RetryAfter))
-}
-
-func poolTransientDegradeDuration(retryAfter time.Duration) time.Duration {
-	if retryAfter <= 0 {
-		return degradedDefault
-	}
-	if retryAfter > degradedMax {
-		return degradedMax
-	}
-	return retryAfter
+	sm.applyDegradedFor(ctx, accountID, j, degradedDefault)
 }
 
 // applyDegradedFor 以指定窗口软降级，窗口封顶 degradedMax。
