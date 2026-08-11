@@ -21,7 +21,7 @@ func (s *Scheduler) ManualRecover(ctx context.Context, accountID int) error {
 		SetErrorMsg("").
 		Exec(dbCtx)
 	if err == nil {
-		s.state.resetPoolDeadStreak(accountID)
+		s.state.resetPoolFailureStreak(accountID)
 		_ = s.reconcileModelRoutingForAccount(ctx, accountID)
 		s.routeCache.InvalidateAll()
 		s.state.recordEvent(accountID, 0, 0, accountevent.EventTypeManualRecovered, "", "", eventSourceManual, 0, nil)
@@ -58,7 +58,7 @@ func (s *Scheduler) MarkRateLimited(ctx context.Context, accountID int, until ti
 
 // ClearRateLimited 配额巡检发现已恢复时清限流态回到 active。
 func (s *Scheduler) ClearRateLimited(ctx context.Context, accountID int) {
-	s.state.resetPoolDeadStreak(accountID)
+	s.state.resetPoolFailureStreak(accountID)
 	s.state.transitionActive(ctx, accountID, eventSourceProbe)
 }
 
@@ -72,7 +72,7 @@ func (s *Scheduler) ClearRateLimitMarkers(ctx context.Context, accountID int) in
 		return cleared
 	}
 	if item.State == account.StateRateLimited || item.State == account.StateDegraded {
-		s.state.resetPoolDeadStreak(accountID)
+		s.state.resetPoolFailureStreak(accountID)
 		s.state.transitionActive(ctx, accountID, eventSourceManual)
 		cleared++
 	}

@@ -769,7 +769,7 @@ func TestSelectAccountPoolFallbackAfterProductionFailures(t *testing.T) {
 				Reason:         "INSUFFICIENT_BALANCE",
 				UpstreamStatus: 403,
 			},
-			repeat: poolDeadStreakThreshold,
+			repeat: poolFailureStreakThreshold,
 		},
 		{
 			name: "401 pool credential dead",
