@@ -21,6 +21,7 @@ func toAccountResp(account appaccount.Account) dto.AccountResp {
 		UpstreamIsPool:     account.UpstreamIsPool,
 		Extra:              account.Extra,
 		GroupIDs:           account.GroupIDs,
+		FamilyGates:        make([]dto.FamilyGateDTO, 0),
 		TimeMixin: dto.TimeMixin{
 			CreatedAt: account.CreatedAt,
 			UpdatedAt: account.UpdatedAt,

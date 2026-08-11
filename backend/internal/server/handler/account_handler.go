@@ -15,17 +15,17 @@ import (
 
 // AccountHandler 上游账号管理 Handler。
 //
-// scheduler 用来读家族级限流冷却（Redis 侧的瞬态状态，不在 DB 里），
-// 后台账号列表/详情会带上 family_cooldowns 字段。允许 nil 退化为不展示冷却信息。
+// scheduler / concurrency 用来读 Redis 侧动态调度状态。后台列表会带上展示用
+// family_cooldowns 和生产审计用 runtime_telemetry；依赖缺失时审计状态显式 unavailable。
 type AccountHandler struct {
-	service   *appaccount.Service
-	scheduler *scheduler.Scheduler
+	service     *appaccount.Service
+	scheduler   *scheduler.Scheduler
+	concurrency *scheduler.ConcurrencyManager
 }
 
-// NewAccountHandler 创建 AccountHandler。sched 可为 nil（旧测试入口），
-// 此时 family_cooldowns 字段会缺省为空。
-func NewAccountHandler(service *appaccount.Service, sched *scheduler.Scheduler) *AccountHandler {
-	return &AccountHandler{service: service, scheduler: sched}
+// NewAccountHandler 创建 AccountHandler。动态依赖可为 nil；对应遥测会显式标为 unavailable。
+func NewAccountHandler(service *appaccount.Service, sched *scheduler.Scheduler, concurrency *scheduler.ConcurrencyManager) *AccountHandler {
+	return &AccountHandler{service: service, scheduler: sched, concurrency: concurrency}
 }
 
 // familyCooldownsFor 拉取指定账号在 Redis 上仍生效的家族冷却，转成 DTO。
@@ -47,6 +47,52 @@ func (h *AccountHandler) familyCooldownsFor(ctx context.Context, accountID int) 
 		})
 	}
 	return out
+}
+
+func runtimeTime(value *time.Time) *string {
+	if value == nil {
+		return nil
+	}
+	formatted := value.UTC().Format(time.RFC3339Nano)
+	return &formatted
+}
+
+// attachRuntimeTelemetry 叠加生产审计所需的权威 Redis 快照。
+// 管理列表本身继续返回；任一动态读取失败时用 unavailable 明确阻止审计误判。
+func (h *AccountHandler) attachRuntimeTelemetry(ctx context.Context, accountID int, resp *dto.AccountResp) {
+	telemetry := &dto.RuntimeTelemetryDTO{
+		ConcurrencyStatus: "unavailable",
+		FamilyGatesStatus: "unavailable",
+	}
+	resp.RuntimeTelemetry = telemetry
+	resp.FamilyGates = make([]dto.FamilyGateDTO, 0)
+
+	if h.concurrency != nil {
+		if count, err := h.concurrency.GetCurrentCountAuthoritative(ctx, accountID); err == nil {
+			resp.CurrentConcurrency = count
+			telemetry.ConcurrencyStatus = "ok"
+		}
+	}
+
+	if h.scheduler == nil {
+		return
+	}
+	gates, err := h.scheduler.ListFamilyGatesAuthoritative(ctx, accountID)
+	if err != nil {
+		return
+	}
+	telemetry.FamilyGatesStatus = "ok"
+	for _, gate := range gates {
+		resp.FamilyGates = append(resp.FamilyGates, dto.FamilyGateDTO{
+			Family:        gate.Family,
+			Phase:         gate.Phase,
+			Kind:          gate.Kind,
+			Reason:        gate.Reason,
+			Until:         runtimeTime(gate.Until),
+			ProbeInFlight: gate.ProbeInFlight,
+			ProbeUntil:    runtimeTime(gate.ProbeUntil),
+		})
+	}
 }
 
 // parseAccountID 解析账号 ID，委托给公共 ParseID。

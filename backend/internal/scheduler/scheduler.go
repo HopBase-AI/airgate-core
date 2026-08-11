@@ -268,6 +268,15 @@ func (s *Scheduler) ListFamilyCooldowns(ctx context.Context, accountID int) []Fa
 	return s.familyCooldown.List(ctx, accountID)
 }
 
+// ListFamilyGatesAuthoritative 返回 cooldown、half-open 与 probe 的完整只读快照。
+// Redis 不可用时返回 error，供生产审计明确标记遥测不可用。
+func (s *Scheduler) ListFamilyGatesAuthoritative(ctx context.Context, accountID int) ([]FamilyGateEntry, error) {
+	if s == nil || s.familyCooldown == nil {
+		return nil, ErrRuntimeTelemetryUnavailable
+	}
+	return s.familyCooldown.ListGatesAuthoritative(ctx, accountID)
+}
+
 // ClearFamilyCooldowns 清除指定账号当前所有家族级限流冷却。
 func (s *Scheduler) ClearFamilyCooldowns(ctx context.Context, accountID int) int {
 	if s.familyCooldown == nil {

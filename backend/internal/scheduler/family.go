@@ -2,8 +2,10 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -607,6 +609,134 @@ type FamilyCooldownEntry struct {
 	Family string
 	Until  time.Time
 	Reason string
+}
+
+// FamilyGateEntry 是 family circuit 的完整只读运行时快照。
+// Phase 包含 active cooldown、half-open 和异常孤儿 probe；ProbeInFlight
+// 表示 half-open lease 当前已有请求持有。
+type FamilyGateEntry struct {
+	Family        string
+	Phase         string
+	Kind          string
+	Reason        string
+	Until         *time.Time
+	ProbeInFlight bool
+	ProbeUntil    *time.Time
+}
+
+const (
+	familyGateCooldown    = "cooldown"
+	familyGateHalfOpen    = "half_open"
+	familyGateOrphanProbe = "orphan_probe"
+)
+
+func activeTelemetryTTL(ttl time.Duration) bool {
+	return ttl >= 0 || ttl == -1
+}
+
+func telemetryDeadline(now time.Time, ttl time.Duration) *time.Time {
+	if ttl < 0 {
+		return nil
+	}
+	deadline := now.Add(ttl)
+	return &deadline
+}
+
+// ListGatesAuthoritative 列出账号下 cooldown、recovery 和 probe 三类 Redis 状态。
+// 与后台展示用 List 不同，任何 Redis 缺失或读取错误都会返回 error，供生产审计 fail closed。
+func (fc *FamilyCooldown) ListGatesAuthoritative(ctx context.Context, accountID int) ([]FamilyGateEntry, error) {
+	if fc == nil || fc.rdb == nil {
+		return nil, ErrRuntimeTelemetryUnavailable
+	}
+
+	prefixes := []string{
+		familyCooldownKey(accountID, ""),
+		familyRecoveryKey(accountID, ""),
+		familyProbeKey(accountID, ""),
+	}
+	familySet := make(map[string]struct{})
+	for _, prefix := range prefixes {
+		var cursor uint64
+		for {
+			keys, next, err := fc.rdb.Scan(ctx, cursor, prefix+"*", 32).Result()
+			if err != nil {
+				return nil, fmt.Errorf("%w: scan family gates: %v", ErrRuntimeTelemetryUnavailable, err)
+			}
+			for _, key := range keys {
+				familySet[strings.TrimPrefix(key, prefix)] = struct{}{}
+			}
+			if next == 0 {
+				break
+			}
+			cursor = next
+		}
+	}
+
+	families := make([]string, 0, len(familySet))
+	for family := range familySet {
+		families = append(families, family)
+	}
+	sort.Strings(families)
+
+	entries := make([]FamilyGateEntry, 0, len(families))
+	for _, family := range families {
+		pipe := fc.rdb.Pipeline()
+		cooldownValueCmd := pipe.Get(ctx, familyCooldownKey(accountID, family))
+		cooldownTTLCmd := pipe.PTTL(ctx, familyCooldownKey(accountID, family))
+		recoveryValueCmd := pipe.Get(ctx, familyRecoveryKey(accountID, family))
+		probeTTLCmd := pipe.PTTL(ctx, familyProbeKey(accountID, family))
+		if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
+			return nil, fmt.Errorf("%w: read family gates: %v", ErrRuntimeTelemetryUnavailable, err)
+		}
+
+		cooldownValue, cooldownErr := cooldownValueCmd.Result()
+		if cooldownErr != nil && !errors.Is(cooldownErr, redis.Nil) {
+			return nil, fmt.Errorf("%w: read family cooldown: %v", ErrRuntimeTelemetryUnavailable, cooldownErr)
+		}
+		cooldownTTL, err := cooldownTTLCmd.Result()
+		if err != nil {
+			return nil, fmt.Errorf("%w: read family cooldown TTL: %v", ErrRuntimeTelemetryUnavailable, err)
+		}
+		recoveryValue, recoveryErr := recoveryValueCmd.Result()
+		if recoveryErr != nil && !errors.Is(recoveryErr, redis.Nil) {
+			return nil, fmt.Errorf("%w: read family recovery: %v", ErrRuntimeTelemetryUnavailable, recoveryErr)
+		}
+		probeTTL, err := probeTTLCmd.Result()
+		if err != nil {
+			return nil, fmt.Errorf("%w: read family probe TTL: %v", ErrRuntimeTelemetryUnavailable, err)
+		}
+
+		cooldownActive := cooldownErr == nil && activeTelemetryTTL(cooldownTTL)
+		recoveryActive := recoveryErr == nil
+		probeActive := activeTelemetryTTL(probeTTL)
+		if !cooldownActive && !recoveryActive && !probeActive {
+			continue
+		}
+
+		now := time.Now()
+		entry := FamilyGateEntry{
+			Family:        family,
+			ProbeInFlight: probeActive,
+			ProbeUntil:    telemetryDeadline(now, probeTTL),
+		}
+		switch {
+		case cooldownActive:
+			kind, reason := decodeFamilyCircuitValue(cooldownValue)
+			entry.Phase = familyGateCooldown
+			entry.Kind = string(kind)
+			entry.Reason = reason
+			entry.Until = telemetryDeadline(now, cooldownTTL)
+		case recoveryActive:
+			kind, reason := decodeFamilyCircuitValue(recoveryValue)
+			entry.Phase = familyGateHalfOpen
+			entry.Kind = string(kind)
+			entry.Reason = reason
+		default:
+			entry.Phase = familyGateOrphanProbe
+		}
+		entries = append(entries, entry)
+	}
+	return entries, nil
 }
 
 // List 列出指定账号当前所有家族冷却。供后台账号管理页展示用。

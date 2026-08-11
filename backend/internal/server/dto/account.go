@@ -10,35 +10,56 @@ type FamilyCooldownDTO struct {
 	Reason string `json:"reason,omitempty"`
 }
 
+// FamilyGateDTO 描述 family circuit 的完整运行时阶段。
+type FamilyGateDTO struct {
+	Family        string  `json:"family"`
+	Phase         string  `json:"phase"`
+	Kind          string  `json:"kind,omitempty"`
+	Reason        string  `json:"reason,omitempty"`
+	Until         *string `json:"until,omitempty"`
+	ProbeInFlight bool    `json:"probe_in_flight"`
+	ProbeUntil    *string `json:"probe_until,omitempty"`
+}
+
+// RuntimeTelemetryDTO 标明动态 Redis 数据是否可被生产审计信任。
+type RuntimeTelemetryDTO struct {
+	ConcurrencyStatus string `json:"concurrency_status"`
+	FamilyGatesStatus string `json:"family_gates_status"`
+}
+
 // AccountResp 账号响应。
 //
 // state 枚举：active / rate_limited / degraded / disabled
 // state_until 仅 rate_limited / degraded 有值（到期自动恢复 active）
 // family_cooldowns 当前在 Redis 上仍生效的家族级冷却列表（gpt-image 撞 4000/min 等），
 // state=active 也可能非空。
+// family_gates / runtime_telemetry 是管理员列表上的权威审计快照；后者明确标记 Redis
+// 动态数据是否完整可读，避免把遥测故障误判为零并发、零 gate。
 // today_image_count / total_image_count 仅 OpenAI 平台账号在列表接口下填充；
 // 用户期望"账号管理页一眼看到今天/累计生了几张图"。
 type AccountResp struct {
-	ID                 int64               `json:"id"`
-	Name               string              `json:"name"`
-	Platform           string              `json:"platform"`
-	Type               string              `json:"type"`
-	Credentials        map[string]string   `json:"credentials"`
-	State              string              `json:"state"`
-	StateUntil         *string             `json:"state_until,omitempty"`
-	Priority           int                 `json:"priority"`
-	MaxConcurrency     int                 `json:"max_concurrency"`
-	CurrentConcurrency int                 `json:"current_concurrency"`
-	ProxyID            *int64              `json:"proxy_id,omitempty"`
-	RateMultiplier     float64             `json:"rate_multiplier"`
-	ErrorMsg           string              `json:"error_msg,omitempty"`
-	UpstreamIsPool     bool                `json:"upstream_is_pool"`
-	Extra              map[string]any      `json:"extra,omitempty"`
-	LastUsedAt         *string             `json:"last_used_at,omitempty"`
-	GroupIDs           []int64             `json:"group_ids"`
-	FamilyCooldowns    []FamilyCooldownDTO `json:"family_cooldowns,omitempty"`
-	TodayImageCount    *int64              `json:"today_image_count,omitempty"`
-	TotalImageCount    *int64              `json:"total_image_count,omitempty"`
+	ID                 int64                `json:"id"`
+	Name               string               `json:"name"`
+	Platform           string               `json:"platform"`
+	Type               string               `json:"type"`
+	Credentials        map[string]string    `json:"credentials"`
+	State              string               `json:"state"`
+	StateUntil         *string              `json:"state_until,omitempty"`
+	Priority           int                  `json:"priority"`
+	MaxConcurrency     int                  `json:"max_concurrency"`
+	CurrentConcurrency int                  `json:"current_concurrency"`
+	ProxyID            *int64               `json:"proxy_id,omitempty"`
+	RateMultiplier     float64              `json:"rate_multiplier"`
+	ErrorMsg           string               `json:"error_msg,omitempty"`
+	UpstreamIsPool     bool                 `json:"upstream_is_pool"`
+	Extra              map[string]any       `json:"extra,omitempty"`
+	LastUsedAt         *string              `json:"last_used_at,omitempty"`
+	GroupIDs           []int64              `json:"group_ids"`
+	FamilyCooldowns    []FamilyCooldownDTO  `json:"family_cooldowns,omitempty"`
+	FamilyGates        []FamilyGateDTO      `json:"family_gates"`
+	RuntimeTelemetry   *RuntimeTelemetryDTO `json:"runtime_telemetry,omitempty"`
+	TodayImageCount    *int64               `json:"today_image_count,omitempty"`
+	TotalImageCount    *int64               `json:"total_image_count,omitempty"`
 	TimeMixin
 }
 

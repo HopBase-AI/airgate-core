@@ -11,6 +11,7 @@ import (
 )
 
 var ErrConcurrencyLimit = errors.New("并发槽位已满")
+var ErrRuntimeTelemetryUnavailable = errors.New("运行时调度遥测不可用")
 
 const (
 	// defaultSlotTTL 单个请求槽位的默认过期时间，防止异常未释放
@@ -167,16 +168,23 @@ func (cm *ConcurrencyManager) ReleaseUserSlot(ctx context.Context, userID int, r
 // 用 ZCount 只统计"未过期的 slot"（score >= now - defaultSlotTTL），
 // 展示层不把僵尸 slot 算进去，即使 acquire 还没来得及清理它们。
 func (cm *ConcurrencyManager) GetCurrentCount(ctx context.Context, accountID int) int {
-	if cm.rdb == nil {
-		return 0
+	count, _ := cm.GetCurrentCountAuthoritative(ctx, accountID)
+	return count
+}
+
+// GetCurrentCountAuthoritative 返回账号当前并发数，并显式报告 Redis 是否可读。
+// 调度主链路仍可 fail-open；生产审计必须用这个接口 fail closed，不能把读取失败误报成 0。
+func (cm *ConcurrencyManager) GetCurrentCountAuthoritative(ctx context.Context, accountID int) (int, error) {
+	if cm == nil || cm.rdb == nil {
+		return 0, ErrRuntimeTelemetryUnavailable
 	}
 	cutoff := time.Now().Add(-defaultSlotTTL).Unix()
 	min := "(" + strconv.FormatInt(cutoff, 10) // 开区间：严格大于 cutoff
 	n, err := cm.rdb.ZCount(ctx, concurrencyKey(accountID), min, "+inf").Result()
 	if err != nil {
-		return 0
+		return 0, fmt.Errorf("%w: read account concurrency: %v", ErrRuntimeTelemetryUnavailable, err)
 	}
-	return int(n)
+	return int(n), nil
 }
 
 // GetCurrentCounts 批量获取多个账户的当前并发数

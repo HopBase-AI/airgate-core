@@ -49,6 +49,7 @@ func (h *AccountHandler) ListAccounts(c *gin.Context) {
 		// 家族冷却落 Redis、不在 DB，handler 层叠加：N 次 Redis SCAN（每账号 0~3 个 key），
 		// page_size=20 默认下额外 RTT 可忽略；scheduler 不可用时直接为空，不影响主响应。
 		resp.FamilyCooldowns = h.familyCooldownsFor(c.Request.Context(), item.ID)
+		h.attachRuntimeTelemetry(c.Request.Context(), item.ID, &resp)
 		list = append(list, resp)
 	}
 
