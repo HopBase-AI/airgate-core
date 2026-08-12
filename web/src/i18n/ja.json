@@ -998,7 +998,7 @@
     "result_failed": "失敗",
     "failed_requests": "失敗リクエスト",
     "error_detail": "エラー詳細",
-    "error_diagnostics": "エラー診断",
+    "error_diagnostics": "エラー",
     "error_source": "エラー発生元",
     "error_source_upstream": "上流エラー",
     "error_source_scheduler": "ローカル振り分け",

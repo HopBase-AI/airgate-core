@@ -998,7 +998,7 @@
     "result_failed": "Failed",
     "failed_requests": "Failed requests",
     "error_detail": "Failure details",
-    "error_diagnostics": "Error diagnostics",
+    "error_diagnostics": "Error",
     "error_source": "Error source",
     "error_source_upstream": "Upstream error",
     "error_source_scheduler": "Local scheduling",
