@@ -34,12 +34,10 @@
   min-height: 0;
 }
 
-.ag-usage-table td.ag-usage-col-error_diagnostics,
 .ag-usage-table td.ag-usage-col-model {
   text-align: left !important;
 }
 
-.ag-usage-table td.ag-usage-col-error_diagnostics > *,
 .ag-usage-table td.ag-usage-col-model > * {
   justify-content: flex-start !important;
   text-align: left !important;

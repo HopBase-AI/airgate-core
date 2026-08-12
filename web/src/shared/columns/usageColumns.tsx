@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useMemo, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { Tooltip } from '@heroui/react';
-import { ArrowDown, ArrowUp, BookOpen, Sparkles } from 'lucide-react';
+import { ArrowDown, ArrowUp, BookOpen, CircleAlert, Sparkles } from 'lucide-react';
 import {
   getPluginUsageCostDetail,
   getPluginUsageMetricDetail,
@@ -245,6 +245,22 @@ function ErrorDetail({ adminView, row, t }: { adminView: boolean; row: UsageRow;
         </>
       ) : null}
     </TooltipPanel>
+  );
+}
+
+/** 紧凑错误指示：仅失败行渲染图标，悬停展开完整失败详情面板。 */
+export function UsageErrorIndicator({ adminView, row }: { adminView: boolean; row: UsageRow }) {
+  const { t } = useTranslation();
+  if (!isFailedUsageRow(row)) {
+    return <span className="text-text-tertiary">-</span>;
+  }
+  const meta = ERROR_CODE_META[row.error_code ?? ''];
+  const color = errorToneColor(meta?.tone ?? 'danger');
+
+  return (
+    <RichTooltip placement="right" content={() => <ErrorDetail adminView={adminView} row={row} t={t} />}>
+      <CircleAlert aria-label={t('usage.error_detail', '失败详情')} className="h-4 w-4 shrink-0" style={{ color }} />
+    </RichTooltip>
   );
 }
 

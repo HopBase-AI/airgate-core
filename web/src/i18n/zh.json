@@ -998,7 +998,7 @@
     "result_failed": "失败",
     "failed_requests": "失败请求",
     "error_detail": "失败详情",
-    "error_diagnostics": "错误诊断",
+    "error_diagnostics": "错误",
     "error_source": "错误来源",
     "error_source_upstream": "上游错误",
     "error_source_scheduler": "本地调度",
