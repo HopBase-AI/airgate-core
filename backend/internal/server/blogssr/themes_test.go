@@ -311,6 +311,8 @@ func TestSSR_HopBaseHostUsesLandingAlignedTheme(t *testing.T) {
 	for i := range posts {
 		posts[i].Lang = "en"
 	}
+	// 第二篇设真实封面:走 hb-cover-real 图片分支;第一篇留空走生成封面兜底。
+	posts[1].CoverImage = "/assets/blog/second-post.jpg"
 	r := newThemedRouter("ember", chrome, posts)
 
 	w := doGetHost(t, r, "hop-base.com", "/blog?lang=en")
@@ -322,37 +324,36 @@ func TestSSR_HopBaseHostUsesLandingAlignedTheme(t *testing.T) {
 		`class="hb-announcement"`,
 		"All three GPT-5.6 variants are now available",
 		`class="hb-header"`,
-		`class="hb-intro"`,
+		`<h1 class="hb-sr-only">`,
 		`class="hb-grid"`,
 		`class="hb-card"`,
 		`class="hb-cover-path"`,
 		`class="hb-cover-glyph"`,
 		"hopbase / feature-post.md",
 		"$ hopbase init",
-		"hopbase / second-post.md",
-		"$ hopbase blog --read",
+		`class="hb-card-cover hb-cover-real"`,
+		`<img src="https://hop-base.com/assets/blog/second-post.jpg" alt="" loading="lazy" decoding="async">`,
 		`class="hb-footer"`,
 		`--hb-canvas:#f2f2f0`,
 		`/assets/fonts/ibm-plex-sans-latin.woff2`,
 		`href="/#enterprise">Enterprise</a>`,
-		`href="/#pricing">Pricing</a>`,
-		`href="/docs">Docs</a>`,
+		`href="/pricing">Pricing</a>`,
+		`href="/en/docs">Docs</a>`,
 		`href="/blog?lang=en" class="act" aria-current="page">Blog</a>`,
-		`href="/#faq">FAQ</a>`,
+		`href="/models">Model catalog</a>`,
 		`role="menuitemradio"`,
 		`landingLang=blogLang==='zh-Hant'?'zh-HK':blogLang`,
 		`syncHeader(){header.classList.toggle('scrolled',window.scrollY>16);}`,
 		`.hb-header{position:fixed`,
 		`.hb-control,.hb-login,.hb-user,.hb-menu-button{box-sizing:border-box;height:32px`,
-		`.hb-intro .hb-frame{min-height:220px`,
-		`.hb-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))`,
-		`.hb-card-cover{position:relative;display:block;aspect-ratio:16/7.2`,
-		`.hb-grid{grid-template-columns:1fr}`,
+		`.hb-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:32px 36px}`,
+		`.hb-card-cover{position:relative;display:block;aspect-ratio:16/9`,
+		`.hb-grid{grid-template-columns:1fr;gap:24px}`,
 		`.hb-cover-bar{position:absolute`,
 		`<link rel="canonical" href="https://hop-base.com/blog?lang=en">`,
 		`hreflang="zh-Hant" href="https://hop-base.com/blog"`,
 		`hreflang="x-default" href="https://hop-base.com/blog"`,
-		`property="og:image" content="https://hop-base.com/assets/hopbase-og.png"`,
+		`property="og:image" content="https://hop-base.com/assets/blog/second-post.jpg"`,
 		`name="twitter:card" content="summary_large_image"`,
 		`"@type":"Blog"`,
 		`"@type":"ItemList"`,
@@ -362,7 +363,7 @@ func TestSSR_HopBaseHostUsesLandingAlignedTheme(t *testing.T) {
 			t.Errorf("hopbase list missing %q", want)
 		}
 	}
-	for _, rejected := range []string{"OPEN LATE JOURNAL", ">旧生态</a>", `class="sk-journal"`, `class="sk-dispatch-list"`} {
+	for _, rejected := range []string{"OPEN LATE JOURNAL", ">旧生态</a>", `class="sk-journal"`, `class="sk-dispatch-list"`, `class="hb-intro"`, `>FAQ</a>`, `href="/#faq"`} {
 		if strings.Contains(body, rejected) {
 			t.Errorf("hopbase list retained legacy treatment %q", rejected)
 		}
