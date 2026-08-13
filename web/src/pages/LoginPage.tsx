@@ -47,6 +47,123 @@ function GitHubIcon() {
   );
 }
 
+/* ==================== 左侧动态背景 ==================== */
+
+// 登录页左侧装饰面板的动态背景：柔光极光缓慢漂移 + 粒子节点连线（网关/网络意象）。
+// 纯 canvas 自绘、无外部素材；prefers-reduced-motion 时只绘静态首帧。
+function LoginAmbientCanvas() {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let width = 0;
+    let height = 0;
+    let raf = 0;
+
+    type AmbientNode = { x: number; y: number; vx: number; vy: number; r: number };
+    let nodes: AmbientNode[] = [];
+    const LINK_DIST = 130;
+
+    const seedNodes = () => {
+      // 节点密度随面板面积走，钳在 28–56 之间避免小屏过密/大屏过疏
+      const count = Math.round(Math.min(56, Math.max(28, (width * height) / 26000)));
+      nodes = Array.from({ length: count }, () => ({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        vx: (Math.random() - 0.5) * 0.16,
+        vy: (Math.random() - 0.5) * 0.16,
+        r: 0.8 + Math.random() * 1.4,
+      }));
+    };
+
+    const drawFrame = (t: number) => {
+      ctx.clearRect(0, 0, width, height);
+      // 三团大半径柔光沿各自轨道缓慢漂移，叠出"极光"层
+      const base = Math.max(width, height);
+      const blobs = [
+        { cx: width * 0.28 + Math.cos(t * 0.00012) * width * 0.1, cy: height * 0.3 + Math.sin(t * 0.00009) * height * 0.1, r: base * 0.42, a: 0.075 },
+        { cx: width * 0.72 + Math.cos(t * 0.00008 + 2) * width * 0.12, cy: height * 0.72 + Math.sin(t * 0.00011 + 1) * height * 0.1, r: base * 0.38, a: 0.05 },
+        { cx: width * 0.55 + Math.cos(t * 0.0001 + 4) * width * 0.14, cy: height * 0.16 + Math.sin(t * 0.00013 + 3) * height * 0.08, r: base * 0.3, a: 0.045 },
+      ];
+      for (const b of blobs) {
+        const g = ctx.createRadialGradient(b.cx, b.cy, 0, b.cx, b.cy, b.r);
+        g.addColorStop(0, `rgba(255,255,255,${b.a})`);
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, width, height);
+      }
+      // 粒子连线
+      for (let i = 0; i < nodes.length; i++) {
+        const a = nodes[i];
+        if (!a) continue;
+        for (let j = i + 1; j < nodes.length; j++) {
+          const b = nodes[j];
+          if (!b) continue;
+          const dist = Math.hypot(a.x - b.x, a.y - b.y);
+          if (dist < LINK_DIST) {
+            ctx.strokeStyle = `rgba(255,255,255,${((1 - dist / LINK_DIST) * 0.14).toFixed(3)})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+          }
+        }
+      }
+      for (const n of nodes) {
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    };
+
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect();
+      width = rect.width;
+      height = rect.height;
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      seedNodes();
+      if (reducedMotion) drawFrame(0);
+    };
+
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(canvas);
+
+    if (!reducedMotion) {
+      const loop = (t: number) => {
+        for (const n of nodes) {
+          n.x += n.vx;
+          n.y += n.vy;
+          if (n.x < -8) n.x = width + 8;
+          else if (n.x > width + 8) n.x = -8;
+          if (n.y < -8) n.y = height + 8;
+          else if (n.y > height + 8) n.y = -8;
+        }
+        drawFrame(t);
+        raf = requestAnimationFrame(loop);
+      };
+      raf = requestAnimationFrame(loop);
+    }
+
+    return () => {
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full" />;
+}
+
 // OAuth 登录按钮区：受协议勾选约束，未勾选时提示与表单一致的错误
 function OAuthButtons({
   acceptedAgreement,
@@ -772,6 +889,8 @@ export default function LoginPage() {
           color: 'oklch(96% 0.004 250)',
         }}
       >
+        {/* 动态背景：极光柔光漂移 + 粒子节点连线 */}
+        <LoginAmbientCanvas />
         {/* 细网格纹理：填补大面积纯色的空洞感 */}
         <div
           className="pointer-events-none absolute inset-0"
