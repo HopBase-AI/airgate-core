@@ -769,6 +769,50 @@ type listItem struct {
 	Tag          string // 首个非空标签(皮肤列表的分类胶囊)
 	ReadingTime  string // 预估阅读时长
 	CoverClass   string // 无封面时的渐变兜底样式类(cv1..cv6 轮转)
+	CoverPath    string // hopbase 皮肤:终端封面路径行(hopbase / <slug>.<ext>)
+	CoverLine1   string // hopbase 皮肤:终端封面命令行首行(按分类模板生成)
+	CoverLine2   string // hopbase 皮肤:终端封面命令行次行
+}
+
+// hopBaseCoverKind 把首个标签归一为终端封面的内容模板键;三语同义标签视为同类,
+// 未知标签返回空串走默认模板。
+func hopBaseCoverKind(tag string) string {
+	switch strings.ToLower(strings.TrimSpace(tag)) {
+	case "教程", "教學", "tutorial", "guide":
+		return "tutorial"
+	case "评测", "評測", "benchmark", "comparison":
+		return "bench"
+	case "实践", "實踐", "practice":
+		return "practice"
+	case "产品", "產品", "product":
+		return "product"
+	default:
+		return ""
+	}
+}
+
+// hopBaseCoverArt 按分类生成 hopbase 皮肤列表终端封面的路径行与两行命令行。
+// 列表统一使用生成封面(不读文章配图),保证台账观感一致;内容纯装饰、
+// 保持终端英文语感,不携带任何具体数字或产品口径。
+func hopBaseCoverArt(slug, tag string) (path, line1, line2 string) {
+	kind := hopBaseCoverKind(tag)
+	ext := ".md"
+	if kind == "bench" || kind == "practice" {
+		ext = ".log"
+	}
+	path = "hopbase / " + strings.TrimSpace(slug) + ext
+	switch kind {
+	case "tutorial":
+		return path, "$ hopbase init", "> connected via api.hop-base.com ✓"
+	case "bench":
+		return path, "model_a  ▇▇▇▇▇▇▇░░", "model_b  ▇▇▇▇▇▇▇▇░"
+	case "practice":
+		return path, "hit_rate  ▇▇▇▇▇▇▇▇░", "spend     ▇▇▇░░░░░░"
+	case "product":
+		return path, "> upload file  [ok]", "> parsing... done ✓"
+	default:
+		return path, "$ hopbase blog --read", "> 200 OK ✓"
+	}
 }
 
 // ListView 列表页视图。
@@ -1044,6 +1088,7 @@ func buildListView(b Branding, posts []appblog.Post, reqInvite, lang string) Lis
 		if postLang := canonicalLang(p.Lang); postLang != "" {
 			postLanguage = htmlLanguage(postLang)
 		}
+		coverPath, coverLine1, coverLine2 := hopBaseCoverArt(p.Slug, tag)
 		items = append(items, listItem{
 			Title:        p.Title,
 			Slug:         p.Slug,
@@ -1058,6 +1103,9 @@ func buildListView(b Branding, posts []appblog.Post, reqInvite, lang string) Lis
 			Tag:          tag,
 			ReadingTime:  readingTimeLabel(p.ContentHTML, canonicalLang(p.Lang)),
 			CoverClass:   coverFallbackClasses[i%len(coverFallbackClasses)],
+			CoverPath:    coverPath,
+			CoverLine1:   coverLine1,
+			CoverLine2:   coverLine2,
 		})
 	}
 

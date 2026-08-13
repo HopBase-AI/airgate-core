@@ -323,8 +323,14 @@ func TestSSR_HopBaseHostUsesLandingAlignedTheme(t *testing.T) {
 		"All three GPT-5.6 variants are now available",
 		`class="hb-header"`,
 		`class="hb-intro"`,
-		`class="hb-featured"`,
-		`class="hb-rows"`,
+		`class="hb-grid"`,
+		`class="hb-card"`,
+		`class="hb-cover-path"`,
+		`class="hb-cover-glyph"`,
+		"hopbase / feature-post.md",
+		"$ hopbase init",
+		"hopbase / second-post.md",
+		"$ hopbase blog --read",
 		`class="hb-footer"`,
 		`--hb-canvas:#f2f2f0`,
 		`/assets/fonts/ibm-plex-sans-latin.woff2`,
@@ -339,10 +345,10 @@ func TestSSR_HopBaseHostUsesLandingAlignedTheme(t *testing.T) {
 		`.hb-header{position:fixed`,
 		`.hb-control,.hb-login,.hb-user,.hb-menu-button{box-sizing:border-box;height:32px`,
 		`.hb-intro .hb-frame{min-height:220px`,
-		`.hb-featured{min-height:280px`,
-		`.hb-row{min-height:112px;display:grid;grid-template-columns:112px minmax(0,1fr) 156px`,
-		`.hb-featured-copy{grid-row:2`,
-		`aspect-ratio:16/9;grid-column:1;grid-row:3`,
+		`.hb-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))`,
+		`.hb-card-cover{position:relative;display:block;aspect-ratio:16/7.2`,
+		`.hb-grid{grid-template-columns:1fr}`,
+		`.hb-cover-bar{position:absolute`,
 		`<link rel="canonical" href="https://hop-base.com/blog?lang=en">`,
 		`hreflang="zh-Hant" href="https://hop-base.com/blog"`,
 		`hreflang="x-default" href="https://hop-base.com/blog"`,
@@ -361,10 +367,13 @@ func TestSSR_HopBaseHostUsesLandingAlignedTheme(t *testing.T) {
 			t.Errorf("hopbase list retained legacy treatment %q", rejected)
 		}
 	}
-	copyPosition := strings.Index(body, `<span class="hb-featured-copy">`)
-	mediaPosition := strings.Index(body, `<span class="hb-terminal-cover">`)
-	if copyPosition < 0 || mediaPosition < 0 || copyPosition > mediaPosition {
-		t.Fatalf("featured mobile semantic order must be metadata, copy, media: copy=%d media=%d", copyPosition, mediaPosition)
+	coverPosition := strings.Index(body, `<span class="hb-card-cover"`)
+	bodyPosition := strings.Index(body, `<span class="hb-card-body">`)
+	if coverPosition < 0 || bodyPosition < 0 || coverPosition > bodyPosition {
+		t.Fatalf("card semantic order must be cover, body: cover=%d body=%d", coverPosition, bodyPosition)
+	}
+	if strings.Contains(body, `class="hb-featured"`) || strings.Contains(body, `class="hb-row"`) {
+		t.Error("uniform card list must not retain legacy featured/row treatment")
 	}
 	if strings.Contains(body, `.hb-nav a:hover,.hb-nav a.act{color:var(--hb-ink);border`) {
 		t.Error("active Blog navigation must not add an underline")
