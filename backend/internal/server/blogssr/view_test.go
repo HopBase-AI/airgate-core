@@ -593,3 +593,34 @@ func TestFindTranslatedPost_AmbiguousPublishedTimeFallsBack(t *testing.T) {
 		t.Fatalf("site-scoped translation = %+v, %v, want topic-a", got, ok)
 	}
 }
+
+func TestHopBaseCoverArt(t *testing.T) {
+	cases := []struct {
+		name  string
+		slug  string
+		tag   string
+		path  string
+		line1 string
+	}{
+		{"教程走 tutorial 模板", "claude-code-cn-quickstart", "教程", "hopbase / claude-code-cn-quickstart.md", "$ hopbase init"},
+		{"繁体評測走 bench 模板", "gpt-vs-sonnet", "評測", "hopbase / gpt-vs-sonnet.log", "model_a  ▇▇▇▇▇▇▇░░"},
+		{"实践走 practice 模板", "prompt-cache", "实践", "hopbase / prompt-cache.log", "hit_rate  ▇▇▇▇▇▇▇▇░"},
+		{"英文 Product 走 product 模板", "attachments", "Product", "hopbase / attachments.md", "> upload file  [ok]"},
+		{"未知标签走默认模板", "misc-post", "杂谈", "hopbase / misc-post.md", "$ hopbase blog --read"},
+		{"空标签走默认模板", "no-tag", "", "hopbase / no-tag.md", "$ hopbase blog --read"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path, line1, line2 := hopBaseCoverArt(tc.slug, tc.tag)
+			if path != tc.path {
+				t.Errorf("path = %q, want %q", path, tc.path)
+			}
+			if line1 != tc.line1 {
+				t.Errorf("line1 = %q, want %q", line1, tc.line1)
+			}
+			if line2 == "" {
+				t.Error("line2 must not be empty")
+			}
+		})
+	}
+}
