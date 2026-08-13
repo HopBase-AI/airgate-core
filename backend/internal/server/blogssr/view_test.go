@@ -477,9 +477,9 @@ func TestBuildDetailLangNav_StaysOnTranslatedArticle(t *testing.T) {
 		t.Fatalf("lang links len = %d, want 3", len(links))
 	}
 	wants := []NavLink{
-		{Label: "繁", LongLabel: "繁中", Href: "/blog/topic-hant?inv=vip8&lang=zh-Hant", Active: false},
-		{Label: "EN", LongLabel: "EN", Href: "/blog/topic-english?inv=vip8&lang=en", Active: true},
-		{Label: "简", LongLabel: "简中", Href: "/blog/topic?inv=vip8&lang=zh", Active: false},
+		{Label: "繁", LongLabel: "繁體中文", Href: "/blog/topic-hant?inv=vip8&lang=zh-Hant", Active: false},
+		{Label: "EN", LongLabel: "English", Href: "/blog/topic-english?inv=vip8&lang=en", Active: true},
+		{Label: "简", LongLabel: "中文", Href: "/blog/topic?inv=vip8&lang=zh", Active: false},
 	}
 	for i, want := range wants {
 		if links[i] != want {

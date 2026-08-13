@@ -261,7 +261,7 @@ func resolveChrome(c Chrome, lang string) Chrome {
 
 // blogLangs 公开博客支持的语言;Code 即文章 lang 字段取值,Label 用于顶栏切换器。
 var blogLangs = []struct{ Code, Label, LongLabel string }{
-	{"zh-Hant", "繁", "繁中"}, {"en", "EN", "EN"}, {"zh", "简", "简中"},
+	{"zh-Hant", "繁", "繁體中文"}, {"en", "EN", "English"}, {"zh", "简", "中文"},
 }
 
 // canonicalLang 归一语言代码到 blogLangs 取值;不认识返回空。
@@ -590,26 +590,26 @@ func hopBaseHeaderLinks(lang string) []ChromeLink {
 	case "en":
 		return []ChromeLink{
 			{Label: "Enterprise", Href: "/#enterprise"},
-			{Label: "Pricing", Href: "/#pricing"},
-			{Label: "Docs", Href: "/docs"},
+			{Label: "Pricing", Href: "/pricing"},
+			{Label: "Docs", Href: "/en/docs"},
 			{Label: "Blog", Href: "/blog"},
-			{Label: "FAQ", Href: "/#faq"},
+			{Label: "Model catalog", Href: "/models"},
 		}
 	case "zh":
 		return []ChromeLink{
 			{Label: "企业能力", Href: "/#enterprise"},
-			{Label: "模型价格", Href: "/#pricing"},
-			{Label: "接入文档", Href: "/docs"},
+			{Label: "模型价格", Href: "/pricing"},
+			{Label: "接入文档", Href: "/zh-cn/docs"},
 			{Label: "博客", Href: "/blog"},
-			{Label: "常见问题", Href: "/#faq"},
+			{Label: "模型广场", Href: "/models"},
 		}
 	default:
 		return []ChromeLink{
 			{Label: "企業能力", Href: "/#enterprise"},
-			{Label: "模型價格", Href: "/#pricing"},
-			{Label: "接入文檔", Href: "/docs"},
+			{Label: "模型價格", Href: "/pricing"},
+			{Label: "接入文檔", Href: "/zh-tw/docs"},
 			{Label: "博客", Href: "/blog"},
-			{Label: "常見問題", Href: "/#faq"},
+			{Label: "模型廣場", Href: "/models"},
 		}
 	}
 }
