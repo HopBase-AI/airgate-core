@@ -333,7 +333,13 @@ func TestSSR_HopBaseHostUsesLandingAlignedTheme(t *testing.T) {
 		"$ hopbase init",
 		`class="hb-card-cover hb-cover-real"`,
 		`<img src="https://hop-base.com/assets/blog/second-post.jpg" alt="" loading="lazy" decoding="async">`,
-		`class="hb-footer"`,
+		`class="hb-announcement-badge">NEW<`,
+		`<footer class="ft">`,
+		`class="ft-taxonomy"`,
+		`href="/models#glm-5-3">glm-5.3</a>`,
+		`/assets/partner-marks/tencent-wordmark.png`,
+		`title="Alibaba Cloud">阿里云</a>`,
+		`A stable, high-concurrency AI gateway for enterprises and agent services.`,
 		`--hb-canvas:#f2f2f0`,
 		`/assets/fonts/ibm-plex-sans-latin.woff2`,
 		`href="/#enterprise">Enterprise</a>`,
@@ -381,7 +387,7 @@ func TestSSR_HopBaseHostUsesLandingAlignedTheme(t *testing.T) {
 	}
 
 	detail := doGetHost(t, r, "hop-base.com", "/blog/feature-post?lang=en").Body.String()
-	for _, want := range []string{`class="hb-header"`, `class="article-title"`, `class="blog-cta"`, `class="hb-footer"`, `"inLanguage":"en"`} {
+	for _, want := range []string{`class="hb-header"`, `class="article-title"`, `class="blog-cta"`, `<footer class="ft">`, `"inLanguage":"en"`} {
 		if !strings.Contains(detail, want) {
 			t.Errorf("hopbase detail missing %q", want)
 		}
