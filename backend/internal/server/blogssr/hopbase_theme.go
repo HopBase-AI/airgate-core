@@ -54,9 +54,10 @@ const hopBaseFooterStr = `<footer class="ft"><div class="ft-in">
 <div class="ft-col ft-col--partners">
 <h4>{{.FT.partners}}</h4>
 <a href="/workbuddy" class="ft-partner-mark"><img src="/assets/partner-marks/tencent-wordmark.png" alt="Tencent 腾讯"></a>
+<a href="/oumomo" class="ft-partner-mark ft-partner-mark--fastmoss"><img src="/assets/partner-marks/fastmoss-wordmark.svg" alt="FastMoss"></a>
 <a href="/oumomo" class="ft-partner-mark ft-partner-mark--oumomo"><img src="/assets/partner-marks/oumomo-wordmark.png" alt="Oumomo 欧漠漠"></a>
 <a href="/#digital-human" class="ft-partner-mark ft-partner-mark--text">MiniMax</a>
-<a href="/#partners" class="ft-partner-mark ft-partner-mark--text" title="Alibaba Cloud">阿里云</a>
+<a href="/#partners" class="ft-partner-mark ft-partner-mark--text ft-partner-mark--cjk" title="Alibaba Cloud">阿里云</a>
 </div>
 </div>
 <div class="ft-taxonomy" aria-label="Model directory">
@@ -309,7 +310,9 @@ a:hover{text-decoration:none}
 .ft-col--partners .ft-partner-mark img{width:auto;height:15px;filter:brightness(0) invert(1);opacity:.68;transition:opacity .15s}
 .ft-col--partners .ft-partner-mark:hover img{opacity:1}
 .ft-col--partners .ft-partner-mark--oumomo img{height:17px}
-.ft-col--partners .ft-partner-mark--text{font:700 14px/1.3 "IBM Plex Sans","Noto Sans SC","PingFang SC",sans-serif;letter-spacing:.01em;color:#fff;opacity:.68;white-space:nowrap;transition:opacity .15s}
+.ft-col--partners .ft-partner-mark--fastmoss img{height:18px}
+.ft-col--partners .ft-partner-mark--text{font:700 17px/1.2 "IBM Plex Sans","Noto Sans SC","PingFang SC",sans-serif;letter-spacing:.01em;color:#fff;opacity:.68;white-space:nowrap;transition:opacity .15s}
+.ft-col--partners .ft-partner-mark--cjk{font-size:13px}
 .ft-col--partners .ft-partner-mark--text:hover{opacity:1;color:#fff}
 @media(max-width:1080px){.hb-nav{gap:18px}.hb-card-body{padding-right:20px;padding-left:20px}}
 @media(max-width:900px){.hb-header-inner{padding-right:20px;padding-left:20px}.hb-nav{display:none}.hb-actions{gap:0}.hb-language,.hb-auth{min-height:48px;display:inline-flex;align-items:center}.hb-language-trigger,.hb-login,.hb-user{position:relative}.hb-language-trigger::before,.hb-login::before,.hb-user::before{position:absolute;inset:-8px 0;content:""}.hb-menu-button{width:48px;height:48px;min-height:48px;display:inline-flex;border-color:transparent}.hb-grid{grid-template-columns:1fr;gap:24px}.ft-top{grid-template-columns:1fr 1fr}.ft-top .ft-col--brand{grid-column:1/-1}.ft-taxonomy{grid-template-columns:repeat(3,minmax(0,1fr));gap:36px 28px}}
