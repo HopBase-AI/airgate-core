@@ -214,6 +214,14 @@ func resolveLandingAnnouncement(raw, lang string) (enabled bool, text, link, hre
 	return enabled, text, link, href
 }
 
+// announcementBadge 公告条左侧的「上新」徽标文案,与落地页 .rail-badge 对齐。
+func announcementBadge(lang string) string {
+	if canonicalLang(lang) == "en" {
+		return "NEW"
+	}
+	return "上新"
+}
+
 func announcementHref(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -507,6 +515,9 @@ type Branding struct {
 	AnnouncementText    string
 	AnnouncementLink    string
 	AnnouncementHref    string
+	AnnouncementBadge   string
+	// FT hopbase 皮肤专用:落地页同款三段式页脚的本地化文案(hopBaseFooterText)。
+	FT map[string]string
 }
 
 // withInv 给站内相对链接追加读者邀请码查询串(navQuery 结果,可能为空)。
@@ -540,6 +551,10 @@ func applyChrome(b *Branding, reqInvite, registerURL, lang string) {
 	b.UI = textFor(b.Lang)
 	b.HTMLLang = htmlLanguage(b.Lang)
 	b.AnnouncementEnabled, b.AnnouncementText, b.AnnouncementLink, b.AnnouncementHref = resolveLandingAnnouncement(b.LandingAnnouncementJSON, b.Lang)
+	b.AnnouncementBadge = announcementBadge(b.Lang)
+	if b.Theme == themeHopBase {
+		b.FT = hopBaseFooterText(b.Lang)
+	}
 
 	b.BrandLabel = firstNonEmpty(c.BrandLabel, b.SiteName)
 	if b.SiteKey == "open-late" {
@@ -1188,6 +1203,10 @@ func buildDetailView(b Branding, p appblog.Post, reqInvite string) DetailView {
 	branding.UI = textFor(strLang)
 	branding.HTMLLang = htmlLanguage(strLang)
 	branding.AnnouncementEnabled, branding.AnnouncementText, branding.AnnouncementLink, branding.AnnouncementHref = resolveLandingAnnouncement(branding.LandingAnnouncementJSON, strLang)
+	branding.AnnouncementBadge = announcementBadge(strLang)
+	if branding.Theme == themeHopBase {
+		branding.FT = hopBaseFooterText(strLang)
+	}
 	if p.PublishedAt != nil {
 		publishedHuman = publishedHumanLabel(*p.PublishedAt, strLang)
 	}
