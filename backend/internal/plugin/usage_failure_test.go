@@ -39,6 +39,21 @@ func TestFailureFromOutcome(t *testing.T) {
 			wantMessage: "model 参数缺失",
 		},
 		{
+			name: "Reason 为空时回退上游响应体 error.message（部分插件 clientError 只写 body）",
+			execution: forwardExecution{
+				outcome: sdk.ForwardOutcome{
+					Kind: sdk.OutcomeClientError,
+					Upstream: sdk.UpstreamResponse{
+						StatusCode: http.StatusBadRequest,
+						Body:       []byte(`{"error":{"message":"audio format \".mpeg\" not allowed","type":"invalid_request_error"}}`),
+					},
+				},
+			},
+			wantCode:    appusage.ErrorCodeClientError,
+			wantStatus:  http.StatusBadRequest,
+			wantMessage: `audio format ".mpeg" not allowed`,
+		},
+		{
 			name: "账号限流无上游状态码回退 429",
 			execution: forwardExecution{
 				outcome: sdk.ForwardOutcome{Kind: sdk.OutcomeAccountRateLimited, Reason: "rate limited"},
