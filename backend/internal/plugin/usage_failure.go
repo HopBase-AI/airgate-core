@@ -22,7 +22,11 @@ type usageFailure struct {
 }
 
 // failureFromOutcome 由转发判决推导失败信息。message 取判决 Reason（缺失时回退
-// 插件 error），status 优先取上游真实状态码，没有则按 Core 对外响应口径回退。
+// 插件 error，再缺失时回退上游响应体里的 error.message——部分插件的 clientError
+// 只把原因写进 body 不填 Reason，对外 HTTP 响应有原因而 usage_log 落空串，排障时
+// 无从定位；对外响应的 sanitizedClientErrorMessage 本就是"先 body 后 Reason"，
+// 这里对齐同一数据源兜底），status 优先取上游真实状态码，没有则按 Core 对外响应
+// 口径回退。
 func failureFromOutcome(execution forwardExecution) usageFailure {
 	status := recordedFailureStatus(execution)
 	code := execution.outcome.Kind.String()
@@ -32,10 +36,14 @@ func failureFromOutcome(execution forwardExecution) usageFailure {
 	if status == http.StatusGatewayTimeout {
 		code = appusage.ErrorCodeUpstreamTimeout
 	}
+	message := judgmentReason(execution)
+	if message == "" {
+		message = extractErrorMessage(execution.outcome.Upstream.Body)
+	}
 	return usageFailure{
 		code:    code,
 		status:  status,
-		message: judgmentReason(execution),
+		message: message,
 	}
 }
 
