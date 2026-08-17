@@ -250,11 +250,32 @@ export default function UserKeysPage() {
   // 报价不可用/无折扣意义（如倍率 0 的特殊分组）时回退旧倍率文案。
   // 用户有专属倍率时显示划线标准报价 + 专属报价。
   const userGroupRates = user?.group_rates;
+  const userGroupPluginSettings = user?.group_plugin_settings;
   const formatGroupZhe = (zhe: number) => {
     const value = zhe * 10;
     return value < 1 ? value.toFixed(2) : value.toFixed(1);
   };
-  const groupOptions = useMemo(() => groupList.map((g) => {
+  const groupOptions = useMemo(() => {
+    // 固定图价分组（如倍率 0、按张计费的纯图片分组）：从分组插件设置（用户分组覆盖优先，
+    // 与后端 resolveFixedImagePrices 同口径）读三档图价，三档齐全才视为固定图价，
+    // 用于替代无意义的「0x 倍率」回退文案。
+    const fixedImagePriceLabel = (g: GroupResp): string | undefined => {
+      const pluginSettings = g.plugin_settings ?? {};
+      for (const plugin of Object.keys(pluginSettings)) {
+        const merged = { ...pluginSettings[plugin], ...(userGroupPluginSettings?.[g.id]?.[plugin] ?? {}) };
+        if (merged.image_enabled !== 'true') continue;
+        const prices = [merged.image_price_1k, merged.image_price_2k, merged.image_price_4k].map(Number);
+        if (prices.some((v) => !Number.isFinite(v) || v <= 0)) continue;
+        const min = Math.min(...prices);
+        const max = Math.max(...prices);
+        const fmt = (v: number) => String(Math.round(v * 100) / 100);
+        return min === max
+          ? t('user_keys.fixed_image_price', { price: fmt(min) })
+          : t('user_keys.fixed_image_price_range', { min: fmt(min), max: fmt(max) });
+      }
+      return undefined;
+    };
+    return groupList.map((g) => {
     const override = userGroupRates?.[g.id];
     const hasOverride = override != null && override > 0 && override !== g.rate_multiplier;
     const quote = groupQuotes.get(g.id);
@@ -291,6 +312,7 @@ export default function UserKeysPage() {
             discountPercent: 0,
             standardMultiplier: hasOverride ? g.rate_multiplier : undefined,
             hasOfficialDiscount: false,
+            fixedPriceLabel: g.rate_multiplier <= 0 && !hasOverride ? fixedImagePriceLabel(g) : undefined,
           }}
           title={rateTooltip}
         />
@@ -302,7 +324,8 @@ export default function UserKeysPage() {
       description: localizedGroupText(g.note ?? '', g.note_i18n, uiLang).trim() || undefined,
       suffix,
     };
-  }), [groupList, groupQuotes, myPricing, pricingFx, t, uiLang, userGroupRates]);
+  });
+  }, [groupList, groupQuotes, myPricing, pricingFx, t, uiLang, userGroupRates, userGroupPluginSettings]);
 
   // 使用配置弹窗
   const {

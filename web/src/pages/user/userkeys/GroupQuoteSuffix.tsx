@@ -6,6 +6,8 @@ export interface GroupQuoteSuffixData {
   discountPercent: number;
   standardMultiplier?: number;
   hasOfficialDiscount: boolean;
+  // 固定图价文案（如「固定 ¥0.4/张」）：倍率无意义的按张计费分组用它替代「0x 倍率」。
+  fixedPriceLabel?: string;
 }
 
 interface GroupQuoteSuffixProps {
@@ -20,6 +22,18 @@ export function GroupQuoteSuffix({ data, title }: GroupQuoteSuffixProps) {
   const { t } = useTranslation();
 
   if (!data.hasOfficialDiscount) {
+    if (data.fixedPriceLabel) {
+      return (
+        <span
+          className="inline-flex items-center whitespace-nowrap text-xs leading-4 tabular-nums"
+          title={title}
+        >
+          <span className="rounded-[var(--radius)] bg-success-subtle px-1.5 py-0.5 font-medium text-success">
+            {data.fixedPriceLabel}
+          </span>
+        </span>
+      );
+    }
     return (
       <span
         className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs tabular-nums text-text-tertiary"

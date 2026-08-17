@@ -1536,6 +1536,8 @@
     "rate_suffix": "multiplier",
     "rate_tooltip": "Billing multiplier {{rate}}x",
     "group_quote_price": "¥{{m}} per official $1",
+    "fixed_image_price": "Flat ¥{{price}}/image",
+    "fixed_image_price_range": "Flat ¥{{min}}–¥{{max}}/image",
     "group_quote_discount": "≈{{off}}% off"
   },
   "setup": {
