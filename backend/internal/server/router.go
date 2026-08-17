@@ -24,6 +24,13 @@ import (
 // 可经 config `plugins.status_plugin` 覆盖，core 不绑定具体插件实现。
 const defaultStatusPluginName = "airgate-health"
 
+// 注册/发码的每 IP 限额。注册是低频动作（正常用户一生一次），额度留给
+// "一家人或一间办公室共用出口 IP" 这类真实场景够用，对脚本批量注册则是硬墙。
+const (
+	registerPerHourPerIP = 5.0
+	registerBurstPerIP   = 5
+)
+
 // registerRoutes 注册所有 API 路由
 func (s *Server) registerRoutes() {
 	r := s.engine
@@ -83,8 +90,13 @@ func (s *Server) registerRoutes() {
 	{
 		authGroup.POST("/login", handlers.Auth.Login)
 		authGroup.POST("/login-apikey", handlers.Auth.LoginByAPIKey)
-		authGroup.POST("/register", handlers.Auth.Register)
-		authGroup.POST("/send-verify-code", handlers.Auth.SendVerifyCode)
+		// 注册与验证码发送额外挂一层按小时计的严格限流。
+		// /auth 组的 10 次/分钟拦不住批量注册：2026-08 的攻击用 12~15 秒一个的节奏
+		// （约 4 次/分钟）合法绕过，两天在两个实例上刷出 1.4 万个账号。
+		regRL := middleware.NewIPRateLimitPerHour(registerPerHourPerIP, registerBurstPerIP)
+		s.registerRateLimiter = regRL.Limiter
+		authGroup.POST("/register", regRL.Handler, handlers.Auth.Register)
+		authGroup.POST("/send-verify-code", regRL.Handler, handlers.Auth.SendVerifyCode)
 		authGroup.POST("/verify-code", handlers.Auth.VerifyCode)
 		// 第三方登录（Google / GitHub）：浏览器导航端点，走重定向
 		authGroup.GET("/oauth/:provider/authorize", handlers.Auth.OAuthAuthorize)

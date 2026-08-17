@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+
+	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	entapikey "github.com/DouDOU-start/airgate-core/ent/apikey"
@@ -51,7 +54,8 @@ type Server struct {
 	handlers    *bootstrap.HTTPHandlers
 
 	// 中间件组件（需 Shutdown 时释放）
-	ipRateLimiter *middleware.IPRateLimiter
+	ipRateLimiter       *middleware.IPRateLimiter
+	registerRateLimiter *middleware.IPRateLimiter
 
 	pluginStartCancel context.CancelFunc
 
@@ -169,6 +173,17 @@ func NewServer(cfg *config.Config, db *ent.Client, rdb *redis.Client) *Server {
 		Scheduler:   sched,
 	})
 
+	// 可信代理/真实客户端 IP —— 必须在注册路由前生效，否则按 IP 的限流拿到的是代理地址。
+	// 配置写错时不阻断启动（服务可用性优先），但必须留下显眼告警：此时 ClientIP() 回落到
+	// gin 默认行为，按 IP 的限流会退化成可被伪造头绕过的状态。
+	if err := applyTrustedProxy(s.engine, cfg.Server); err != nil {
+		slog.Error("trusted_proxy_config_invalid",
+			"proxies", strings.Join(cfg.Server.TrustedProxies, ","),
+			"platform", cfg.Server.TrustedPlatform,
+			sdk.LogFieldError, err,
+		)
+	}
+
 	// 注册路由
 	s.registerRoutes()
 
@@ -280,6 +295,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.ipRateLimiter != nil {
 		s.ipRateLimiter.Stop()
 	}
+	if s.registerRateLimiter != nil {
+		s.registerRateLimiter.Stop()
+	}
 
 	// 停止插件市场后台同步
 	if !s.cfg.Plugins.Marketplace.Disabled {
@@ -293,4 +311,40 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	s.recorder.Stop()
 
 	return err
+}
+
+// applyTrustedProxy 配置 gin 的可信代理与云平台真实 IP 头。
+//
+// gin 默认信任所有代理并取 X-Forwarded-For 最左值，这有两个后果：客户端可以自行
+// 伪造该头；在 Cloudflare 橙云后面拿到的是每次都在变的 CF 节点地址。2026-08 的批量
+// 注册事故里 /auth 组的 IP 限流就是这样失效的——同一攻击者被分散进成百上千个令牌桶，
+// 阈值永远攒不满（同期灰云直连的 ToC 实例限流正常触发 429，是对照证据）。
+//
+// 生产建议：走 CF 的实例配 trusted_platform=cloudflare，并把 trusted_proxies 收敛到
+// 反代地址；同时在反代层只放行 CF 回源 IP 段，否则攻击者绕过 CDN 直连源站仍可伪造
+// CF-Connecting-IP。
+func applyTrustedProxy(engine *gin.Engine, cfg config.ServerConfig) error {
+	switch strings.ToLower(strings.TrimSpace(cfg.TrustedPlatform)) {
+	case "":
+		// 不启用，保持 X-Forwarded-For / RemoteAddr 的默认解析
+	case "cloudflare", "cf":
+		engine.TrustedPlatform = gin.PlatformCloudflare
+	case "google", "gcp", "appengine":
+		engine.TrustedPlatform = gin.PlatformGoogleAppEngine
+	default:
+		// 其余值按自定义头名处理（例如某些自建 CDN 的 X-Real-IP）
+		engine.TrustedPlatform = strings.TrimSpace(cfg.TrustedPlatform)
+	}
+
+	if len(cfg.TrustedProxies) == 0 {
+		return nil
+	}
+	if err := engine.SetTrustedProxies(cfg.TrustedProxies); err != nil {
+		return err
+	}
+	slog.Info("trusted_proxy_configured",
+		"proxies", strings.Join(cfg.TrustedProxies, ","),
+		"platform", engine.TrustedPlatform,
+	)
+	return nil
 }

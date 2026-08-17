@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -109,6 +110,19 @@ type ServerConfig struct {
 	Host string `yaml:"host"`
 	Port int    `yaml:"port"`
 	Mode string `yaml:"mode"` // debug / release
+
+	// TrustedProxies 受信任的反向代理地址或 CIDR（如 ["127.0.0.1", "::1"]）。
+	// 留空沿用 gin 默认——信任所有代理并取 X-Forwarded-For 最左值，这意味着
+	// 客户端可以自行伪造该头，任何按 IP 做的限流都会被绕开。生产环境应当只填
+	// 真正的反代地址（本仓部署形态是 Caddy → core，即 127.0.0.1）。
+	TrustedProxies []string `yaml:"trusted_proxies"`
+
+	// TrustedPlatform 指定由可信 CDN/云平台写入的真实客户端 IP 头。
+	//   - "cloudflare"：读 CF-Connecting-IP（橙云代理场景必填）
+	//   - "google"：读 X-Appengine-Remote-Addr
+	//   - 其他非空值按自定义头名处理
+	// 空值表示不启用，ClientIP() 回落到 X-Forwarded-For / RemoteAddr。
+	TrustedPlatform string `yaml:"trusted_platform"`
 }
 
 // DatabaseConfig 数据库配置
@@ -206,6 +220,8 @@ func applyEnvOverrides(cfg *Config) {
 	envStr("HOST", &cfg.Server.Host)
 	envInt("PORT", &cfg.Server.Port)
 	envStr("GIN_MODE", &cfg.Server.Mode)
+	envCSV("TRUSTED_PROXIES", &cfg.Server.TrustedProxies)
+	envStr("TRUSTED_PLATFORM", &cfg.Server.TrustedPlatform)
 
 	// 数据库
 	envStr("DB_HOST", &cfg.Database.Host)
@@ -245,6 +261,21 @@ func envStr(key string, dst *string) {
 	if v := os.Getenv(key); v != "" {
 		*dst = v
 	}
+}
+
+// envCSV 如果环境变量存在，按逗号分隔覆盖目标字符串切片（空段会被丢弃）
+func envCSV(key string, dst *[]string) {
+	v := os.Getenv(key)
+	if v == "" {
+		return
+	}
+	out := make([]string, 0, strings.Count(v, ",")+1)
+	for _, part := range strings.Split(v, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	*dst = out
 }
 
 // envInt 如果环境变量存在且为合法整数，覆盖目标整数
