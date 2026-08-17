@@ -1536,6 +1536,8 @@
     "rate_suffix": "倍率",
     "rate_tooltip": "結算倍率 {{rate}}x",
     "group_quote_price": "¥{{m}}/$1",
+    "fixed_image_price": "固定 ¥{{price}}/張",
+    "fixed_image_price_range": "固定 ¥{{min}}–¥{{max}}/張",
     "group_quote_discount": "約 {{zhe}} 折"
   },
   "setup": {

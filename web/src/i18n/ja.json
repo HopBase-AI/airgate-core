@@ -1534,6 +1534,8 @@
     "rate_suffix": "倍率",
     "rate_tooltip": "課金倍率 {{rate}}x",
     "group_quote_price": "公式$1あたり¥{{m}}",
+    "fixed_image_price": "1枚 ¥{{price}} 固定",
+    "fixed_image_price_range": "1枚 ¥{{min}}–¥{{max}} 固定",
     "group_quote_discount": "約{{off}}%オフ"
   },
   "setup": {
