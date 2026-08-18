@@ -4364,6 +4364,7 @@ func buildReport(baseURL string, platform PlatformType, startedAt, completedAt t
 	}
 	matrix := buildModelIssueMatrix(platform, models, risks, evidence)
 	checks := buildStandardChecks(platform, catalog, models, risks, evidence, nil)
+	referenceComparison := compareMaxPoolReference(catalog, models)
 	coverage := coverageFromMatrix(matrix)
 	scoreEligible, scoreEligibilityReason := reportScoreEligibility(len(models), available, coverage)
 	score := overallScore(models, risks)
@@ -4397,16 +4398,19 @@ func buildReport(baseURL string, platform PlatformType, startedAt, completedAt t
 			Synthetic:     false,
 			Heterogeneous: len(families) > 1,
 		},
-		Models:         models,
-		ModelMatrix:    matrix,
-		Risks:          risks,
-		Evidence:       evidence,
-		StandardChecks: checks,
-		Baselines:      baselines,
-		Charts:         buildChartData(models, risks, families),
+		Models:              models,
+		ModelMatrix:         matrix,
+		Risks:               risks,
+		Evidence:            evidence,
+		StandardChecks:      checks,
+		Baselines:           baselines,
+		ReferenceComparison: &referenceComparison,
+		Charts:              buildChartData(models, risks, families),
 		Raw: map[string]any{
-			"models_route":      catalog.route,
-			"scenario_registry": registrySummary(registry),
+			"models_route":                catalog.route,
+			"scenario_registry":           registrySummary(registry),
+			"reference_baseline_id":       referenceComparison.BaselineID,
+			"reference_comparison_status": referenceComparison.Status,
 		},
 		NextMilestone: []string{
 			"补 AWS Bedrock/Platform 原生 SigV4、Converse/InvokeModel、AWS event-stream、region/workspace 错误探针",
