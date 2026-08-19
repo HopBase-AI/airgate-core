@@ -1,6 +1,7 @@
 import { del, get, post, put } from './client';
 import type {
   GroupResp,
+  UserGroupResp,
   CreateGroupReq,
   UpdateGroupReq,
   PageReq,
@@ -9,9 +10,9 @@ import type {
 } from '../types';
 
 export const groupsApi = {
-  // 用户接口
+  // 用户接口（瘦投影，价格展示以 /models/pricing/me 的分组摘要为准）
   listAvailable: (params: PageReq & { platform?: string }) =>
-    get<PagedData<GroupResp>>('/api/v1/groups', params),
+    get<PagedData<UserGroupResp>>('/api/v1/groups', params),
 
   // 管理员接口
   list: (params: PageReq & { platform?: string }) =>

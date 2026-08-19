@@ -7,17 +7,19 @@ import (
 
 // User 用户领域对象。
 type User struct {
-	ID                    int
-	Email                 string
-	Username              string
-	DisplayBadge          string
-	PasswordHash          string
-	Balance               float64
-	Role                  string
-	CanAuthorBlog         bool // 是否可进入后台撰写博客(管理员天然可)
-	MaxConcurrency        int
-	GroupRates            map[int64]float64
-	GroupPluginSettings   map[int64]map[string]map[string]string
+	ID                  int
+	Email               string
+	Username            string
+	DisplayBadge        string
+	PasswordHash        string
+	Balance             float64
+	Role                string
+	CanAuthorBlog       bool // 是否可进入后台撰写博客(管理员天然可)
+	MaxConcurrency      int
+	GroupRates          map[int64]float64
+	GroupPluginSettings map[int64]map[string]map[string]string
+	// PricingMode 定价展示模式：standard=标准牌价；quote=报价客户（只展示报价单价格，裁剪牌价锚点）。
+	PricingMode           string
 	AllowedGroupIDs       []int64
 	BalanceAlertThreshold float64
 	BalanceAlertNotified  bool
@@ -55,6 +57,8 @@ type CreateInput struct {
 	MaxConcurrency      int
 	GroupRates          map[int64]float64
 	GroupPluginSettings map[int64]map[string]map[string]string
+	// PricingMode 空串表示未指定，沿用默认 standard。
+	PricingMode string
 }
 
 // UpdateInput 更新用户输入。
@@ -69,6 +73,7 @@ type UpdateInput struct {
 	HasGroupRates          bool
 	GroupPluginSettings    map[int64]map[string]map[string]string
 	HasGroupPluginSettings bool
+	PricingMode            *string
 	AllowedGroupIDs        []int64
 	HasAllowedGroupIDs     bool
 	Status                 *string
@@ -164,6 +169,7 @@ type Mutation struct {
 	HasGroupRates          bool
 	GroupPluginSettings    map[int64]map[string]map[string]string
 	HasGroupPluginSettings bool
+	PricingMode            *string
 	AllowedGroupIDs        []int64
 	HasAllowedGroupIDs     bool
 	Status                 *string

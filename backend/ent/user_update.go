@@ -192,6 +192,20 @@ func (uu *UserUpdate) ClearGroupRates() *UserUpdate {
 	return uu
 }
 
+// SetPricingMode sets the "pricing_mode" field.
+func (uu *UserUpdate) SetPricingMode(um user.PricingMode) *UserUpdate {
+	uu.mutation.SetPricingMode(um)
+	return uu
+}
+
+// SetNillablePricingMode sets the "pricing_mode" field if the given value is not nil.
+func (uu *UserUpdate) SetNillablePricingMode(um *user.PricingMode) *UserUpdate {
+	if um != nil {
+		uu.SetPricingMode(*um)
+	}
+	return uu
+}
+
 // SetGroupPluginSettings sets the "group_plugin_settings" field.
 func (uu *UserUpdate) SetGroupPluginSettings(m map[int64]map[string]map[string]string) *UserUpdate {
 	uu.mutation.SetGroupPluginSettings(m)
@@ -632,6 +646,11 @@ func (uu *UserUpdate) check() error {
 			return &ValidationError{Name: "max_concurrency", err: fmt.Errorf(`ent: validator failed for field "User.max_concurrency": %w`, err)}
 		}
 	}
+	if v, ok := uu.mutation.PricingMode(); ok {
+		if err := user.PricingModeValidator(v); err != nil {
+			return &ValidationError{Name: "pricing_mode", err: fmt.Errorf(`ent: validator failed for field "User.pricing_mode": %w`, err)}
+		}
+	}
 	if v, ok := uu.mutation.Status(); ok {
 		if err := user.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "User.status": %w`, err)}
@@ -713,6 +732,9 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if uu.mutation.GroupRatesCleared() {
 		_spec.ClearField(user.FieldGroupRates, field.TypeJSON)
+	}
+	if value, ok := uu.mutation.PricingMode(); ok {
+		_spec.SetField(user.FieldPricingMode, field.TypeEnum, value)
 	}
 	if value, ok := uu.mutation.GroupPluginSettings(); ok {
 		_spec.SetField(user.FieldGroupPluginSettings, field.TypeJSON, value)
@@ -1210,6 +1232,20 @@ func (uuo *UserUpdateOne) ClearGroupRates() *UserUpdateOne {
 	return uuo
 }
 
+// SetPricingMode sets the "pricing_mode" field.
+func (uuo *UserUpdateOne) SetPricingMode(um user.PricingMode) *UserUpdateOne {
+	uuo.mutation.SetPricingMode(um)
+	return uuo
+}
+
+// SetNillablePricingMode sets the "pricing_mode" field if the given value is not nil.
+func (uuo *UserUpdateOne) SetNillablePricingMode(um *user.PricingMode) *UserUpdateOne {
+	if um != nil {
+		uuo.SetPricingMode(*um)
+	}
+	return uuo
+}
+
 // SetGroupPluginSettings sets the "group_plugin_settings" field.
 func (uuo *UserUpdateOne) SetGroupPluginSettings(m map[int64]map[string]map[string]string) *UserUpdateOne {
 	uuo.mutation.SetGroupPluginSettings(m)
@@ -1663,6 +1699,11 @@ func (uuo *UserUpdateOne) check() error {
 			return &ValidationError{Name: "max_concurrency", err: fmt.Errorf(`ent: validator failed for field "User.max_concurrency": %w`, err)}
 		}
 	}
+	if v, ok := uuo.mutation.PricingMode(); ok {
+		if err := user.PricingModeValidator(v); err != nil {
+			return &ValidationError{Name: "pricing_mode", err: fmt.Errorf(`ent: validator failed for field "User.pricing_mode": %w`, err)}
+		}
+	}
 	if v, ok := uuo.mutation.Status(); ok {
 		if err := user.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "User.status": %w`, err)}
@@ -1761,6 +1802,9 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 	}
 	if uuo.mutation.GroupRatesCleared() {
 		_spec.ClearField(user.FieldGroupRates, field.TypeJSON)
+	}
+	if value, ok := uuo.mutation.PricingMode(); ok {
+		_spec.SetField(user.FieldPricingMode, field.TypeEnum, value)
 	}
 	if value, ok := uuo.mutation.GroupPluginSettings(); ok {
 		_spec.SetField(user.FieldGroupPluginSettings, field.TypeJSON, value)

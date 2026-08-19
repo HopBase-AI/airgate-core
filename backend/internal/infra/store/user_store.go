@@ -418,6 +418,9 @@ func applyUserMutationCreate(builder *ent.UserCreate, mutation appuser.Mutation)
 	if mutation.HasGroupPluginSettings {
 		builder.SetGroupPluginSettings(cloneUserGroupPluginSettings(mutation.GroupPluginSettings))
 	}
+	if mutation.PricingMode != nil {
+		builder.SetPricingMode(entuser.PricingMode(*mutation.PricingMode))
+	}
 }
 
 func applyUserMutationUpdate(builder *ent.UserUpdateOne, mutation appuser.Mutation) {
@@ -444,6 +447,9 @@ func applyUserMutationUpdate(builder *ent.UserUpdateOne, mutation appuser.Mutati
 	}
 	if mutation.HasGroupPluginSettings {
 		builder.SetGroupPluginSettings(cloneUserGroupPluginSettings(mutation.GroupPluginSettings))
+	}
+	if mutation.PricingMode != nil {
+		builder.SetPricingMode(entuser.PricingMode(*mutation.PricingMode))
 	}
 	if mutation.HasAllowedGroupIDs {
 		builder.ClearAllowedGroups()
@@ -488,6 +494,7 @@ func mapUser(item *ent.User) appuser.User {
 		MaxConcurrency:        item.MaxConcurrency,
 		GroupRates:            cloneUserGroupRates(item.GroupRates),
 		GroupPluginSettings:   cloneUserGroupPluginSettings(item.GroupPluginSettings),
+		PricingMode:           item.PricingMode.String(),
 		BalanceAlertThreshold: item.BalanceAlertThreshold,
 		BalanceAlertNotified:  item.BalanceAlertNotified,
 		Status:                item.Status.String(),

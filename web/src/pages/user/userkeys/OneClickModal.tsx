@@ -8,14 +8,14 @@ import { useToast } from '../../../shared/ui';
 import { useClipboard } from '../../../shared/hooks/useClipboard';
 import { oneclickApi, type OneClickIssueResp, type OneClickStatus } from '../../../shared/api/oneclick';
 import { queryKeys } from '../../../shared/queryKeys';
-import type { APIKeyResp, GroupResp } from '../../../shared/types';
+import type { APIKeyResp, UserGroupResp } from '../../../shared/types';
 
 const CCS_RELEASES_URL = 'https://github.com/farion1231/cc-switch/releases';
 
 // 一键接入弹窗。流程刻意分两步:打开只展示说明,用户点「生成接入命令」这个明确的
 // 确认动作后才签发一次性令牌并开始轮询——避免"一打开就 loading"造成的误解,
 // 也不为误点的弹窗浪费令牌。令牌与客户端无关,Claude Code / Codex 命令共用。
-export function useOneClickModal(groupMap: Map<number, GroupResp>) {
+export function useOneClickModal(groupMap: Map<number, UserGroupResp>) {
   const { toast } = useToast();
   const { t } = useTranslation();
 

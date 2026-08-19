@@ -578,6 +578,7 @@ var (
 		{Name: "max_concurrency", Type: field.TypeInt, Default: 0},
 		{Name: "totp_secret", Type: field.TypeString, Nullable: true},
 		{Name: "group_rates", Type: field.TypeJSON, Nullable: true},
+		{Name: "pricing_mode", Type: field.TypeEnum, Enums: []string{"standard", "quote"}, Default: "standard"},
 		{Name: "group_plugin_settings", Type: field.TypeJSON, Nullable: true},
 		{Name: "balance_alert_threshold", Type: field.TypeFloat64, Default: 0},
 		{Name: "balance_alert_notified", Type: field.TypeBool, Default: false},
@@ -600,7 +601,7 @@ var (
 			{
 				Name:    "user_inviter_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsersColumns[17]},
+				Columns: []*schema.Column{UsersColumns[18]},
 			},
 		},
 	}

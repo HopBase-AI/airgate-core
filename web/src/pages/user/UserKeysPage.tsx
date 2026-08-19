@@ -6,7 +6,7 @@ import { usePagination } from '../../shared/hooks/usePagination';
 import { groupsApi } from '../../shared/api/groups';
 import { modelsApi } from '../../shared/api/models';
 import { settingsApi } from '../../shared/api/settings';
-import { groupUSDMultiplierForDisplay } from '../../shared/modelPricing';
+import { parseQuoteFx } from '../../shared/quoteMath';
 import { useToast } from '../../shared/ui';
 import { Alert, AlertDialog, Button, Dropdown, EmptyState, Modal, Spinner, useOverlayState } from '@heroui/react';
 import { DialogTriggerShim } from '../../shared/components/DialogTriggerShim';
@@ -42,8 +42,7 @@ import {
   RefreshCw,
   Rocket,
 } from 'lucide-react';
-import type { APIKeyResp, CreateAPIKeyReq, UpdateAPIKeyReq, GroupResp } from '../../shared/types';
-import { useAuth } from '../../app/providers/AuthProvider';
+import type { APIKeyResp, CreateAPIKeyReq, UpdateAPIKeyReq, UserGroupResp } from '../../shared/types';
 import { EditKeyModal } from './userkeys/EditKeyModal';
 import { CreateKeyModal } from './userkeys/CreateKeyModal';
 import { UseKeyModal, useUseKeyModal } from './userkeys/UseKeyModal';
@@ -59,7 +58,6 @@ export default function UserKeysPage() {
   const { toast } = useToast();
   const copy = useClipboard();
   const queryClient = useQueryClient();
-  const { user } = useAuth();
 
   const { page, setPage, pageSize, setPageSize } = usePagination(DEFAULT_PAGE_SIZE, 'user.keys');
   const [modalOpen, setModalOpen] = useState(false);
@@ -102,14 +100,10 @@ export default function UserKeysPage() {
     staleTime: 5 * 60_000,
     retry: false,
   });
-  const pricingFx = useMemo(() => {
-    try {
-      const config = JSON.parse(publicSettings?.toc_landing_pricing ?? '{}') as { fx?: number };
-      return typeof config.fx === 'number' && config.fx > 0 ? config.fx : 6.8;
-    } catch {
-      return 6.8;
-    }
-  }, [publicSettings?.toc_landing_pricing]);
+  const pricingFx = useMemo(
+    () => parseQuoteFx(publicSettings?.toc_landing_pricing),
+    [publicSettings?.toc_landing_pricing],
+  );
   const groupQuotes = useMemo(
     () => new Map((myPricing?.groups ?? []).map((quote) => [quote.id, quote])),
     [myPricing?.groups],
@@ -241,35 +235,51 @@ export default function UserKeysPage() {
 
   // 查找分组
   const groupList = useMemo(() => groupsData?.list ?? [], [groupsData?.list]);
-  const groupMap = useMemo(() => new Map<number, GroupResp>(groupList.map((g) => [g.id, g])), [groupList]);
+  const groupMap = useMemo(() => new Map<number, UserGroupResp>(groupList.map((g) => [g.id, g])), [groupList]);
 
   const hasAvailableGroups = groupList.length > 0;
 
+  // 报价客户模式：只展示报价单换算出的价格，不渲染任何牌价对比/折扣锚点。
+  const quoteMode = myPricing?.pricing_mode === 'quote';
+
   // 分组选项：右侧按统一口径展示报价与折扣。
   // （倍率语义 = 每消耗官方 $1 扣多少 ¥ 余额；折 = 倍率 ÷ fx，全站同一定义）。
-  // 报价不可用/无折扣意义（如倍率 0 的特殊分组）时回退旧倍率文案。
-  // 用户有专属倍率时显示划线标准报价 + 专属报价。
-  const userGroupRates = user?.group_rates;
+  // 价格数据一律来自 /models/pricing/me 的分组摘要（权威口径，/groups 瘦投影不再带倍率），
+  // 摘要请求失败时不展示价格后缀（宁缺勿错）。固定图价哨兵分组（标准倍率 0）不展示
+  // token 倍率——后端摘要的 effective_rate 对这类分组是 billing 的 1.0 兜底值，不是真实报价。
   const formatGroupZhe = (zhe: number) => {
     const value = zhe * 10;
     return value < 1 ? value.toFixed(2) : value.toFixed(1);
   };
   const groupOptions = useMemo(() => groupList.map((g) => {
-    const override = userGroupRates?.[g.id];
-    const hasOverride = override != null && override > 0 && override !== g.rate_multiplier;
     const quote = groupQuotes.get(g.id);
-    // usd_multiplier = 每官方 $1 扣多少 ¥（quote 已按用户专属倍率计算）；标准报价按分组标准倍率同比例还原
-    // 新后端的 groups 摘要是权威结果，0 表示没有可用 token 报价。只有旧后端
-    // 完全缺少 groups 字段时，才从模型报价兼容推导。
-    const usdMult = groupUSDMultiplierForDisplay(myPricing, g, userGroupRates);
-    const effectiveRate = quote?.effective_rate
-      ?? (hasOverride ? override : g.rate_multiplier);
-    const standardMult = usdMult != null && g.rate_multiplier > 0 && effectiveRate > 0 && effectiveRate !== g.rate_multiplier
-      ? usdMult * (g.rate_multiplier / effectiveRate)
+    const effectiveRate = quote?.effective_rate ?? 0;
+    const standardRate = quote?.group_rate ?? 0;
+    const usdMult = quote != null && effectiveRate > 0
+      && typeof quote.usd_multiplier === 'number' && Number.isFinite(quote.usd_multiplier) && quote.usd_multiplier > 0
+      ? quote.usd_multiplier
       : null;
-    const rateTooltip = t('user_keys.rate_tooltip', { rate: hasOverride ? override : g.rate_multiplier });
+    // 报价客户的摘要里 group_rate 已被后端改写为 effective_rate，天然无「标准 vs 专属」差值
+    const hasOverride = standardRate > 0 && effectiveRate > 0 && effectiveRate !== standardRate;
+    const standardMult = usdMult != null && hasOverride
+      ? usdMult * (standardRate / effectiveRate)
+      : null;
+    const rateTooltip = t('user_keys.rate_tooltip', { rate: effectiveRate });
     let suffix;
-    if (usdMult != null && usdMult / pricingFx < 1 && g.rate_multiplier > 0) {
+    if (quoteMode) {
+      // 报价客户：只显示「¥X.XX / $1」；无 token 报价（固定图价组）则不加后缀
+      suffix = usdMult != null ? (
+        <GroupQuoteSuffix
+          data={{
+            multiplier: usdMult,
+            discountZhe: '',
+            discountPercent: 0,
+            hasOfficialDiscount: false,
+            quoteOnly: true,
+          }}
+        />
+      ) : undefined;
+    } else if (usdMult != null && usdMult / pricingFx < 1 && standardRate > 0) {
       suffix = (
         <GroupQuoteSuffix
           data={{
@@ -282,14 +292,14 @@ export default function UserKeysPage() {
           title={rateTooltip}
         />
       );
-    } else {
+    } else if (effectiveRate > 0 && standardRate > 0) {
       suffix = (
         <GroupQuoteSuffix
           data={{
-            multiplier: hasOverride ? override : g.rate_multiplier,
+            multiplier: effectiveRate,
             discountZhe: '',
             discountPercent: 0,
-            standardMultiplier: hasOverride ? g.rate_multiplier : undefined,
+            standardMultiplier: hasOverride ? standardRate : undefined,
             hasOfficialDiscount: false,
           }}
           title={rateTooltip}
@@ -302,7 +312,7 @@ export default function UserKeysPage() {
       description: localizedGroupText(g.note ?? '', g.note_i18n, uiLang).trim() || undefined,
       suffix,
     };
-  }), [groupList, groupQuotes, myPricing, pricingFx, t, uiLang, userGroupRates]);
+  }), [groupList, groupQuotes, pricingFx, quoteMode, t, uiLang]);
 
   // 使用配置弹窗
   const {
@@ -433,13 +443,19 @@ export default function UserKeysPage() {
                   ? localizedGroupText(group.name, group.name_i18n, uiLang)
                   : `#${row.group_id}`;
               const hasSellRate = row.sell_rate != null && row.sell_rate > 0;
-              const userOverride = row.group_id == null ? undefined : user?.group_rates?.[row.group_id];
-              const hasOverride =
-                typeof userOverride === 'number' &&
-                Number.isFinite(userOverride) &&
-                userOverride > 0 &&
-                group != null &&
-                userOverride !== group.rate_multiplier;
+              // 倍率展示以 /models/pricing/me 分组摘要为准（/groups 瘦投影不再带倍率）。
+              // 报价客户摘要里 group_rate=effective_rate，天然不出现「专属」差值标记。
+              const rowQuote = row.group_id == null ? undefined : groupQuotes.get(row.group_id);
+              const rowEffectiveRate = rowQuote?.effective_rate ?? 0;
+              const rowStandardRate = rowQuote?.group_rate ?? 0;
+              const hasOverride = !quoteMode
+                && rowEffectiveRate > 0
+                && rowStandardRate > 0
+                && rowEffectiveRate !== rowStandardRate;
+              const rowUsdMult = rowQuote != null
+                && typeof rowQuote.usd_multiplier === 'number' && rowQuote.usd_multiplier > 0
+                ? rowQuote.usd_multiplier
+                : null;
               const profit = (row.used_quota || 0) - (row.used_quota_actual || 0);
               const isExpired = row.expires_at && new Date(row.expires_at) < new Date();
               const displayStatus = isExpired ? 'expired' : row.status;
@@ -476,16 +492,21 @@ export default function UserKeysPage() {
                           <span className="min-w-0 truncate">{groupName}</span>
                         </span>
                       </div>
-                      {(group || hasSellRate) && (
+                      {((quoteMode ? rowUsdMult != null : rowEffectiveRate > 0 && rowStandardRate > 0) || hasSellRate) && (
                         <MetricChips
                           className="ag-metric-chips--stack ag-metric-chips--markup"
                           items={[
-                            ...(group ? [{
+                            ...(quoteMode && rowUsdMult != null ? [{
+                              color: 'default' as const,
+                              label: t('user_keys.quote_price_short', '报价'),
+                              value: t('user_keys.group_quote_price', { m: rowUsdMult.toFixed(2) }),
+                            }] : []),
+                            ...(!quoteMode && rowEffectiveRate > 0 && rowStandardRate > 0 ? [{
                               color: 'default' as const,
                               label: t('user_keys.group_rate_short', '分组倍率'),
-                              value: hasOverride && userOverride != null
-                                ? `${userOverride.toFixed(2)} ${t('user_keys.user_override_tag', '专属')}`
-                                : group.rate_multiplier.toFixed(2),
+                              value: hasOverride
+                                ? `${rowEffectiveRate.toFixed(2)} ${t('user_keys.user_override_tag', '专属')}`
+                                : rowEffectiveRate.toFixed(2),
                             }] : []),
                             ...(hasSellRate ? [{
                               color: 'default' as const,

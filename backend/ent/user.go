@@ -38,6 +38,8 @@ type User struct {
 	TotpSecret *string `json:"-"`
 	// GroupRates holds the value of the "group_rates" field.
 	GroupRates map[int64]float64 `json:"group_rates,omitempty"`
+	// 定价展示模式：standard=标准牌价（现状）；quote=报价客户——控制台只展示 group_rates 报价单换算出的价格，登录态接口裁剪牌价对比与折扣锚点。仅影响展示口径，计费仍走 group_rates 覆盖链。
+	PricingMode user.PricingMode `json:"pricing_mode,omitempty"`
 	// 用户级分组插件配置覆盖。用于 OpenAI 生图 1K/2K/4K 专属固定价等，不影响 group_rates 倍率。
 	GroupPluginSettings map[int64]map[string]map[string]string `json:"group_plugin_settings,omitempty"`
 	// BalanceAlertThreshold holds the value of the "balance_alert_threshold" field.
@@ -154,7 +156,7 @@ func (*User) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case user.FieldID, user.FieldMaxConcurrency, user.FieldInviterID:
 			values[i] = new(sql.NullInt64)
-		case user.FieldEmail, user.FieldPasswordHash, user.FieldUsername, user.FieldDisplayBadge, user.FieldRole, user.FieldTotpSecret, user.FieldStatus, user.FieldSignupSource, user.FieldInviteCode, user.FieldReferralTier, user.FieldReferralDisplayName:
+		case user.FieldEmail, user.FieldPasswordHash, user.FieldUsername, user.FieldDisplayBadge, user.FieldRole, user.FieldTotpSecret, user.FieldPricingMode, user.FieldStatus, user.FieldSignupSource, user.FieldInviteCode, user.FieldReferralTier, user.FieldReferralDisplayName:
 			values[i] = new(sql.NullString)
 		case user.FieldCreatedAt, user.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -241,6 +243,12 @@ func (u *User) assignValues(columns []string, values []any) error {
 				if err := json.Unmarshal(*value, &u.GroupRates); err != nil {
 					return fmt.Errorf("unmarshal field group_rates: %w", err)
 				}
+			}
+		case user.FieldPricingMode:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field pricing_mode", values[i])
+			} else if value.Valid {
+				u.PricingMode = user.PricingMode(value.String)
 			}
 		case user.FieldGroupPluginSettings:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -412,6 +420,9 @@ func (u *User) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("group_rates=")
 	builder.WriteString(fmt.Sprintf("%v", u.GroupRates))
+	builder.WriteString(", ")
+	builder.WriteString("pricing_mode=")
+	builder.WriteString(fmt.Sprintf("%v", u.PricingMode))
 	builder.WriteString(", ")
 	builder.WriteString("group_plugin_settings=")
 	builder.WriteString(fmt.Sprintf("%v", u.GroupPluginSettings))

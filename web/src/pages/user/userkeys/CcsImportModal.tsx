@@ -5,7 +5,7 @@ import { DialogTriggerShim } from '../../../shared/components/DialogTriggerShim'
 import { Terminal } from 'lucide-react';
 import { useToast } from '../../../shared/ui';
 import { apikeysApi } from '../../../shared/api/apikeys';
-import type { APIKeyResp, GroupResp } from '../../../shared/types';
+import type { APIKeyResp, UserGroupResp } from '../../../shared/types';
 
 function executeCcsImport(
   baseUrl: string,
@@ -104,7 +104,7 @@ function executeCcsImport(
   }
 }
 
-export function useCcsImportModal(groupMap: Map<number, GroupResp>) {
+export function useCcsImportModal(groupMap: Map<number, UserGroupResp>) {
   const { toast } = useToast();
   const { t } = useTranslation();
 

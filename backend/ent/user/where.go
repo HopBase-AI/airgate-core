@@ -595,6 +595,26 @@ func GroupRatesNotNil() predicate.User {
 	return predicate.User(sql.FieldNotNull(FieldGroupRates))
 }
 
+// PricingModeEQ applies the EQ predicate on the "pricing_mode" field.
+func PricingModeEQ(v PricingMode) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPricingMode, v))
+}
+
+// PricingModeNEQ applies the NEQ predicate on the "pricing_mode" field.
+func PricingModeNEQ(v PricingMode) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldPricingMode, v))
+}
+
+// PricingModeIn applies the In predicate on the "pricing_mode" field.
+func PricingModeIn(vs ...PricingMode) predicate.User {
+	return predicate.User(sql.FieldIn(FieldPricingMode, vs...))
+}
+
+// PricingModeNotIn applies the NotIn predicate on the "pricing_mode" field.
+func PricingModeNotIn(vs ...PricingMode) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldPricingMode, vs...))
+}
+
 // GroupPluginSettingsIsNil applies the IsNil predicate on the "group_plugin_settings" field.
 func GroupPluginSettingsIsNil() predicate.User {
 	return predicate.User(sql.FieldIsNull(FieldGroupPluginSettings))

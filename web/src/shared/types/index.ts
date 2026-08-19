@@ -92,6 +92,8 @@ export interface UserResp {
 
   group_rates?: Record<number, number>;
   group_plugin_settings?: Record<number, Record<string, Record<string, string>>>;
+  // 定价展示模式：standard=标准牌价；quote=报价客户（只展示报价单价格，隐藏牌价锚点）
+  pricing_mode?: 'standard' | 'quote';
   allowed_group_ids?: number[];
   balance_alert_threshold: number;
   status: string;
@@ -124,6 +126,7 @@ export interface CreateUserReq {
   max_concurrency?: number;
   group_rates?: Record<number, number>;
   group_plugin_settings?: Record<number, Record<string, Record<string, string>>>;
+  pricing_mode?: 'standard' | 'quote';
 }
 
 export interface UpdateUserReq {
@@ -135,6 +138,7 @@ export interface UpdateUserReq {
   max_concurrency?: number;
   group_rates?: Record<number, number>;
   group_plugin_settings?: Record<number, Record<string, Record<string, string>>>;
+  pricing_mode?: 'standard' | 'quote';
   allowed_group_ids?: number[];
   status?: 'active' | 'disabled';
 }
@@ -408,6 +412,20 @@ export interface GroupAllowedUser {
   user_id: number;
   email: string;
   username: string;
+}
+
+// UserGroupResp 用户可用分组（GET /api/v1/groups 瘦投影）：只含选组展示字段，
+// 不含 rate_multiplier / plugin_settings / model_routing 等内部定价与运营字段。
+// 用户侧价格展示一律以 /models/pricing/me 的分组摘要（MyGroupQuote）为准。
+export interface UserGroupResp {
+  id: number;
+  name: string;
+  name_i18n?: Record<string, string>;
+  platform: string;
+  is_exclusive: boolean;
+  note?: string;
+  note_i18n?: Record<string, string>;
+  sort_weight: number;
 }
 
 export interface GroupResp {

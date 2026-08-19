@@ -7,15 +7,17 @@ import (
 
 // User 认证域用户对象。
 type User struct {
-	ID              int
-	Email           string
-	Username        string
-	DisplayBadge    string
-	PasswordHash    string
-	Balance         float64
-	Role            string
-	MaxConcurrency  int
-	GroupRates      map[int64]float64
+	ID             int
+	Email          string
+	Username       string
+	DisplayBadge   string
+	PasswordHash   string
+	Balance        float64
+	Role           string
+	MaxConcurrency int
+	GroupRates     map[int64]float64
+	// PricingMode 定价展示模式（standard / quote），登录响应需要携带给前端做报价客户判定。
+	PricingMode     string
 	AllowedGroupIDs []int64
 	Status          string
 	CreatedAt       time.Time
