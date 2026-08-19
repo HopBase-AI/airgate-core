@@ -35,6 +35,8 @@ const (
 	FieldTotpSecret = "totp_secret"
 	// FieldGroupRates holds the string denoting the group_rates field in the database.
 	FieldGroupRates = "group_rates"
+	// FieldPricingMode holds the string denoting the pricing_mode field in the database.
+	FieldPricingMode = "pricing_mode"
 	// FieldGroupPluginSettings holds the string denoting the group_plugin_settings field in the database.
 	FieldGroupPluginSettings = "group_plugin_settings"
 	// FieldBalanceAlertThreshold holds the string denoting the balance_alert_threshold field in the database.
@@ -128,6 +130,7 @@ var Columns = []string{
 	FieldMaxConcurrency,
 	FieldTotpSecret,
 	FieldGroupRates,
+	FieldPricingMode,
 	FieldGroupPluginSettings,
 	FieldBalanceAlertThreshold,
 	FieldBalanceAlertNotified,
@@ -222,6 +225,32 @@ func RoleValidator(r Role) error {
 		return nil
 	default:
 		return fmt.Errorf("user: invalid enum value for role field: %q", r)
+	}
+}
+
+// PricingMode defines the type for the "pricing_mode" enum field.
+type PricingMode string
+
+// PricingModeStandard is the default value of the PricingMode enum.
+const DefaultPricingMode = PricingModeStandard
+
+// PricingMode values.
+const (
+	PricingModeStandard PricingMode = "standard"
+	PricingModeQuote    PricingMode = "quote"
+)
+
+func (pm PricingMode) String() string {
+	return string(pm)
+}
+
+// PricingModeValidator is a validator for the "pricing_mode" field enum values. It is called by the builders before save.
+func PricingModeValidator(pm PricingMode) error {
+	switch pm {
+	case PricingModeStandard, PricingModeQuote:
+		return nil
+	default:
+		return fmt.Errorf("user: invalid enum value for pricing_mode field: %q", pm)
 	}
 }
 
@@ -328,6 +357,11 @@ func ByMaxConcurrency(opts ...sql.OrderTermOption) OrderOption {
 // ByTotpSecret orders the results by the totp_secret field.
 func ByTotpSecret(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTotpSecret, opts...).ToFunc()
+}
+
+// ByPricingMode orders the results by the pricing_mode field.
+func ByPricingMode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPricingMode, opts...).ToFunc()
 }
 
 // ByBalanceAlertThreshold orders the results by the balance_alert_threshold field.

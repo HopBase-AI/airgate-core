@@ -7,7 +7,7 @@ import { useToast } from '../../../shared/ui';
 import { useClipboard } from '../../../shared/hooks/useClipboard';
 import { useSiteSettings } from '../../../app/providers/SiteSettingsProvider';
 import { apikeysApi } from '../../../shared/api/apikeys';
-import type { APIKeyResp, GroupResp } from '../../../shared/types';
+import type { APIKeyResp, UserGroupResp } from '../../../shared/types';
 
 function getUseKeyConfig(
   baseUrl: string,
@@ -141,7 +141,7 @@ goals = true`;
   }
 }
 
-export function useUseKeyModal(groupMap: Map<number, GroupResp>) {
+export function useUseKeyModal(groupMap: Map<number, UserGroupResp>) {
   const { toast } = useToast();
   const { t } = useTranslation();
 

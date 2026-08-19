@@ -29,6 +29,8 @@ func (User) Fields() []ent.Field {
 			Comment("用户级并发上限：同一 user 所有 API Key 加起来同时在途的请求数。0 表示不限制（默认）。与 api_key.max_concurrency 是 AND 关系，两者都会检查。"),
 		field.String("totp_secret").Optional().Nillable().Sensitive(),
 		field.JSON("group_rates", map[int64]float64{}).Optional(),
+		field.Enum("pricing_mode").Values("standard", "quote").Default("standard").
+			Comment("定价展示模式：standard=标准牌价（现状）；quote=报价客户——控制台只展示 group_rates 报价单换算出的价格，登录态接口裁剪牌价对比与折扣锚点。仅影响展示口径，计费仍走 group_rates 覆盖链。"),
 		field.JSON("group_plugin_settings", map[int64]map[string]map[string]string{}).Optional().
 			Comment("用户级分组插件配置覆盖。用于 OpenAI 生图 1K/2K/4K 专属固定价等，不影响 group_rates 倍率。"),
 		field.Float("balance_alert_threshold").Default(0), // 0 表示关闭预警

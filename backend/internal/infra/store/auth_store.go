@@ -248,6 +248,7 @@ func mapAuthUser(item *ent.User) appauth.User {
 		Role:           string(item.Role),
 		MaxConcurrency: item.MaxConcurrency,
 		GroupRates:     cloneAuthGroupRates(item.GroupRates),
+		PricingMode:    item.PricingMode.String(),
 		Status:         string(item.Status),
 		CreatedAt:      item.CreatedAt,
 		UpdatedAt:      item.UpdatedAt,

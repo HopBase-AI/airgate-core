@@ -17,6 +17,8 @@ var (
 	ErrDeleteAdminForbidden = errors.New("不能删除管理员用户")
 	// ErrInvalidRateMultiplier 专属倍率非法（不能为负）。
 	ErrInvalidRateMultiplier = errors.New("专属倍率不能为负数")
+	// ErrInvalidPricingMode 定价展示模式非法（仅支持 standard / quote）。
+	ErrInvalidPricingMode = errors.New("无效的定价展示模式")
 	// ErrDuplicateBalanceChange 幂等键已存在，同一笔余额变更已入账。
 	ErrDuplicateBalanceChange = errors.New("余额变更已入账（幂等键重复）")
 	// ErrInvalidAPIKeySession API Key scoped JWT 已不再对应有效 Key/owner。

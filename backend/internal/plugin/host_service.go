@@ -812,15 +812,40 @@ func (h *HostService) listGroups(ctx context.Context, req hostListGroupsRequest)
 		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	// 报价客户（pricing_mode=quote）：插件 UI 也不得看到标准牌价——倍率字段
+	// 改写为该用户的有效倍率，与 /models/pricing/me 的裁剪口径一致。
+	// 用户不存在按非报价处理（兼容旧调用方传任意 user_id）；其余查询错误向上抛，
+	// 避免出错时把标准牌价漏出去。
+	var quoteUser *ent.User
+	if req.UserID > 0 {
+		qu, err := h.db.User.Query().Where(user.IDEQ(int(req.UserID))).Only(ctx)
+		switch {
+		case err == nil:
+			if qu.PricingMode == user.PricingModeQuote {
+				quoteUser = qu
+			}
+		case ent.IsNotFound(err):
+			// 保持旧行为：无效 user_id 不影响列表本身
+		default:
+			if cerr := hostContextError(err); cerr != nil {
+				return nil, cerr
+			}
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
 	items := make([]map[string]interface{}, 0, len(groups))
 	for _, g := range groups {
+		rateMultiplier := g.RateMultiplier
+		if quoteUser != nil {
+			rateMultiplier = billing.ResolveBillingRateForGroup(quoteUser.GroupRates, g.ID, g.RateMultiplier)
+		}
 		item := map[string]interface{}{
 			"id":              int64(g.ID),
 			"name":            g.Name,
 			"name_i18n":       g.NameI18n,
 			"platform":        g.Platform,
 			"is_exclusive":    g.IsExclusive,
-			"rate_multiplier": g.RateMultiplier,
+			"rate_multiplier": rateMultiplier,
 			"note":            g.Note,
 			"note_i18n":       g.NoteI18n,
 			"status_visible":  g.StatusVisible,
@@ -888,13 +913,19 @@ func (h *HostService) listEligibleGroups(ctx context.Context, req hostListGroups
 		if strings.TrimSpace(req.Model) != "" && !h.groupHasSchedulableAccountForModel(ctx, c, req.Model, req.NeedsImage) {
 			continue
 		}
+		// 报价客户：标准牌价改写为有效倍率，响应里不存在「标准 vs 专属」差值
+		//（与 /models/pricing/me 的裁剪口径一致），插件 UI 无从渲染牌价对比。
+		rateMultiplier := g.RateMultiplier
+		if u.PricingMode == user.PricingModeQuote {
+			rateMultiplier = c.EffectiveRate
+		}
 		item := map[string]interface{}{
 			"id":              int64(g.ID),
 			"name":            g.Name,
 			"name_i18n":       g.NameI18n,
 			"platform":        g.Platform,
 			"is_exclusive":    g.IsExclusive,
-			"rate_multiplier": g.RateMultiplier,
+			"rate_multiplier": rateMultiplier,
 			"effective_rate":  c.EffectiveRate,
 			"note":            g.Note,
 			"note_i18n":       g.NoteI18n,

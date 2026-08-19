@@ -101,7 +101,34 @@ func (s *Service) UserPricing(ctx context.Context, userID int) (Result, error) {
 			),
 		})
 	}
+	result.PricingMode = u.PricingMode
+	if u.PricingMode == PricingModeQuote {
+		applyQuoteModePruning(&result)
+	}
 	return result, nil
+}
+
+// PricingModeQuote 报价客户模式：控制台只展示该用户报价单换算出的价格。
+const PricingModeQuote = "quote"
+
+// applyQuoteModePruning 报价客户口径裁剪：
+//   - 模型报价抹掉分组来源（「经由 <分组>」是标准牌价体系的锚点，报价客户不该看到）；
+//   - 分组摘要的标准倍率改写为有效倍率，响应里不再存在「标准 vs 专属」的差值，
+//     前端因此推不出默认牌价，也自然不渲染划线对比与折扣徽章。
+//
+// 报价本身（UserRate / EffectiveRate / USDMultiplier / 固定图价）保持计费同源，不动。
+func applyQuoteModePruning(result *Result) {
+	for pi := range result.Platforms {
+		models := result.Platforms[pi].Models
+		for mi := range models {
+			models[mi].GroupID = 0
+			models[mi].GroupName = ""
+			models[mi].GroupNameI18n = nil
+		}
+	}
+	for gi := range result.Groups {
+		result.Groups[gi].GroupRate = result.Groups[gi].EffectiveRate
+	}
 }
 
 // APIKeyPricing 计算 API Key 登录会话的实付价视图。
@@ -167,6 +194,9 @@ func (s *Service) APIKeyPricing(ctx context.Context, userID, apiKeyID int) (Resu
 			result.Platforms = append(result.Platforms, quotes)
 		}
 	}
+	// API Key 会话继承 Key 归属用户的定价展示模式：报价客户用 Key 登录时，
+	// 前端同样不渲染划线原价/折扣徽章（该视图本就不带分组摘要，无需再裁剪）。
+	result.PricingMode = u.PricingMode
 	return result, nil
 }
 

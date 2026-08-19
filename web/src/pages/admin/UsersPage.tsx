@@ -23,10 +23,11 @@ import { BalanceModal } from './users/BalanceModal';
 import { UserApiKeysModal } from './users/UserApiKeysModal';
 import { BalanceHistoryModal } from './users/BalanceHistoryModal';
 import { UserGroupsModal } from './users/UserGroupsModal';
+import { QuoteSheetModal } from './users/QuoteSheetModal';
 import type { UserResp } from '../../shared/types';
 import {
   Plus, Search, Pencil, MoreHorizontal, RefreshCw,
-  Key, Users, PlusCircle, MinusCircle, Clock, Trash2,
+  Key, Users, PlusCircle, MinusCircle, Clock, Trash2, Tag,
 } from 'lucide-react';
 
 const FALLBACK_DEFAULT_USER_MAX_CONCURRENCY = 5;
@@ -54,6 +55,7 @@ export default function UsersPage() {
   const [apiKeysUser, setApiKeysUser] = useState<UserResp | null>(null);
   const [balanceHistoryUser, setBalanceHistoryUser] = useState<UserResp | null>(null);
   const [groupsUser, setGroupsUser] = useState<UserResp | null>(null);
+  const [quoteUser, setQuoteUser] = useState<UserResp | null>(null);
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: queryKeys.users(page, pageSize, debouncedKeyword, statusFilter),
@@ -203,16 +205,17 @@ export default function UsersPage() {
               <CommonTable.Column id="username">{t('users.username')}</CommonTable.Column>
               <CommonTable.Column id="role">{t('users.role')}</CommonTable.Column>
               <CommonTable.Column id="balance">{t('users.balance')}</CommonTable.Column>
+              <CommonTable.Column id="quote">{t('users.quote')}</CommonTable.Column>
               <CommonTable.Column id="status">{t('common.status')}</CommonTable.Column>
               <CommonTable.Column id="created_at">{t('users.created_at')}</CommonTable.Column>
               <CommonTable.Column id="actions">{t('common.actions')}</CommonTable.Column>
             </CommonTable.Header>
             <CommonTable.Body>
               {isLoading ? (
-                <TableLoadingRow colSpan={8} />
+                <TableLoadingRow colSpan={9} />
               ) : rows.length === 0 ? (
                 <CommonTable.Row id="empty">
-                  <CommonTable.Cell colSpan={8}>
+                  <CommonTable.Cell colSpan={9}>
                     <EmptyState>
                       <div className="text-sm text-default-500">{t('common.no_data')}</div>
                     </EmptyState>
@@ -245,6 +248,26 @@ export default function UsersPage() {
                     </CommonTable.Cell>
                     <CommonTable.Cell>
                       <span className="font-mono">${formatBalance(row.balance)}</span>
+                    </CommonTable.Cell>
+                    <CommonTable.Cell>
+                      {(() => {
+                        const overridden = Object.values(row.group_rates ?? {}).filter((rate) => rate > 0).length;
+                        const isQuote = row.pricing_mode === 'quote';
+                        if (!isQuote && overridden === 0) {
+                          return (
+                            <Chip color="default" size="sm" variant="soft">
+                              {t('users.quote_badge_standard')}
+                            </Chip>
+                          );
+                        }
+                        return (
+                          <Chip color="accent" size="sm" variant="soft">
+                            {isQuote
+                              ? t('users.quote_badge_quote', { n: overridden })
+                              : t('users.quote_badge_override', { n: overridden })}
+                          </Chip>
+                        );
+                      })()}
                     </CommonTable.Cell>
                     <CommonTable.Cell>
                       <NativeSwitch
@@ -295,6 +318,9 @@ export default function UsersPage() {
                                   case 'groups':
                                     setGroupsUser(row);
                                     break;
+                                  case 'quote':
+                                    setQuoteUser(row);
+                                    break;
                                   case 'topup':
                                     setBalanceUser({ user: row, defaultAction: 'add' });
                                     break;
@@ -320,6 +346,12 @@ export default function UsersPage() {
                                 <span className="flex items-center gap-2">
                                   <Users className="w-3.5 h-3.5" style={{ color: 'var(--ag-info)' }} />
                                   {t('users.groups')}
+                                </span>
+                              </Dropdown.Item>
+                              <Dropdown.Item id="quote" textValue={t('users.quote_sheet')}>
+                                <span className="flex items-center gap-2">
+                                  <Tag className="w-3.5 h-3.5" style={{ color: 'var(--ag-primary)' }} />
+                                  {t('users.quote_sheet')}
                                 </span>
                               </Dropdown.Item>
                               <Dropdown.Item id="topup" textValue={t('users.topup')}>
@@ -472,6 +504,18 @@ export default function UsersPage() {
           onSaved={() => {
             queryClient.invalidateQueries({ queryKey: queryKeys.users() });
             setGroupsUser(null);
+          }}
+        />
+      )}
+
+      {quoteUser && (
+        <QuoteSheetModal
+          open
+          user={quoteUser}
+          onClose={() => setQuoteUser(null)}
+          onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: queryKeys.users() });
+            setQuoteUser(null);
           }}
         />
       )}

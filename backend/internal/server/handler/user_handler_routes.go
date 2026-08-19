@@ -198,6 +198,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		MaxConcurrency:      maxConcurrency,
 		GroupRates:          req.GroupRates,
 		GroupPluginSettings: req.GroupPluginSettings,
+		PricingMode:         req.PricingMode,
 	})
 	if err != nil {
 		httpCode, message := h.handleError("创建用户失败", "创建失败", err)
@@ -232,6 +233,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		HasGroupRates:          req.GroupRates != nil,
 		GroupPluginSettings:    req.GroupPluginSettings,
 		HasGroupPluginSettings: req.GroupPluginSettings != nil,
+		PricingMode:            req.PricingMode,
 		AllowedGroupIDs:        derefInt64Slice(req.AllowedGroupIDs),
 		HasAllowedGroupIDs:     req.AllowedGroupIDs != nil,
 		Status:                 req.Status,

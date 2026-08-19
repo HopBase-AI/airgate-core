@@ -32,6 +32,21 @@ func toGroupRespFromDomain(item appgroup.Group) dto.GroupResp {
 	}
 }
 
+// toUserGroupRespFromDomain 用户可用分组的瘦投影：只保留选组所需的展示字段，
+// 不透出 rate_multiplier / plugin_settings / model_routing 等内部定价与运营字段。
+func toUserGroupRespFromDomain(item appgroup.Group) dto.UserGroupResp {
+	return dto.UserGroupResp{
+		ID:          int64(item.ID),
+		Name:        item.Name,
+		NameI18n:    item.NameI18n,
+		Platform:    item.Platform,
+		IsExclusive: item.IsExclusive,
+		Note:        item.Note,
+		NoteI18n:    item.NoteI18n,
+		SortWeight:  item.SortWeight,
+	}
+}
+
 func toGroupAllowedUsers(items []appgroup.GroupAllowedUser) []dto.GroupAllowedUserResp {
 	if len(items) == 0 {
 		return nil

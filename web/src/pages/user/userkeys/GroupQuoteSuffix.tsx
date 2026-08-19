@@ -6,6 +6,9 @@ export interface GroupQuoteSuffixData {
   discountPercent: number;
   standardMultiplier?: number;
   hasOfficialDiscount: boolean;
+  // quoteOnly 报价客户模式：只显示「¥X.XX / $1」报价本身，
+  // 不渲染划线标准价与折扣徽章（报价客户不该看到任何牌价锚点）。
+  quoteOnly?: boolean;
 }
 
 interface GroupQuoteSuffixProps {
@@ -18,6 +21,18 @@ const formatMultiplier = (multiplier: number) =>
 
 export function GroupQuoteSuffix({ data, title }: GroupQuoteSuffixProps) {
   const { t } = useTranslation();
+
+  const price = (multiplier: number) => t('user_keys.group_quote_price', {
+    m: formatMultiplier(multiplier),
+  });
+
+  if (data.quoteOnly) {
+    return (
+      <span className="inline-flex items-center whitespace-nowrap text-xs tabular-nums text-text-tertiary" title={title}>
+        {price(data.multiplier)}
+      </span>
+    );
+  }
 
   if (!data.hasOfficialDiscount) {
     return (
@@ -34,10 +49,6 @@ export function GroupQuoteSuffix({ data, title }: GroupQuoteSuffixProps) {
       </span>
     );
   }
-
-  const price = (multiplier: number) => t('user_keys.group_quote_price', {
-    m: formatMultiplier(multiplier),
-  });
 
   return (
     <span

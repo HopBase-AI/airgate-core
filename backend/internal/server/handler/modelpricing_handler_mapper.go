@@ -35,5 +35,5 @@ func toMyModelPricingResp(result appmodelpricing.Result) dto.MyModelPricingResp 
 			USDMultiplier: g.USDMultiplier,
 		})
 	}
-	return dto.MyModelPricingResp{Platforms: platforms, Groups: groups}
+	return dto.MyModelPricingResp{Platforms: platforms, Groups: groups, PricingMode: result.PricingMode}
 }

@@ -12,6 +12,7 @@ type UserResp struct {
 	MaxConcurrency        int                                    `json:"max_concurrency"`
 	GroupRates            map[int64]float64                      `json:"group_rates,omitempty"`           // 用户专属分组倍率
 	GroupPluginSettings   map[int64]map[string]map[string]string `json:"group_plugin_settings,omitempty"` // 用户专属插件配置
+	PricingMode           string                                 `json:"pricing_mode,omitempty"`          // 定价展示模式：standard=标准牌价；quote=报价客户
 	AllowedGroupIDs       []int64                                `json:"allowed_group_ids,omitempty"`     // 已分配的专属分组 ID
 	BalanceAlertThreshold float64                                `json:"balance_alert_threshold"`
 	Status                string                                 `json:"status"`
@@ -64,6 +65,7 @@ type CreateUserReq struct {
 	MaxConcurrency      *int                                   `json:"max_concurrency" binding:"omitempty,gte=0"`
 	GroupRates          map[int64]float64                      `json:"group_rates"`
 	GroupPluginSettings map[int64]map[string]map[string]string `json:"group_plugin_settings"`
+	PricingMode         string                                 `json:"pricing_mode" binding:"omitempty,oneof=standard quote"`
 }
 
 // UpdateUserReq 管理员更新用户请求
@@ -76,7 +78,8 @@ type UpdateUserReq struct {
 	MaxConcurrency      *int                                   `json:"max_concurrency"`
 	GroupRates          map[int64]float64                      `json:"group_rates"`
 	GroupPluginSettings map[int64]map[string]map[string]string `json:"group_plugin_settings"`
-	AllowedGroupIDs     *[]int64                               `json:"allowed_group_ids"` // nil=不修改, []=清空, [1,2]=设置
+	PricingMode         *string                                `json:"pricing_mode" binding:"omitempty,oneof=standard quote"` // nil=不修改
+	AllowedGroupIDs     *[]int64                               `json:"allowed_group_ids"`                                     // nil=不修改, []=清空, [1,2]=设置
 	Status              *string                                `json:"status" binding:"omitempty,oneof=active disabled"`
 }
 
