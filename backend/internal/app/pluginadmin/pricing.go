@@ -347,12 +347,33 @@ func categoryOf(capabilities []string) string {
 	return ""
 }
 
+// withTokenPricing 把 price.input/cached_input/output 补进桶价模型。
+//
+// 桶价与 token 价不是二选一：Gemini / GPT Image 这类模型按 token 结算，同时声明
+// 官方单张牌价供展示端铺档位。早期只有 seedream 这种纯按张计费的模型会报桶价，
+// 于是解析时直接丢掉了 token 价——结果是 gemini 平台的生图模型在公开目录里
+// input/output 变成 0（openai 平台因为 models.catalog 覆盖层补了 token 价才没露）。
+// 缺 price.input/output 的纯按张模型保持 0，与改动前一致。
+func withTokenPricing(item PublicPricingModel, metadata map[string]string) PublicPricingModel {
+	if input, ok := parsePriceValue(metadata["price.input"]); ok {
+		item.Input = input
+	}
+	if output, ok := parsePriceValue(metadata["price.output"]); ok {
+		item.Output = output
+	}
+	if cached, ok := parsePriceValue(metadata["price.cached_input"]); ok {
+		item.CachedInput = cached
+	}
+	return item
+}
+
 // parseBuiltinPricing 把插件上报的 price.*/long_context.* metadata 解析为公开定价。
 // 无任何桶价且无 price.input/price.output 视为"无价格提示"（老插件），跳过。
 func parseBuiltinPricing(id, name string, contextWindow int, capabilities []string, metadata map[string]string) (PublicPricingModel, bool) {
-	// 图片生成模型：价格是 price.image.<bucket> 按张桶价，没有 input/output。
+	// 图片生成模型：价格主要在 price.image.<bucket> 按张桶价；按 token 结算的
+	// 生图模型会另外声明 price.input/output，两者一并保留。
 	if buckets := parseImageBuckets(metadata); len(buckets) > 0 {
-		return PublicPricingModel{
+		return withTokenPricing(PublicPricingModel{
 			ID:            id,
 			Name:          name,
 			ContextWindow: contextWindow,
@@ -360,11 +381,11 @@ func parseBuiltinPricing(id, name string, contextWindow int, capabilities []stri
 			Vendor:        metadata["vendor"],
 			Series:        metadata["series"],
 			Image:         buckets,
-		}, true
+		}, metadata), true
 	}
-	// 视频生成模型：价格是 price.video_tokens.<bucket> 桶价，没有 input/output。
+	// 视频生成模型：价格主要在 price.video_tokens.<bucket> 桶价，同上一并保留 token 价。
 	if buckets := parseVideoBuckets(metadata); len(buckets) > 0 {
-		return PublicPricingModel{
+		return withTokenPricing(PublicPricingModel{
 			ID:            id,
 			Name:          name,
 			ContextWindow: contextWindow,
@@ -372,7 +393,7 @@ func parseBuiltinPricing(id, name string, contextWindow int, capabilities []stri
 			Vendor:        metadata["vendor"],
 			Series:        metadata["series"],
 			VideoTokens:   buckets,
-		}, true
+		}, metadata), true
 	}
 	input, okIn := parsePriceValue(metadata["price.input"])
 	output, okOut := parsePriceValue(metadata["price.output"])
