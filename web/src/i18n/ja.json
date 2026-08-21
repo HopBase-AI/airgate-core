@@ -190,6 +190,9 @@
     "video_with_ref": "画像から動画",
     "video_price_unit": "課金単価 · 100 万 video tokens あたり",
     "video_price_note": "単価は 100 万 video tokens あたり。実際の料金 = 単価 × 生成時に消費した video tokens。",
+    "image_1k": "1K / 枚",
+    "image_2k": "2K / 枚",
+    "image_4k": "4K / 枚",
     "image_le_236w": "≤ 2.36 MP / 枚",
     "image_gt_236w": "> 2.36 MP / 枚",
     "image_le_261w": "≤ 2.61 MP / 枚",
@@ -244,7 +247,9 @@
     "vendor_zhipu": "Zhipu GLM",
     "vendor_seedance": "ByteDance Seedance",
     "vendor_kling": "Kuaishou Kling",
-    "vendor_deepseek": "DeepSeek"
+    "vendor_deepseek": "DeepSeek",
+    "subtitle_official_only": "各モデルの公式基本価格です。実際の価格は商談時のお見積りによります。担当営業までお問い合わせください。",
+    "pricing_note_official_only": "公式基本価格はモデル選定の参考用で、当社の提示価格ではありません。実際の請求はお見積りに準じます。"
   },
   "account_events": {
     "title": "異常モニター",
@@ -1367,6 +1372,10 @@
     "toc_pricing_fx_hint": "1 米ドルを人民元に換算した値（例：6.8）。空欄の場合は下流のデフォルトを使用します。",
     "toc_pricing_currency": "実支払価格の表示通貨",
     "toc_pricing_currency_hint": "モデル広場で実支払価格を表示する際に使う通貨です。",
+    "toc_pricing_official_only": "モデルプラザの価格基準",
+    "toc_pricing_official_only_hint": "有効にするとモデルプラザは公式基本価格のみを表示し、実支払価格・割引バッジ・「経由グループ」を表示しません。顧客ごとに見積もる ToB 向けに有効化し、セルフサービスのサイトでは無効のままにしてください（利用者が自分の支払価格を確認できなくなります）。",
+    "toc_pricing_official_only_on": "公式基本価格のみ",
+    "toc_pricing_official_only_off": "実支払価格を表示（既定）",
     "toc_pricing_currency_default": "デフォルト",
     "toc_pricing_platform_multipliers": "プラットフォーム表示倍率",
     "toc_pricing_platform_multipliers_hint": "公式 $1 あたりに消費する残高です。空欄にするとそのプラットフォームの価格を表示しません。右側のグレーの数値は該当プラットフォームのグループ実倍率で、乖離が大きいと黄色で警告します。両者がずれると公開価格と実際の請求額が一致しなくなります。",

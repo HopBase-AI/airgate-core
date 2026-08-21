@@ -46,6 +46,27 @@ describe('toc_landing_pricing 圆环往返', () => {
     expect(serializeTocPricing(parseTocPricing(''))).toBe('');
   });
 
+  // plaza_official_only 决定模型广场是否只展示官方基准价。它是个开关而非数值，
+  // 最容易在 parse→serialize 里被静默丢掉——一丢，ToB 广场就退回展示实付价。
+  it('官方基准价开关往返保真', () => {
+    const raw = '{"fx": 6.8, "plaza_currency": "USD", "plaza_official_only": true}';
+    const v = parseTocPricing(raw);
+    expect(v.plazaOfficialOnly).toBe(true);
+    expect(JSON.parse(serializeTocPricing(v))).toEqual(JSON.parse(raw));
+  });
+
+  it('关闭时不写键，保持「留空＝走下游默认」', () => {
+    const v = parseTocPricing('{"fx": 6.8}');
+    expect(v.plazaOfficialOnly).toBe(false);
+    expect(JSON.parse(serializeTocPricing(v))).toEqual({ fx: 6.8 });
+  });
+
+  it('非布尔值当成配置损坏，而不是悄悄按 true 处理', () => {
+    const v = parseTocPricing('{"plaza_official_only": "true"}');
+    expect(v.parseError).toBe(true);
+    expect(v.plazaOfficialOnly).toBe(false);
+  });
+
   it('非法 JSON 不抛异常', () => {
     expect(() => parseTocPricing('{"fx": 6.8,')).not.toThrow();
   });

@@ -4,7 +4,9 @@ import {
   hasFixedImagePricingBuckets,
   hasFixedImageTierPrices,
   resolveBucketDiscount,
+  officialPriceSymbol,
   resolveFixedImageTierPrices,
+  resolvePlazaFixedImageTiers,
 } from './modelPlazaPricing';
 
 describe('model plaza price formatting', () => {
@@ -78,5 +80,38 @@ describe('fixed image prices', () => {
     ])).toBe(false);
     expect(resolveBucketDiscount(0.6, 6.8, false)).toBeCloseTo(0.6 / 6.8);
     expect(hasFixedImagePricingBuckets([{ imageBillingMode: 'fixed' }])).toBe(true);
+  });
+});
+
+// 固定图价来自分组配置（groups.plugin_settings.openai.image_price_*），是某个分组的
+// 成交价而不是官方牌价。ToB 逐客户单独报价，广场切「只展示官方基准价」后一旦漏铺，
+// 就等于把某客户的成交价公开挂出去。
+describe('官方基准价口径下的固定图价', () => {
+  const model = { image_price_1k: 0.4, image_price_2k: 0.4, image_price_4k: 0.4 };
+
+  it('展示实付价时照常铺出三档', () => {
+    expect(resolvePlazaFixedImageTiers(model, 6.8, 'CNY', true)).toEqual([
+      { tier: '1k', sale: 0.4, billingMode: 'fixed' },
+      { tier: '2k', sale: 0.4, billingMode: 'fixed' },
+      { tier: '4k', sale: 0.4, billingMode: 'fixed' },
+    ]);
+  });
+
+  it('官方基准价口径下一张都不铺', () => {
+    expect(resolvePlazaFixedImageTiers(model, 6.8, 'CNY', false)).toEqual([]);
+    expect(resolvePlazaFixedImageTiers(model, 6.8, 'USD', false)).toEqual([]);
+  });
+});
+
+// 人民币牌价模型（GLM 等，currency="CNY"）的基准价数字本身就是 ¥。
+// 广场切到「只展示官方基准价」后全站都走这条路，标错币种就是把 ¥1.4 报成 $1.4。
+describe('基准价币种符号', () => {
+  it('人民币牌价模型用 ¥', () => {
+    expect(officialPriceSymbol({ currency: 'CNY' })).toBe('¥');
+  });
+
+  it('官方美元价模型与未声明币种的模型用 $', () => {
+    expect(officialPriceSymbol({ currency: 'USD' })).toBe('$');
+    expect(officialPriceSymbol({})).toBe('$');
   });
 });

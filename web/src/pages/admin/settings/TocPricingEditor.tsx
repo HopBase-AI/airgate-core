@@ -40,6 +40,10 @@ export type TocPricingValue = {
   multipliers: Record<string, string>;
   board: BoardRow[];
   plazaCurrency: string;
+  // 模型广场只展示官方基准价（不渲染实付价/折扣/经由分组）。ToB 单独报价，
+  // 广场给出「你的价格」既不是客户实际拿到的价，也泄露分组配置；ToC 自助站
+  // 必须留空/关闭，否则用户看不到自己的实付价。
+  plazaOfficialOnly: boolean;
   // Unknown keys are retained so editing a known field cannot erase a newer
   // server-side pricing option that this editor does not understand yet.
   extra?: Record<string, unknown>;
@@ -54,7 +58,9 @@ function numText(v: unknown): string {
 }
 
 export function parseTocPricing(raw: string): TocPricingValue {
-  const empty: TocPricingValue = { fx: '', multipliers: {}, board: [], plazaCurrency: '', extra: {} };
+  const empty: TocPricingValue = {
+    fx: '', multipliers: {}, board: [], plazaCurrency: '', plazaOfficialOnly: false, extra: {},
+  };
   if (!raw.trim()) return empty;
   let parsed: unknown;
   try {
@@ -64,7 +70,7 @@ export function parseTocPricing(raw: string): TocPricingValue {
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { ...empty, parseError: true };
   const obj = parsed as Record<string, unknown>;
-  const knownKeys = new Set(['fx', 'multipliers', 'board', 'plaza_currency']);
+  const knownKeys = new Set(['fx', 'multipliers', 'board', 'plaza_currency', 'plaza_official_only']);
   const extra = Object.fromEntries(Object.entries(obj).filter(([key]) => !knownKeys.has(key)));
   let parseError = false;
 
@@ -77,6 +83,10 @@ export function parseTocPricing(raw: string): TocPricingValue {
   }
   if ('board' in obj && obj.board !== null && !Array.isArray(obj.board)) parseError = true;
   if ('plaza_currency' in obj && obj.plaza_currency !== null && typeof obj.plaza_currency !== 'string') {
+    parseError = true;
+  }
+  if ('plaza_official_only' in obj && obj.plaza_official_only !== null
+    && typeof obj.plaza_official_only !== 'boolean') {
     parseError = true;
   }
 
@@ -125,6 +135,7 @@ export function parseTocPricing(raw: string): TocPricingValue {
     multipliers,
     board,
     plazaCurrency: currency.toUpperCase(),
+    plazaOfficialOnly: obj['plaza_official_only'] === true,
     extra,
     ...(parseError ? { parseError: true } : {}),
   };
@@ -169,6 +180,9 @@ export function serializeTocPricing(v: TocPricingValue): string {
   if (board.length > 0) out['board'] = board;
 
   if (v.plazaCurrency.trim() !== '') out['plaza_currency'] = v.plazaCurrency.trim().toUpperCase();
+
+  // 只在开启时写键：留空＝下游默认（展示实付价），与其余字段的「留空走默认」一致。
+  if (v.plazaOfficialOnly) out['plaza_official_only'] = true;
 
   if (Object.keys(out).length === 0) return '';
   return JSON.stringify(out, null, 2);
@@ -309,6 +323,26 @@ export function TocPricingEditor({
             </div>
           </Field>
         </div>
+
+        <Field
+          label={t('settings.toc_pricing_official_only')}
+          hint={t('settings.toc_pricing_official_only_hint')}
+        >
+          <div className="flex gap-1">
+            {([[false, t('settings.toc_pricing_official_only_off')],
+              [true, t('settings.toc_pricing_official_only_on')]] as const).map(([on, label]) => (
+                <Button
+                  key={String(on)}
+                  fullWidth
+                  size="sm"
+                  variant={form.plazaOfficialOnly === on ? 'primary' : 'secondary'}
+                  onPress={() => commit({ ...form, plazaOfficialOnly: on })}
+                >
+                  {label}
+                </Button>
+              ))}
+          </div>
+        </Field>
 
         <div>
           <div className="mb-2 text-[13px] font-medium text-text-secondary">

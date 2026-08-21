@@ -190,6 +190,9 @@
     "video_with_ref": "Image-to-video",
     "video_price_unit": "Billing rate · per 1M video tokens",
     "video_price_note": "Rate per 1M video tokens; actual cost = rate × video tokens consumed by the generation.",
+    "image_1k": "1K / image",
+    "image_2k": "2K / image",
+    "image_4k": "4K / image",
     "image_le_236w": "≤ 2.36 MP / image",
     "image_gt_236w": "> 2.36 MP / image",
     "image_le_261w": "≤ 2.61 MP / image",
@@ -244,7 +247,9 @@
     "vendor_zhipu": "Zhipu GLM",
     "vendor_seedance": "ByteDance Seedance",
     "vendor_kling": "Kuaishou Kling",
-    "vendor_deepseek": "DeepSeek"
+    "vendor_deepseek": "DeepSeek",
+    "subtitle_official_only": "Official base prices for each model. Your actual rate is set by your commercial quote — contact your sales contact for the quotation.",
+    "pricing_note_official_only": "Official base prices are for model selection only and are not our quoted rates; billing follows your commercial quotation."
   },
   "account_events": {
     "title": "Error Monitor",
@@ -1367,6 +1372,10 @@
     "toc_pricing_fx_hint": "How much CNY one US dollar converts to, e.g. 6.8. Leave empty to use the downstream default.",
     "toc_pricing_currency": "Charged-price currency",
     "toc_pricing_currency_hint": "Currency used when the model plaza shows the charged price.",
+    "toc_pricing_official_only": "Model plaza price basis",
+    "toc_pricing_official_only_hint": "When on, the model plaza shows only official base prices — no effective rate, discount badge, or source group. Turn on for per-customer quoted (ToB) deployments; keep off on self-serve sites or users cannot see what they actually pay.",
+    "toc_pricing_official_only_on": "Official base price only",
+    "toc_pricing_official_only_off": "Show effective price (default)",
     "toc_pricing_currency_default": "Default",
     "toc_pricing_platform_multipliers": "Platform display multipliers",
     "toc_pricing_platform_multipliers_hint": "Credits deducted per official $1. Leave empty to hide that platform's price. The grey number on the right is the platform group's real multiplier; a large gap is flagged in yellow — when the two disagree, the public price no longer matches what users are charged.",

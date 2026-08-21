@@ -190,6 +190,9 @@
     "video_with_ref": "图生视频",
     "video_price_unit": "计费单价 · / 1M video tokens",
     "video_price_note": "单价 / 百万 video tokens；实际费用 = 单价 × 本次生成消耗的 video tokens。",
+    "image_1k": "1K / 张",
+    "image_2k": "2K / 张",
+    "image_4k": "4K / 张",
     "image_le_236w": "≤ 2.36 MP / 张",
     "image_gt_236w": "> 2.36 MP / 张",
     "image_le_261w": "≤ 2.61 MP / 张",
@@ -244,7 +247,9 @@
     "vendor_zhipu": "智谱 GLM",
     "vendor_seedance": "字节 Seedance",
     "vendor_kling": "快手可灵",
-    "vendor_deepseek": "DeepSeek"
+    "vendor_deepseek": "DeepSeek",
+    "subtitle_official_only": "以下为各模型的官方基准价。您的实际价格以商务报价为准，请联系对接的销售获取报价单。",
+    "pricing_note_official_only": "官方基准价仅供选型参考，不含本平台报价；实际结算价以商务报价单为准。"
   },
   "account_events": {
     "title": "异常监控",
@@ -1367,6 +1372,10 @@
     "toc_pricing_fx_hint": "每 1 美元折算多少人民币，如 6.8。留空则下游按默认汇率。",
     "toc_pricing_currency": "实付价展示货币",
     "toc_pricing_currency_hint": "模型广场展示实付价时使用的货币。",
+    "toc_pricing_official_only": "模型广场价格口径",
+    "toc_pricing_official_only_hint": "开启后模型广场只展示官方基准价，不再渲染实付价、折扣徽章与「经由分组」。ToB 逐客户单独报价时开启；ToC 自助站必须保持关闭，否则用户看不到自己的实付价。",
+    "toc_pricing_official_only_on": "只展示官方基准价",
+    "toc_pricing_official_only_off": "展示实付价（默认）",
     "toc_pricing_currency_default": "默认",
     "toc_pricing_platform_multipliers": "平台展示倍率",
     "toc_pricing_platform_multipliers_hint": "每官方 $1 扣多少额度。留空＝该平台不展示售价。右侧灰字是该平台分组的真实倍率，偏差过大会标黄——两者不一致时官网展示价会与实付价对不上。",

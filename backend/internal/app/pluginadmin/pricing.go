@@ -228,7 +228,12 @@ func (s *Service) applyOverlay(ctx context.Context, platform string, models []Pu
 		}
 		// 图片模型：基座已有按张桶价，或新增条目显式声明 kind=image。
 		// 桶价 map 逐桶覆盖（价>0 覆盖、=0 收回该桶），忽略 token/长上下文字段。
-		if target.Image != nil || strings.EqualFold(entry.Kind, "image") {
+		//
+		// 例外：token 形态的 pricing（带 input / output 键）落到下面的 token 分支。
+		// 生图模型可以同时有官方单张价（插件声明的 price.image.*，供模型广场铺档位）
+		// 和 token 底价（覆盖层校正的实际计费单价），两者量纲不同，不能互相顶替；
+		// 若在这里吞掉，input/output/flex_* 会被当成桶名塞进 Image，把广场铺成乱码。
+		if (target.Image != nil || strings.EqualFold(entry.Kind, "image")) && !isTokenPricing(pricing) {
 			if len(pricing) > 0 {
 				if target.Image == nil {
 					target.Image = make(map[string]float64, len(pricing))
