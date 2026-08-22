@@ -1020,6 +1020,10 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 	hardExclude := make([]int, 0, maxHostForwardAttempts*len(routes))
 	var lastUpstream sdk.UpstreamResponse
 	hasLastUpstream := false
+	// 与 Forwarder 一致：4xx 判决也换号重试；穷尽后优先回放最后一次客户端错误
+	// 响应（而不是中途某次 5xx 的响应体），真实错误信息必须完整到达调用方。
+	var lastClientUpstream sdk.UpstreamResponse
+	hasLastClientUpstream := false
 	failureSummary := allRoutesFailureSummary{}
 	for _, route := range routes {
 		model := h.resolveHostModel(route.Platform, req.Model)
@@ -1145,7 +1149,12 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 				return nil, cerr
 			}
 
-			if fwdErr != nil || outcome.Kind.ShouldFailover() {
+			replayableClient := outcome.Kind == sdk.OutcomeClientError && replayableClientError(outcome)
+			if fwdErr != nil || outcome.Kind.ShouldFailover() || replayableClient {
+				if replayableClient && returnableUpstream(outcome.Upstream) {
+					lastClientUpstream = outcome.Upstream
+					hasLastClientUpstream = true
+				}
 				failureSummary.recordExecution(forwardExecution{outcome: outcome, err: fwdErr, duration: duration})
 				slog.Warn("host_forward_attempt_failed",
 					sdk.LogFieldGroupID, route.GroupID,
@@ -1204,6 +1213,9 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 		}
 	}
 
+	if hasLastClientUpstream {
+		lastUpstream, hasLastUpstream = lastClientUpstream, true
+	}
 	return hostAllRoutesFailurePayload(failureSummary, lastUpstream, hasLastUpstream), nil
 }
 
@@ -1383,6 +1395,8 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 	sw := &hostStreamWriter{stream: stream}
 	hardExclude := make([]int, 0, maxHostForwardAttempts*len(routes))
 	failureSummary := allRoutesFailureSummary{}
+	// 与 Forwarder 一致：4xx 判决也换号重试，穷尽后回放最后一次客户端错误。
+	var lastClientError *sdk.ForwardOutcome
 
 	for _, route := range routes {
 		model := h.resolveHostModel(route.Platform, req.Model)
@@ -1503,8 +1517,13 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 				return hostForwardContextError(fwdCtx, fwdErr)
 			}
 
-			canRetry := !fw.committed && (fwdErr != nil || outcome.Kind.ShouldFailover())
+			replayableClient := outcome.Kind == sdk.OutcomeClientError && replayableClientError(outcome)
+			canRetry := !fw.committed && (fwdErr != nil || outcome.Kind.ShouldFailover() || replayableClient)
 			if canRetry {
+				if replayableClient {
+					snapshot := outcome
+					lastClientError = &snapshot
+				}
 				failureSummary.recordExecution(forwardExecution{outcome: outcome, err: fwdErr, duration: duration})
 				slog.Warn("host_forward_stream_attempt_failed",
 					sdk.LogFieldGroupID, route.GroupID,
@@ -1577,6 +1596,9 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 		}
 	}
 
+	if lastClientError != nil {
+		return hostForwardClientError(*lastClientError)
+	}
 	return sendHostStreamFailure(stream, failureSummary)
 }
 
