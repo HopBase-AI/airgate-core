@@ -322,7 +322,7 @@ func (f *Forwarder) recordUsageWithFailureOverride(c *gin.Context, state *forwar
 		ImageCost:         usageValues.ImageCost,
 		BillingRate:       billing.ResolveBillingRate(state.keyInfo),
 		SellRate:          state.keyInfo.SellRate,
-		AccountRate:       state.account.RateMultiplier,
+		AccountRate:       billing.ResolveAccountRateForModel(state.account.Extra, actualModel, state.account.RateMultiplier),
 	}
 	userPluginSettings := map[string]map[string]string(nil)
 	if state.keyInfo.UserGroupPluginSettings != nil {
