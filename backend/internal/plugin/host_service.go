@@ -1972,6 +1972,10 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 	req.RequestID = strings.TrimSpace(req.RequestID)
 	usageValues := usageSnapshotFromSDK(usage)
 
+	actualModel := usage.Model
+	if actualModel == "" {
+		actualModel = model
+	}
 	calcInput := billing.CalculateInput{
 		InputCost:         usageValues.InputCost,
 		ImageInputCost:    usageValues.ImageInputCost,
@@ -1980,7 +1984,7 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 		CacheCreationCost: usageValues.CacheCreationCost,
 		ImageCost:         usageValues.ImageCost,
 		BillingRate:       route.EffectiveRate,
-		AccountRate:       accFull.RateMultiplier,
+		AccountRate:       billing.ResolveAccountRateForModel(accFull.Extra, actualModel, accFull.RateMultiplier),
 	}
 	var imageFixedPriceApplied bool
 	var imageFixedPriceReplacesTotal bool
@@ -1992,10 +1996,6 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 	applyHostForwardBilling(usage, calc)
 	applyHostForwardTrace(usage, req.TraceID)
 
-	actualModel := usage.Model
-	if actualModel == "" {
-		actualModel = model
-	}
 	if usageID, found, err := h.existingHostForwardUsageID(ctx, req, platform, actualModel); err != nil {
 		return 0, err
 	} else if found {
