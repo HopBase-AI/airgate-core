@@ -113,7 +113,12 @@ export function EditKeyModal({
             <Select.Value>{selectedGroupLabel}</Select.Value>
             <Select.Indicator />
           </Select.Trigger>
-          <Select.Popover>
+          {/* 分组选项是两行文本 + 右侧「¥X/$1 约 N 折」价格后缀,内容天然很宽;
+              Select.Popover 默认按内容自适应宽度,会撑得比弹窗还宽、左右溢出到对话框外。
+              react-aria 的 Select 会在 Popover 上注入 --trigger-width(见
+              react-aria-components/dist/private/Select.mjs),这里据此把弹层钉成
+              与触发器同宽,长文案交给选项内部既有的 truncate 处理。 */}
+          <Select.Popover className="w-[var(--trigger-width)]">
             <ListBox items={groupItems}>
               {(item) => (
                 <ListBox.Item id={item.id} textValue={item.textValue}>
