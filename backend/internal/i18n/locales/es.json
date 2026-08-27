@@ -1,0 +1,15 @@
+{
+  "login_failed": "Error de inicio de sesión",
+  "invalid_credentials": "Correo electrónico o contraseña no válidos",
+  "user_disabled": "El usuario ha sido deshabilitado",
+  "unauthorized": "No autorizado",
+  "forbidden": "Prohibido",
+  "not_found": "Recurso no encontrado",
+  "internal_error": "Error interno",
+  "rate_limited": "Demasiadas solicitudes, inténtelo de nuevo más tarde",
+  "balance_insufficient": "Saldo insuficiente",
+  "quota_exceeded": "Cuota excedida",
+  "totp_required": "Se requiere el código TOTP",
+  "totp_invalid": "Código TOTP no válido",
+  "already_installed": "El sistema ya está instalado"
+}

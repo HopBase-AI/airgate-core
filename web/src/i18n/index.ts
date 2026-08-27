@@ -4,8 +4,9 @@ import zh from './zh.json';
 import zhHK from './zh-HK.json';
 import en from './en.json';
 import ja from './ja.json';
+import es from './es.json';
 
-const SUPPORTED_LANGUAGES = new Set(['zh', 'zh-HK', 'en', 'ja']);
+const SUPPORTED_LANGUAGES = new Set(['zh', 'zh-HK', 'en', 'ja', 'es']);
 const DEFAULT_LANGUAGE = 'en';
 
 export function normalizeLanguage(lang: string | null | undefined) {
@@ -14,6 +15,7 @@ export function normalizeLanguage(lang: string | null | undefined) {
   if (lower === 'zh-hant' || lower === 'zh-hk' || lower === 'zh-tw' || lower === 'zh-mo') return 'zh-HK';
   if (lower === 'zh' || lower === 'zh-cn' || lower === 'zh-hans' || lower === 'zh-sg') return 'zh';
   if (lower === 'en' || lower === 'en-us' || lower === 'en-gb') return 'en';
+  if (lower === 'es' || lower.startsWith('es-')) return 'es';
   return SUPPORTED_LANGUAGES.has(lang) ? lang : null;
 }
 
@@ -41,6 +43,7 @@ function detectBrowserLanguage(): string {
     if (lang === 'zh' || lang.startsWith('zh-cn') || lang.startsWith('zh-sg') || lang.includes('hans')) return 'zh';
     if (lang.startsWith('zh')) return 'zh';
     if (lang.startsWith('ja')) return 'ja';
+    if (lang.startsWith('es')) return 'es';
     if (lang.startsWith('en')) return 'en';
   }
   return DEFAULT_LANGUAGE;
@@ -115,6 +118,7 @@ i18n.use(initReactI18next).init({
     'zh-HK': { translation: zhHK },
     en: { translation: en },
     ja: { translation: ja },
+    es: { translation: es },
   },
   lng: getStoredLanguage(),
   fallbackLng: DEFAULT_LANGUAGE,
@@ -122,7 +126,7 @@ i18n.use(initReactI18next).init({
 });
 
 // 切换语言时同步 <html lang>（无障碍与 SEO：初始 index.html 静态 lang 不会自动更新）
-const HTML_LANG: Record<string, string> = { zh: 'zh-CN', 'zh-HK': 'zh-HK', en: 'en', ja: 'ja' };
+const HTML_LANG: Record<string, string> = { zh: 'zh-CN', 'zh-HK': 'zh-HK', en: 'en', ja: 'ja', es: 'es' };
 function syncDocumentLang(lang: string) {
   if (typeof document !== 'undefined') {
     document.documentElement.lang = HTML_LANG[lang] || lang || 'en';

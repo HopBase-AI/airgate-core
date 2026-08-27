@@ -856,7 +856,8 @@
     "copy_accounts_select_platform_first": "請先選擇平台",
     "copy_accounts_empty": "該平台暫無其他分組可複製",
     "copy_accounts_count": "{{count}} 個帳號",
-    "group": "分組"
+    "group": "分組",
+    "i18n_lang_es": "Español"
   },
   "api_keys": {
     "title": "API 金鑰",
@@ -1698,7 +1699,9 @@
       "webpage_empty": "未能提取到網頁正文",
       "charset_fallback": "已按 {{charset}} 編碼解碼",
       "truncated": "內容超長，已截斷",
-      "parse_failed": "檔案解析失敗"
+      "parse_failed": "檔案解析失敗",
+      "too_many_videos": "每條訊息最多 1 個影片",
+      "video_gemini_only": "影片內容僅 Gemini 系列模型可識別"
     },
     "select_model_first": "請先選擇模型",
     "select_image_model_first": "請先選擇圖片模型",
@@ -2039,7 +2042,14 @@
     "studio_mobile_projects": "專案",
     "studio_mobile_create": "創作",
     "studio_loading_works": "載入作品",
-    "studio_workshop": "創作工作坊"
+    "studio_workshop": "創作工作坊",
+    "export_message": "匯出訊息",
+    "studio_price_per_image": "/張",
+    "studio_batch_prompt_count": "共 {{count}} 個提示詞",
+    "studio_untitled_project": "未命名項目",
+    "studio_route_official": "官方直連",
+    "studio_route_overseas": "海外",
+    "studio_route_domestic": "國內"
   },
   "pagination": {
     "total": "共 {{count}} 筆",

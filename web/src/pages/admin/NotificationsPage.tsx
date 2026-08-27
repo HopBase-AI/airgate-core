@@ -22,6 +22,7 @@ const LANDING_ANNOUNCEMENT_LANGS = [
   { code: 'zh-HK', label: '繁體中文' },
   { code: 'en', label: 'English' },
   { code: 'ja', label: '日本語' },
+  { code: 'es', label: 'Español' },
 ] as const;
 
 const LEVEL_ICONS = {

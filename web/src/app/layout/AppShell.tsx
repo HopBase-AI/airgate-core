@@ -113,6 +113,7 @@ const LANGUAGE_OPTIONS = [
   { key: 'zh', label: '简体中文', shortLabel: '简' },
   { key: 'zh-HK', label: '繁體中文（香港）', shortLabel: '繁' },
   { key: 'ja', label: '日本語', shortLabel: '日' },
+  { key: 'es', label: 'Español', shortLabel: 'ES' },
 ] as const;
 
 function normalizeAppLanguage(lang: string | undefined) {

@@ -8,6 +8,8 @@ describe('normalizeLanguage', () => {
     expect(normalizeLanguage('zh-Hans')).toBe('zh');
     expect(normalizeLanguage('zh-CN')).toBe('zh');
     expect(normalizeLanguage('en-US')).toBe('en');
+    expect(normalizeLanguage('es')).toBe('es');
+    expect(normalizeLanguage('es-MX')).toBe('es');
   });
 
   it('rejects unsupported keys', () => {

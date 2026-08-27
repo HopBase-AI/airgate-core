@@ -57,7 +57,7 @@ export function PluginShell({
   const isAdmin = !isAPIKeySession && (getTokenRole() === 'admin' || user?.role === 'admin');
   const displayName = user?.api_key_name || user?.username || user?.email?.split('@')[0] || 'User';
 
-  const LANG_CYCLE = ['en', 'zh', 'zh-HK', 'ja'] as const;
+  const LANG_CYCLE = ['en', 'zh', 'zh-HK', 'ja', 'es'] as const;
   const LANG_SHORT: Record<string, string> = { en: 'EN', zh: '简', 'zh-HK': '繁', ja: '日' };
   const currentLang = (LANG_CYCLE as readonly string[]).includes(i18n.language) ? i18n.language : 'en';
   const toggleLanguage = () => {
