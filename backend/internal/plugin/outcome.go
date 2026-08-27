@@ -53,25 +53,7 @@ func (f *Forwarder) writeResult(c *gin.Context, state *forwardState, execution f
 			writeUpstream(c, execution.outcome.Upstream)
 		}
 	case sdk.OutcomeClientError:
-		slog.Warn("上游返回客户端错误，交由 Core 返回上游响应",
-			"plugin", state.plugin.Name,
-			"account_id", state.account.ID,
-			"group_id", state.keyInfo.GroupID,
-			"status_code", execution.outcome.Upstream.StatusCode,
-			"reason", execution.outcome.Reason)
-		if state.stream && streamHeartbeatOnlyWritten(c) {
-			protocolStreamError(c, sanitizedClientErrorStatus(execution.outcome), "invalid_request_error", "invalid_request", sanitizedClientErrorMessage(execution.outcome))
-		} else if !state.stream || !c.Writer.Written() {
-			writeClientErrorResponse(c, execution.outcome)
-		}
-		// 上游对这次 4xx 也计了费时照常落计费记录（费用必须与扣款一致），
-		// 但同时打上错误码，用户仍能在使用日志里认出它是一次失败请求。
-		// 上游没计费则落零费用失败记录。
-		if execution.outcome.Usage != nil {
-			f.recordUsage(c, state, execution)
-		} else {
-			f.recordFailureUsage(c, state, failureFromOutcome(execution))
-		}
+		f.writeClientErrorResult(c, state, execution)
 	default:
 		if execution.outcome.Usage != nil {
 			f.recordUsage(c, state, execution)
@@ -79,6 +61,31 @@ func (f *Forwarder) writeResult(c *gin.Context, state *forwardState, execution f
 			f.recordFailureUsage(c, state, failureFromOutcome(execution))
 		}
 		writeFailureResponse(c, state, execution)
+	}
+}
+
+// writeClientErrorResult 把上游 4xx 原样透传给客户端并落账。
+// 两个入口共用：单次尝试判 ClientError 的 writeResult 分支，以及 failover 穷尽后
+// Forward 回放最后一次 4xx（后者的调度判决在失败当刻已 Apply 过，不再重复）。
+func (f *Forwarder) writeClientErrorResult(c *gin.Context, state *forwardState, execution forwardExecution) {
+	slog.Warn("上游返回客户端错误，交由 Core 返回上游响应",
+		"plugin", state.plugin.Name,
+		"account_id", state.account.ID,
+		"group_id", state.keyInfo.GroupID,
+		"status_code", execution.outcome.Upstream.StatusCode,
+		"reason", execution.outcome.Reason)
+	if state.stream && streamHeartbeatOnlyWritten(c) {
+		protocolStreamError(c, sanitizedClientErrorStatus(execution.outcome), "invalid_request_error", "invalid_request", sanitizedClientErrorMessage(execution.outcome))
+	} else if !state.stream || !c.Writer.Written() {
+		writeClientErrorResponse(c, execution.outcome)
+	}
+	// 上游对这次 4xx 也计了费时照常落计费记录（费用必须与扣款一致），
+	// 但同时打上错误码，用户仍能在使用日志里认出它是一次失败请求。
+	// 上游没计费则落零费用失败记录。
+	if execution.outcome.Usage != nil {
+		f.recordUsage(c, state, execution)
+	} else {
+		f.recordFailureUsage(c, state, failureFromOutcome(execution))
 	}
 }
 
@@ -315,7 +322,7 @@ func (f *Forwarder) recordUsageWithFailureOverride(c *gin.Context, state *forwar
 		ImageCost:         usageValues.ImageCost,
 		BillingRate:       billing.ResolveBillingRate(state.keyInfo),
 		SellRate:          state.keyInfo.SellRate,
-		AccountRate:       state.account.RateMultiplier,
+		AccountRate:       billing.ResolveAccountRateForModel(state.account.Extra, actualModel, state.account.RateMultiplier),
 	}
 	userPluginSettings := map[string]map[string]string(nil)
 	if state.keyInfo.UserGroupPluginSettings != nil {

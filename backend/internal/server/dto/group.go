@@ -37,6 +37,21 @@ type GroupResp struct {
 	TimeMixin
 }
 
+// UserGroupResp 用户可用分组响应（GET /groups 用户视角瘦投影）。
+// 刻意不复用 GroupResp：分组标准倍率（rate_multiplier）、插件配置（含固定图价）、
+// 模型路由等是内部定价/运营字段，不应下发给普通用户——报价客户尤其不能经此
+// 反推默认牌价。用户侧展示价格一律以 /models/pricing/me 的分组摘要为准。
+type UserGroupResp struct {
+	ID          int64             `json:"id"`
+	Name        string            `json:"name"`
+	NameI18n    map[string]string `json:"name_i18n,omitempty"`
+	Platform    string            `json:"platform"`
+	IsExclusive bool              `json:"is_exclusive"`
+	Note        string            `json:"note,omitempty"`
+	NoteI18n    map[string]string `json:"note_i18n,omitempty"`
+	SortWeight  int               `json:"sort_weight"`
+}
+
 // CreateGroupReq 创建分组请求
 type CreateGroupReq struct {
 	Name string `json:"name" binding:"required"`

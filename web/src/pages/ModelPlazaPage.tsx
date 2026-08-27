@@ -21,7 +21,8 @@ import {
   formatModelPrice,
   hasFixedImagePricingBuckets,
   resolveBucketDiscount,
-  resolveFixedImageTierPrices,
+  officialPriceSymbol,
+  resolvePlazaFixedImageTiers,
 } from './modelPlazaPricing';
 
 interface TocPricingConfig {
@@ -31,6 +32,11 @@ interface TocPricingConfig {
   // 实付价展示货币："CNY"（¥，余额 ¥1=$1 平价，ToB 主站）或缺省 "USD"
   //（按 fx 折算的美元等值，ToC 美元余额站群的安全缺省）。
   plaza_currency?: string;
+  // true = 模型广场只展示官方基准价：不渲染实付价、折扣徽章、「经由分组」与固定图价。
+  // ToB 是逐客户单独报价的，广场给出的「你的价格」既不是客户真正拿到的价，
+  // 又把分组配置摊开给所有人看；ToC 自助站必须保持缺省（false），
+  // 否则自助用户看不到自己的实付价。
+  plaza_official_only?: boolean;
 }
 
 // DisplayPrice 单模型价格展示态：
@@ -119,15 +125,18 @@ function resolveUserPrice(model: ModelLedgerItem, fx: number, saleCurrency: 'CNY
 }
 
 // resolveStandardPrice 全站统一标准售价（/pricing/me 不可用时的回退）：官方价 × 售价倍率 ÷ fx（美元）。
+// 无倍率时退化为纯官方基准价展示，模型广场的「只展示官方基准价」口径也走这条路。
 function resolveStandardPrice(model: ModelLedgerItem, config: TocPricingConfig | null): DisplayPrice {
   const officialValues = {
     input: model.input,
     cachedInput: model.cached_input ?? 0,
     output: model.output,
   };
+  // 基准价的币种跟着模型走，不能硬标 $。
+  const officialSymbol = officialPriceSymbol(model);
   const { multiplier, fx } = resolveMultiplier(model, config);
   if (multiplier == null) {
-    return { ...officialValues, officialOnly: true, official: officialValues, saleSymbol: '$', officialSymbol: '$', zhe: null };
+    return { ...officialValues, officialOnly: true, official: officialValues, saleSymbol: officialSymbol, officialSymbol, zhe: null };
   }
   return {
     input: model.input * multiplier / fx,
@@ -136,7 +145,7 @@ function resolveStandardPrice(model: ModelLedgerItem, config: TocPricingConfig |
     officialOnly: false,
     official: officialValues,
     saleSymbol: '$',
-    officialSymbol: '$',
+    officialSymbol,
     zhe: null,
   };
 }
@@ -214,7 +223,9 @@ function resolveImagePrices(
 ): BucketPrice[] {
   const userRate = userMode ? (model.user_rate ?? 0) : 0;
   const { multiplier, fx } = resolveMultiplier(model, config);
-  const order = ['le_236w', 'le_261w', 'gt_236w', 'gt_261w', 'input_reference', 'input_ref_gt_first'];
+  // 档位展示序：分辨率档（gemini / gpt-image 的官方单张价）从低到高在前，
+  // 其后是 seedream 的像素档与参考图档。未列出的桶按出现顺序垫底。
+  const order = ['1k', '2k', '4k', 'le_236w', 'le_261w', 'gt_236w', 'gt_261w', 'input_reference', 'input_ref_gt_first'];
   return Object.entries(model.image ?? {})
     .sort(([a], [b]) => {
       const ai = order.indexOf(a);
@@ -254,7 +265,7 @@ function formatZhe(zhe: number): string {
   return value < 1 ? value.toFixed(2) : value.toFixed(1);
 }
 
-function PriceCell({ label, sale, official, officialOnly, officialTitle, saleSymbol, officialSymbol, allowZero, fallbackLabel }: {
+function PriceCell({ label, sale, official, officialOnly, officialTitle, saleSymbol, officialSymbol, allowZero, fallbackLabel, quoteMode }: {
   label: string;
   sale: number | null;
   official: number;
@@ -264,21 +275,27 @@ function PriceCell({ label, sale, official, officialOnly, officialTitle, saleSym
   officialSymbol: '$' | '¥';
   allowZero?: boolean;
   fallbackLabel?: string;
+  // quoteMode 报价客户：官方价降级为不划线的参考行——划线是「对比牌价」的锚点语义，报价客户不该看到
+  quoteMode?: boolean;
 }) {
-  // 有售价换算时同格展示划线官方原价，折扣一眼可比
-  const showStrike = sale != null && !officialOnly && official > 0 && !(officialSymbol === saleSymbol && official === sale);
+  // 有售价换算时同格展示官方原价（标准用户划线对比；报价客户仅作参考行）
+  const showOfficial = sale != null && !officialOnly && official > 0 && !(officialSymbol === saleSymbol && official === sale);
   return (
     <div>
       <dt>{label}</dt>
       <dd>
         {sale == null ? (fallbackLabel ?? '—') : formatModelPrice(sale, officialOnly ? officialSymbol : saleSymbol, allowZero)}
-        {showStrike ? <del title={officialTitle}>{formatModelPrice(official, officialSymbol)}</del> : null}
+        {showOfficial ? (
+          quoteMode
+            ? <span className="ag-model-official-ref" title={officialTitle}>{formatModelPrice(official, officialSymbol)}</span>
+            : <del title={officialTitle}>{formatModelPrice(official, officialSymbol)}</del>
+        ) : null}
       </dd>
     </div>
   );
 }
 
-function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode }: {
+function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode, quoteMode }: {
   model: ModelLedgerItem;
   price: DisplayPrice | null;
   video: BucketPrice[] | null;
@@ -286,6 +303,8 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode }
   videoSaleSymbol: '$' | '¥';
   fx: number;
   userMode: boolean;
+  // quoteMode 报价客户：不渲染折扣徽章与「经由分组」，官方价不划线
+  quoteMode: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const officialTitle = t('model_plaza.official_price');
@@ -295,7 +314,7 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode }
     groupNameI18n?: Record<string, string>,
     leading = false,
   ) => (
-    zhe != null && zhe > 0 && zhe < 1 ? (
+    !quoteMode && zhe != null && zhe > 0 && zhe < 1 ? (
       <p className={`ag-model-price-meta${leading ? ' ag-model-price-meta-leading' : ''}`}>
         <Chip color="success" size="sm" variant="soft">
           {t('model_plaza.discount_badge', { zhe: formatZhe(zhe), off: Math.round((1 - zhe) * 100) })}
@@ -328,6 +347,7 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode }
               officialOnly={b.officialOnly}
               officialTitle={officialTitle}
               officialSymbol="$"
+              quoteMode={quoteMode}
               sale={b.sale}
               saleSymbol={videoSaleSymbol}
               allowZero={b.imageBillingMode === 'fixed'}
@@ -344,9 +364,9 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode }
   return (
     <div className="ag-model-price-wrap">
       <dl className="ag-model-price-grid">
-        <PriceCell label={t('model_plaza.input')} sale={price.input} official={price.official.input} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
-        <PriceCell label={t('model_plaza.cached_input')} sale={price.cachedInput} official={price.official.cachedInput} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
-        <PriceCell label={t('model_plaza.output')} sale={price.output} official={price.official.output} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
+        <PriceCell label={t('model_plaza.input')} quoteMode={quoteMode} sale={price.input} official={price.official.input} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
+        <PriceCell label={t('model_plaza.cached_input')} quoteMode={quoteMode} sale={price.cachedInput} official={price.official.cachedInput} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
+        <PriceCell label={t('model_plaza.output')} quoteMode={quoteMode} sale={price.output} official={price.official.output} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
       </dl>
       {discountMeta(price.zhe, price.groupName, price.groupNameI18n)}
       {price.officialOnly ? <p className="ag-model-official-label">{t('model_plaza.official_price')}</p> : null}
@@ -382,7 +402,7 @@ function ModelTableSkeleton() {
 export default function ModelPlazaPage() {
   const { t } = useTranslation();
   const { toast } = useToast();
-  const { isAPIKeySession } = useAuth();
+  const { isAPIKeySession, user } = useAuth();
   const [search, setSearch] = useState('');
   // 三层导航：L1 用途大类（Tab）→ L2 厂商（chips）→ L3 系列折叠。
   // platformFilter 是正交的第四轴「接入渠道」，从主轴降级为次级筛选。
@@ -394,15 +414,20 @@ export default function ModelPlazaPage() {
   const [copiedID, setCopiedID] = useState<string | null>(null);
 
   // 首选登录态实付价视图。普通账号失败时可回退公开目录；API Key
-  // 会话必须 fail closed，避免把当前 Key 不可调用的全量模型展示给下游。
+  // 会话必须 fail closed，避免把当前 Key 不可调用的全量模型展示给下游；
+  // 报价客户同样 fail closed——公开目录是标准牌价口径，不能展示给报价客户。
+  // 注意 user 是异步加载的：档案未就绪时按「模式未知」处理，一律不回退，
+  // 否则报价客户刷新页面的竞态窗口里会闪出（并缓存住）标准牌价目录。
+  const isQuoteUser = user == null || user.pricing_mode === 'quote';
   const myPricingQuery = useQuery({
     queryKey: queryKeys.myModelPricing(),
     queryFn: modelsApi.myPricing,
     staleTime: 60_000,
     retry: 1,
   });
-  const apiKeyPricingError = isAPIKeySession && myPricingQuery.isError;
-  const useFallback = !isAPIKeySession && myPricingQuery.isError;
+  const quoteMode = myPricingQuery.data?.pricing_mode === 'quote';
+  const apiKeyPricingError = (isAPIKeySession || isQuoteUser) && myPricingQuery.isError;
+  const useFallback = !isAPIKeySession && !isQuoteUser && myPricingQuery.isError;
   const catalogQuery = useQuery({
     queryKey: queryKeys.modelPricing(),
     queryFn: modelsApi.pricing,
@@ -434,6 +459,12 @@ export default function ModelPlazaPage() {
   const fx = typeof pricingConfig?.fx === 'number' && pricingConfig.fx > 0 ? pricingConfig.fx : 6.8;
   // 实付价展示货币：ToB 主站配 CNY（¥，余额平价）；缺省 USD 等值（ToC 美元余额站群安全缺省）
   const plazaCurrency: 'CNY' | 'USD' = pricingConfig?.plaza_currency === 'CNY' ? 'CNY' : 'USD';
+  // 官方基准价口径：仍按登录态取目录（模型可见范围照旧按分组授权裁剪），
+  // 只是价格列换成官方牌价。传 null 给各 resolve* 即可让它们回落 officialOnly，
+  // 不必在每个分支里再判一次模式。
+  const officialOnlyMode = pricingConfig?.plaza_official_only === true;
+  const showUserPrice = userMode && !officialOnlyMode;
+  const displayPricingConfig = officialOnlyMode ? null : pricingConfig;
   const pricingFallback = !userMode && (settingsQuery.isLoading || settingsQuery.isError || !pricingConfig);
   const personalPricingFallback = useFallback && !catalogQuery.isError;
   const brands = useMemo(
@@ -543,9 +574,11 @@ export default function ModelPlazaPage() {
       <header className="ag-model-plaza-header">
         <div>
           <h1>{t('model_plaza.title')}</h1>
-          <p>{userMode
-            ? t(isAPIKeySession ? 'model_plaza.subtitle_api_key' : 'model_plaza.subtitle_user')
-            : t('model_plaza.subtitle')}</p>
+          <p>{officialOnlyMode
+            ? t('model_plaza.subtitle_official_only')
+            : userMode
+              ? t(isAPIKeySession ? 'model_plaza.subtitle_api_key' : 'model_plaza.subtitle_user')
+              : t('model_plaza.subtitle')}</p>
         </div>
         {!isLoading ? (
           <div className="ag-model-plaza-count" aria-label={t('model_plaza.total_count', { count: models.length })}>
@@ -675,7 +708,11 @@ export default function ModelPlazaPage() {
                 <th>{t('model_plaza.platform_capability')}</th>
                 <th>{t('model_plaza.context')}</th>
                 <th>
-                  {userMode ? t('model_plaza.your_price') : (pricingFallback ? t('model_plaza.official_price') : t('model_plaza.standard_price'))}
+                  {officialOnlyMode
+                    ? t('model_plaza.official_price')
+                    : userMode
+                      ? t('model_plaza.your_price')
+                      : (pricingFallback ? t('model_plaza.official_price') : t('model_plaza.standard_price'))}
                 </th>
               </tr>
             </thead>
@@ -721,22 +758,29 @@ export default function ModelPlazaPage() {
                   );
                 }
                 const { model, nested } = row;
-                const video = isVideoModel(model) ? resolveVideoPrices(model, pricingConfig, userMode, plazaCurrency, t) : null;
-                const fixedImage = userMode
-                  ? resolveFixedImageTierPrices(model, fx, plazaCurrency).map(({ tier, sale, billingMode }) => ({
-                      bucket: tier,
-                      label: tier.toUpperCase(),
-                      sale,
-                      official: 0,
-                      officialOnly: false,
-                      imageBillingMode: billingMode,
-                    }))
-                  : [];
+                const video = isVideoModel(model)
+                  ? resolveVideoPrices(model, displayPricingConfig, showUserPrice, plazaCurrency, t)
+                  : null;
+                const fixedImage = resolvePlazaFixedImageTiers(model, fx, plazaCurrency, showUserPrice)
+                  .map(({ tier, sale, billingMode }) => ({
+                    bucket: tier,
+                    label: tier.toUpperCase(),
+                    sale,
+                    official: 0,
+                    officialOnly: false,
+                    imageBillingMode: billingMode,
+                  }));
                 const image = fixedImage.length > 0
                   ? fixedImage
-                  : isImageModel(model) ? resolveImagePrices(model, pricingConfig, userMode, plazaCurrency, t) : null;
+                  : isImageModel(model)
+                    ? resolveImagePrices(model, displayPricingConfig, showUserPrice, plazaCurrency, t)
+                    : null;
                 const bucketPrices = video ?? image;
-                const price = bucketPrices ? null : (userMode ? resolveUserPrice(model, fx, plazaCurrency) : resolveStandardPrice(model, pricingConfig));
+                const price = bucketPrices
+                  ? null
+                  : (showUserPrice
+                    ? resolveUserPrice(model, fx, plazaCurrency)
+                    : resolveStandardPrice(model, displayPricingConfig));
                 const officialOnly = bucketPrices ? (bucketPrices[0]?.officialOnly ?? true) : price!.officialOnly;
                 return (
                   <tr key={`${model.platform}:${model.id}`} className={nested ? 'ag-model-series-child' : undefined}>
@@ -766,15 +810,16 @@ export default function ModelPlazaPage() {
                     <td data-label={t('model_plaza.context')}>
                       <span className="ag-model-context">{formatCompact(model.context_window) ?? t('model_plaza.not_provided')}</span>
                     </td>
-                    <td data-label={officialOnly ? t('model_plaza.official_price') : (userMode ? t('model_plaza.your_price') : t('model_plaza.standard_price'))}>
+                    <td data-label={officialOnly ? t('model_plaza.official_price') : (showUserPrice ? t('model_plaza.your_price') : t('model_plaza.standard_price'))}>
                       <PriceGrid
                         fx={fx}
                         image={image}
                         model={model}
                         price={price}
-                        userMode={userMode}
+                        quoteMode={quoteMode || officialOnlyMode}
+                        userMode={showUserPrice}
                         video={video}
-                        videoSaleSymbol={userMode && ((model.user_rate ?? 0) > 0 || fixedImage.length > 0) && plazaCurrency === 'CNY' ? '¥' : '$'}
+                        videoSaleSymbol={showUserPrice && ((model.user_rate ?? 0) > 0 || fixedImage.length > 0) && plazaCurrency === 'CNY' ? '¥' : '$'}
                       />
                     </td>
                   </tr>
@@ -782,7 +827,9 @@ export default function ModelPlazaPage() {
               })}
             </tbody>
           </table>
-          {userMode ? (
+          {officialOnlyMode ? (
+            <p className="ag-model-pricing-note">{t('model_plaza.pricing_note_official_only')}</p>
+          ) : showUserPrice ? (
             <p className="ag-model-pricing-note">
               {t(plazaCurrency === 'CNY' ? 'model_plaza.pricing_note_cny' : 'model_plaza.pricing_note_usd', { fx })}
             </p>

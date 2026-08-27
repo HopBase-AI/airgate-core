@@ -135,6 +135,12 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (User, error) {
 		return User{}, err
 	}
 
+	pricingMode, err := normalizePricingMode(input.PricingMode)
+	if err != nil {
+		logger.Warn("user_create_rejected", sdk.LogFieldReason, "invalid_pricing_mode")
+		return User{}, err
+	}
+
 	created, err := s.repo.Create(ctx, Mutation{
 		Email:                  &input.Email,
 		PasswordHash:           stringPtr(string(hash)),
@@ -146,6 +152,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (User, error) {
 		HasGroupRates:          input.GroupRates != nil,
 		GroupPluginSettings:    cloneGroupPluginSettings(input.GroupPluginSettings),
 		HasGroupPluginSettings: input.GroupPluginSettings != nil,
+		PricingMode:            pricingMode,
 	})
 	if err != nil {
 		logger.Error("user_create_failed",
@@ -172,6 +179,20 @@ func (s *Service) Update(ctx context.Context, id int, input UpdateInput) (User, 
 			}
 		}
 	}
+	// 用归一化结果而非原始指针：空串表示「未指定」，须归一成 nil 不落库，
+	// 否则 SetPricingMode("") 会被 ent 枚举校验拒绝成 500。
+	var pricingMode *string
+	if input.PricingMode != nil {
+		normalized, err := normalizePricingMode(*input.PricingMode)
+		if err != nil {
+			logger.Warn("user_update_rejected",
+				sdk.LogFieldUserID, id,
+				sdk.LogFieldReason, "invalid_pricing_mode",
+			)
+			return User{}, err
+		}
+		pricingMode = normalized
+	}
 	mutation := Mutation{
 		Username:               input.Username,
 		DisplayBadge:           normalizeDisplayBadgePtr(input.DisplayBadge),
@@ -182,6 +203,7 @@ func (s *Service) Update(ctx context.Context, id int, input UpdateInput) (User, 
 		HasGroupRates:          input.HasGroupRates,
 		GroupPluginSettings:    cloneGroupPluginSettings(input.GroupPluginSettings),
 		HasGroupPluginSettings: input.HasGroupPluginSettings,
+		PricingMode:            pricingMode,
 		AllowedGroupIDs:        append([]int64(nil), input.AllowedGroupIDs...),
 		HasAllowedGroupIDs:     input.HasAllowedGroupIDs,
 		Status:                 input.Status,
@@ -534,6 +556,18 @@ func cloneOneGroupPluginSettings(input map[string]map[string]string) map[string]
 		}
 	}
 	return cloned
+}
+
+// normalizePricingMode 校验定价展示模式；空串表示未指定（返回 nil 指针，沿用 schema 默认 standard）。
+func normalizePricingMode(value string) (*string, error) {
+	switch value {
+	case "":
+		return nil, nil
+	case "standard", "quote":
+		return stringPtr(value), nil
+	default:
+		return nil, ErrInvalidPricingMode
+	}
 }
 
 func stringPtr(value string) *string {

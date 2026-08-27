@@ -339,6 +339,16 @@
   text-decoration: line-through;
 }
 
+/* 报价客户模式的官方参考价：同划线价的位置与弱化程度，但不划线——
+   官方价是公开参考信息，划线才是「对比我们牌价」的锚点语义 */
+.ag-model-price-grid dd .ag-model-official-ref {
+  display: block;
+  margin-top: 0.125rem;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 400;
+}
+
 .ag-model-long-context {
   margin-top: 0.5rem;
   color: var(--warning);

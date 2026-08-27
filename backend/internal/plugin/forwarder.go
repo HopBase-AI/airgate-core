@@ -186,6 +186,10 @@ func (f *Forwarder) Forward(c *gin.Context) {
 	totalAttempts := 0
 
 	failureSummary := allRoutesFailureSummary{}
+	// 4xx 判决也参与 failover：记住最后一次可透传的 ClientError 尝试，
+	// 所有账号穷尽后按原样回放给客户端，而不是脱敏的「全部上游失败」——
+	// 真实的客户端错误信息（参数非法、context 超长等）必须完整到达客户端。
+	var lastClientError *clientErrorReplay
 
 	for _, route := range routes {
 		state.selectedRoute = route
@@ -395,6 +399,15 @@ func (f *Forwarder) Forward(c *gin.Context) {
 					return
 				}
 
+				if execution.outcome.Kind == sdk.OutcomeClientError {
+					lastClientError = &clientErrorReplay{
+						execution: execution,
+						account:   state.account,
+						keyInfo:   state.keyInfo,
+						route:     state.selectedRoute,
+					}
+				}
+
 				if execution.outcome.Kind.IsAccountFault() {
 					hardExclude = append(hardExclude, accountID)
 				} else {
@@ -438,6 +451,26 @@ func (f *Forwarder) Forward(c *gin.Context) {
 			"attempts", attempt,
 			"scheduling_models", state.schedulingModelCandidates(),
 		)
+	}
+
+	if lastClientError != nil {
+		// 所有候选账号都试过、至少一次上游给出了可透传的 4xx：对客户端而言
+		// 这是一次客户端错误，回放最后一次原始响应（含 body）。恢复该次尝试
+		// 的账号/分组归属，让计费与日志落在真正产生这份响应的链路上。
+		state.selectedRoute = lastClientError.route
+		state.keyInfo = lastClientError.keyInfo
+		state.account = lastClientError.account
+		f.runForwardEndChain(c, state, lastClientError.execution, mwBag)
+		f.writeClientErrorResult(c, state, lastClientError.execution)
+		c.Set(ginCtxKeyAccountID, lastClientError.account.ID)
+		c.Set(ginCtxKeyAttempts, totalAttempts)
+		logger.Info("forward_client_error_replayed_after_failover",
+			"attempts", totalAttempts,
+			"upstream_status", lastClientError.execution.outcome.Upstream.StatusCode,
+			sdk.LogFieldAccountID, lastClientError.account.ID,
+			sdk.LogFieldDurationMs, time.Since(startedAt).Milliseconds(),
+		)
+		return
 	}
 
 	failAttrs := []any{
@@ -902,7 +935,8 @@ func keyInfoForRoute(base *auth.APIKeyInfo, route routing.Candidate) *auth.APIKe
 
 // canFailover 是否允许换账号重试。
 // 流式业务数据已写入 → 不可；只有协议中立 SSE comment 心跳时仍可；
-// err 非 nil（插件自身崩）→ 可；其余由 Kind.ShouldFailover() 决定。
+// err 非 nil（插件自身崩）→ 可；ClientError → 可（见 replayableClientError，
+// 穷尽后由 Forward 回放最后一次 4xx 原始响应）；其余由 Kind.ShouldFailover() 决定。
 func (f *Forwarder) canFailover(c *gin.Context, state *forwardState, execution forwardExecution) bool {
 	if state.stream && streamApplicationResponseCommitted(c) {
 		return false
@@ -910,7 +944,21 @@ func (f *Forwarder) canFailover(c *gin.Context, state *forwardState, execution f
 	if execution.err != nil {
 		return true
 	}
+	if execution.outcome.Kind == sdk.OutcomeClientError {
+		return replayableClientError(execution.outcome)
+	}
 	return execution.outcome.Kind.ShouldFailover()
+}
+
+// replayableClientError 判定一次 4xx 判决是否值得换账号重放。
+// 服务稳定性优先：中转常把自身上游的故障包装成 4xx 返回（例：2026-08-21 aijws
+// 用 400 + "Upstream request failed" 表达其上游转发失败），且组内各账号支持的
+// 模型/参数集合不同，换号确有救活的机会。真正的客户端错误在所有账号上都会 4xx，
+// 穷尽后 Forward 回放最后一次原始响应，客户端看到的结果与不重试时一致，
+// 代价只是 maxFailoverAttempts 上限内的额外上游调用。
+// 唯独 504 网关超时执行结果未知，禁止在其它账号上重放。
+func replayableClientError(outcome sdk.ForwardOutcome) bool {
+	return outcome.Upstream.StatusCode != http.StatusGatewayTimeout
 }
 
 // callPlugin 把请求发给插件。

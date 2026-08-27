@@ -83,9 +83,10 @@ func (h *GroupHandler) ListAvailableGroups(c *gin.Context) {
 		return
 	}
 
-	list := make([]dto.GroupResp, 0, len(result.List))
+	// 用户视角走瘦 DTO：不下发分组标准倍率/插件配置/模型路由等内部字段。
+	list := make([]dto.UserGroupResp, 0, len(result.List))
 	for _, item := range result.List {
-		list = append(list, toGroupRespFromDomain(item))
+		list = append(list, toUserGroupRespFromDomain(item))
 	}
 
 	response.Success(c, response.PagedData(list, result.Total, result.Page, result.PageSize))

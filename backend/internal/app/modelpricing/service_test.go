@@ -85,6 +85,10 @@ func (f *fakeAPIKeys) FindOwned(_ context.Context, userID, id int) (appapikey.Ke
 // 仿生产形态的目录/分组：Codex 双档显式路由 gpt 模型、GLM 分组只路由 glm-5.2（CNY 基准 + 官方美元参考价）、
 // Claude 分组空路由（不限制）。
 func testService(userRates map[int64]float64) *Service {
+	return testServiceWithUser(appuser.User{GroupRates: userRates})
+}
+
+func testServiceWithUser(user appuser.User) *Service {
 	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{
 		{Platform: "openai", Models: []apppluginadmin.PublicPricingModel{
 			{ID: "gpt-5.5", Input: 5, Output: 30},
@@ -113,7 +117,7 @@ func testService(userRates map[int64]float64) *Service {
 		// 固定图价哨兵组：倍率 0 + 空路由（匹配所有 openai 模型），不得污染 token 报价
 		{ID: 7, Name: "Image 4k", Platform: "openai", RateMultiplier: 0, ModelRouting: map[string][]int64{}},
 	}}
-	return NewService(catalog, groups, &fakeUsers{user: appuser.User{GroupRates: userRates}}, &fakeAPIKeys{})
+	return NewService(catalog, groups, &fakeUsers{user: user}, &fakeAPIKeys{})
 }
 
 func TestUserPricingPicksBestEligibleGroup(t *testing.T) {
@@ -185,6 +189,61 @@ func TestUserPricingHonorsUserRateOverride(t *testing.T) {
 	}
 	for _, g := range result.Groups {
 		if g.ID == 3 && (g.EffectiveRate != 0.3 || g.GroupRate != 0.6 || g.USDMultiplier != 0.3) {
+			t.Fatalf("Codex Pro quote = %+v", g)
+		}
+	}
+}
+
+// TestUserPricingQuoteModePrunesStandardAnchors 报价客户口径：
+// 报价数值与计费同源不变，但响应里不得残留任何能反推默认牌价的锚点
+// （模型的分组来源、分组摘要的标准倍率差值）。
+func TestUserPricingQuoteModePrunesStandardAnchors(t *testing.T) {
+	svc := testServiceWithUser(appuser.User{
+		GroupRates:  map[int64]float64{3: 0.3},
+		PricingMode: "quote",
+	})
+	result, err := svc.UserPricing(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if result.PricingMode != "quote" {
+		t.Fatalf("PricingMode = %q", result.PricingMode)
+	}
+	for _, platform := range result.Platforms {
+		for _, m := range platform.Models {
+			// 报价不变：gpt-5.5 仍取专属倍率 0.3
+			if m.ID == "gpt-5.5" && m.UserRate != 0.3 {
+				t.Fatalf("gpt-5.5 = %+v", m)
+			}
+			// 分组来源必须被抹掉
+			if m.GroupID != 0 || m.GroupName != "" || m.GroupNameI18n != nil {
+				t.Fatalf("%s 残留分组来源: %+v", m.ID, m)
+			}
+		}
+	}
+	for _, g := range result.Groups {
+		// 标准倍率改写为有效倍率：响应里不存在「标准 vs 专属」差值
+		if g.GroupRate != g.EffectiveRate {
+			t.Fatalf("分组 %d 残留标准倍率: group_rate=%v effective=%v", g.ID, g.GroupRate, g.EffectiveRate)
+		}
+		if g.ID == 3 && g.EffectiveRate != 0.3 {
+			t.Fatalf("Codex Pro 有效倍率 = %+v", g)
+		}
+	}
+}
+
+// TestUserPricingStandardModeKeepsAnchors 标准用户口径不受报价机制影响（回归护栏）。
+func TestUserPricingStandardModeKeepsAnchors(t *testing.T) {
+	svc := testServiceWithUser(appuser.User{GroupRates: map[int64]float64{3: 0.3}})
+	result, err := svc.UserPricing(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if result.PricingMode != "" && result.PricingMode != "standard" {
+		t.Fatalf("PricingMode = %q", result.PricingMode)
+	}
+	for _, g := range result.Groups {
+		if g.ID == 3 && (g.GroupRate != 0.6 || g.EffectiveRate != 0.3) {
 			t.Fatalf("Codex Pro quote = %+v", g)
 		}
 	}

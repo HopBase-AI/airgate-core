@@ -20,6 +20,7 @@ func userToResp(user appauth.User) dto.UserResp {
 		Role:           user.Role,
 		MaxConcurrency: user.MaxConcurrency,
 		GroupRates:     user.GroupRates,
+		PricingMode:    user.PricingMode,
 		AllowedGroupIDs: append([]int64(nil),
 			user.AllowedGroupIDs...),
 		Status: user.Status,

@@ -268,3 +268,134 @@ func createProcessingTask(t *testing.T, db *ent.Client, attempts, maxAttempts in
 		SetMaxAttempts(maxAttempts).
 		SaveX(context.Background())
 }
+
+func createPendingTask(t *testing.T, db *ent.Client, pluginID string) *ent.Task {
+	t.Helper()
+	return db.Task.Create().
+		SetPluginID(pluginID).
+		SetTaskType("video.generate").
+		SetStatus(enttask.StatusPending).
+		SetStage("pending").
+		SetUserID(7).
+		SetInput(map[string]interface{}{"prompt": "test"}).
+		SetAttempts(0).
+		SetMaxAttempts(3).
+		SaveX(context.Background())
+}
+
+// launchPluginTasks 必须立即返回,慢任务只占在飞额度,不得阻塞派发方。
+func TestLaunchPluginTasksDoesNotBlockOnSlowTask(t *testing.T) {
+	ctx := context.Background()
+	db := openManagerTasksTestDB(t)
+	const pluginID = "plugin-slow-launch"
+	typeSet := map[string]bool{"video.generate": true}
+
+	var tasks []*ent.Task
+	for i := 0; i < 3; i++ {
+		tasks = append(tasks, createPendingTask(t, db, pluginID))
+	}
+
+	release := make(chan struct{})
+	processor := taskProcessorFunc(func(ctx context.Context, req *pb.ProcessTaskRequest) (*pb.ProcessTaskResponse, error) {
+		<-release
+		return &pb.ProcessTaskResponse{Success: true}, nil
+	})
+
+	mgr := &Manager{hostFactory: &HostService{db: db}}
+	done := make(chan struct{})
+	go func() {
+		mgr.launchPluginTasks(ctx, pluginID, pluginID, processor, typeSet, tasks)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("launchPluginTasks 在任务未完成时阻塞未返回")
+	}
+
+	if got := taskInflight.get(pluginID); got != 3 {
+		t.Fatalf("in-flight = %d, want 3", got)
+	}
+	for _, task := range tasks {
+		if st := db.Task.GetX(ctx, task.ID).Status; st != enttask.StatusProcessing {
+			t.Fatalf("task %d status = %q, want processing", task.ID, st)
+		}
+	}
+
+	close(release)
+	deadline := time.Now().Add(5 * time.Second)
+	for taskInflight.get(pluginID) != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("in-flight 未归零: %d", taskInflight.get(pluginID))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for _, task := range tasks {
+		if st := db.Task.GetX(ctx, task.ID).Status; st != enttask.StatusCompleted {
+			t.Fatalf("task %d status = %q, want completed", task.ID, st)
+		}
+	}
+}
+
+// dispatchPendingTasks 每 tick 只补齐剩余在飞额度,超额部分留待下一轮。
+func TestDispatchPendingTasksRespectsInflightSlots(t *testing.T) {
+	ctx := context.Background()
+	db := openManagerTasksTestDB(t)
+	const pluginID = "plugin-slot-cap"
+	db.Setting.Create().SetKey(taskConcurrencySettingKey + "." + pluginID).SetGroup("tasks").SetValue("2").SaveX(ctx)
+
+	for i := 0; i < 5; i++ {
+		createPendingTask(t, db, pluginID)
+	}
+
+	// 无 instances:dispatchPluginTasks 会打 plugin_not_found 并放弃,任务保持 pending。
+	// 这里只验证取数量受额度限制——通过预置在飞数观察查询行为。
+	taskInflight.add(pluginID)
+	defer taskInflight.done(pluginID)
+
+	caps := loadPluginConcurrencyCaps(ctx, db)
+	slots := pluginConcurrencyCap(caps, pluginID) - taskInflight.get(pluginID)
+	if slots != 1 {
+		t.Fatalf("slots = %d, want 1 (cap 2 - inflight 1)", slots)
+	}
+
+	tasks, err := db.Task.Query().
+		Where(enttask.StatusIn(enttask.StatusPending, enttask.StatusRetrying), enttask.PluginIDEQ(pluginID)).
+		Limit(slots).
+		All(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("取数 = %d, want 1", len(tasks))
+	}
+}
+
+func TestPluginConcurrencyCapResolution(t *testing.T) {
+	ctx := context.Background()
+	db := openManagerTasksTestDB(t)
+	db.Setting.Create().SetKey(taskConcurrencySettingKey).SetGroup("tasks").SetValue("30").SaveX(ctx)
+	db.Setting.Create().SetKey(taskConcurrencySettingKey + ".gateway-gemini").SetGroup("tasks").SetValue("40").SaveX(ctx)
+	db.Setting.Create().SetKey(taskConcurrencySettingKey + ".gateway-seedance").SetGroup("tasks").SetValue("bogus").SaveX(ctx)
+	db.Setting.Create().SetKey(taskConcurrencySettingKey + ".gateway-openai").SetGroup("tasks").SetValue("0").SaveX(ctx)
+
+	caps := loadPluginConcurrencyCaps(ctx, db)
+	cases := []struct {
+		plugin string
+		want   int
+	}{
+		{"gateway-gemini", 40},   // 插件级覆盖
+		{"gateway-kling", 30},    // 回落全局
+		{"gateway-seedance", 30}, // 非法值忽略 → 全局
+		{"gateway-openai", 30},   // 0 非法 → 全局
+	}
+	for _, c := range cases {
+		if got := pluginConcurrencyCap(caps, c.plugin); got != c.want {
+			t.Errorf("cap(%s) = %d, want %d", c.plugin, got, c.want)
+		}
+	}
+	if got := pluginConcurrencyCap(nil, "any"); got != defaultMaxPluginConcurrency {
+		t.Errorf("无配置默认 = %d, want %d", got, defaultMaxPluginConcurrency)
+	}
+}

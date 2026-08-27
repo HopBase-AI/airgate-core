@@ -230,6 +230,108 @@ func TestPublicModelPricingVideoBuckets(t *testing.T) {
 	}
 }
 
+// TestPublicModelPricingImageBucketsKeepBuiltinTokenPrice 按 token 结算的生图模型
+// （Gemini / GPT Image）同时声明官方单张牌价和 token 底价，两者都要投影出来。
+//
+// 曾经解析到桶价就直接返回，token 价被丢掉：openai 平台因为 models.catalog 覆盖层
+// 会把 token 价补回来所以没露馅，gemini 平台没有覆盖层，公开目录里 input/output
+// 直接变成 0。
+func TestPublicModelPricingImageBucketsKeepBuiltinTokenPrice(t *testing.T) {
+	manager := &fakeCatalogManager{
+		metas: []plugin.PluginMeta{{Name: "airgate-gemini", Type: "gateway", Platform: "gemini"}},
+		models: map[string][]sdk.ModelInfo{
+			"gemini": {
+				{ID: "gemini-3-pro-image", Name: "Gemini 3 Pro Image",
+					Capabilities: []string{"image_generation"},
+					Metadata: map[string]string{
+						"vendor":             "google",
+						"price.image.1k":     "0.1344",
+						"price.image.4k":     "0.24",
+						"price.input":        "2",
+						"price.cached_input": "0.2",
+						"price.output":       "120",
+					}},
+				// 纯按张计费的模型没有 token 价，保持 0。
+				{ID: "seedream-5-0-pro", Name: "Seedream 5.0 Pro",
+					Capabilities: []string{"image_generation"},
+					Metadata:     map[string]string{"price.image.le_236w": "0.045"}},
+			},
+		},
+	}
+	svc := NewService(manager, nil)
+	svc.SetModelOverlayReader(func(context.Context, string) (string, error) { return "", nil })
+
+	result := svc.PublicModelPricing(context.Background())
+	if len(result) != 1 || len(result[0].Models) != 2 {
+		t.Fatalf("result = %+v", result)
+	}
+	byID := map[string]PublicPricingModel{}
+	for _, m := range result[0].Models {
+		byID[m.ID] = m
+	}
+
+	pro := byID["gemini-3-pro-image"]
+	if pro.Image["1k"] != 0.1344 || pro.Image["4k"] != 0.24 {
+		t.Fatalf("官方单张价丢失: %+v", pro.Image)
+	}
+	if pro.Input != 2 || pro.CachedInput != 0.2 || pro.Output != 120 {
+		t.Fatalf("token 底价被桶价挤掉: input=%v cached=%v output=%v", pro.Input, pro.CachedInput, pro.Output)
+	}
+
+	seedream := byID["seedream-5-0-pro"]
+	if seedream.Image["le_236w"] != 0.045 {
+		t.Fatalf("按张桶价丢失: %+v", seedream.Image)
+	}
+	if seedream.Input != 0 || seedream.Output != 0 {
+		t.Fatalf("纯按张模型不应凭空得到 token 价: input=%v output=%v", seedream.Input, seedream.Output)
+	}
+}
+
+// TestPublicModelPricingImageBucketsKeepTokenOverlay 生图模型可以同时有官方单张价
+// （插件声明的 price.image.*，模型广场按档位铺价）和 token 底价（覆盖层校正的实际
+// 计费单价）。两者量纲不同：若图片分支把 token 形态的覆盖也吞掉，input/output/flex_*
+// 会被当成桶名塞进 Image，广场就会铺出「input $2 / 张」这种乱码档位。
+func TestPublicModelPricingImageBucketsKeepTokenOverlay(t *testing.T) {
+	manager := &fakeCatalogManager{
+		metas: []plugin.PluginMeta{{Name: "airgate-openai", Type: "gateway", Platform: "openai"}},
+		models: map[string][]sdk.ModelInfo{
+			"openai": {
+				{ID: "gemini-3-pro-image", Name: "Gemini 3 Pro Image",
+					Capabilities: []string{"image_generation"},
+					Metadata: map[string]string{
+						"vendor":         "google",
+						"price.image.1k": "0.1344",
+						"price.image.2k": "0.1344",
+						"price.image.4k": "0.24",
+						"price.input":    "2",
+						"price.output":   "120",
+					}},
+			},
+		},
+	}
+	svc := NewService(manager, nil)
+	svc.SetModelOverlayReader(func(context.Context, string) (string, error) {
+		return `[{"id":"gemini-3-pro-image","pricing":{"input":2,"output":120,"cached_input":0.2}}]`, nil
+	})
+
+	result := svc.PublicModelPricing(context.Background())
+	if len(result) != 1 || len(result[0].Models) != 1 {
+		t.Fatalf("result = %+v", result)
+	}
+	m := result[0].Models[0]
+	if m.Image["1k"] != 0.1344 || m.Image["2k"] != 0.1344 || m.Image["4k"] != 0.24 {
+		t.Fatalf("官方单张价被 token 覆盖层污染: %+v", m.Image)
+	}
+	for _, bogus := range []string{"input", "output", "cached_input"} {
+		if _, ok := m.Image[bogus]; ok {
+			t.Fatalf("token 键 %q 被当成图片档位塞进 Image: %+v", bogus, m.Image)
+		}
+	}
+	if m.Input != 2 || m.Output != 120 || m.CachedInput != 0.2 {
+		t.Fatalf("token 底价未被覆盖层校正: input=%v cached=%v output=%v", m.Input, m.CachedInput, m.Output)
+	}
+}
+
 // TestPublicModelPricingImageBuckets 图片生成模型的按张官方价投影：
 // 内置 price.image.* 铺出 → 覆盖层按像素档位改价/收回，不伪装成 token 价。
 func TestPublicModelPricingImageBuckets(t *testing.T) {

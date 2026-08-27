@@ -59,6 +59,16 @@ type forwardExecution struct {
 	duration time.Duration
 }
 
+// clientErrorReplay 快照一次 ClientError 尝试的执行结果与归属上下文。
+// failover 穷尽后回放该 4xx 时，计费与日志必须落在产生这份响应的账号/分组上，
+// 而 state 里的这些字段可能已被后续 pickAccount / 路由切换覆盖。
+type clientErrorReplay struct {
+	execution forwardExecution
+	account   *ent.Account
+	keyInfo   *auth.APIKeyInfo
+	route     routing.Candidate
+}
+
 // parsedRequest 从 JSON body 提取的请求元信息。
 type parsedRequest struct {
 	Model           string

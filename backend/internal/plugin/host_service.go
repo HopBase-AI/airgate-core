@@ -812,15 +812,40 @@ func (h *HostService) listGroups(ctx context.Context, req hostListGroupsRequest)
 		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	// 报价客户（pricing_mode=quote）：插件 UI 也不得看到标准牌价——倍率字段
+	// 改写为该用户的有效倍率，与 /models/pricing/me 的裁剪口径一致。
+	// 用户不存在按非报价处理（兼容旧调用方传任意 user_id）；其余查询错误向上抛，
+	// 避免出错时把标准牌价漏出去。
+	var quoteUser *ent.User
+	if req.UserID > 0 {
+		qu, err := h.db.User.Query().Where(user.IDEQ(int(req.UserID))).Only(ctx)
+		switch {
+		case err == nil:
+			if qu.PricingMode == user.PricingModeQuote {
+				quoteUser = qu
+			}
+		case ent.IsNotFound(err):
+			// 保持旧行为：无效 user_id 不影响列表本身
+		default:
+			if cerr := hostContextError(err); cerr != nil {
+				return nil, cerr
+			}
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
 	items := make([]map[string]interface{}, 0, len(groups))
 	for _, g := range groups {
+		rateMultiplier := g.RateMultiplier
+		if quoteUser != nil {
+			rateMultiplier = billing.ResolveBillingRateForGroup(quoteUser.GroupRates, g.ID, g.RateMultiplier)
+		}
 		item := map[string]interface{}{
 			"id":              int64(g.ID),
 			"name":            g.Name,
 			"name_i18n":       g.NameI18n,
 			"platform":        g.Platform,
 			"is_exclusive":    g.IsExclusive,
-			"rate_multiplier": g.RateMultiplier,
+			"rate_multiplier": rateMultiplier,
 			"note":            g.Note,
 			"note_i18n":       g.NoteI18n,
 			"status_visible":  g.StatusVisible,
@@ -888,13 +913,19 @@ func (h *HostService) listEligibleGroups(ctx context.Context, req hostListGroups
 		if strings.TrimSpace(req.Model) != "" && !h.groupHasSchedulableAccountForModel(ctx, c, req.Model, req.NeedsImage) {
 			continue
 		}
+		// 报价客户：标准牌价改写为有效倍率，响应里不存在「标准 vs 专属」差值
+		//（与 /models/pricing/me 的裁剪口径一致），插件 UI 无从渲染牌价对比。
+		rateMultiplier := g.RateMultiplier
+		if u.PricingMode == user.PricingModeQuote {
+			rateMultiplier = c.EffectiveRate
+		}
 		item := map[string]interface{}{
 			"id":              int64(g.ID),
 			"name":            g.Name,
 			"name_i18n":       g.NameI18n,
 			"platform":        g.Platform,
 			"is_exclusive":    g.IsExclusive,
-			"rate_multiplier": g.RateMultiplier,
+			"rate_multiplier": rateMultiplier,
 			"effective_rate":  c.EffectiveRate,
 			"note":            g.Note,
 			"note_i18n":       g.NoteI18n,
@@ -989,6 +1020,10 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 	hardExclude := make([]int, 0, maxHostForwardAttempts*len(routes))
 	var lastUpstream sdk.UpstreamResponse
 	hasLastUpstream := false
+	// 与 Forwarder 一致：4xx 判决也换号重试；穷尽后优先回放最后一次客户端错误
+	// 响应（而不是中途某次 5xx 的响应体），真实错误信息必须完整到达调用方。
+	var lastClientUpstream sdk.UpstreamResponse
+	hasLastClientUpstream := false
 	failureSummary := allRoutesFailureSummary{}
 	for _, route := range routes {
 		model := h.resolveHostModel(route.Platform, req.Model)
@@ -1114,7 +1149,12 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 				return nil, cerr
 			}
 
-			if fwdErr != nil || outcome.Kind.ShouldFailover() {
+			replayableClient := outcome.Kind == sdk.OutcomeClientError && replayableClientError(outcome)
+			if fwdErr != nil || outcome.Kind.ShouldFailover() || replayableClient {
+				if replayableClient && returnableUpstream(outcome.Upstream) {
+					lastClientUpstream = outcome.Upstream
+					hasLastClientUpstream = true
+				}
 				failureSummary.recordExecution(forwardExecution{outcome: outcome, err: fwdErr, duration: duration})
 				slog.Warn("host_forward_attempt_failed",
 					sdk.LogFieldGroupID, route.GroupID,
@@ -1173,6 +1213,9 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 		}
 	}
 
+	if hasLastClientUpstream {
+		lastUpstream, hasLastUpstream = lastClientUpstream, true
+	}
 	return hostAllRoutesFailurePayload(failureSummary, lastUpstream, hasLastUpstream), nil
 }
 
@@ -1352,6 +1395,8 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 	sw := &hostStreamWriter{stream: stream}
 	hardExclude := make([]int, 0, maxHostForwardAttempts*len(routes))
 	failureSummary := allRoutesFailureSummary{}
+	// 与 Forwarder 一致：4xx 判决也换号重试，穷尽后回放最后一次客户端错误。
+	var lastClientError *sdk.ForwardOutcome
 
 	for _, route := range routes {
 		model := h.resolveHostModel(route.Platform, req.Model)
@@ -1472,8 +1517,13 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 				return hostForwardContextError(fwdCtx, fwdErr)
 			}
 
-			canRetry := !fw.committed && (fwdErr != nil || outcome.Kind.ShouldFailover())
+			replayableClient := outcome.Kind == sdk.OutcomeClientError && replayableClientError(outcome)
+			canRetry := !fw.committed && (fwdErr != nil || outcome.Kind.ShouldFailover() || replayableClient)
 			if canRetry {
+				if replayableClient {
+					snapshot := outcome
+					lastClientError = &snapshot
+				}
 				failureSummary.recordExecution(forwardExecution{outcome: outcome, err: fwdErr, duration: duration})
 				slog.Warn("host_forward_stream_attempt_failed",
 					sdk.LogFieldGroupID, route.GroupID,
@@ -1546,6 +1596,9 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 		}
 	}
 
+	if lastClientError != nil {
+		return hostForwardClientError(*lastClientError)
+	}
 	return sendHostStreamFailure(stream, failureSummary)
 }
 
@@ -1919,6 +1972,10 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 	req.RequestID = strings.TrimSpace(req.RequestID)
 	usageValues := usageSnapshotFromSDK(usage)
 
+	actualModel := usage.Model
+	if actualModel == "" {
+		actualModel = model
+	}
 	calcInput := billing.CalculateInput{
 		InputCost:         usageValues.InputCost,
 		ImageInputCost:    usageValues.ImageInputCost,
@@ -1927,7 +1984,7 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 		CacheCreationCost: usageValues.CacheCreationCost,
 		ImageCost:         usageValues.ImageCost,
 		BillingRate:       route.EffectiveRate,
-		AccountRate:       accFull.RateMultiplier,
+		AccountRate:       billing.ResolveAccountRateForModel(accFull.Extra, actualModel, accFull.RateMultiplier),
 	}
 	var imageFixedPriceApplied bool
 	var imageFixedPriceReplacesTotal bool
@@ -1939,10 +1996,6 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 	applyHostForwardBilling(usage, calc)
 	applyHostForwardTrace(usage, req.TraceID)
 
-	actualModel := usage.Model
-	if actualModel == "" {
-		actualModel = model
-	}
 	if usageID, found, err := h.existingHostForwardUsageID(ctx, req, platform, actualModel); err != nil {
 		return 0, err
 	} else if found {

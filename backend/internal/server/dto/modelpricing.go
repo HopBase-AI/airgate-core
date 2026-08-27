@@ -51,9 +51,12 @@ type PublicLongContextResp struct {
 }
 
 // MyModelPricingResp 当前登录用户的实付价视图（模型广场/分组选择数据源）。
+// pricing_mode="quote" 表示报价客户：响应已按报价口径裁剪（模型不带分组来源、
+// 分组摘要 group_rate=effective_rate），前端据此隐藏划线原价/折扣徽章/牌价回退。
 type MyModelPricingResp struct {
-	Platforms []MyPlatformPricingResp `json:"platforms"`
-	Groups    []MyGroupQuoteResp      `json:"groups"`
+	Platforms   []MyPlatformPricingResp `json:"platforms"`
+	Groups      []MyGroupQuoteResp      `json:"groups"`
+	PricingMode string                  `json:"pricing_mode,omitempty"`
 }
 
 // MyPlatformPricingResp 单平台的用户报价清单。

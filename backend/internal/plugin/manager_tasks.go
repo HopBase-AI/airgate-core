@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/DouDOU-start/airgate-core/ent"
+	"github.com/DouDOU-start/airgate-core/ent/setting"
 	enttask "github.com/DouDOU-start/airgate-core/ent/task"
 	pb "github.com/DouDOU-start/airgate-sdk/protocol/proto"
 	sdkgrpc "github.com/DouDOU-start/airgate-sdk/runtimego/grpc"
@@ -20,9 +23,17 @@ const (
 	taskProcessTimeout   = 10 * time.Minute
 	taskStaleThreshold   = 10 * time.Minute
 	taskRecoverInterval  = 30 * time.Second
-	taskBatchSize        = 10
 	taskRecoverLimit     = 100
-	maxPluginConcurrency = 5
+
+	// defaultMaxPluginConcurrency 单插件在飞任务数上限的默认值。上限过大时的
+	// 真实约束是:大图 b64 在执行链路的内存峰值(4K 图一张 ~18MB)与弱上游账号的
+	// 并发闸门等待窗口(60s),20 在两者的安全区内。
+	defaultMaxPluginConcurrency = 20
+
+	// taskConcurrencySettingKey 后台可调的在飞上限 settings 键(全局默认);
+	// 追加 ".<plugin_id>" 为插件级覆盖,如 tasks.max_plugin_concurrency.gateway-gemini。
+	// 改动即时生效(每个分发 tick 重读),无需发版。
+	taskConcurrencySettingKey = "tasks.max_plugin_concurrency"
 )
 
 // taskTypesCache caches GetTaskTypes results per plugin to avoid gRPC calls every dispatch cycle.
@@ -34,6 +45,40 @@ type taskTypesCache struct {
 type taskProcessor interface {
 	ProcessTask(context.Context, *pb.ProcessTaskRequest) (*pb.ProcessTaskResponse, error)
 }
+
+// taskInflightCounter 记录每插件当前在飞任务数。只有 leader 的分发循环递增
+// (单 goroutine),任务 goroutine 结束时递减;分发循环据此每 tick 持续补位,
+// 取代旧的"取一批→整批跑完→再取"模型。leader 切换时新 leader 从零计数,
+// 旧 leader 在途任务照常跑完,瞬时并行度最多 2×上限,与旧批模型同级,可接受。
+type taskInflightCounter struct {
+	mu sync.Mutex
+	n  map[string]int
+}
+
+func (c *taskInflightCounter) add(pluginID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.n == nil {
+		c.n = make(map[string]int)
+	}
+	c.n[pluginID]++
+}
+
+func (c *taskInflightCounter) done(pluginID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.n[pluginID] > 0 {
+		c.n[pluginID]--
+	}
+}
+
+func (c *taskInflightCounter) get(pluginID string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.n[pluginID]
+}
+
+var taskInflight = &taskInflightCounter{}
 
 func updateTaskWhileProcessing(ctx context.Context, db *ent.Client, taskID int, apply func(*ent.TaskUpdate)) (bool, error) {
 	update := db.Task.Update().
@@ -141,7 +186,7 @@ func (m *Manager) taskDispatchLoop(ctx context.Context) {
 var ttCache = &taskTypesCache{}
 
 func (m *Manager) dispatchPendingTasks(ctx context.Context) {
-	// 仅 leader 分发：任务队列集群共享。原子领取（dispatchPluginTasks 的条件更新）已能防
+	// 仅 leader 分发：任务队列集群共享。原子领取（launchPluginTasks 的条件更新）已能防
 	// 重复执行，这里再 gate 一层避免多实例重复查询/抢占的无谓开销。
 	if m.isLeaderFunc != nil && !m.isLeaderFunc() {
 		return
@@ -151,34 +196,73 @@ func (m *Manager) dispatchPendingTasks(ctx context.Context) {
 	}
 	db := m.hostFactory.db
 
-	tasks, err := db.Task.Query().
+	// 按插件分别取数补位:全局取一批再分组会让单插件积压饿死其他插件,
+	// 且每插件的取数量由剩余在飞额度决定,不再有固定批大小。
+	pluginIDs, err := db.Task.Query().
 		Where(enttask.StatusIn(enttask.StatusPending, enttask.StatusRetrying)).
-		Order(ent.Desc(enttask.FieldPriority), ent.Asc(enttask.FieldCreatedAt)).
-		Limit(taskBatchSize).
-		All(ctx)
+		GroupBy(enttask.FieldPluginID).
+		Strings(ctx)
 	if err != nil {
 		slog.Error("task_dispatch_query_failed", sdk.LogFieldError, err)
 		return
 	}
-	if len(tasks) == 0 {
+	if len(pluginIDs) == 0 {
 		return
 	}
 
-	// Group by plugin_id
-	byPlugin := make(map[string][]*ent.Task)
-	for _, t := range tasks {
-		byPlugin[t.PluginID] = append(byPlugin[t.PluginID], t)
+	caps := loadPluginConcurrencyCaps(ctx, db)
+	for _, pid := range pluginIDs {
+		slots := pluginConcurrencyCap(caps, pid) - taskInflight.get(pid)
+		if slots <= 0 {
+			continue
+		}
+		tasks, err := db.Task.Query().
+			Where(
+				enttask.StatusIn(enttask.StatusPending, enttask.StatusRetrying),
+				enttask.PluginIDEQ(pid),
+			).
+			Order(ent.Desc(enttask.FieldPriority), ent.Asc(enttask.FieldCreatedAt)).
+			Limit(slots).
+			All(ctx)
+		if err != nil {
+			slog.Error("task_dispatch_query_failed", sdk.LogFieldPluginID, pid, sdk.LogFieldError, err)
+			continue
+		}
+		if len(tasks) == 0 {
+			continue
+		}
+		m.dispatchPluginTasks(ctx, pid, tasks)
 	}
+}
 
-	var wg sync.WaitGroup
-	for pluginID, pluginTasks := range byPlugin {
-		wg.Add(1)
-		go func(pid string, pts []*ent.Task) {
-			defer wg.Done()
-			m.dispatchPluginTasks(ctx, pid, pts)
-		}(pluginID, pluginTasks)
+// loadPluginConcurrencyCaps 读取后台配置的在飞上限(全局键 + 插件级覆盖)。
+// 读失败或值非法一律回落默认:分发是热路径,配置问题不应停摆队列。
+func loadPluginConcurrencyCaps(ctx context.Context, db *ent.Client) map[string]int {
+	rows, err := db.Setting.Query().
+		Where(setting.KeyHasPrefix(taskConcurrencySettingKey)).
+		All(ctx)
+	if err != nil {
+		return nil
 	}
-	wg.Wait()
+	caps := make(map[string]int, len(rows))
+	for _, row := range rows {
+		v, convErr := strconv.Atoi(strings.TrimSpace(row.Value))
+		if convErr != nil || v <= 0 {
+			continue
+		}
+		caps[row.Key] = v
+	}
+	return caps
+}
+
+func pluginConcurrencyCap(caps map[string]int, pluginID string) int {
+	if v, ok := caps[taskConcurrencySettingKey+"."+pluginID]; ok {
+		return v
+	}
+	if v, ok := caps[taskConcurrencySettingKey]; ok {
+		return v
+	}
+	return defaultMaxPluginConcurrency
 }
 
 func (m *Manager) getPluginTaskTypes(ctx context.Context, pluginID string, ext *sdkgrpc.ExtensionGRPCClient) (map[string]bool, error) {
@@ -219,9 +303,14 @@ func (m *Manager) dispatchPluginTasks(ctx context.Context, pluginID string, task
 		return
 	}
 
+	m.launchPluginTasks(ctx, pluginID, inst.Name, inst.Extension, typeSet, tasks)
+}
+
+// launchPluginTasks 原子领取任务并异步执行,立即返回——不等待任务完成。
+// 慢任务只占用自己的在飞额度;旧的整批 wg.Wait 语义曾让单个 300s 卡死任务
+// 冻结全插件队列 5 分钟(2026-08-20 生产实测),此处是修复的核心。
+func (m *Manager) launchPluginTasks(ctx context.Context, pluginID, pluginName string, processor taskProcessor, typeSet map[string]bool, tasks []*ent.Task) {
 	db := m.hostFactory.db
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, maxPluginConcurrency)
 
 	for _, t := range tasks {
 		if !typeSet[t.TaskType] {
@@ -254,15 +343,12 @@ func (m *Manager) dispatchPluginTasks(ctx context.Context, pluginID string, task
 			continue
 		}
 
-		wg.Add(1)
-		sem <- struct{}{}
+		taskInflight.add(pluginID)
 		go func(task *ent.Task) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			m.processOneTask(ctx, inst.Name, inst.Extension, task)
+			defer taskInflight.done(pluginID)
+			m.processOneTask(ctx, pluginName, processor, task)
 		}(t)
 	}
-	wg.Wait()
 }
 
 func (m *Manager) processOneTask(ctx context.Context, pluginName string, processor taskProcessor, t *ent.Task) {

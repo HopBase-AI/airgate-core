@@ -75,4 +75,8 @@ type GroupQuote struct {
 type Result struct {
 	Platforms []PlatformQuotes
 	Groups    []GroupQuote
+	// PricingMode 用户定价展示模式（standard / quote；API Key 会话为空）。
+	// quote 时结果已按报价客户口径裁剪：模型不带分组来源、分组摘要不带标准倍率，
+	// 前端据此隐藏划线原价与折扣徽章。
+	PricingMode string
 }

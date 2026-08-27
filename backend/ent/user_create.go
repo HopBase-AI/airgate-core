@@ -142,6 +142,20 @@ func (uc *UserCreate) SetGroupRates(m map[int64]float64) *UserCreate {
 	return uc
 }
 
+// SetPricingMode sets the "pricing_mode" field.
+func (uc *UserCreate) SetPricingMode(um user.PricingMode) *UserCreate {
+	uc.mutation.SetPricingMode(um)
+	return uc
+}
+
+// SetNillablePricingMode sets the "pricing_mode" field if the given value is not nil.
+func (uc *UserCreate) SetNillablePricingMode(um *user.PricingMode) *UserCreate {
+	if um != nil {
+		uc.SetPricingMode(*um)
+	}
+	return uc
+}
+
 // SetGroupPluginSettings sets the "group_plugin_settings" field.
 func (uc *UserCreate) SetGroupPluginSettings(m map[int64]map[string]map[string]string) *UserCreate {
 	uc.mutation.SetGroupPluginSettings(m)
@@ -451,6 +465,10 @@ func (uc *UserCreate) defaults() {
 		v := user.DefaultMaxConcurrency
 		uc.mutation.SetMaxConcurrency(v)
 	}
+	if _, ok := uc.mutation.PricingMode(); !ok {
+		v := user.DefaultPricingMode
+		uc.mutation.SetPricingMode(v)
+	}
 	if _, ok := uc.mutation.BalanceAlertThreshold(); !ok {
 		v := user.DefaultBalanceAlertThreshold
 		uc.mutation.SetBalanceAlertThreshold(v)
@@ -534,6 +552,14 @@ func (uc *UserCreate) check() error {
 	if v, ok := uc.mutation.MaxConcurrency(); ok {
 		if err := user.MaxConcurrencyValidator(v); err != nil {
 			return &ValidationError{Name: "max_concurrency", err: fmt.Errorf(`ent: validator failed for field "User.max_concurrency": %w`, err)}
+		}
+	}
+	if _, ok := uc.mutation.PricingMode(); !ok {
+		return &ValidationError{Name: "pricing_mode", err: errors.New(`ent: missing required field "User.pricing_mode"`)}
+	}
+	if v, ok := uc.mutation.PricingMode(); ok {
+		if err := user.PricingModeValidator(v); err != nil {
+			return &ValidationError{Name: "pricing_mode", err: fmt.Errorf(`ent: validator failed for field "User.pricing_mode": %w`, err)}
 		}
 	}
 	if _, ok := uc.mutation.BalanceAlertThreshold(); !ok {
@@ -650,6 +676,10 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := uc.mutation.GroupRates(); ok {
 		_spec.SetField(user.FieldGroupRates, field.TypeJSON, value)
 		_node.GroupRates = value
+	}
+	if value, ok := uc.mutation.PricingMode(); ok {
+		_spec.SetField(user.FieldPricingMode, field.TypeEnum, value)
+		_node.PricingMode = value
 	}
 	if value, ok := uc.mutation.GroupPluginSettings(); ok {
 		_spec.SetField(user.FieldGroupPluginSettings, field.TypeJSON, value)

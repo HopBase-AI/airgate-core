@@ -92,6 +92,9 @@ export interface MyModelPricing {
   // Legacy Core versions omitted this field. When present, even an empty list
   // or usd_multiplier=0 is authoritative and must not be reconstructed client-side.
   groups?: MyGroupQuote[];
+  // 定价展示模式：quote=报价客户，响应已按报价口径裁剪（模型不带分组来源、
+  // group_rate=effective_rate），前端须隐藏划线原价/折扣徽章/公开牌价回退。
+  pricing_mode?: 'standard' | 'quote';
 }
 
 export const modelsApi = {

@@ -58,6 +58,7 @@ func TestCanFailoverAfterHeartbeatUntilApplicationData(t *testing.T) {
 		sdk.OutcomeAccountRateLimited,
 		sdk.OutcomeAccountDead,
 		sdk.OutcomeUpstreamTransient,
+		sdk.OutcomeClientError,
 	}
 	for _, kind := range retryable {
 		kind := kind
@@ -86,15 +87,18 @@ func TestCanFailoverAfterHeartbeatUntilApplicationData(t *testing.T) {
 func TestCanFailoverOutcomeMatrixBeforeResponseCommit(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name string
-		kind sdk.OutcomeKind
-		err  error
-		want bool
+		name   string
+		kind   sdk.OutcomeKind
+		status int
+		err    error
+		want   bool
 	}{
 		{name: "429 account rate limit", kind: sdk.OutcomeAccountRateLimited, want: true},
 		{name: "403 or 401 account dead", kind: sdk.OutcomeAccountDead, want: true},
 		{name: "502 or 503 upstream transient", kind: sdk.OutcomeUpstreamTransient, want: true},
-		{name: "client 4xx", kind: sdk.OutcomeClientError, want: false},
+		{name: "client 4xx", kind: sdk.OutcomeClientError, status: http.StatusBadRequest, want: true},
+		{name: "client 404 model not found", kind: sdk.OutcomeClientError, status: http.StatusNotFound, want: true},
+		{name: "client 504 gateway timeout not replayable", kind: sdk.OutcomeClientError, status: http.StatusGatewayTimeout, want: false},
 		{name: "committed stream abort", kind: sdk.OutcomeStreamAborted, want: false},
 		{name: "success", kind: sdk.OutcomeSuccess, want: false},
 		{name: "unknown without plugin error", kind: sdk.OutcomeUnknown, want: false},
@@ -110,7 +114,7 @@ func TestCanFailoverOutcomeMatrixBeforeResponseCommit(t *testing.T) {
 			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 			installTTFTWriter(c)
 			got := (&Forwarder{}).canFailover(c, &forwardState{stream: true}, forwardExecution{
-				outcome: sdk.ForwardOutcome{Kind: tt.kind},
+				outcome: sdk.ForwardOutcome{Kind: tt.kind, Upstream: sdk.UpstreamResponse{StatusCode: tt.status}},
 				err:     tt.err,
 			})
 			if got != tt.want {
@@ -135,6 +139,7 @@ func TestCanFailoverRejectsCommittedStreamEvenForRetryableFailure(t *testing.T) 
 		{outcome: sdk.ForwardOutcome{Kind: sdk.OutcomeAccountRateLimited}},
 		{outcome: sdk.ForwardOutcome{Kind: sdk.OutcomeAccountDead}},
 		{outcome: sdk.ForwardOutcome{Kind: sdk.OutcomeUpstreamTransient}},
+		{outcome: sdk.ForwardOutcome{Kind: sdk.OutcomeClientError, Upstream: sdk.UpstreamResponse{StatusCode: http.StatusBadRequest}}},
 		{err: io.ErrUnexpectedEOF},
 	} {
 		if (&Forwarder{}).canFailover(c, &forwardState{stream: true}, execution) {

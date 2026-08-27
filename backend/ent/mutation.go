@@ -18669,6 +18669,7 @@ type UserMutation struct {
 	addmax_concurrency         *int
 	totp_secret                *string
 	group_rates                *map[int64]float64
+	pricing_mode               *user.PricingMode
 	group_plugin_settings      *map[int64]map[string]map[string]string
 	balance_alert_threshold    *float64
 	addbalance_alert_threshold *float64
@@ -19230,6 +19231,42 @@ func (m *UserMutation) GroupRatesCleared() bool {
 func (m *UserMutation) ResetGroupRates() {
 	m.group_rates = nil
 	delete(m.clearedFields, user.FieldGroupRates)
+}
+
+// SetPricingMode sets the "pricing_mode" field.
+func (m *UserMutation) SetPricingMode(um user.PricingMode) {
+	m.pricing_mode = &um
+}
+
+// PricingMode returns the value of the "pricing_mode" field in the mutation.
+func (m *UserMutation) PricingMode() (r user.PricingMode, exists bool) {
+	v := m.pricing_mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPricingMode returns the old "pricing_mode" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldPricingMode(ctx context.Context) (v user.PricingMode, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPricingMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPricingMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPricingMode: %w", err)
+	}
+	return oldValue.PricingMode, nil
+}
+
+// ResetPricingMode resets all changes to the "pricing_mode" field.
+func (m *UserMutation) ResetPricingMode() {
+	m.pricing_mode = nil
 }
 
 // SetGroupPluginSettings sets the "group_plugin_settings" field.
@@ -20136,7 +20173,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 22)
+	fields := make([]string, 0, 23)
 	if m.email != nil {
 		fields = append(fields, user.FieldEmail)
 	}
@@ -20166,6 +20203,9 @@ func (m *UserMutation) Fields() []string {
 	}
 	if m.group_rates != nil {
 		fields = append(fields, user.FieldGroupRates)
+	}
+	if m.pricing_mode != nil {
+		fields = append(fields, user.FieldPricingMode)
 	}
 	if m.group_plugin_settings != nil {
 		fields = append(fields, user.FieldGroupPluginSettings)
@@ -20231,6 +20271,8 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.TotpSecret()
 	case user.FieldGroupRates:
 		return m.GroupRates()
+	case user.FieldPricingMode:
+		return m.PricingMode()
 	case user.FieldGroupPluginSettings:
 		return m.GroupPluginSettings()
 	case user.FieldBalanceAlertThreshold:
@@ -20284,6 +20326,8 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldTotpSecret(ctx)
 	case user.FieldGroupRates:
 		return m.OldGroupRates(ctx)
+	case user.FieldPricingMode:
+		return m.OldPricingMode(ctx)
 	case user.FieldGroupPluginSettings:
 		return m.OldGroupPluginSettings(ctx)
 	case user.FieldBalanceAlertThreshold:
@@ -20386,6 +20430,13 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetGroupRates(v)
+		return nil
+	case user.FieldPricingMode:
+		v, ok := value.(user.PricingMode)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPricingMode(v)
 		return nil
 	case user.FieldGroupPluginSettings:
 		v, ok := value.(map[int64]map[string]map[string]string)
@@ -20651,6 +20702,9 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldGroupRates:
 		m.ResetGroupRates()
+		return nil
+	case user.FieldPricingMode:
+		m.ResetPricingMode()
 		return nil
 	case user.FieldGroupPluginSettings:
 		m.ResetGroupPluginSettings()

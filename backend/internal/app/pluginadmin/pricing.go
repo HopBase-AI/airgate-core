@@ -228,7 +228,12 @@ func (s *Service) applyOverlay(ctx context.Context, platform string, models []Pu
 		}
 		// 图片模型：基座已有按张桶价，或新增条目显式声明 kind=image。
 		// 桶价 map 逐桶覆盖（价>0 覆盖、=0 收回该桶），忽略 token/长上下文字段。
-		if target.Image != nil || strings.EqualFold(entry.Kind, "image") {
+		//
+		// 例外：token 形态的 pricing（带 input / output 键）落到下面的 token 分支。
+		// 生图模型可以同时有官方单张价（插件声明的 price.image.*，供模型广场铺档位）
+		// 和 token 底价（覆盖层校正的实际计费单价），两者量纲不同，不能互相顶替；
+		// 若在这里吞掉，input/output/flex_* 会被当成桶名塞进 Image，把广场铺成乱码。
+		if (target.Image != nil || strings.EqualFold(entry.Kind, "image")) && !isTokenPricing(pricing) {
 			if len(pricing) > 0 {
 				if target.Image == nil {
 					target.Image = make(map[string]float64, len(pricing))
@@ -342,12 +347,33 @@ func categoryOf(capabilities []string) string {
 	return ""
 }
 
+// withTokenPricing 把 price.input/cached_input/output 补进桶价模型。
+//
+// 桶价与 token 价不是二选一：Gemini / GPT Image 这类模型按 token 结算，同时声明
+// 官方单张牌价供展示端铺档位。早期只有 seedream 这种纯按张计费的模型会报桶价，
+// 于是解析时直接丢掉了 token 价——结果是 gemini 平台的生图模型在公开目录里
+// input/output 变成 0（openai 平台因为 models.catalog 覆盖层补了 token 价才没露）。
+// 缺 price.input/output 的纯按张模型保持 0，与改动前一致。
+func withTokenPricing(item PublicPricingModel, metadata map[string]string) PublicPricingModel {
+	if input, ok := parsePriceValue(metadata["price.input"]); ok {
+		item.Input = input
+	}
+	if output, ok := parsePriceValue(metadata["price.output"]); ok {
+		item.Output = output
+	}
+	if cached, ok := parsePriceValue(metadata["price.cached_input"]); ok {
+		item.CachedInput = cached
+	}
+	return item
+}
+
 // parseBuiltinPricing 把插件上报的 price.*/long_context.* metadata 解析为公开定价。
 // 无任何桶价且无 price.input/price.output 视为"无价格提示"（老插件），跳过。
 func parseBuiltinPricing(id, name string, contextWindow int, capabilities []string, metadata map[string]string) (PublicPricingModel, bool) {
-	// 图片生成模型：价格是 price.image.<bucket> 按张桶价，没有 input/output。
+	// 图片生成模型：价格主要在 price.image.<bucket> 按张桶价；按 token 结算的
+	// 生图模型会另外声明 price.input/output，两者一并保留。
 	if buckets := parseImageBuckets(metadata); len(buckets) > 0 {
-		return PublicPricingModel{
+		return withTokenPricing(PublicPricingModel{
 			ID:            id,
 			Name:          name,
 			ContextWindow: contextWindow,
@@ -355,11 +381,11 @@ func parseBuiltinPricing(id, name string, contextWindow int, capabilities []stri
 			Vendor:        metadata["vendor"],
 			Series:        metadata["series"],
 			Image:         buckets,
-		}, true
+		}, metadata), true
 	}
-	// 视频生成模型：价格是 price.video_tokens.<bucket> 桶价，没有 input/output。
+	// 视频生成模型：价格主要在 price.video_tokens.<bucket> 桶价，同上一并保留 token 价。
 	if buckets := parseVideoBuckets(metadata); len(buckets) > 0 {
-		return PublicPricingModel{
+		return withTokenPricing(PublicPricingModel{
 			ID:            id,
 			Name:          name,
 			ContextWindow: contextWindow,
@@ -367,7 +393,7 @@ func parseBuiltinPricing(id, name string, contextWindow int, capabilities []stri
 			Vendor:        metadata["vendor"],
 			Series:        metadata["series"],
 			VideoTokens:   buckets,
-		}, true
+		}, metadata), true
 	}
 	input, okIn := parsePriceValue(metadata["price.input"])
 	output, okOut := parsePriceValue(metadata["price.output"])
