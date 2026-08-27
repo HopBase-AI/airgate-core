@@ -856,7 +856,8 @@
     "copy_accounts_select_platform_first": "先にプラットフォームを選択してください",
     "copy_accounts_empty": "このプラットフォームにはコピーできる他のグループがありません",
     "copy_accounts_count": "{{count}} 個のアカウント",
-    "group": "グループ"
+    "group": "グループ",
+    "i18n_lang_es": "Español"
   },
   "api_keys": {
     "title": "APIキー",
@@ -1696,7 +1697,9 @@
       "webpage_empty": "Web ページの本文を抽出できませんでした",
       "charset_fallback": "{{charset}} エンコーディングでデコードしました",
       "truncated": "内容が長すぎるため、切り詰めました",
-      "parse_failed": "ファイルの解析に失敗しました"
+      "parse_failed": "ファイルの解析に失敗しました",
+      "too_many_videos": "1 メッセージにつき動画は 1 本まで",
+      "video_gemini_only": "動画入力は Gemini 系モデルのみ対応しています"
     },
     "select_model_first": "先にモデルを選択してください",
     "select_image_model_first": "先に画像モデルを選択してください",
@@ -2037,7 +2040,14 @@
     "studio_mobile_projects": "プロジェクト",
     "studio_mobile_create": "作成",
     "studio_loading_works": "作品を読み込み中",
-    "studio_workshop": "クリエイティブスタジオ"
+    "studio_workshop": "クリエイティブスタジオ",
+    "export_message": "メッセージをエクスポート",
+    "studio_price_per_image": "/枚",
+    "studio_batch_prompt_count": "{{count}} 件のプロンプト",
+    "studio_untitled_project": "無題プロジェクト",
+    "studio_route_official": "公式ダイレクト",
+    "studio_route_overseas": "海外",
+    "studio_route_domestic": "国内"
   },
   "pagination": {
     "total": "全 {{count}} 件",

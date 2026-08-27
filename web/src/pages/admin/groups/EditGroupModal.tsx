@@ -46,6 +46,7 @@ const I18N_LANGS: Array<{ code: string; labelKey: string }> = [
   { code: 'en', labelKey: 'groups.i18n_lang_en' },
   { code: 'zh-HK', labelKey: 'groups.i18n_lang_zh_hk' },
   { code: 'ja', labelKey: 'groups.i18n_lang_ja' },
+  { code: 'es', labelKey: 'groups.i18n_lang_es' },
 ];
 
 // buildI18nMap 组装提交用多语言 map：收录所有非空白条目（留空=回退基准文案）。

@@ -8,5 +8,11 @@ export function localizedGroupText(
   lang: string,
 ): string {
   const text = i18nMap?.[lang];
-  return text && text.trim() !== '' ? text : base;
+  if (text && text.trim() !== '') return text;
+  // 非中文界面缺当前语言覆盖时,先回退英文覆盖再回退基准文案(基准名多为中文)
+  if (lang !== 'zh' && lang !== 'zh-HK') {
+    const enText = i18nMap?.['en'];
+    if (enText && enText.trim() !== '') return enText;
+  }
+  return base;
 }

@@ -856,7 +856,8 @@
     "force_instructions": "Force Instructions",
     "force_instructions_hint": "Leave empty to keep as-is. Choose a preset or enter custom content.",
     "instructions_none": "No override",
-    "instructions_custom_placeholder": "Enter custom instructions..."
+    "instructions_custom_placeholder": "Enter custom instructions...",
+    "i18n_lang_es": "Español"
   },
   "api_keys": {
     "title": "API Keys",
@@ -1698,7 +1699,9 @@
       "webpage_empty": "No page content could be extracted",
       "charset_fallback": "Decoded using {{charset}} encoding",
       "truncated": "Content was too long and has been truncated",
-      "parse_failed": "Failed to parse file"
+      "parse_failed": "Failed to parse file",
+      "too_many_videos": "Only one video per message",
+      "video_gemini_only": "Video input is only supported by Gemini-series models"
     },
     "select_model_first": "Select a model first",
     "select_image_model_first": "Select an image model first",
@@ -2039,7 +2042,14 @@
     "studio_mobile_projects": "Projects",
     "studio_mobile_create": "Create",
     "studio_loading_works": "Loading works",
-    "studio_workshop": "Creative Studio"
+    "studio_workshop": "Creative Studio",
+    "export_message": "Export message",
+    "studio_price_per_image": "/image",
+    "studio_batch_prompt_count": "{{count}} prompts",
+    "studio_untitled_project": "Untitled project",
+    "studio_route_official": "Official",
+    "studio_route_overseas": "Global",
+    "studio_route_domestic": "CN"
   },
   "pagination": {
     "total": "{{count}} items total",

@@ -20,7 +20,7 @@ func I18n() gin.HandlerFunc {
 }
 
 // detectLanguage 从 Accept-Language 头检测语言
-// 支持的语言：zh（默认）、en
+// 支持的语言：zh（默认）、en、es
 func detectLanguage(header string) string {
 	if header == "" {
 		return "zh"
@@ -37,6 +37,9 @@ func detectLanguage(header string) string {
 		}
 		if strings.HasPrefix(lang, "zh") {
 			return "zh"
+		}
+		if strings.HasPrefix(lang, "es") {
+			return "es"
 		}
 	}
 	return "zh"
