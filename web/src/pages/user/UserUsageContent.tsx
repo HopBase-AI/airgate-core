@@ -153,7 +153,7 @@ function APIKeyInfoBar() {
         {effectiveRate > 0 && (
           <div className="flex items-center gap-2">
             <Percent className="w-3.5 h-3.5 text-text-tertiary" />
-            <span className="text-text-tertiary">{t('auth.apikey_rate', '倍率')}:</span>
+            <span className="text-text-tertiary">{t('auth.apikey_rate', 'Rate')}:</span>
             <span className="text-text-secondary font-mono">{effectiveRate.toFixed(2)}x</span>
           </div>
         )}
@@ -213,8 +213,8 @@ export default function UserUsageContent() {
 
   const resultOptions = [
     { id: '', label: t('common.all') },
-    { id: 'success', label: t('usage.result_success', '成功') },
-    { id: 'error', label: t('usage.result_failed', '失败') },
+    { id: 'success', label: t('usage.result_success', 'Success') },
+    { id: 'error', label: t('usage.result_failed', 'Failed') },
   ];
 
   const { data: apiKeysData } = useQuery({
@@ -285,7 +285,7 @@ export default function UserUsageContent() {
     .filter((column) => column.key !== 'first_token_ms' && column.key !== 'duration_ms' && column.key !== 'stream');
   const endpointColumn: UsageColumnConfig<UsageRow> = {
     key: 'endpoint',
-    title: t('usage.endpoint', '端点'),
+    title: t('usage.endpoint', 'Endpoint'),
     width: '180px',
     hideOnMobile: true,
     render: (row) => {
@@ -357,7 +357,7 @@ export default function UserUsageContent() {
           accentColor="var(--ag-warning)"
         />
         <StatCard
-          title={t('usage.failed_requests', '失败请求')}
+          title={t('usage.failed_requests', 'Failed requests')}
           value={(stats?.failed_requests ?? 0).toLocaleString()}
           icon={<TriangleAlert className="w-5 h-5" />}
           accentColor="var(--ag-danger)"
@@ -406,7 +406,7 @@ export default function UserUsageContent() {
         </div>
         <div className="w-full sm:w-40">
           <Select
-            aria-label={t('usage.result', '结果')}
+            aria-label={t('usage.result', 'Result')}
             fullWidth
             selectedKey={filters.result ?? ''}
             onSelectionChange={(key) => updateFilter('result', key == null ? '' : String(key))}
@@ -415,7 +415,7 @@ export default function UserUsageContent() {
               <Select.Value>
                 {filters.result
                   ? t(filters.result === 'error' ? 'usage.result_failed' : 'usage.result_success')
-                  : <span className="text-text-tertiary">{t('usage.result', '结果')}</span>}
+                  : <span className="text-text-tertiary">{t('usage.result', 'Result')}</span>}
               </Select.Value>
               <Select.Indicator />
             </Select.Trigger>
@@ -486,7 +486,7 @@ export default function UserUsageContent() {
         ariaLabel={t('usage.title', 'Usage')}
         columns={columns}
         dataVersion={dataUpdatedAt}
-        emptyDescription={t('usage.empty_description', '调整筛选条件后重试')}
+        emptyDescription={t('usage.empty_description', 'Adjust your filters and try again')}
         emptyTitle={t('common.no_data')}
         highlightNewRows={autoRefreshEnabled && page === 1}
         highlightResetKey={JSON.stringify({ ...filters, page, pageSize })}

@@ -533,7 +533,7 @@ export function AppShell({ children }: AppShellProps) {
             </Dropdown>
             {/* Theme toggle */}
             <Button
-              aria-label={theme === 'dark' ? '切换亮色模式' : '切换暗色模式'}
+              aria-label={theme === 'dark' ? t('legal.theme_to_light') : t('legal.theme_to_dark')}
               className="h-10 w-10"
               isIconOnly
               size="sm"

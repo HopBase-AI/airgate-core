@@ -216,29 +216,29 @@ function ErrorDetail({ adminView, row, t }: { adminView: boolean; row: UsageRow;
   const model = resolvedUsageModel(row);
 
   return (
-    <TooltipPanel title={t('usage.error_detail', '失败详情')} subtitle={[row.platform, model].filter(Boolean).join(' / ')}>
-      <TooltipRow label={t('usage.error_type', '类型')} value={label} tone={meta?.tone === 'danger' ? 'warning' : 'accent'} />
-      <TooltipRow label={t('usage.error_code', '错误码')} value={code || '-'} tone="strong" />
+    <TooltipPanel title={t('usage.error_detail', 'Failure details')} subtitle={[row.platform, model].filter(Boolean).join(' / ')}>
+      <TooltipRow label={t('usage.error_type', 'Type')} value={label} tone={meta?.tone === 'danger' ? 'warning' : 'accent'} />
+      <TooltipRow label={t('usage.error_code', 'Error code')} value={code || '-'} tone="strong" />
       {row.error_status ? (
-        <TooltipRow label={t('usage.error_status', 'HTTP 状态码')} value={row.error_status} tone="strong" />
+        <TooltipRow label={t('usage.error_status', 'HTTP status')} value={row.error_status} tone="strong" />
       ) : null}
-      <TooltipRow label={t('usage.model_or_operation', '模型 / 操作')} value={model} tone="strong" />
-      {adminRow ? <TooltipRow label={t('usage.log_id', '记录 ID')} value={`#${adminRow.id}`} /> : null}
-      {traceID ? <TooltipRow label={t('usage.trace_id', '链路 ID')} value={traceID} /> : null}
-      {adminRow?.request_id ? <TooltipRow label={t('usage.request_id', '记录请求 ID')} value={adminRow.request_id} /> : null}
-      <TooltipRow label={t('usage.time', '时间')} value={new Date(row.created_at).toLocaleString()} />
-      {user ? <TooltipRow label={t('common.user', '用户')} value={user} /> : null}
-      {adminRow?.group_id ? <TooltipRow label={t('usage.group_id', '分组 ID')} value={`#${adminRow.group_id}`} /> : null}
+      <TooltipRow label={t('usage.model_or_operation', 'Model / Operation')} value={model} tone="strong" />
+      {adminRow ? <TooltipRow label={t('usage.log_id', 'Record ID')} value={`#${adminRow.id}`} /> : null}
+      {traceID ? <TooltipRow label={t('usage.trace_id', 'Trace ID')} value={traceID} /> : null}
+      {adminRow?.request_id ? <TooltipRow label={t('usage.request_id', 'Usage request ID')} value={adminRow.request_id} /> : null}
+      <TooltipRow label={t('usage.time', 'Time')} value={new Date(row.created_at).toLocaleString()} />
+      {user ? <TooltipRow label={t('common.user', 'User')} value={user} /> : null}
+      {adminRow?.group_id ? <TooltipRow label={t('usage.group_id', 'Group ID')} value={`#${adminRow.group_id}`} /> : null}
       {apiKey ? <TooltipRow label="API Key" value={apiKey} /> : null}
-      {account ? <TooltipRow label={t('usage.upstream_credential', '上游凭证')} value={account} /> : null}
-      {adminRow?.endpoint ? <TooltipRow label={t('usage.endpoint', '端点')} value={adminRow.endpoint} /> : null}
-      {adminRow?.ip_address ? <TooltipRow label={t('usage.ip_address', '客户端 IP')} value={adminRow.ip_address} /> : null}
-      {adminRow?.user_agent ? <TooltipRow label={t('usage.user_agent', '客户端')} value={adminRow.user_agent} /> : null}
-      <TooltipRow label={t('usage.duration', '耗时')} value={`${row.duration_ms} ms`} />
+      {account ? <TooltipRow label={t('usage.upstream_credential', 'Upstream Credential')} value={account} /> : null}
+      {adminRow?.endpoint ? <TooltipRow label={t('usage.endpoint', 'Endpoint')} value={adminRow.endpoint} /> : null}
+      {adminRow?.ip_address ? <TooltipRow label={t('usage.ip_address', 'Client IP')} value={adminRow.ip_address} /> : null}
+      {adminRow?.user_agent ? <TooltipRow label={t('usage.user_agent', 'Client')} value={adminRow.user_agent} /> : null}
+      <TooltipRow label={t('usage.duration', 'Duration')} value={`${row.duration_ms} ms`} />
       {message ? (
         <>
           <TooltipDivider />
-          <div className="px-2 pt-1 text-xs text-text-tertiary">{t('usage.error_message', '错误原文')}</div>
+          <div className="px-2 pt-1 text-xs text-text-tertiary">{t('usage.error_message', 'Error message')}</div>
           <div className="max-h-48 select-text overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius)] bg-surface px-2 py-1 font-mono text-xs leading-relaxed text-text-secondary">
             {message}
           </div>
@@ -259,7 +259,7 @@ export function UsageErrorIndicator({ adminView, row }: { adminView: boolean; ro
 
   return (
     <RichTooltip placement="right" content={() => <ErrorDetail adminView={adminView} row={row} t={t} />}>
-      <CircleAlert aria-label={t('usage.error_detail', '失败详情')} className="h-4 w-4 shrink-0" style={{ color }} />
+      <CircleAlert aria-label={t('usage.error_detail', 'Failure details')} className="h-4 w-4 shrink-0" style={{ color }} />
     </RichTooltip>
   );
 }
@@ -454,20 +454,20 @@ function metricColor(metric: UsageMetric, index: number): string | undefined {
   return [USAGE_TOKEN_COLORS.input, USAGE_TOKEN_COLORS.output, USAGE_TOKEN_COLORS.cacheRead, USAGE_TOKEN_COLORS.cacheCreation][index % 4];
 }
 
-function legacyMetrics(row: UsageRow): UsageMetric[] {
+function legacyMetrics(row: UsageRow, t: TFunction): UsageMetric[] {
   const cacheCreation = (row as UsageLogResp).cache_creation_tokens ?? 0;
   return [
-    { key: 'input_tokens', label: '输入 Token', kind: 'token', unit: 'token', value: row.input_tokens },
-    { key: 'output_tokens', label: '输出 Token', kind: 'token', unit: 'token', value: row.output_tokens },
-    { key: 'cached_input_tokens', label: '缓存读取 Token', kind: 'token', unit: 'token', value: row.cached_input_tokens },
-    { key: 'cache_creation_tokens', label: '缓存写入 Token', kind: 'token', unit: 'token', value: cacheCreation },
+    { key: 'input_tokens', label: t('usage.input_tokens'), kind: 'token', unit: 'token', value: row.input_tokens },
+    { key: 'output_tokens', label: t('usage.output_tokens'), kind: 'token', unit: 'token', value: row.output_tokens },
+    { key: 'cached_input_tokens', label: t('usage.metric_cached_input_tokens', 'Cached Input Token'), kind: 'token', unit: 'token', value: row.cached_input_tokens },
+    { key: 'cache_creation_tokens', label: t('usage.metric_cache_creation_tokens', 'Cache Creation Token'), kind: 'token', unit: 'token', value: cacheCreation },
   ].filter((metric) => metric.value > 0 || metric.key === 'input_tokens' || metric.key === 'output_tokens');
 }
 
-function rowMetrics(row: UsageRow): UsageMetric[] {
+function rowMetrics(row: UsageRow, t: TFunction): UsageMetric[] {
   const metrics = row.usage_metrics ?? [];
   if (metrics.length > 0) return metrics;
-  return legacyMetrics(row);
+  return legacyMetrics(row, t);
 }
 
 function buildUsageRecordContext(row: UsageRow, customerScope: boolean) {
@@ -532,7 +532,7 @@ function buildCostDetailContext(row: UsageLogResp | UserUsageLogResp, adminView:
 }
 
 function GenericMetricDetail({ row, t }: { row: UsageRow; t: TFunction }) {
-  const allMetrics = rowMetrics(row);
+  const allMetrics = rowMetrics(row, t);
   const hasSDKMetrics = (row.usage_metrics?.length ?? 0) > 0;
   const metrics = allMetrics.filter((metric) => (
     !isTotalMetric(metric) && (metricNumber(metric.value) > 0 || !hasSDKMetrics)
@@ -544,11 +544,11 @@ function GenericMetricDetail({ row, t }: { row: UsageRow; t: TFunction }) {
   const shouldShowTokenTotal = !!totalMetric || tokenTotal > 0 || metrics.some((metric) => metric.kind === 'token');
 
   return (
-    <TooltipPanel title={t('usage.metric_detail', '计量明细')} subtitle={row.model}>
+    <TooltipPanel title={t('usage.metric_detail', 'Metric details')} subtitle={row.model}>
       {metrics.map((metric, index) => (
         <TooltipRow
           key={metric.key || `${metric.label}:${index}`}
-          label={metric.label || metric.key || t('usage.metric', '计量')}
+          label={metric.label || metric.key || t('usage.metric', 'Metric')}
           value={formatMetricValue(metric)}
           color={metricColor(metric, index)}
         />
@@ -602,23 +602,23 @@ function buildResellerCostColumn(t: TFunction, adminView: boolean): UsageColumnC
                 )}
                 <TooltipRow label={t('usage.rate_multiplier')} value={`${row.rate_multiplier.toFixed(2)}x`} />
                 {adminView && row.account_rate_multiplier > 0 && (
-                  <TooltipRow label={t('usage.account_rate', '账号倍率')} value={`${row.account_rate_multiplier.toFixed(2)}x`} />
+                  <TooltipRow label={t('usage.account_rate', 'Account Rate')} value={`${row.account_rate_multiplier.toFixed(2)}x`} />
                 )}
                 {row.sell_rate > 0 && (
-                  <TooltipRow label={t('usage.sell_rate', '销售倍率')} value={`${row.sell_rate.toFixed(2)}x`} />
+                  <TooltipRow label={t('usage.sell_rate', 'Sell Rate')} value={`${row.sell_rate.toFixed(2)}x`} />
                 )}
                 <TooltipDivider />
                 {adminView && (
                   <TooltipRow label={t('usage.original_cost')} value={<CostValue value={row.total_cost} decimals={6} tone="standard" />} />
                 )}
                 {adminView && (
-                  <TooltipRow label={t('usage.account_cost', '账号计费')} value={<CostValue value={row.account_cost} decimals={6} />} />
+                  <TooltipRow label={t('usage.account_cost', 'Account cost')} value={<CostValue value={row.account_cost} decimals={6} />} />
                 )}
-                <TooltipRow label={t('usage.user_charged', '用户扣费')} value={<CostValue value={row.actual_cost} decimals={6} tone="actual" />} />
+                <TooltipRow label={t('usage.user_charged', 'User Charged')} value={<CostValue value={row.actual_cost} decimals={6} tone="actual" />} />
                 {row.sell_rate > 0 && row.billed_cost !== row.actual_cost && (
                   <>
-                    <TooltipRow label={t('usage.billed_cost', '客户账面')} value={<CostValue value={row.billed_cost} decimals={6} />} />
-                    <TooltipRow label={t('usage.profit', '利润')} value={<CostValue value={row.billed_cost - row.actual_cost} decimals={6} tone="success" />} />
+                    <TooltipRow label={t('usage.billed_cost', 'Customer Billed')} value={<CostValue value={row.billed_cost} decimals={6} />} />
+                    <TooltipRow label={t('usage.profit', 'Profit')} value={<CostValue value={row.billed_cost - row.actual_cost} decimals={6} tone="success" />} />
                   </>
                 )}
               </TooltipPanel>
@@ -691,13 +691,13 @@ export function useUsageColumns(opts?: { customerScope?: boolean; adminView?: bo
     return [
     {
       key: 'status',
-      title: t('usage.result', '结果'),
+      title: t('usage.result', 'Result'),
       width: '92px',
       render: (row) => {
         if (!isFailedUsageRow(row)) {
           return (
             <span className="inline-flex h-5 items-center justify-center rounded-[var(--radius)] px-1.5 text-[12px] font-medium leading-none text-text-tertiary">
-              {t('usage.result_success', '成功')}
+              {t('usage.result_success', 'Success')}
             </span>
           );
         }
@@ -717,7 +717,7 @@ export function useUsageColumns(opts?: { customerScope?: boolean; adminView?: bo
                   color,
                 }}
               >
-                {row.error_status ? row.error_status : t('usage.result_failed', '失败')}
+                {row.error_status ? row.error_status : t('usage.result_failed', 'Failed')}
               </span>
               {adminView ? (
                 <span className="max-w-full truncate text-[10px] font-medium leading-none text-text-secondary">
@@ -753,7 +753,7 @@ export function useUsageColumns(opts?: { customerScope?: boolean; adminView?: bo
     },
     {
       key: 'model',
-      title: t('usage.model_or_operation', '模型 / 操作'),
+      title: t('usage.model_or_operation', 'Model / Operation'),
       width: '220px',
       render: (row) => {
         const assetOperation = isAssetUsageOperation(row);
@@ -766,7 +766,7 @@ export function useUsageColumns(opts?: { customerScope?: boolean; adminView?: bo
             return (
               <MetaChip
                 color="rgb(14,165,233)"
-                label={t('usage.asset_operation', '素材接口')}
+                label={t('usage.asset_operation', 'Asset API')}
               />
             );
           }
@@ -820,11 +820,11 @@ export function useUsageColumns(opts?: { customerScope?: boolean; adminView?: bo
     },
     {
       key: 'tokens',
-      title: t('usage.metrics', '计量'),
+      title: t('usage.metrics', 'Metrics'),
       width: '220px',
       render: (row) => {
         if (isUnbilledFailure(row)) return <UnbilledCell />;
-        const metrics = rowMetrics(row);
+        const metrics = rowMetrics(row, t);
         const PluginUsageMetricDetail = getPluginUsageMetricDetail(row.platform);
         const inputTokens = metricValue(metrics, ['input_tokens', 'input_token', 'prompt_tokens', 'prompt_token']) ?? row.input_tokens;
         const outputTokens = metricValue(metrics, ['output_tokens', 'output_token', 'completion_tokens', 'completion_token']) ?? row.output_tokens;

@@ -177,8 +177,8 @@ function OAuthButtons({
   const { t } = useTranslation();
   const site = useSiteSettings();
   const providers = [
-    site.oauth_google_enabled ? { id: 'google', label: t('auth.oauth_google', { defaultValue: '使用 Google 登录' }), icon: <GoogleIcon /> } : null,
-    site.oauth_github_enabled ? { id: 'github', label: t('auth.oauth_github', { defaultValue: '使用 GitHub 登录' }), icon: <GitHubIcon /> } : null,
+    site.oauth_google_enabled ? { id: 'google', label: t('auth.oauth_google', { defaultValue: 'Continue with Google' }), icon: <GoogleIcon /> } : null,
+    site.oauth_github_enabled ? { id: 'github', label: t('auth.oauth_github', { defaultValue: 'Continue with GitHub' }), icon: <GitHubIcon /> } : null,
   ].filter(Boolean) as Array<{ id: string; label: string; icon: React.ReactNode }>;
 
   if (!providers.length) return null;
@@ -187,7 +187,7 @@ function OAuthButtons({
     <div className="w-full">
       <div className="my-5 flex items-center gap-3">
         <span className="h-px flex-1 bg-glass-border" />
-        <span className="text-[11px] text-text-tertiary">{t('auth.oauth_divider', { defaultValue: '或' })}</span>
+        <span className="text-[11px] text-text-tertiary">{t('auth.oauth_divider', { defaultValue: 'or' })}</span>
         <span className="h-px flex-1 bg-glass-border" />
       </div>
       <div className="space-y-2.5">
@@ -871,7 +871,7 @@ export default function LoginPage() {
       .catch(() => {
         if (attempt.controller.signal.aborted || !clearTokenIfSessionCurrent(attempt.identity)) return;
         if (authenticationAttemptRef.current === attempt) authenticationAttemptRef.current = null;
-        setOauthError(t('auth.oauth_failed', { defaultValue: '第三方登录失败，请重试' }));
+        setOauthError(t('auth.oauth_failed', { defaultValue: 'Third-party sign-in failed, please retry' }));
         setOauthLoading(false);
       });
     // 仅在挂载时消费一次回调参数
@@ -1036,7 +1036,7 @@ export default function LoginPage() {
             {oauthLoading && (
               <Alert status="accent" className="mb-5">
                 <Alert.Content>
-                  <Alert.Description>{t('auth.oauth_signing_in', { defaultValue: '正在完成第三方登录…' })}</Alert.Description>
+                  <Alert.Description>{t('auth.oauth_signing_in', { defaultValue: 'Completing sign-in…' })}</Alert.Description>
                 </Alert.Content>
               </Alert>
             )}

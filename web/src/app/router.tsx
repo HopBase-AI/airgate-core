@@ -359,10 +359,10 @@ const chatRoute = createRoute({
       <PluginShell
         pluginName="airgate-playground"
         titleKey="plugin_shell.playground_title"
-        titleFallback="AI 对话"
+        titleFallback="AI Chat"
         breadcrumbs={[
-          { to: '/', labelKey: 'plugin_shell.console', labelFallback: '控制台' },
-          { labelKey: 'plugin_shell.playground_title', labelFallback: 'AI 对话' },
+          { to: '/', labelKey: 'plugin_shell.console', labelFallback: 'Console' },
+          { labelKey: 'plugin_shell.playground_title', labelFallback: 'AI Chat' },
         ]}
       >
         <PluginPage pluginNameOverride="airgate-playground" subPathOverride="/chat" />

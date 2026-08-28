@@ -46,12 +46,12 @@ export function PluginShell({
     };
   }, []);
 
-  const workspaceLabel = t('plugin_shell.workspace', '插件工作区');
+  const workspaceLabel = t('plugin_shell.workspace', 'Plugin workspace');
   const title = titleKey
     ? t(titleKey, { defaultValue: titleFallback ?? workspaceLabel })
     : titleFallback ?? workspaceLabel;
   const breadcrumbItems = breadcrumbs ?? [
-    { to: '/', labelKey: 'plugin_shell.console', labelFallback: '控制台' },
+    { to: '/', labelKey: 'plugin_shell.console', labelFallback: 'Console' },
     { labelKey: titleKey, labelFallback: title },
   ];
   const isAdmin = !isAPIKeySession && (getTokenRole() === 'admin' || user?.role === 'admin');
@@ -89,7 +89,7 @@ export function PluginShell({
           </Button>
 
           <Button
-            aria-label={theme === 'dark' ? '切换亮色模式' : '切换暗色模式'}
+            aria-label={theme === 'dark' ? t('legal.theme_to_light') : t('legal.theme_to_dark')}
             className="h-10 w-10"
             isIconOnly
             size="sm"
