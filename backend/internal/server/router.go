@@ -154,6 +154,7 @@ func (s *Server) registerRoutes() {
 		userGroup.GET("/usage", handlers.Usage.UserUsage)
 		userGroup.GET("/usage/stats", handlers.Usage.UserUsageStats)
 		userGroup.GET("/usage/trend", handlers.Usage.UserUsageTrend)
+		userGroup.GET("/usage/export", handlers.Usage.UserUsageExport)
 
 		// 插件菜单（精简元信息：仅返回 name + frontend_pages，普通账号会话可访问，
 		// 用于前端 AppShell 渲染插件提供的页面菜单项）
