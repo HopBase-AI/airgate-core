@@ -48,7 +48,7 @@ function getUseKeyConfig(
         return {
           files: [
             {
-              path: '~/.bashrc 或 ~/.zshrc',
+              path: t('user_keys.bashrc_or_zshrc'),
               content: `export ANTHROPIC_BASE_URL="${baseUrl}"\nexport ANTHROPIC_API_KEY="${apiKey}"`,
             },
           ],
@@ -115,7 +115,7 @@ goals = true`;
     return {
       files: [
         {
-          path: '~/.bashrc 或 ~/.zshrc',
+          path: t('user_keys.bashrc_or_zshrc'),
           content: `export ANTHROPIC_BASE_URL="${baseUrl}"\nexport ANTHROPIC_API_KEY="${apiKey}"`,
         },
       ],

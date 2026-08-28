@@ -43,7 +43,7 @@ export function useClipboard() {
         }
       } catch { /* 继续回退 */ }
 
-      toast('error', t('common.copy_failed', '复制失败'));
+      toast('error', t('common.copy_failed', 'Copy failed, please copy manually'));
       return false;
     },
     [toast, t],

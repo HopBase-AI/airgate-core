@@ -415,7 +415,7 @@ export default function UserKeysPage() {
           <CommonTable.Column id="group_id">{t('user_keys.group')}</CommonTable.Column>
           <CommonTable.Column id="status">{t('common.status')}</CommonTable.Column>
           <CommonTable.Column id="quota" style={{ width: '17.5rem' }}>{t('user_keys.quota_label')}</CommonTable.Column>
-          <CommonTable.Column id="markup" style={{ width: '10.75rem' }}>{t('user_keys.markup_title', '销售/成本')}</CommonTable.Column>
+          <CommonTable.Column id="markup" style={{ width: '10.75rem' }}>{t('user_keys.markup_title', 'Sales/Cost')}</CommonTable.Column>
           <CommonTable.Column id="usage" style={{ width: '10.75rem' }}>{t('api_keys.usage')}</CommonTable.Column>
           <CommonTable.Column id="expires_at">{t('user_keys.expires_at')}</CommonTable.Column>
           <CommonTable.Column id="actions" style={{ width: 132 }}>
@@ -498,19 +498,19 @@ export default function UserKeysPage() {
                           items={[
                             ...(quoteMode && rowUsdMult != null ? [{
                               color: 'default' as const,
-                              label: t('user_keys.quote_price_short', '报价'),
+                              label: t('user_keys.quote_price_short', 'Quote'),
                               value: t('user_keys.group_quote_price', { m: rowUsdMult.toFixed(2) }),
                             }] : []),
                             ...(!quoteMode && rowEffectiveRate > 0 && rowStandardRate > 0 ? [{
                               color: 'default' as const,
-                              label: t('user_keys.group_rate_short', '分组倍率'),
+                              label: t('user_keys.group_rate_short', 'Group Rate'),
                               value: hasOverride
-                                ? `${rowEffectiveRate.toFixed(2)} ${t('user_keys.user_override_tag', '专属')}`
+                                ? `${rowEffectiveRate.toFixed(2)} ${t('user_keys.user_override_tag', 'override')}`
                                 : rowEffectiveRate.toFixed(2),
                             }] : []),
                             ...(hasSellRate ? [{
                               color: 'default' as const,
-                              label: t('user_keys.sell_rate_short', '销售倍率'),
+                              label: t('user_keys.sell_rate_short', 'Sell Rate'),
                               value: row.sell_rate.toFixed(2),
                             }] : []),
                           ]}
@@ -529,12 +529,12 @@ export default function UserKeysPage() {
                           amount: row.used_quota,
                           color: 'warning',
                           highlightDollar: true,
-                          label: t('user_keys.quota_used_short', '已使用'),
+                          label: t('user_keys.quota_used_short', 'Used'),
                         },
                         {
                           amount: row.quota_usd > 0 ? row.quota_usd : undefined,
                           color: 'success',
-                          label: t('user_keys.quota_total_short', '总配额'),
+                          label: t('user_keys.quota_total_short', 'Total'),
                           value: '∞',
                         },
                       ]}
@@ -546,20 +546,20 @@ export default function UserKeysPage() {
                       items={[
                         {
                           color: 'default',
-                          label: t('user_keys.sell_rate_short', '倍率'),
+                          label: t('user_keys.sell_rate_short', 'Sell Rate'),
                           value: hasSellRate ? row.sell_rate.toFixed(2) : '—',
                         },
                         {
                           amount: row.used_quota_actual || 0,
                           color: 'default',
                           dollarTone: 'warning',
-                          label: t('user_keys.cost_actual', '成本'),
+                          label: t('user_keys.cost_actual', 'Cost'),
                         },
                         {
                           amount: profit,
                           color: 'default',
                           dollarTone: 'success',
-                          label: t('user_keys.profit', '利润'),
+                          label: t('user_keys.profit', 'Profit'),
                         },
                       ]}
                     />
@@ -572,14 +572,14 @@ export default function UserKeysPage() {
                           amount: row.today_cost,
                           color: 'warning',
                           dollarTone: 'warning',
-                          label: t('api_keys.today', '今日'),
+                          label: t('api_keys.today', 'Today'),
                           mutedWhenZero: true,
                         },
                         {
                           amount: row.thirty_day_cost,
                           color: 'warning',
                           dollarTone: 'warning',
-                          label: t('api_keys.thirty_days', '近30天'),
+                          label: t('api_keys.thirty_days', '30 Days'),
                           mutedWhenZero: true,
                         },
                       ]}

@@ -167,7 +167,7 @@ export default function DocsPage() {
           </Link>
           <div className="flex items-center gap-2">
             <Button
-              aria-label={theme === 'dark' ? '切换亮色模式' : '切换暗色模式'}
+              aria-label={theme === 'dark' ? t('legal.theme_to_light') : t('legal.theme_to_dark')}
               isIconOnly
               size="sm"
               variant="ghost"
