@@ -347,6 +347,11 @@ func (s *Service) ListGroupRateOverrides(ctx context.Context, groupID int64) ([]
 //
 // 读 - 改 - 写：先拉出用户当前的 group_rates map，修改单个条目，再整体写回。
 // 并发场景下存在理论上的写丢失窗口，但后台管理单用户操作可以接受。
+// ListAllGroupRateOverrides 返回所有用户的分组专属倍率，键=分组 ID。
+func (s *Service) ListAllGroupRateOverrides(ctx context.Context) (map[int64][]GroupRateOverride, error) {
+	return s.repo.ListAllGroupRateOverrides(ctx)
+}
+
 func (s *Service) SetGroupRate(ctx context.Context, userID int, groupID int64, rate float64, pluginSettings map[string]map[string]string) (GroupRateOverride, error) {
 	if rate <= 0 {
 		return GroupRateOverride{}, ErrInvalidRateMultiplier

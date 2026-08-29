@@ -32,6 +32,7 @@ import {
   PluginPage,
   PluginsPage,
   RelayDetectionPage,
+  PricingPage,
   preloadRoutePage,
   PrivacyPolicyPage,
   ProfilePage,
@@ -320,6 +321,7 @@ const adminSubscriptionsRoute = createRoute({ getParentRoute: () => adminLayout,
 const adminProxiesRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/proxies', component: renderPage(ProxiesPage) });
 const adminUsageRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/usage', component: renderPage(UsagePage) });
 const adminRelayDetectionRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/relay-detection', component: renderPage(RelayDetectionPage) });
+const adminPricingRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/pricing', component: renderPage(PricingPage) });
 const adminPluginsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/plugins', component: renderPage(PluginsPage) });
 const adminNotificationsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/notifications', component: renderPage(NotificationsPage) });
 const adminSettingsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/settings', component: renderPage(SettingsPage) });
@@ -431,6 +433,7 @@ const routeTree = rootRoute.addChildren([
       adminProxiesRoute,
       adminUsageRoute,
       adminRelayDetectionRoute,
+      adminPricingRoute,
       adminPluginsRoute,
       adminNotificationsRoute,
       adminSettingsRoute,

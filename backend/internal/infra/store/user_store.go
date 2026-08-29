@@ -119,6 +119,34 @@ func (s *UserStore) ListWithGroupRateOverride(ctx context.Context, groupID int64
 	return result, nil
 }
 
+// ListAllGroupRateOverrides 一次扫表返回所有用户的分组专属倍率，键=分组 ID。
+//
+// 与 ListWithGroupRateOverride 同样采用内存过滤（group_rates 是 JSON map，ent 未生成
+// JSONB 包含谓词），但只扫一次表——价格总览要覆盖全部分组，逐组调用会是 N 次全表扫描。
+func (s *UserStore) ListAllGroupRateOverrides(ctx context.Context) (map[int64][]appuser.GroupRateOverride, error) {
+	users, err := s.db.User.Query().
+		Order(ent.Asc(entuser.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[int64][]appuser.GroupRateOverride)
+	for _, u := range users {
+		for groupID, rate := range u.GroupRates {
+			if rate <= 0 {
+				continue
+			}
+			result[groupID] = append(result[groupID], appuser.GroupRateOverride{
+				UserID:   u.ID,
+				Email:    u.Email,
+				Username: u.Username,
+				Rate:     rate,
+			})
+		}
+	}
+	return result, nil
+}
+
 // Create 创建用户。
 func (s *UserStore) Create(ctx context.Context, mutation appuser.Mutation) (appuser.User, error) {
 	builder := s.db.User.Create()

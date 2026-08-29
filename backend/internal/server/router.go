@@ -226,6 +226,8 @@ func (s *Server) registerRoutes() {
 		// 博客后台路由已上移至 blogAuthorGroup(允许 admin 或 can_author_blog)
 
 		// 分组管理
+		// 价格总览：分组标准价 × 成本 × 专属客户价，一张表看全「谁按什么价」
+		adminGroup.GET("/pricing/overview", handlers.Pricing.Overview)
 		adminGroup.GET("/groups", handlers.Group.ListGroups)
 		adminGroup.POST("/groups", handlers.Group.CreateGroup)
 		adminGroup.GET("/groups/:id", handlers.Group.GetGroup)

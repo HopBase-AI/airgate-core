@@ -149,7 +149,8 @@
     "referral_admin": "推廣回贈",
     "blog": "網誌",
     "my_invite": "我的邀請",
-    "model_plaza": "模型廣場"
+    "model_plaza": "模型廣場",
+    "pricing": "價格管理"
   },
   "model_plaza": {
     "title": "模型廣場",
@@ -2521,5 +2522,24 @@
     "promoter_name_label": "官方署名(選填)",
     "promoter_name_placeholder": "如 HopBase 官方團隊",
     "promoter_name_hint": "顯示給訪客的團隊/署名;留空則顯示通用「官方推廣」。"
+  },
+  "pricing": {
+    "title": "價格管理",
+    "subtitle": "每個分組的標準價、成本與毛利，以及享有專屬價的客戶。折 = 倍率 ÷ 匯率，全站統一口徑。",
+    "col_group": "分組",
+    "col_platform": "平台",
+    "col_models": "模型數",
+    "col_standard": "標準價",
+    "col_cost": "成本",
+    "col_margin": "毛利",
+    "col_overrides": "專屬客戶",
+    "models_unrestricted": "不限",
+    "no_account": "無可用帳號",
+    "inverted": "倒掛 {{n}}",
+    "inverted_hint": "比標準價還貴",
+    "delisted": "已下架",
+    "exclusive": "專屬",
+    "mode_quote": "報價客戶",
+    "mode_override": "專屬倍率"
   }
 }

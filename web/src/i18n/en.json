@@ -149,7 +149,8 @@
     "referral_admin": "Referral Program",
     "blog": "Blog",
     "my_invite": "My Referrals",
-    "model_plaza": "Model Plaza"
+    "model_plaza": "Model Plaza",
+    "pricing": "Pricing"
   },
   "model_plaza": {
     "title": "Model Plaza",
@@ -2521,5 +2522,24 @@
     "promoter_name_label": "Official display name (optional)",
     "promoter_name_placeholder": "e.g. HopBase Official Team",
     "promoter_name_hint": "Team/signature shown to visitors; leave blank to show the generic \"Official Promotion\"."
+  },
+  "pricing": {
+    "title": "Pricing",
+    "subtitle": "Standard price, cost and margin per group, plus customers on custom rates. Discount = multiplier ÷ FX, one definition site-wide.",
+    "col_group": "Group",
+    "col_platform": "Platform",
+    "col_models": "Models",
+    "col_standard": "Standard",
+    "col_cost": "Cost",
+    "col_margin": "Margin",
+    "col_overrides": "Custom rates",
+    "models_unrestricted": "Unrestricted",
+    "no_account": "No account available",
+    "inverted": "{{n}} inverted",
+    "inverted_hint": "Higher than standard",
+    "delisted": "Delisted",
+    "exclusive": "Exclusive",
+    "mode_quote": "Quoted customer",
+    "mode_override": "Custom multiplier"
   }
 }

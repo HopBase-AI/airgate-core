@@ -76,6 +76,7 @@ type HTTPHandlers struct {
 	Referral       *handler.ReferralHandler
 	ModelPricing   *handler.ModelPricingHandler
 	Blog           *handler.BlogHandler
+	Pricing        *handler.PricingHandler
 
 	AccountService *appaccount.Service
 	// BlogService 供公开 SSR 博客页(server 包)复用同一份博客用例。
@@ -159,6 +160,7 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 		User:           handler.NewUserHandler(userService, settingsService),
 		Account:        handler.NewAccountHandler(accountService, dep.Scheduler),
 		Group:          handler.NewGroupHandler(groupService),
+		Pricing:        handler.NewPricingHandler(groupService, userService, accountService),
 		APIKey:         handler.NewAPIKeyHandler(apiKeyService),
 		Subscription:   handler.NewSubscriptionHandler(subscriptionService),
 		Usage:          handler.NewUsageHandler(usageService),

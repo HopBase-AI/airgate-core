@@ -149,7 +149,8 @@
     "referral_admin": "紹介プログラム",
     "blog": "ブログ",
     "my_invite": "友達招待",
-    "model_plaza": "モデル広場"
+    "model_plaza": "モデル広場",
+    "pricing": "価格管理"
   },
   "model_plaza": {
     "title": "モデル広場",
@@ -2521,5 +2522,24 @@
     "promoter_name_label": "公式表示名(任意)",
     "promoter_name_placeholder": "例: HopBase 公式チーム",
     "promoter_name_hint": "訪問者に表示するチーム/署名。空欄の場合は汎用の「公式プロモーション」を表示します。"
+  },
+  "pricing": {
+    "title": "価格管理",
+    "subtitle": "グループごとの標準価格・原価・粗利と、専用価格が適用される顧客。掛率 ÷ 為替 = 割引で全社統一。",
+    "col_group": "グループ",
+    "col_platform": "プラットフォーム",
+    "col_models": "モデル数",
+    "col_standard": "標準価格",
+    "col_cost": "原価",
+    "col_margin": "粗利",
+    "col_overrides": "専用価格の顧客",
+    "models_unrestricted": "制限なし",
+    "no_account": "利用可能なアカウントなし",
+    "inverted": "逆転 {{n}}",
+    "inverted_hint": "標準価格より高い",
+    "delisted": "提供終了",
+    "exclusive": "専用",
+    "mode_quote": "見積顧客",
+    "mode_override": "専用掛率"
   }
 }

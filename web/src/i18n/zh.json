@@ -149,7 +149,8 @@
     "referral_admin": "推广返利",
     "blog": "博客",
     "my_invite": "我的邀请",
-    "model_plaza": "模型广场"
+    "model_plaza": "模型广场",
+    "pricing": "价格管理"
   },
   "model_plaza": {
     "title": "模型广场",
@@ -2521,5 +2522,24 @@
     "promoter_name_label": "官方署名(选填)",
     "promoter_name_placeholder": "如 HopBase 官方团队",
     "promoter_name_hint": "展示给访客的团队/署名;留空则显示通用「官方推广」。"
+  },
+  "pricing": {
+    "title": "价格管理",
+    "subtitle": "每个分组的标准价、成本与毛利，以及享受专属价的客户。折 = 倍率 ÷ 汇率，全站统一口径。",
+    "col_group": "分组",
+    "col_platform": "平台",
+    "col_models": "模型数",
+    "col_standard": "标准价",
+    "col_cost": "成本",
+    "col_margin": "毛利",
+    "col_overrides": "专属客户",
+    "models_unrestricted": "不限",
+    "no_account": "无可用账号",
+    "inverted": "倒挂 {{n}}",
+    "inverted_hint": "比标准价还贵",
+    "delisted": "已下架",
+    "exclusive": "专属",
+    "mode_quote": "报价客户",
+    "mode_override": "专属倍率"
   }
 }
