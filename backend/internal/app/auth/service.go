@@ -418,20 +418,20 @@ func (s *Service) getNewUserDefaults(ctx context.Context) (balance float64, conc
 }
 
 // defaultVerifyEmailSubject 验证码邮件默认主题模板。
-const defaultVerifyEmailSubject = "{{site_name}} - 邮箱验证码"
+const defaultVerifyEmailSubject = "{{site_name}} - 邮箱验证码 | Verification Code | Código de verificación"
 
 // defaultVerifyEmailBody 验证码邮件默认正文模板。
 const defaultVerifyEmailBody = `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 420px; margin: 0 auto; background: #ffffff; border-radius: 8px; border: 1px solid #e5e7eb;">
 <div style="padding: 32px 28px;">
 <div style="font-size: 16px; font-weight: 600; color: #111; margin-bottom: 20px;">{{site_name}}</div>
-<p style="color: #555; font-size: 14px; line-height: 1.6; margin: 0 0 24px;">您好，您正在注册账户，请使用以下验证码完成操作：</p>
+<p style="color: #555; font-size: 14px; line-height: 1.6; margin: 0 0 24px;">您好，您正在注册账户，请使用以下验证码完成操作：<br />Hello, please use the verification code below to complete your registration:<br />Hola, use el siguiente código de verificación para completar su registro:</p>
 <div style="background: #f7f8fa; border: 1px solid #eef0f3; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 24px;">
 <span style="font-size: 32px; font-weight: 700; letter-spacing: 10px; color: #111;">{{code}}</span>
 </div>
-<p style="color: #999; font-size: 12px; line-height: 1.6; margin: 0;">验证码 10 分钟内有效，请勿泄露给他人。如非本人操作，请忽略此邮件。</p>
+<p style="color: #999; font-size: 12px; line-height: 1.6; margin: 0;">验证码 10 分钟内有效，请勿泄露给他人。如非本人操作，请忽略此邮件。<br />The code is valid for 10 minutes — do not share it. If you did not request this, please ignore this email.<br />El código es válido por 10 minutos; no lo comparta. Si no solicitó esto, ignore este correo.</p>
 </div>
 <div style="border-top: 1px solid #f0f0f0; padding: 14px 28px;">
-<p style="color: #c0c0c0; font-size: 11px; margin: 0; text-align: center;">此邮件由 {{site_name}} 系统自动发送，请勿直接回复</p>
+<p style="color: #c0c0c0; font-size: 11px; margin: 0; text-align: center;">此邮件由 {{site_name}} 系统自动发送，请勿直接回复 · Automated message from {{site_name}}, please do not reply · Mensaje automático, no responda</p>
 </div>
 </div>`
 
