@@ -471,12 +471,25 @@ func resolveReasoningEffort(fromRequest string, usage *sdk.Usage) string {
 // writeUpstream 把上游原始响应透传给客户端。
 func writeUpstream(c *gin.Context, up sdk.UpstreamResponse) {
 	copyUpstreamHeaders(c, up.Headers)
+	// Body 可能已被插件改写过（模型别名回填、异步任务轮询换体等），上游的封帧头
+	// 不再描述实际写出的字节：照抄 Content-Length 会让 net/http 整笔拒写超长的
+	// Write 并强制断连——下游反代收到 unexpected EOF，Cloudflare 对客户转成 520
+	//（2026-08-29 MiniMax X-Async 生图事故）。删掉由 net/http 按实际 body 重算；
+	// Transfer-Encoding 属逐跳头，一并去掉。Content-Encoding 保留：body 未解压时
+	// 它仍如实描述字节流。
+	c.Writer.Header().Del("Content-Length")
+	c.Writer.Header().Del("Transfer-Encoding")
 	status := up.StatusCode
 	if status == 0 {
 		status = http.StatusOK
 	}
 	c.Writer.WriteHeader(status)
-	_, _ = c.Writer.Write(up.Body)
+	if _, err := c.Writer.Write(up.Body); err != nil {
+		slog.Warn("回写上游响应体失败",
+			"status", status,
+			"bytes", len(up.Body),
+			"error", err)
+	}
 }
 
 func copyUpstreamHeaders(c *gin.Context, headers http.Header) {
