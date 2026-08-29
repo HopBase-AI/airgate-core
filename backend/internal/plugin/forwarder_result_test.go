@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -298,6 +299,51 @@ func TestWriteUpstreamIfPresentPreservesEmptyBodyStatusAndHeaders(t *testing.T) 
 				t.Fatalf("body = %q, want empty", recorder.Body.String())
 			}
 		})
+	}
+}
+
+// writeUpstream 的封帧回归（2026-08-29 MiniMax X-Async 生图事故）：插件可能换掉
+// body（异步任务轮询换体、模型别名回填），上游响应头里的 Content-Length 不再描述
+// 实际写出的字节。照抄会让 net/http 整笔拒写并强制断连，客户端读 body 时得到
+// unexpected EOF（经反代/Cloudflare 后变成 520）。必须用真实 HTTP server 验证：
+// httptest.ResponseRecorder 不执行封帧，测不出这个问题。
+func TestWriteUpstreamDropsStaleFramingHeaders(t *testing.T) {
+	t.Parallel()
+
+	largeBody := strings.Repeat("a", 256*1024)
+	engine := gin.New()
+	engine.POST("/forward", func(c *gin.Context) {
+		writeUpstream(c, sdk.UpstreamResponse{
+			StatusCode: http.StatusOK,
+			Headers: http.Header{
+				"Content-Type":   []string{"application/json"},
+				"Content-Length": []string{"57"}, // 异步提交回执的过期封帧头
+				"X-Trace-Id":     []string{"trace-1"},
+			},
+			Body: []byte(largeBody),
+		})
+	})
+	server := httptest.NewServer(engine)
+	defer server.Close()
+
+	resp, err := http.Post(server.URL+"/forward", "application/json", nil)
+	if err != nil {
+		t.Fatalf("请求失败: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	got, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("读取响应体失败（过期 Content-Length 破坏封帧）: %v", err)
+	}
+	if len(got) != len(largeBody) {
+		t.Fatalf("body 长度 = %d, want %d", len(got), len(largeBody))
+	}
+	if gotTrace := resp.Header.Get("X-Trace-Id"); gotTrace != "trace-1" {
+		t.Fatalf("X-Trace-Id = %q, want trace-1", gotTrace)
+	}
+	if gotCT := resp.Header.Get("Content-Type"); gotCT != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", gotCT)
 	}
 }
 
