@@ -149,7 +149,8 @@
     "referral_admin": "Programa de referidos",
     "blog": "Blog",
     "my_invite": "Mis referidos",
-    "model_plaza": "Plaza de modelos"
+    "model_plaza": "Plaza de modelos",
+    "pricing": "Precios"
   },
   "model_plaza": {
     "title": "Plaza de modelos",
@@ -2521,5 +2522,24 @@
     "promoter_name_label": "Nombre oficial para mostrar (opcional)",
     "promoter_name_placeholder": "p. ej., Equipo oficial de HopBase",
     "promoter_name_hint": "Nombre de equipo o firma que se muestra a los visitantes; déjelo en blanco para mostrar el genérico «Promoción oficial»."
+  },
+  "pricing": {
+    "title": "Gestión de precios",
+    "subtitle": "Precio estándar, coste y margen por grupo, más los clientes con tarifa propia. Descuento = multiplicador ÷ tipo de cambio, criterio único.",
+    "col_group": "Grupo",
+    "col_platform": "Plataforma",
+    "col_models": "Modelos",
+    "col_standard": "Estándar",
+    "col_cost": "Coste",
+    "col_margin": "Margen",
+    "col_overrides": "Tarifa propia",
+    "models_unrestricted": "Sin límite",
+    "no_account": "Sin cuenta disponible",
+    "inverted": "{{n}} invertidos",
+    "inverted_hint": "Más caro que el estándar",
+    "delisted": "Retirado",
+    "exclusive": "Exclusivo",
+    "mode_quote": "Cliente con presupuesto",
+    "mode_override": "Multiplicador propio"
   }
 }

@@ -52,6 +52,7 @@ import {
   Clapperboard,
   Route,
   Bell,
+  Tags,
 } from 'lucide-react';
 
 interface AppShellProps {
@@ -71,6 +72,7 @@ const adminMenuItems: MenuItem[] = [
   { path: '/admin/users', labelKey: 'nav.users', icon: <Users className="h-5 w-5" />, sectionKey: 'nav.management' },
   { path: '/admin/accounts', labelKey: 'nav.accounts', icon: <IdCard className="h-5 w-5" /> },
   { path: '/admin/groups', labelKey: 'nav.groups', icon: <FolderTree className="h-5 w-5" /> },
+  { path: '/admin/pricing', labelKey: 'nav.pricing', icon: <Tags className="h-5 w-5" /> },
   { path: '/admin/subscriptions', labelKey: 'nav.subscriptions', icon: <CreditCard className="h-5 w-5" /> },
   { path: '/admin/proxies', labelKey: 'nav.proxies', icon: <Globe className="h-5 w-5" /> },
   { path: '/admin/usage', labelKey: 'nav.usage', icon: <ChartNoAxesCombined className="h-5 w-5" /> },

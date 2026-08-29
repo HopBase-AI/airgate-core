@@ -202,6 +202,9 @@ type Repository interface {
 	List(context.Context, ListFilter) ([]User, int64, error)
 	EmailExists(context.Context, string) (bool, error)
 	ListWithGroupRateOverride(ctx context.Context, groupID int64) ([]GroupRateOverride, error)
+	// ListAllGroupRateOverrides 一次返回所有用户的分组专属倍率，键=分组 ID。
+	// 价格总览页要跨全部分组展示，逐组调用 ListWithGroupRateOverride 会做 N 次全表扫描。
+	ListAllGroupRateOverrides(ctx context.Context) (map[int64][]GroupRateOverride, error)
 	Create(context.Context, Mutation) (User, error)
 	Update(context.Context, int, Mutation) (User, error)
 	UpdateBalance(context.Context, int, BalanceUpdate) (User, error)

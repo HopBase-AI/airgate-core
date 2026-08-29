@@ -67,6 +67,10 @@ func (s stubRepository) EmailExists(_ context.Context, _ string) (bool, error) {
 func (s stubRepository) ListWithGroupRateOverride(_ context.Context, _ int64) ([]GroupRateOverride, error) {
 	return nil, nil
 }
+
+func (s stubRepository) ListAllGroupRateOverrides(_ context.Context) (map[int64][]GroupRateOverride, error) {
+	return map[int64][]GroupRateOverride{}, nil
+}
 func (s stubRepository) Create(_ context.Context, _ Mutation) (User, error) { return User{}, nil }
 func (s stubRepository) Update(_ context.Context, _ int, _ Mutation) (User, error) {
 	return User{}, nil
