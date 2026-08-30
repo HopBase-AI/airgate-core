@@ -624,3 +624,66 @@ func TestHopBaseCoverArt(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildFAQPageLD(t *testing.T) {
+	zhContent := `<p>正文开头。</p><h2>调度机制</h2><p>一些内容。</p>` +
+		`<h2>常见问题</h2>` +
+		`<h3>支持多大并发?</h3><p>按业务场景配置,<strong>联系顾问</strong>评估。</p>` +
+		`<h3>失败会计费吗?</h3><p>不会。</p><ul><li>错误码非空不计费</li></ul>` +
+		`<h2>结语</h2><p>结语段落,不属于 FAQ。</p>`
+
+	ld := buildFAQPageLD(zhContent, "https://hop-base.com/blog/x")
+	for _, want := range []string{
+		`"@type":"FAQPage"`,
+		`"@id":"https://hop-base.com/blog/x#faq"`,
+		`"name":"支持多大并发?"`,
+		"按业务场景配置,联系顾问评估。",
+		`"name":"失败会计费吗?"`,
+		"不会。 错误码非空不计费",
+	} {
+		if !strings.Contains(ld, want) {
+			t.Errorf("faq ld missing %q\n got: %s", want, ld)
+		}
+	}
+	if strings.Contains(ld, "结语") || strings.Contains(ld, "调度机制") {
+		t.Errorf("faq ld leaked content outside FAQ section: %s", ld)
+	}
+
+	// 英文标题 FAQ / 繁体標題均可命中;h2 带属性也可命中。
+	for _, content := range []string{
+		`<h2 id="faq">FAQ</h2><h3>How big?</h3><p>Sized per workload &amp; scenario.</p>`,
+		`<h2>Frequently Asked Questions</h2><h3>Q1</h3><p>A1</p>`,
+		`<h2>常見問題</h2><h3>問一</h3><p>答一</p>`,
+	} {
+		if got := buildFAQPageLD(content, "https://x/blog/y"); !strings.Contains(got, `"@type":"FAQPage"`) {
+			t.Errorf("expected FAQPage for %q, got %q", content, got)
+		}
+	}
+	// 实体解码:&amp; 先还原为 &,再由 json.Marshal HTML 转义为 &(安全内联 script)
+	if got := buildFAQPageLD(`<h2>FAQ</h2><h3>Q</h3><p>A &amp; B</p>`, "https://x/blog/y"); !strings.Contains(got, `A \u0026 B`) {
+		t.Errorf("entity not unescaped: %s", got)
+	}
+
+	// 无 FAQ 小节 / 小节内无成对问答:返回空串
+	for _, content := range []string{
+		`<p>没有 FAQ 的文章。</p><h2>普通小节</h2><p>内容。</p>`,
+		`<h2>常见问题</h2><p>只有段落没有 h3。</p>`,
+		``,
+	} {
+		if got := buildFAQPageLD(content, "https://x/blog/y"); got != "" {
+			t.Errorf("expected empty for %q, got %q", content, got)
+		}
+	}
+}
+
+func TestBuildDetailView_FAQPageLD(t *testing.T) {
+	b := Branding{SiteName: "HopBase", OriginBase: "https://hop-base.com"}
+	withFAQ := appblog.Post{Title: "t", Slug: "s", ContentHTML: `<h2>常见问题</h2><h3>问</h3><p>答</p>`}
+	if v := buildDetailView(b, withFAQ, ""); !strings.Contains(string(v.FAQPageLD), `"@type":"FAQPage"`) {
+		t.Errorf("FAQPageLD not populated: %q", v.FAQPageLD)
+	}
+	without := appblog.Post{Title: "t", Slug: "s", ContentHTML: `<p>plain</p>`}
+	if v := buildDetailView(b, without, ""); string(v.FAQPageLD) != "" {
+		t.Errorf("FAQPageLD should be empty, got %q", v.FAQPageLD)
+	}
+}

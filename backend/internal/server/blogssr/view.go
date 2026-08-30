@@ -6,6 +6,7 @@ package blogssr
 
 import (
 	"encoding/json"
+	"html"
 	"html/template"
 	"net/url"
 	"regexp"
@@ -869,6 +870,7 @@ type DetailView struct {
 	GatePosition    int
 	JSONLD          template.JS
 	BreadcrumbLD    template.JS // BreadcrumbList 结构化数据(首页 > 博客 > 本文)
+	FAQPageLD       template.JS // FAQPage 结构化数据(正文「常见问题/FAQ」小节抽取;无则空,模板跳过)
 	// Hreflang 三语译文互指(rel=alternate);仅 show_langs 开启且存在关联译文时非空。
 	// 由 RenderDetail 注入——译文关联需要全量已发布列表,buildDetailView 拿不到。
 	Hreflang []HreflangLink
@@ -1212,6 +1214,7 @@ func buildDetailView(b Branding, p appblog.Post, reqInvite string) DetailView {
 	}
 	jsonLD := buildJSONLD(seoTitle, metaDesc, canonical, ogImage, publishedISO, modifiedISO, b.SiteName, publicImageURL(b.OriginBase, logoURL), branding.HTMLLang)
 	breadcrumbLD := buildBreadcrumbLD(b.OriginBase, b.SiteName, seoTitle, canonical)
+	faqPageLD := buildFAQPageLD(p.ContentHTML, canonical)
 
 	return DetailView{
 		Branding:        branding,
@@ -1234,6 +1237,7 @@ func buildDetailView(b Branding, p appblog.Post, reqInvite string) DetailView {
 		GatePosition:    gatePos,
 		JSONLD:          template.JS(jsonLD),       //nolint:gosec // json.Marshal HTML-escapes hostile fields
 		BreadcrumbLD:    template.JS(breadcrumbLD), //nolint:gosec // json.Marshal HTML-escapes hostile fields
+		FAQPageLD:       template.JS(faqPageLD),    //nolint:gosec // json.Marshal HTML-escapes hostile fields
 	}
 }
 
@@ -1361,4 +1365,62 @@ func buildJSONLD(title, desc, canonical, image, publishedISO, modifiedISO, siteN
 		return "{}"
 	}
 	return string(b)
+}
+
+// FAQ 小节抽取:正文经 bluemonday 净化且为平铺 HTML,标题在 h2、问答在其后的
+// h3/段落对,正则按此契约切分即可,不需要完整 DOM 解析。
+var (
+	faqSectionRe = regexp.MustCompile(`(?is)<h2[^>]*>\s*(?:常见问题|常見問題|FAQs?|Frequently\s+Asked\s+Questions?)\s*</h2>(.*?)(?:<h2[^>]*>|$)`)
+	faqItemRe    = regexp.MustCompile(`(?is)<h3[^>]*>(.*?)</h3>`)
+)
+
+// buildFAQPageLD 从正文的「常见问题/FAQ」小节生成 FAQPage 结构化数据;
+// 无该小节或抽不出成对问答时返回空串,模板按空跳过注入。
+func buildFAQPageLD(contentHTML, canonical string) string {
+	m := faqSectionRe.FindStringSubmatch(contentHTML)
+	if m == nil {
+		return ""
+	}
+	section := m[1]
+	items := faqItemRe.FindAllStringSubmatchIndex(section, -1)
+	entities := make([]map[string]any, 0, len(items))
+	for i, loc := range items {
+		question := htmlToPlainText(section[loc[2]:loc[3]])
+		answerEnd := len(section)
+		if i+1 < len(items) {
+			answerEnd = items[i+1][0]
+		}
+		answer := htmlToPlainText(section[loc[1]:answerEnd])
+		if question == "" || answer == "" {
+			continue
+		}
+		entities = append(entities, map[string]any{
+			"@type":          "Question",
+			"name":           question,
+			"acceptedAnswer": map[string]any{"@type": "Answer", "text": answer},
+		})
+	}
+	if len(entities) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(map[string]any{
+		"@context":   "https://schema.org",
+		"@type":      "FAQPage",
+		"@id":        canonical + "#faq",
+		"mainEntity": entities,
+	})
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// blockBoundaryRe 块级收尾标签换成空格,避免相邻段落文本粘连;行内标签(strong/a/code)
+// 则直接剥除不留空格,CJK 文本才不会被打散。
+var blockBoundaryRe = regexp.MustCompile(`(?i)</(?:p|li|ul|ol|h[1-6]|tr|td|th|table|blockquote|pre)>|<br\s*/?>`)
+
+// htmlToPlainText 剥标签、解实体并折叠空白,产出结构化数据里的纯文本。
+func htmlToPlainText(s string) string {
+	text := htmlTagRe.ReplaceAllString(blockBoundaryRe.ReplaceAllString(s, " "), "")
+	return strings.Join(strings.Fields(html.UnescapeString(text)), " ")
 }

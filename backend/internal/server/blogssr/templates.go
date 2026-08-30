@@ -146,7 +146,8 @@ const detailHeadStr = `<!doctype html>
 <meta name="twitter:image:alt" content="{{.Title}}">{{end}}
 <script type="application/ld+json">{{.JSONLD}}</script>
 <script type="application/ld+json">{{.BreadcrumbLD}}</script>
-`
+{{if .FAQPageLD}}<script type="application/ld+json">{{.FAQPageLD}}</script>
+{{end}}`
 
 const notFoundHeadStr = `<!doctype html>
 <html lang="{{if .HTMLLang}}{{.HTMLLang}}{{else}}zh-Hant{{end}}">
