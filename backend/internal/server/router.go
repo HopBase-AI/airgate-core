@@ -448,8 +448,27 @@ func (s *Server) registerRoutes() {
 			s.dynamicRouter.Handle(c)
 			return
 		}
+		// 无凭证请求打到网关 API 命名空间时，同样交给 apiKeyAuth 返回标准
+		// 401 JSON（missing_api_key），不能落进 SPA 兜底——agent/SDK 探测端点
+		// 收到 200+HTML 会误判协议（llms.txt 把 /v1/models 声明为发现入口）。
+		if isGatewayAPIPath(c.Request.URL.Path) {
+			apiKeyAuth(c)
+			return
+		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)
 	})
+}
+
+// isGatewayAPIPath 判断路径是否属于模型网关的对外 API 命名空间。
+// 覆盖各插件注册的协议前缀（OpenAI/Anthropic 的 /v1、Gemini 原生 /v1beta、
+// bailian 的 DashScope 原路径）与 core 保留的裸 /models 元数据路径；console
+// 自身的 /api/v1 具名路由注册在 gin 路由表里，不会落到 NoRoute。
+func isGatewayAPIPath(p string) bool {
+	return strings.HasPrefix(p, "/v1/") ||
+		strings.HasPrefix(p, "/v1beta/") ||
+		strings.HasPrefix(p, "/api/v1/services/") ||
+		strings.HasPrefix(p, "/api/v1/tasks/") ||
+		p == "/models"
 }
 
 // servePluginAsset 处理 /plugins/<name>/assets/* 请求。

@@ -51,3 +51,32 @@ func TestConvertMarketEntries(t *testing.T) {
 		t.Fatalf("转换结果异常: %+v", got[0])
 	}
 }
+
+func TestIsGatewayAPIPath(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"/v1/models", true},
+		{"/v1/chat/completions", true},
+		{"/v1/messages", true},
+		{"/v1beta/interactions", true},
+		{"/api/v1/services/aigc/video-generation/video-synthesis", true},
+		{"/api/v1/tasks/task-123", true},
+		{"/models", true},
+		{"/", false},
+		{"/login", false},
+		{"/console/keys", false},
+		{"/api/v1/usage/stats", false},
+		{"/v1", false},
+		{"/assets/index.js", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			if got := isGatewayAPIPath(tt.path); got != tt.want {
+				t.Fatalf("isGatewayAPIPath(%q) = %v，期望 %v", tt.path, got, tt.want)
+			}
+		})
+	}
+}
