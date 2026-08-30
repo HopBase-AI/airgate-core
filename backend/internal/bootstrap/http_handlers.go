@@ -75,6 +75,7 @@ type HTTPHandlers struct {
 	GenerationTask *handler.GenerationTaskHandler
 	Referral       *handler.ReferralHandler
 	ModelPricing   *handler.ModelPricingHandler
+	MCP            *handler.MCPHandler
 	Blog           *handler.BlogHandler
 	Pricing        *handler.PricingHandler
 
@@ -177,6 +178,7 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 		GenerationTask: handler.NewGenerationTaskHandler(generationTaskService),
 		Referral:       handler.NewReferralHandler(referralService),
 		ModelPricing:   handler.NewModelPricingHandler(modelPricingService),
+		MCP:            handler.NewMCPHandler(dep.DB, modelPricingService, usageService),
 		Blog:           handler.NewBlogHandler(blogService),
 		AccountService: accountService,
 
