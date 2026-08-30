@@ -1,8 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Button, Chip, EmptyState } from '@heroui/react';
-import { BadgeCheck, Copy, FileText, Gift, Percent, Users, Wallet } from 'lucide-react';
+import { Button, Chip, EmptyState, ListBox, Select } from '@heroui/react';
+import { BadgeCheck, Copy, FileText, Gift, Globe, Percent, Users, Wallet } from 'lucide-react';
 import { referralApi } from '../../shared/api/referral';
 import { blogApi } from '../../shared/api/blog';
 import { queryKeys } from '../../shared/queryKeys';
@@ -15,6 +15,18 @@ import { TablePaginationFooter } from '../../shared/components/TablePaginationFo
 import { useToast } from '../../shared/ui';
 import { buildBlogShareURL, publicBlogBase } from '../../shared/blogShare';
 import type { BlogLanguage } from '../../shared/types';
+
+// 邀请链接可指定落地语言:?lang= 会被控制台(i18n/index.ts)与落地页统一识别并
+// 持久化为域级 cookie,访客从注册到控制台全程该语言;auto = 不拼参数,跟随访客浏览器。
+// 语言名一律用自称(autonym),不随界面语言翻译。
+const LINK_LANGS = [
+  { id: 'auto', label: '' },
+  { id: 'zh', label: '简体中文' },
+  { id: 'zh-HK', label: '繁體中文' },
+  { id: 'en', label: 'English' },
+  { id: 'ja', label: '日本語' },
+  { id: 'es', label: 'Español' },
+] as const;
 
 function formatTime(date: string): string {
   return new Date(date).toLocaleString('zh-CN', {
@@ -67,11 +79,13 @@ export default function InvitePage() {
   }, [me?.link_base_url]);
 
   // 邀请链接：后台可配前缀（如指向落地页），未配置则用当前控制台域名。
+  const [linkLang, setLinkLang] = useState<string>('auto');
   const inviteLink = useMemo(() => {
     if (!me?.invite_code) return '';
     const base = me.link_base_url?.trim() || window.location.origin;
-    return `${base.replace(/\/+$/, '')}/?inv=${me.invite_code}`;
-  }, [me?.invite_code, me?.link_base_url]);
+    const langParam = linkLang !== 'auto' ? `&lang=${linkLang}` : '';
+    return `${base.replace(/\/+$/, '')}/?inv=${me.invite_code}${langParam}`;
+  }, [me?.invite_code, me?.link_base_url, linkLang]);
 
   // 官方推广官身份:博客能力(编辑 + 「分享文章」复制博客链接)为官方推广官专属,
   // 普通用户不显示分享文章入口(裸邀请链接仍可用)。
@@ -164,10 +178,45 @@ export default function InvitePage() {
           >
             {meLoading ? '…' : inviteLink || '-'}
           </code>
+          <Select
+            aria-label={t('referral.link_lang')}
+            className="shrink-0"
+            selectedKey={linkLang}
+            onSelectionChange={(key) => {
+              if (key != null) setLinkLang(String(key));
+            }}
+          >
+            <Select.Trigger>
+              <Globe className="h-4 w-4" />
+              <Select.Value>
+                {linkLang === 'auto'
+                  ? t('referral.link_lang_auto')
+                  : LINK_LANGS.find((l) => l.id === linkLang)?.label}
+              </Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox
+                items={LINK_LANGS.map((l) => ({
+                  id: l.id,
+                  label: l.id === 'auto' ? t('referral.link_lang_auto') : l.label,
+                }))}
+              >
+                {(item) => (
+                  <ListBox.Item id={item.id} textValue={item.label}>
+                    {item.label}
+                  </ListBox.Item>
+                )}
+              </ListBox>
+            </Select.Popover>
+          </Select>
           <Button variant="primary" className="shrink-0 gap-1.5" onPress={copyLink} isDisabled={!inviteLink}>
             <Copy className="h-4 w-4" />
             {t('referral.copy_link')}
           </Button>
+        </div>
+        <div className="mt-2 text-xs" style={{ color: 'var(--ag-text-tertiary)' }}>
+          {t('referral.link_lang_hint')}
         </div>
         {me?.invite_code ? (
           <div className="mt-2 text-xs" style={{ color: 'var(--ag-text-tertiary)' }}>
