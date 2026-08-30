@@ -617,15 +617,21 @@ func (h *HostService) probeForward(ctx context.Context, req hostProbeForwardRequ
 	resp["platform"] = g.Platform
 
 	model := req.Model
+	probeImage := false
 	if model == "" {
 		if models := h.manager.GetModels(g.Platform); len(models) > 0 {
-			model = pickProbeModelForRouting(models, g.ModelRouting)
+			model, probeImage = pickProbeModelForRouting(models, g.ModelRouting)
 		}
 	}
 	if model == "" {
 		return errProbeResp("no_model", fmt.Sprintf("platform %s 没有可用 model", g.Platform), start), nil
 	}
 	resp["model"] = model
+	if probeImage {
+		resp["probe_kind"] = "image"
+	} else {
+		resp["probe_kind"] = "chat"
+	}
 
 	// 调度选号。probe token 只用于本次真实上游探测，避免 half-open 被只读遍历抢占。
 	probeToken := uuid.NewString()
@@ -658,13 +664,32 @@ func (h *HostService) probeForward(ctx context.Context, req hostProbeForwardRequ
 		return errProbeResp("plugin_missing", "platform "+g.Platform+" 没有可用插件", start), nil
 	}
 
-	// 构造最小探测请求：固定 prompt "hi"，stream=false（无需 Writer，结果通过 Body 返回）
-	body, _ := json.Marshal(map[string]any{
-		"model":      model,
-		"messages":   []map[string]string{{"role": "user", "content": "hi"}},
-		"stream":     false,
-		"max_tokens": 5,
-	})
+	// 构造最小探测请求。chat：固定 prompt "hi"，max_tokens=5，成本近乎为零。
+	// image：最小 1K 单图（生图模型没有更便宜的探法；调用方按成本节流频率）。
+	var body []byte
+	headers := http.Header{
+		"Content-Type":       {"application/json"},
+		"X-Airgate-Internal": {"probe"},
+	}
+	probeTimeout := 30 * time.Second
+	if probeImage {
+		body, _ = json.Marshal(map[string]any{
+			"model":  model,
+			"prompt": "a single small red dot, plain white background",
+			"n":      1,
+			"size":   "1024x1024",
+		})
+		headers.Set("X-Forwarded-Path", "/v1/images/generations")
+		// 生图普遍 10~40s，30s 会把健康的组误判成超时。
+		probeTimeout = 90 * time.Second
+	} else {
+		body, _ = json.Marshal(map[string]any{
+			"model":      model,
+			"messages":   []map[string]string{{"role": "user", "content": "hi"}},
+			"stream":     false,
+			"max_tokens": 5,
+		})
+	}
 
 	fwdReq := &sdk.ForwardRequest{
 		Account: &sdk.Account{
@@ -675,17 +700,14 @@ func (h *HostService) probeForward(ctx context.Context, req hostProbeForwardRequ
 			Credentials: cloneStringMapHost(accFull.Credentials),
 			ProxyURL:    proxyURLFromAccount(accFull),
 		},
-		Body: body,
-		Headers: http.Header{
-			"Content-Type":       {"application/json"},
-			"X-Airgate-Internal": {"probe"},
-		},
-		Model:  model,
-		Stream: false,
+		Body:    body,
+		Headers: headers,
+		Model:   model,
+		Stream:  false,
 	}
 
-	// 调用插件，限制最长 30s（探测不应卡住调度循环）
-	fwdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	// 调用插件并限时（探测不应卡住调度循环）
+	fwdCtx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 
 	gate, err := h.scheduler.ClaimAccountGate(fwdCtx, acc.ID, acc.Platform, model, probeToken)
@@ -3108,16 +3130,40 @@ func pickRoutableModel(models []sdk.ModelInfo, routing map[string][]int64) strin
 	return ""
 }
 
-// pickProbeModelForRouting 从当前分组可路由的模型中选一个非图片模型用于探测。
-// 图片模型探测需要实际生图（成本高），跳过；如果全是图片模型则返回空。
+// pickProbeModelForRouting 从当前分组可路由的模型中选探测模型。
+// 优先非图片模型（最小 chat 请求近乎零成本）；纯生图分组退而选生图模型
+// （最小 1K 生成请求，isImage=true，探测方按成本节流）——此前直接返回空，
+// 生图分组永远 no_model 零监控（2026-08-22 审计盲区，2026-08-29 组18/组23
+// 事故均因无监控靠人肉翻库发现）。视频/音频等重媒体模型永不入选。
 // 直接使用 ModelInfo.HasCapability 判断，无需经过 Manager 全局查找。
-func pickProbeModelForRouting(models []sdk.ModelInfo, routing map[string][]int64) string {
+func pickProbeModelForRouting(models []sdk.ModelInfo, routing map[string][]int64) (model string, isImage bool) {
 	for _, m := range models {
 		if scheduler.ModelRoutingServes(routing, m.ID) && !m.HasCapability(sdk.ModelCapImageGeneration) {
-			return m.ID
+			return m.ID, false
 		}
 	}
-	return ""
+	var imageCandidates []string
+	for _, m := range models {
+		if !scheduler.ModelRoutingServes(routing, m.ID) || !m.HasCapability(sdk.ModelCapImageGeneration) {
+			continue
+		}
+		if m.HasCapability(sdk.ModelCapVideoGeneration) || m.HasCapability(sdk.ModelCapAudioGeneration) {
+			continue
+		}
+		imageCandidates = append(imageCandidates, m.ID)
+	}
+	if len(imageCandidates) == 0 {
+		return "", false
+	}
+	// 按名字启发式挑便宜档（lite > flash > 其余第一个）。
+	for _, keyword := range []string{"lite", "flash"} {
+		for _, id := range imageCandidates {
+			if strings.Contains(strings.ToLower(id), keyword) {
+				return id, true
+			}
+		}
+	}
+	return imageCandidates[0], true
 }
 
 // truncateProbeErr 限制 error_msg 长度，避免巨型上游错误体污染探测表。

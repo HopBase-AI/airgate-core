@@ -254,9 +254,29 @@ func TestPickProbeModelForRouting(t *testing.T) {
 	routing := map[string][]int64{
 		"overseas-*": {33},
 	}
-	if got := pickProbeModelForRouting(models, routing); got != "overseas-video" {
-		t.Fatalf("pickProbeModelForRouting() = %q, want overseas-video", got)
+	got, isImage := pickProbeModelForRouting(models, routing)
+	if got != "overseas-video" || isImage {
+		t.Fatalf("pickProbeModelForRouting() = %q/%v, want overseas-video/false", got, isImage)
 	}
+}
+
+// 纯生图分组退而选生图模型(此前返回空导致 no_model 零监控);
+// 便宜档优先(lite>flash),视频/音频模型永不入选。
+func TestPickProbeModelForRoutingImageFallback(t *testing.T) {
+	models := []sdk.ModelInfo{
+		{ID: "gemini-3-pro-image", Capabilities: []string{sdk.ModelCapImageGeneration}},
+		{ID: "gemini-2.5-flash-image", Capabilities: []string{sdk.ModelCapImageGeneration}},
+		{ID: "wan-video", Capabilities: []string{sdk.ModelCapVideoGeneration}},
+	}
+	routing := map[string][]int64{
+		"gemini-3-pro-image":     {40},
+		"gemini-2.5-flash-image": {40},
+	}
+	got, isImage := pickProbeModelForRouting(models, routing)
+	if got != "gemini-2.5-flash-image" || !isImage {
+		t.Fatalf("pickProbeModelForRouting() = %q/%v, want gemini-2.5-flash-image/true", got, isImage)
+	}
+
 }
 
 func TestPickRoutableModelRespectsExactDisableOverGlob(t *testing.T) {
