@@ -687,3 +687,27 @@ func TestBuildDetailView_FAQPageLD(t *testing.T) {
 		t.Errorf("FAQPageLD should be empty, got %q", v.FAQPageLD)
 	}
 }
+
+func TestBuildFAQPageLD_BoldParagraphFallback(t *testing.T) {
+	// 早期文章排版:FAQ 小节内无 h3,一段一问 <p><strong>问</strong>答</p>
+	content := `<h2>常见问题</h2>` +
+		`<p><strong>换网关要改代码吗?</strong>不用。只改 base_url 与 Key。</p>` +
+		`<p><strong>额度怎么按人管?</strong>给每人独立 Key 设上限。</p>`
+	ld := buildFAQPageLD(content, "https://hop-base.com/blog/x")
+	for _, want := range []string{
+		`"@type":"FAQPage"`,
+		`"name":"换网关要改代码吗?"`,
+		"不用。只改 base_url 与 Key。",
+		`"name":"额度怎么按人管?"`,
+	} {
+		if !strings.Contains(ld, want) {
+			t.Errorf("bold-fallback ld missing %q\n got: %s", want, ld)
+		}
+	}
+	// h3 存在时优先 h3 路径,body 里的 <p><strong> 不重复入列
+	mixed := `<h2>FAQ</h2><h3>Q1</h3><p><strong>emphasis</strong> answer body</p>`
+	ld2 := buildFAQPageLD(mixed, "https://x/blog/y")
+	if !strings.Contains(ld2, `"name":"Q1"`) || strings.Contains(ld2, `"name":"emphasis"`) {
+		t.Errorf("h3 should take precedence over bold paragraphs: %s", ld2)
+	}
+}

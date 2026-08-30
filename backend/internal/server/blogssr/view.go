@@ -1372,6 +1372,8 @@ func buildJSONLD(title, desc, canonical, image, publishedISO, modifiedISO, siteN
 var (
 	faqSectionRe = regexp.MustCompile(`(?is)<h2[^>]*>\s*(?:常见问题|常見問題|FAQs?|Frequently\s+Asked\s+Questions?)\s*</h2>(.*?)(?:<h2[^>]*>|$)`)
 	faqItemRe    = regexp.MustCompile(`(?is)<h3[^>]*>(.*?)</h3>`)
+	// faqBoldItemRe 兼容早期文章的问答排版:<p><strong>问</strong>答</p>(无 h3)。
+	faqBoldItemRe = regexp.MustCompile(`(?is)<p>\s*<strong>(.*?)</strong>(.*?)</p>`)
 )
 
 // buildFAQPageLD 从正文的「常见问题/FAQ」小节生成 FAQPage 结构化数据;
@@ -1382,23 +1384,9 @@ func buildFAQPageLD(contentHTML, canonical string) string {
 		return ""
 	}
 	section := m[1]
-	items := faqItemRe.FindAllStringSubmatchIndex(section, -1)
-	entities := make([]map[string]any, 0, len(items))
-	for i, loc := range items {
-		question := htmlToPlainText(section[loc[2]:loc[3]])
-		answerEnd := len(section)
-		if i+1 < len(items) {
-			answerEnd = items[i+1][0]
-		}
-		answer := htmlToPlainText(section[loc[1]:answerEnd])
-		if question == "" || answer == "" {
-			continue
-		}
-		entities = append(entities, map[string]any{
-			"@type":          "Question",
-			"name":           question,
-			"acceptedAnswer": map[string]any{"@type": "Answer", "text": answer},
-		})
+	entities := faqEntitiesFromHeadings(section)
+	if len(entities) == 0 {
+		entities = faqEntitiesFromBoldParagraphs(section)
 	}
 	if len(entities) == 0 {
 		return ""
@@ -1418,6 +1406,48 @@ func buildFAQPageLD(contentHTML, canonical string) string {
 // blockBoundaryRe 块级收尾标签换成空格,避免相邻段落文本粘连;行内标签(strong/a/code)
 // 则直接剥除不留空格,CJK 文本才不会被打散。
 var blockBoundaryRe = regexp.MustCompile(`(?i)</(?:p|li|ul|ol|h[1-6]|tr|td|th|table|blockquote|pre)>|<br\s*/?>`)
+
+// faqEntitiesFromHeadings 抽 h3=问、至下一 h3/末尾=答 的问答对(当前 SOP 排版)。
+func faqEntitiesFromHeadings(section string) []map[string]any {
+	items := faqItemRe.FindAllStringSubmatchIndex(section, -1)
+	entities := make([]map[string]any, 0, len(items))
+	for i, loc := range items {
+		question := htmlToPlainText(section[loc[2]:loc[3]])
+		answerEnd := len(section)
+		if i+1 < len(items) {
+			answerEnd = items[i+1][0]
+		}
+		answer := htmlToPlainText(section[loc[1]:answerEnd])
+		if question == "" || answer == "" {
+			continue
+		}
+		entities = append(entities, faqEntity(question, answer))
+	}
+	return entities
+}
+
+// faqEntitiesFromBoldParagraphs 兜底早期排版:<p><strong>问</strong>答</p> 一段一问。
+func faqEntitiesFromBoldParagraphs(section string) []map[string]any {
+	items := faqBoldItemRe.FindAllStringSubmatch(section, -1)
+	entities := make([]map[string]any, 0, len(items))
+	for _, it := range items {
+		question := htmlToPlainText(it[1])
+		answer := htmlToPlainText(it[2])
+		if question == "" || answer == "" {
+			continue
+		}
+		entities = append(entities, faqEntity(question, answer))
+	}
+	return entities
+}
+
+func faqEntity(question, answer string) map[string]any {
+	return map[string]any{
+		"@type":          "Question",
+		"name":           question,
+		"acceptedAnswer": map[string]any{"@type": "Answer", "text": answer},
+	}
+}
 
 // htmlToPlainText 剥标签、解实体并折叠空白,产出结构化数据里的纯文本。
 func htmlToPlainText(s string) string {
