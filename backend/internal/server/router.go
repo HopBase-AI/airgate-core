@@ -448,8 +448,32 @@ func (s *Server) registerRoutes() {
 			s.dynamicRouter.Handle(c)
 			return
 		}
+		// 无凭证请求打到网关 API 命名空间时，同样交给 apiKeyAuth 返回标准
+		// 401 JSON（missing_api_key），不能落进 SPA 兜底——agent/SDK 探测端点
+		// 收到 200+HTML 会误判协议（llms.txt 把 /v1/models 声明为发现入口）。
+		if s.isGatewayAPIPath(c.Request.URL.Path) {
+			apiKeyAuth(c)
+			return
+		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)
 	})
+}
+
+// isGatewayAPIPath 判断路径是否属于模型网关的对外 API 命名空间。
+// /v1、/v1beta 两个协议前缀静态兜底，其余（裸 /messages、/chat/completions、
+// bailian 的 /api/v1/services、/api/v1/tasks 等）从插件管理器的路由注册表推导，
+// 插件新增前缀自动生效。裸 /models 被显式排除：它同时是控制台 SPA 的模型广场页
+// 路由，浏览器直开/刷新不带凭证，必须继续落 SPA；带 key 的 API 客户端不受影响
+// （走 HasAPIKey 分支）。console 自身的 /api/v1 具名路由注册在 gin 路由表里，
+// 不会落到 NoRoute。
+func (s *Server) isGatewayAPIPath(p string) bool {
+	if p == "/models" {
+		return false
+	}
+	if strings.HasPrefix(p, "/v1/") || strings.HasPrefix(p, "/v1beta/") {
+		return true
+	}
+	return s.pluginMgr != nil && s.pluginMgr.MatchesRoutePath(p)
 }
 
 // servePluginAsset 处理 /plugins/<name>/assets/* 请求。

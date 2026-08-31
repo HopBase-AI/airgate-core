@@ -51,3 +51,34 @@ func TestConvertMarketEntries(t *testing.T) {
 		t.Fatalf("转换结果异常: %+v", got[0])
 	}
 }
+
+func TestIsGatewayAPIPath(t *testing.T) {
+	// pluginMgr 为 nil：只验证静态前缀与显式排除；插件注册表推导的匹配
+	// （裸 /messages、/api/v1/tasks/* 等）见 plugin 包的 TestMatchesRoutePath。
+	srv := &Server{}
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"/v1/models", true},
+		{"/v1/chat/completions", true},
+		{"/v1/messages", true},
+		{"/v1beta/interactions", true},
+		// 裸 /models 是控制台 SPA 的模型广场页，浏览器无凭证直开必须落 SPA
+		{"/models", false},
+		{"/", false},
+		{"/login", false},
+		{"/console/keys", false},
+		{"/api/v1/usage/stats", false},
+		{"/v1", false},
+		{"/assets/index.js", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			if got := srv.isGatewayAPIPath(tt.path); got != tt.want {
+				t.Fatalf("isGatewayAPIPath(%q) = %v，期望 %v", tt.path, got, tt.want)
+			}
+		})
+	}
+}

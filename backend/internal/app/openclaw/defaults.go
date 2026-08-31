@@ -37,23 +37,23 @@ const DefaultMemorySearchModel = "text-embedding-3-small"
 // 额外带一个 label 供脚本展示给用户。
 const DefaultModelsPresetJSON = `[
   {
-    "id": "gpt-5.4",
-    "label": "GPT-5.4 (推荐)",
+    "id": "claude-sonnet-5",
+    "label": "Claude Sonnet 5 (推荐)",
+    "api": "anthropic-messages",
+    "reasoning": true,
+    "input": ["text", "image"]
+  },
+  {
+    "id": "claude-opus-5",
+    "label": "Claude Opus 5",
+    "api": "anthropic-messages",
+    "reasoning": true,
+    "input": ["text", "image"]
+  },
+  {
+    "id": "gpt-5.5",
+    "label": "GPT-5.5",
     "api": "openai-responses",
-    "reasoning": true,
-    "input": ["text", "image"]
-  },
-  {
-    "id": "claude-sonnet-4-6",
-    "label": "Claude Sonnet 4.6",
-    "api": "anthropic-messages",
-    "reasoning": true,
-    "input": ["text", "image"]
-  },
-  {
-    "id": "claude-opus-4-6",
-    "label": "Claude Opus 4.6",
-    "api": "anthropic-messages",
     "reasoning": true,
     "input": ["text", "image"]
   }

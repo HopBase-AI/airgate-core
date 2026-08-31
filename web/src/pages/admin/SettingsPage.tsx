@@ -111,23 +111,23 @@ const DEFAULT_OPENCLAW_PROVIDER_NAME = 'airgate';
 const DEFAULT_OPENCLAW_MEMORY_MODEL = 'text-embedding-3-small';
 const DEFAULT_OPENCLAW_MODELS_PRESET = `[
   {
-    "id": "gpt-5.4",
-    "label": "GPT-5.4 (推荐)",
+    "id": "claude-sonnet-5",
+    "label": "Claude Sonnet 5 (推荐)",
+    "api": "anthropic-messages",
+    "reasoning": true,
+    "input": ["text", "image"]
+  },
+  {
+    "id": "claude-opus-5",
+    "label": "Claude Opus 5",
+    "api": "anthropic-messages",
+    "reasoning": true,
+    "input": ["text", "image"]
+  },
+  {
+    "id": "gpt-5.5",
+    "label": "GPT-5.5",
     "api": "openai-responses",
-    "reasoning": true,
-    "input": ["text", "image"]
-  },
-  {
-    "id": "claude-sonnet-4-6",
-    "label": "Claude Sonnet 4.6",
-    "api": "anthropic-messages",
-    "reasoning": true,
-    "input": ["text", "image"]
-  },
-  {
-    "id": "claude-opus-4-6",
-    "label": "Claude Opus 4.6",
-    "api": "anthropic-messages",
     "reasoning": true,
     "input": ["text", "image"]
   }

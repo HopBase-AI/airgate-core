@@ -35,7 +35,7 @@ func TestBuildModelsText_Defaults(t *testing.T) {
 		t.Fatalf("expected 3 lines for default preset, got %d: %q", len(lines), text)
 	}
 
-	// 第一行应当是 gpt-5.4，五个字段，caps 含 reasoning image
+	// 第一行应当是 claude-sonnet-5，五个字段，caps 含 reasoning image
 	parts := strings.Split(lines[0], "|")
 	if len(parts) != 5 {
 		t.Fatalf("line[0] expected 5 pipe fields, got %d: %q", len(parts), lines[0])
@@ -43,14 +43,14 @@ func TestBuildModelsText_Defaults(t *testing.T) {
 	if parts[0] != "1" {
 		t.Errorf("line[0] idx = %q, want 1", parts[0])
 	}
-	if parts[1] != "gpt-5.4" {
-		t.Errorf("line[0] id = %q, want gpt-5.4", parts[1])
+	if parts[1] != "claude-sonnet-5" {
+		t.Errorf("line[0] id = %q, want claude-sonnet-5", parts[1])
 	}
-	if !strings.Contains(parts[2], "GPT-5.4") {
-		t.Errorf("line[0] label = %q, want to contain GPT-5.4", parts[2])
+	if !strings.Contains(parts[2], "Claude Sonnet 5") {
+		t.Errorf("line[0] label = %q, want to contain Claude Sonnet 5", parts[2])
 	}
-	if parts[3] != "openai-responses" {
-		t.Errorf("line[0] api = %q, want openai-responses", parts[3])
+	if parts[3] != "anthropic-messages" {
+		t.Errorf("line[0] api = %q, want anthropic-messages", parts[3])
 	}
 	if !strings.Contains(parts[4], "reasoning") || !strings.Contains(parts[4], "image") {
 		t.Errorf("line[0] caps = %q, want reasoning+image", parts[4])
@@ -80,7 +80,7 @@ func TestBuildOpenClawConfig_Happy(t *testing.T) {
 	s := &Service{}
 	out, err := s.BuildOpenClawConfig(newTestConfig(), RenderConfigRequest{
 		APIKey:      "sk-test-1234",
-		SelectedIDs: []string{"gpt-5.4", "claude-sonnet-4-6"},
+		SelectedIDs: []string{"claude-sonnet-5", "claude-opus-5"},
 	})
 	if err != nil {
 		t.Fatalf("BuildOpenClawConfig: %v", err)
@@ -108,8 +108,8 @@ func TestBuildOpenClawConfig_Happy(t *testing.T) {
 	}
 
 	primary := cfg["agents"].(map[string]any)["defaults"].(map[string]any)["model"].(map[string]any)["primary"]
-	if primary != DefaultProviderName+"/gpt-5.4" {
-		t.Errorf("defaults.model.primary = %v, want airgate/gpt-5.4", primary)
+	if primary != DefaultProviderName+"/claude-sonnet-5" {
+		t.Errorf("defaults.model.primary = %v, want airgate/claude-sonnet-5", primary)
 	}
 
 	// memorySearch 未启用时不应出现
@@ -128,7 +128,7 @@ func TestBuildOpenClawConfig_MemorySearchEnabled(t *testing.T) {
 
 	out, err := s.BuildOpenClawConfig(c, RenderConfigRequest{
 		APIKey:      "sk-test-1234",
-		SelectedIDs: []string{"gpt-5.4"},
+		SelectedIDs: []string{"claude-sonnet-5"},
 	})
 	if err != nil {
 		t.Fatalf("BuildOpenClawConfig: %v", err)
@@ -172,10 +172,10 @@ func TestBuildOpenClawConfig_ValidationErrors(t *testing.T) {
 		req  RenderConfigRequest
 		want string
 	}{
-		{"empty api key", base, RenderConfigRequest{SelectedIDs: []string{"gpt-5.4"}}, "api_key"},
+		{"empty api key", base, RenderConfigRequest{SelectedIDs: []string{"claude-sonnet-5"}}, "api_key"},
 		{"empty selection", base, RenderConfigRequest{APIKey: "sk-x"}, "selected_ids"},
 		{"unknown id", base, RenderConfigRequest{APIKey: "sk-x", SelectedIDs: []string{"no-such-model"}}, "unknown model id"},
-		{"missing base url", func() Config { c := base; c.BaseURL = ""; return c }(), RenderConfigRequest{APIKey: "sk-x", SelectedIDs: []string{"gpt-5.4"}}, "base_url"},
+		{"missing base url", func() Config { c := base; c.BaseURL = ""; return c }(), RenderConfigRequest{APIKey: "sk-x", SelectedIDs: []string{"claude-sonnet-5"}}, "base_url"},
 	}
 
 	for _, tc := range cases {
@@ -197,7 +197,7 @@ func TestBuildOpenClawConfig_DedupSelection(t *testing.T) {
 	s := &Service{}
 	out, err := s.BuildOpenClawConfig(newTestConfig(), RenderConfigRequest{
 		APIKey:      "sk-x",
-		SelectedIDs: []string{"gpt-5.4", "gpt-5.4", "claude-sonnet-4-6"},
+		SelectedIDs: []string{"claude-sonnet-5", "claude-sonnet-5", "claude-opus-5"},
 	})
 	if err != nil {
 		t.Fatalf("BuildOpenClawConfig: %v", err)
