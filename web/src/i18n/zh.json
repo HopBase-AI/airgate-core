@@ -88,7 +88,11 @@
     "enabled": "已启用",
     "disabled": "已禁用",
     "select": "选择",
-    "select_all": "全选"
+    "select_all": "全选",
+    "collapse": "收起",
+    "expand": "展开",
+    "retry": "重试",
+    "unauthorized": "未授权，请重新登录"
   },
   "status": {
     "active": "活跃",
@@ -1133,7 +1137,9 @@
     "configure": "配置",
     "configure_title": "配置 - {{name}}",
     "no_config_schema": "该插件未声明任何配置项",
-    "save_reload": "保存并重新加载"
+    "save_reload": "保存并重新加载",
+    "config_saved": "配置已保存，插件已重新加载",
+    "required_fields": "以下字段必填: {{fields}}"
   },
   "notifications": {
     "title": "通知",
@@ -1484,7 +1490,8 @@
     "blog_theme": "皮肤",
     "blog_theme_default": "默认",
     "blog_chrome": "导航/文案配置(JSON)",
-    "blog_chrome_invalid": "格式应为 JSON 对象(键见占位示例)"
+    "blog_chrome_invalid": "格式应为 JSON 对象(键见占位示例)",
+    "blog_sites_label_placeholder": "Essevin 主站"
   },
   "docs": {
     "cta_hint": "准备好了吗？立即开始使用。",

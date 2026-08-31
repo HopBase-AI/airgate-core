@@ -452,7 +452,7 @@ export default function NotificationsPage() {
                       onPress={saveLandingAnnouncement}
                     >
                       {landingMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                      {t('settings.save')}
+                      {t('common.save')}
                     </Button>
                   </div>
                 </div>

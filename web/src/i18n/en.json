@@ -88,7 +88,11 @@
     "enabled": "Enabled",
     "disabled": "Disabled",
     "select": "Select",
-    "select_all": "Select all"
+    "select_all": "Select all",
+    "collapse": "Collapse",
+    "expand": "Expand",
+    "retry": "Retry",
+    "unauthorized": "Unauthorized. Please sign in again."
   },
   "status": {
     "active": "Active",
@@ -1133,7 +1137,9 @@
     "configure": "Configure",
     "configure_title": "Configure - {{name}}",
     "no_config_schema": "This plugin declares no configuration options",
-    "save_reload": "Save and reload"
+    "save_reload": "Save and reload",
+    "config_saved": "Configuration saved; plugin reloaded",
+    "required_fields": "Required fields: {{fields}}"
   },
   "notifications": {
     "title": "Notifications",
@@ -1484,7 +1490,8 @@
     "blog_theme": "Theme",
     "blog_theme_default": "Default",
     "blog_chrome": "Nav / copy config (JSON)",
-    "blog_chrome_invalid": "Must be a JSON object (see placeholder for keys)"
+    "blog_chrome_invalid": "Must be a JSON object (see placeholder for keys)",
+    "blog_sites_label_placeholder": "Essevin main site"
   },
   "docs": {
     "cta_hint": "Ready to start? Jump in now.",
