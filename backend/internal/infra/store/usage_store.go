@@ -521,13 +521,19 @@ func applyUsageStatsFilter(query *ent.UsageLogQuery, filter appusage.StatsFilter
 	}
 	loc := timezone.Resolve(filter.TZ)
 	if filter.StartDate != "" {
-		if parsed, err := timezone.ParseDate(filter.StartDate, loc); err == nil {
+		if parsed, _, err := timezone.ParseDateOrDateTime(filter.StartDate, loc); err == nil {
 			query = query.Where(entusagelog.CreatedAtGTE(parsed))
 		}
 	}
 	if filter.EndDate != "" {
-		if parsed, err := timezone.ParseDate(filter.EndDate, loc); err == nil {
-			query = query.Where(entusagelog.CreatedAtLT(parsed.AddDate(0, 0, 1)))
+		if parsed, withTime, err := timezone.ParseDateOrDateTime(filter.EndDate, loc); err == nil {
+			if withTime {
+				// 精确时刻:右界含所选秒。
+				query = query.Where(entusagelog.CreatedAtLT(parsed.Add(time.Second)))
+			} else {
+				// 整日:右界含当日全天。
+				query = query.Where(entusagelog.CreatedAtLT(parsed.AddDate(0, 0, 1)))
+			}
 		}
 	}
 	return query

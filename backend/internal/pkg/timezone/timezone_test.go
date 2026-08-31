@@ -49,3 +49,38 @@ func TestParseDateUsesLocation(t *testing.T) {
 		t.Fatalf("解析结果异常: %v", got)
 	}
 }
+
+func TestParseDateOrDateTime(t *testing.T) {
+	loc, _ := time.LoadLocation("Asia/Shanghai")
+	cases := []struct {
+		in       string
+		wantTime bool
+		wantStr  string
+		wantErr  bool
+	}{
+		{"2026-08-31", false, "2026-08-31 00:00:00", false},
+		{"2026-08-31T14:30:05", true, "2026-08-31 14:30:05", false},
+		{"2026-08-31 14:30:05", true, "2026-08-31 14:30:05", false},
+		{"2026/08/31", false, "", true},
+		{"14:30:05", false, "", true},
+		{"", false, "", true},
+	}
+	for _, c := range cases {
+		got, withTime, err := ParseDateOrDateTime(c.in, loc)
+		if c.wantErr {
+			if err == nil {
+				t.Fatalf("%q 应解析失败", c.in)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%q 解析失败: %v", c.in, err)
+		}
+		if withTime != c.wantTime {
+			t.Fatalf("%q withTime = %v, want %v", c.in, withTime, c.wantTime)
+		}
+		if s := got.Format("2006-01-02 15:04:05"); s != c.wantStr {
+			t.Fatalf("%q = %s, want %s", c.in, s, c.wantStr)
+		}
+	}
+}
