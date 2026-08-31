@@ -339,7 +339,9 @@ func TestBuildPluginRequestOmitsWriterForPlainNonStreamRequest(t *testing.T) {
 	}
 }
 
-func TestBuildPluginRequestOmitsWriterForNonStreamImagesRequest(t *testing.T) {
+// 同步图像生成/编辑请求带 Writer + 标记头:插件据此在等待上游期间输出保活字节
+// (CF 边缘 ~100s 无字节切断),并按标记头恢复同步语义(ForwardStream 会硬置 Stream)。
+func TestBuildPluginRequestPassesWriterForSyncImagesRequest(t *testing.T) {
 	t.Parallel()
 
 	recorder := httptest.NewRecorder()
@@ -357,8 +359,44 @@ func TestBuildPluginRequestOmitsWriterForNonStreamImagesRequest(t *testing.T) {
 	if req.Stream {
 		t.Fatalf("Stream = true, want false")
 	}
-	if req.Writer != nil {
-		t.Fatalf("Writer = %T, want nil", req.Writer)
+	if req.Writer == nil {
+		t.Fatal("Writer = nil, want client writer for sync images keep-alive")
+	}
+	if got := req.Headers.Get("X-Airgate-Images-Sync-Writer"); got != "1" {
+		t.Fatalf("X-Airgate-Images-Sync-Writer = %q, want \"1\"", got)
+	}
+}
+
+// 任务查询与非图像路径保持原状:不带 Writer、不打标记头。
+func TestBuildPluginRequestOmitsWriterForImagesTaskQuery(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		method, path string
+	}{
+		{http.MethodGet, "/v1/images/tasks"},
+		{http.MethodGet, "/v1/images/tasks/list"},
+		{http.MethodPost, "/v1/chat/completions"},
+		{http.MethodGet, "/v1/images/generations"},
+	} {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(tc.method, tc.path, nil)
+		state := &forwardState{
+			requestPath: tc.path,
+			stream:      false,
+			realtime:    false,
+			keyInfo:     &auth.APIKeyInfo{},
+			account:     &ent.Account{},
+		}
+
+		req := buildPluginRequest(c, state)
+		if req.Writer != nil {
+			t.Fatalf("%s %s: Writer = %T, want nil", tc.method, tc.path, req.Writer)
+		}
+		if got := req.Headers.Get("X-Airgate-Images-Sync-Writer"); got != "" {
+			t.Fatalf("%s %s: 意外标记头 %q", tc.method, tc.path, got)
+		}
 	}
 }
 
