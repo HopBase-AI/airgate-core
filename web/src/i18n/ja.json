@@ -2074,6 +2074,7 @@
     "studio_batch_prompt_count": "{{count}} 件のプロンプト",
     "studio_untitled_project": "無題プロジェクト",
     "studio_route_official": "公式ダイレクト",
+    "studio_route_dedicated": "専用線",
     "studio_route_overseas": "海外",
     "studio_route_domestic": "国内"
   },
