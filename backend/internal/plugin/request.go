@@ -517,8 +517,25 @@ func buildPluginRequest(c *gin.Context, state *forwardState) *sdk.ForwardRequest
 	}
 	if state.realtime {
 		req.Writer = c.Writer
+	} else if isSyncImagesWritablePath(c.Request.Method, state.requestPath) {
+		// 同步图像生成/编辑:上游延迟方差大(2026-08-31 实测 16s~125s+),把客户端 Writer
+		// 交给插件,由插件在等待期间输出保活字节,避免 CF 边缘 ~100 秒无字节切断。
+		// 标记头让插件识别「同步 + 可写」——gRPC ForwardStream 服务端会把 Stream 硬置
+		// true,插件按此头恢复同步语义(见 openai 插件 keepalive.go)。协议格式仍全归
+		// 插件,core 只递管道;不认识该头的插件不受影响(Writer 仅是可选写入目标)。
+		req.Writer = c.Writer
+		headers.Set("X-Airgate-Images-Sync-Writer", "1")
 	}
 	return req
+}
+
+// isSyncImagesWritablePath 判定「值得带保活 Writer 的同步图像请求」:仅长耗时的
+// 生成/编辑提交;任务查询(GET /v1/images/tasks*)与其余路径保持原状。
+func isSyncImagesWritablePath(method, path string) bool {
+	if method != http.MethodPost {
+		return false
+	}
+	return strings.HasSuffix(path, "/images/generations") || strings.HasSuffix(path, "/images/edits")
 }
 
 func applyAccountCapabilityHeaders(headers http.Header, acc *ent.Account) {
