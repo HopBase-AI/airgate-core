@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams } from '@tanstack/react-router';
 import type { PluginFrontendModule } from '@doudou-start/airgate-theme/plugin';
 import { loadPluginFrontend } from '../app/plugin-loader';
@@ -14,6 +15,7 @@ interface PluginPageProps {
 }
 
 export default function PluginPage({ pluginNameOverride, subPathOverride }: PluginPageProps = {}) {
+  const { t } = useTranslation();
   // strict:false 时路由未注册的 params 会推导成 any,用注解钉住类型
   const params: { pluginName?: string; _splat?: string } = useParams({ strict: false });
   const { pluginName, _splat } = params;
@@ -63,7 +65,7 @@ export default function PluginPage({ pluginNameOverride, subPathOverride }: Plug
   if (!activeMod?.routes?.length) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-text-secondary">插件未提供页面</div>
+        <div className="text-text-secondary">{t('plugins.page_not_provided')}</div>
       </div>
     );
   }
@@ -71,7 +73,7 @@ export default function PluginPage({ pluginNameOverride, subPathOverride }: Plug
   if (!matched) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-text-secondary">页面未找到</div>
+        <div className="text-text-secondary">{t('plugins.page_not_found')}</div>
       </div>
     );
   }

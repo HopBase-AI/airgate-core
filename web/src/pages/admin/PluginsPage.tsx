@@ -238,7 +238,7 @@ export default function PluginsPage() {
                               onPress={() => setConfigTarget(row)}
                             >
                               <Settings className="w-3.5 h-3.5" />
-                              配置
+                              {t('plugins.configure')}
                             </Button>
                           )}
                           {row.is_dev && (() => {
@@ -376,6 +376,7 @@ function PluginConfigModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [values, setValues] = useState<Record<string, string>>({});
   const open = !!plugin;
@@ -445,7 +446,7 @@ function PluginConfigModal({
             style={{ maxWidth: '640px', width: 'min(100%, calc(100vw - 2rem))' }}
           >
             <Modal.Header>
-              <Modal.Heading>{`配置 - ${plugin?.display_name || plugin?.name || ''}`}</Modal.Heading>
+              <Modal.Heading>{t('plugins.configure_title', { name: plugin?.display_name || plugin?.name || '' })}</Modal.Heading>
               <Modal.CloseTrigger />
             </Modal.Header>
             <Modal.Body>
@@ -517,7 +518,7 @@ function PluginConfigModal({
           })}
           {(!plugin?.config_schema || plugin.config_schema.length === 0) && (
             <p className="text-sm text-text-tertiary text-center py-4">
-              该插件未声明任何配置项
+              {t('plugins.no_config_schema')}
             </p>
           )}
                 </div>
@@ -525,11 +526,11 @@ function PluginConfigModal({
             </Modal.Body>
             <Modal.Footer>
               <Button variant="secondary" isDisabled={saveMutation.isPending} onPress={onClose}>
-                取消
+                {t('common.cancel')}
               </Button>
               <Button variant="primary" isDisabled={saveMutation.isPending} onPress={handleSave}>
                 {saveMutation.isPending ? <Spinner size="sm" /> : null}
-                保存并重新加载
+                {t('plugins.save_reload')}
               </Button>
             </Modal.Footer>
           </Modal.Dialog>
