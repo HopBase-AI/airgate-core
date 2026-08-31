@@ -88,7 +88,11 @@
     "enabled": "有効",
     "disabled": "無効",
     "select": "選択",
-    "select_all": "すべて選択"
+    "select_all": "すべて選択",
+    "collapse": "折りたたむ",
+    "expand": "展開",
+    "retry": "再試行",
+    "unauthorized": "認証エラー。再度ログインしてください"
   },
   "status": {
     "active": "アクティブ",
@@ -1133,7 +1137,9 @@
     "configure": "設定",
     "configure_title": "設定 - {{name}}",
     "no_config_schema": "このプラグインには設定項目がありません",
-    "save_reload": "保存して再読み込み"
+    "save_reload": "保存して再読み込み",
+    "config_saved": "設定を保存し、プラグインを再読み込みしました",
+    "required_fields": "必須項目: {{fields}}"
   },
   "notifications": {
     "title": "通知",
@@ -1484,7 +1490,8 @@
     "blog_theme": "テーマ",
     "blog_theme_default": "デフォルト",
     "blog_chrome": "ナビ/文言設定(JSON)",
-    "blog_chrome_invalid": "JSON オブジェクトである必要があります(キーはプレースホルダー参照)"
+    "blog_chrome_invalid": "JSON オブジェクトである必要があります(キーはプレースホルダー参照)",
+    "blog_sites_label_placeholder": "Essevin メインサイト"
   },
   "docs": {
     "cta_hint": "準備はできましたか？今すぐ利用を始めましょう。",

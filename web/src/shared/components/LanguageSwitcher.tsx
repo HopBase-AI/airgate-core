@@ -46,7 +46,7 @@ export function LanguageSwitcher({ className }: { className?: string }) {
       </Dropdown.Trigger>
       <Dropdown.Popover placement="bottom end">
         <Dropdown.Menu
-          aria-label="选择语言"
+          aria-label={t('common.language') || '选择语言'}
           selectedKeys={[currentLanguage]}
           selectionMode="single"
           onAction={(key) => changeLanguage(String(key))}

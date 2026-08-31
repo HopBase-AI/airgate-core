@@ -88,7 +88,11 @@
     "enabled": "已啟用",
     "disabled": "已停用",
     "select": "選取",
-    "select_all": "全選"
+    "select_all": "全選",
+    "collapse": "收起",
+    "expand": "展開",
+    "retry": "重試",
+    "unauthorized": "未授權，請重新登入"
   },
   "status": {
     "active": "活躍",
@@ -1133,7 +1137,9 @@
     "configure": "配置",
     "configure_title": "配置 - {{name}}",
     "no_config_schema": "該插件未聲明任何配置項",
-    "save_reload": "保存並重新加載"
+    "save_reload": "保存並重新加載",
+    "config_saved": "配置已儲存，插件已重新載入",
+    "required_fields": "以下欄位必填: {{fields}}"
   },
   "notifications": {
     "title": "通知",
@@ -1484,7 +1490,8 @@
     "blog_theme": "皮膚",
     "blog_theme_default": "默認",
     "blog_chrome": "導航/文案配置(JSON)",
-    "blog_chrome_invalid": "格式應為 JSON 對象(鍵見佔位示例)"
+    "blog_chrome_invalid": "格式應為 JSON 對象(鍵見佔位示例)",
+    "blog_sites_label_placeholder": "Essevin 主站"
   },
   "docs": {
     "cta_hint": "準備好了嗎？立即開始使用。",

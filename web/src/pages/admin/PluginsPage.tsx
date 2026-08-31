@@ -412,7 +412,7 @@ function PluginConfigModal({
       if (plugin?.name) {
         clearPluginFrontendCache(plugin.name);
       }
-      toast('success', '配置已保存，插件已重新加载');
+      toast('success', t('plugins.config_saved', '配置已保存，插件已重新加载'));
       onSaved();
     },
     onError: (err: Error) => toast('error', err.message),
@@ -424,7 +424,7 @@ function PluginConfigModal({
       .filter((f) => f.required && !values[f.key])
       .map((f) => f.label || f.key);
     if (missing.length > 0) {
-      toast('error', `以下字段必填: ${missing.join(', ')}`);
+      toast('error', t('plugins.required_fields', '以下字段必填: {{fields}}', { fields: missing.join(', ') }));
       return;
     }
     saveMutation.mutate(values);

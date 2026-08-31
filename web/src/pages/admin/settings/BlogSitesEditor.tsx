@@ -186,7 +186,7 @@ export function BlogSitesEditor({
                     className="flex-1"
                     value={r.label}
                     onChange={(e) => update(r.uid, { label: e.target.value })}
-                    placeholder="Essevin 主站"
+                    placeholder={t('settings.blog_sites_label_placeholder', 'Essevin 主站')}
                   />
                   <Button size="sm" variant="ghost" onPress={() => removeRow(r.uid)} aria-label={t('common.delete')}>
                     <Trash2 className="h-3.5 w-3.5" />

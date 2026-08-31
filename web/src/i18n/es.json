@@ -88,7 +88,11 @@
     "enabled": "Habilitado",
     "disabled": "Deshabilitado",
     "select": "Seleccionar",
-    "select_all": "Seleccionar todo"
+    "select_all": "Seleccionar todo",
+    "collapse": "Contraer",
+    "expand": "Expandir",
+    "retry": "Reintentar",
+    "unauthorized": "No autorizado. Inicie sesión de nuevo."
   },
   "status": {
     "active": "Activo",
@@ -1133,7 +1137,9 @@
     "configure": "Configurar",
     "configure_title": "Configurar - {{name}}",
     "no_config_schema": "Este complemento no declara opciones de configuración",
-    "save_reload": "Guardar y recargar"
+    "save_reload": "Guardar y recargar",
+    "config_saved": "Configuración guardada; plugin recargado",
+    "required_fields": "Campos obligatorios: {{fields}}"
   },
   "notifications": {
     "title": "Notificaciones",
@@ -1484,7 +1490,8 @@
     "blog_theme": "Tema",
     "blog_theme_default": "Predeterminado",
     "blog_chrome": "Configuración de navegación / textos (JSON)",
-    "blog_chrome_invalid": "Debe ser un objeto JSON (consulte el marcador de posición para ver las claves)"
+    "blog_chrome_invalid": "Debe ser un objeto JSON (consulte el marcador de posición para ver las claves)",
+    "blog_sites_label_placeholder": "Sitio principal de Essevin"
   },
   "docs": {
     "cta_hint": "¿Listo para empezar? Comience ahora.",
