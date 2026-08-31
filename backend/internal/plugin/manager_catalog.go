@@ -321,6 +321,26 @@ func (m *Manager) GetAllRoutes() map[string][]sdk.RouteDefinition {
 	return result
 }
 
+// MatchesRoutePath 判断路径是否命中任一运行中插件声明的网关路由（忽略 HTTP 方法）。
+// 插件路由声明的都是无参数的前缀式路径（如 /v1/video/tasks 承接 /v1/video/tasks/{id}），
+// 因此按「等于该路径或位于其子路径下」匹配。供 NoRoute 判断无凭证请求是否打在
+// 网关 API 命名空间上（返回 401 JSON 而非 SPA 兜底）。
+func (m *Manager) MatchesRoutePath(path string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, routes := range m.routeCache {
+		for _, route := range routes {
+			if route.Path == "" {
+				continue
+			}
+			if path == route.Path || strings.HasPrefix(path, strings.TrimRight(route.Path, "/")+"/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // IsMetadataOnlyRoute 判断给定路径是否由插件声明为 metadata_only。
 // 插件在 RouteDefinition.Metadata 中设置 "metadata_only"="true" 表示该路径仅返回元信息，
 // 不需要账号调度、计费；设置为 "prefix" 表示该路径及其子路径（如 /v1/video/tasks/:id）
