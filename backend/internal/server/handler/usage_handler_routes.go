@@ -107,15 +107,17 @@ func (h *UsageHandler) UserUsageStats(c *gin.Context) {
 		return
 	}
 
-	// End customer scope：只暴露 billed_cost，剥离 actual_cost / total_cost
+	// End customer scope：只暴露 billed_cost，剥离 actual_cost / total_cost。
+	// 投影逻辑收敛在 appusage.CustomerViewOf，与 MCP 管理面共用同一保密边界。
 	if scoped {
+		view := appusage.CustomerViewOf(result)
 		resp := dto.UsageStatsResp{
-			TotalRequests:   result.Summary.TotalRequests,
-			FailedRequests:  result.Summary.FailedRequests,
-			TotalTokens:     result.Summary.TotalTokens,
-			TotalBilledCost: result.Summary.TotalBilledCost,
+			TotalRequests:   view.TotalRequests,
+			FailedRequests:  view.FailedRequests,
+			TotalTokens:     view.TotalTokens,
+			TotalBilledCost: view.TotalBilledCost,
 		}
-		for _, m := range result.ByModel {
+		for _, m := range view.ByModel {
 			resp.ByModel = append(resp.ByModel, dto.ModelStats{
 				Model:      m.Model,
 				Requests:   m.Requests,

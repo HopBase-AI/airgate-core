@@ -16,6 +16,8 @@ import (
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/ent/enttest"
+	entuser "github.com/DouDOU-start/airgate-core/ent/user"
+	appmcp "github.com/DouDOU-start/airgate-core/internal/app/mcp"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 )
 
@@ -64,7 +66,10 @@ func requestMCP(t *testing.T, db *ent.Client, key string, payload string) *httpt
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	h := NewMCPHandler(db, nil, nil)
+	svc := appmcp.NewService(func(ctx context.Context, rawKey string) (*auth.APIKeyInfo, error) {
+		return auth.ValidateAPIKeyForManagement(ctx, db, rawKey)
+	}, nil, nil)
+	h := NewMCPHandler(svc)
 	router.POST("/mcp", h.Handle)
 
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewBufferString(payload))
@@ -279,5 +284,82 @@ func TestMCPUnknownToolReturnsInvalidParams(t *testing.T) {
 	errObj := body["error"].(map[string]any)
 	if errObj["code"].(float64) != mcpErrInvalidParams {
 		t.Fatalf("error.code = %v, want %d", errObj["code"], mcpErrInvalidParams)
+	}
+}
+
+func TestMCPDisabledUserRejected(t *testing.T) {
+	db := openMCPTestDB(t)
+	ctx := context.Background()
+	seq := atomic.AddInt64(&mcpTestUserSeq, 1)
+	user, err := db.User.Create().
+		SetEmail(fmt.Sprintf("mcp-disabled-%d@example.com", seq)).
+		SetPasswordHash("hash").
+		SetBalance(10).
+		SetStatus(entuser.StatusDisabled).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	key, hash, err := auth.GenerateAPIKey()
+	if err != nil {
+		t.Fatalf("GenerateAPIKey: %v", err)
+	}
+	if _, err := db.APIKey.Create().
+		SetName("mcp-disabled").
+		SetKeyHash(hash).
+		SetUser(user).
+		Save(ctx); err != nil {
+		t.Fatalf("create api key: %v", err)
+	}
+
+	w := requestMCP(t, db, key, `{"jsonrpc":"2.0","id":1,"method":"ping"}`)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 (%s)", w.Code, w.Body.String())
+	}
+	body := decodeMCPBody(t, w)
+	errObj := body["error"].(map[string]any)
+	if errObj["code"] != "account_disabled" {
+		t.Fatalf("error.code = %v, want account_disabled", errObj["code"])
+	}
+}
+
+func TestMCPQuotaExhaustedKeyStillReadable(t *testing.T) {
+	// 管理面有意放行配额耗尽的 key——额度状态正是它要查的内容。
+	db := openMCPTestDB(t)
+	ctx := context.Background()
+	key := createMCPTestKey(t, ctx, db, 50, 10, 10)
+
+	w := requestMCP(t, db, key, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_balance"}}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", w.Code, w.Body.String())
+	}
+	payload := mcpToolResultText(t, decodeMCPBody(t, w))
+	if payload["available_usd"].(float64) != 0 {
+		t.Fatalf("available_usd = %v, want 0", payload["available_usd"])
+	}
+}
+
+func TestMCPGetUsageRejectsInvalidArgs(t *testing.T) {
+	db := openMCPTestDB(t)
+	ctx := context.Background()
+	key := createMCPTestKey(t, ctx, db, 10, 0, 0)
+
+	cases := []string{
+		`{"start_date":"2026/08/01"}`,
+		`{"start_date":"2026-08-10","end_date":"2026-08-01"}`,
+		`{"tz":"Mars/Olympus"}`,
+		`{"start_date":"2020-01-01","end_date":"2026-08-01"}`,
+	}
+	for _, args := range cases {
+		payload := fmt.Sprintf(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_usage","arguments":%s}}`, args)
+		w := requestMCP(t, db, key, payload)
+		body := decodeMCPBody(t, w)
+		result, ok := body["result"].(map[string]any)
+		if !ok {
+			t.Fatalf("args %s: no result (%v)", args, body)
+		}
+		if result["isError"] != true {
+			t.Fatalf("args %s: isError = %v, want true", args, result["isError"])
+		}
 	}
 }

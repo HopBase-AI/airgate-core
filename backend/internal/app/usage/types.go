@@ -250,3 +250,41 @@ type Repository interface {
 	StatsByGroup(context.Context, StatsFilter) ([]GroupStats, error)
 	TrendEntries(context.Context, TrendFilter) ([]TrendEntry, error)
 }
+
+// CustomerModelStats end customer(key 持有者)视角的按模型账面统计。
+type CustomerModelStats struct {
+	Model      string
+	Requests   int64
+	Tokens     int64
+	BilledCost float64
+}
+
+// CustomerStats end customer 视角的账面统计:只含 billed 口径,
+// 不含平台真实成本——这是 reseller 成本保密边界的唯一投影点,
+// 控制台 API Key 会话与 MCP 管理面都必须经它输出。
+type CustomerStats struct {
+	TotalRequests   int64
+	FailedRequests  int64
+	TotalTokens     int64
+	TotalBilledCost float64
+	ByModel         []CustomerModelStats
+}
+
+// CustomerViewOf 把完整统计收敛为 end customer 可见的账面投影。
+func CustomerViewOf(result UserStatsResult) CustomerStats {
+	view := CustomerStats{
+		TotalRequests:   result.Summary.TotalRequests,
+		FailedRequests:  result.Summary.FailedRequests,
+		TotalTokens:     result.Summary.TotalTokens,
+		TotalBilledCost: result.Summary.TotalBilledCost,
+	}
+	for _, m := range result.ByModel {
+		view.ByModel = append(view.ByModel, CustomerModelStats{
+			Model:      m.Model,
+			Requests:   m.Requests,
+			Tokens:     m.Tokens,
+			BilledCost: m.BilledCost,
+		})
+	}
+	return view
+}
