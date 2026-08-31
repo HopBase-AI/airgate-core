@@ -2074,6 +2074,7 @@
     "studio_batch_prompt_count": "共 {{count}} 个提示词",
     "studio_untitled_project": "未命名项目",
     "studio_route_official": "官方直连",
+    "studio_route_dedicated": "专线",
     "studio_route_overseas": "海外",
     "studio_route_domestic": "国内"
   },

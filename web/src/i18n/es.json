@@ -2074,6 +2074,7 @@
     "studio_batch_prompt_count": "{{count}} prompts",
     "studio_untitled_project": "Proyecto sin título",
     "studio_route_official": "Directo oficial",
+    "studio_route_dedicated": "Línea dedicada",
     "studio_route_overseas": "Global",
     "studio_route_domestic": "CN"
   },
