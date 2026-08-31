@@ -369,6 +369,13 @@ func (s *Server) registerRoutes() {
 	// 实现见 cc_compat.go。
 	r.GET("/v1/usage", s.handleCCCompatUserBalance)
 
+	// === MCP 管理面（Streamable HTTP，无状态，sk-xxx API Key 自鉴权） ===
+	// 只读工具：余额 / Key 配额 / 可用模型与实付价 / 用量统计。
+	// 必须注册在 NoRoute 之前，否则会被插件动态路由吃掉。实现见 handler/mcp_handler_routes.go。
+	r.POST("/mcp", handlers.MCP.Handle)
+	r.GET("/mcp", handlers.MCP.HandleMethodNotAllowed)
+	r.DELETE("/mcp", handlers.MCP.HandleMethodNotAllowed)
+
 	// === OpenClaw 一键接入（公共路由，无需认证） ===
 	// 设计：install.sh 通过 `curl | bash` 分发，因此必须公开；models/info
 	// 也无需鉴权，内容均为管理员已标记为 "可公开" 的元信息。

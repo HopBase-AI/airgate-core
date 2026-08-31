@@ -9,6 +9,7 @@ import (
 
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
+	"github.com/DouDOU-start/airgate-core/internal/billing"
 )
 
 // cc-switch 通用模板兼容端点
@@ -94,24 +95,10 @@ func (s *Server) handleCCCompatUserBalance(c *gin.Context) {
 	})
 }
 
-// ccCompatAvailableBalance 返回 cc-switch 展示的真实可用余额：
-// - Key 有 quota_usd 时，Key 剩余额度和用户余额任一耗尽都会让请求不可用；
-// - Key 无上限时，直接展示用户余额，避免旧实现的 1000000 假余额。
+// ccCompatAvailableBalance 返回 cc-switch 展示的真实可用余额，
+// 口径与 MCP 管理面共用，实现在 billing.AvailableBalance。
 func ccCompatAvailableBalance(userBalance, quotaUSD, usedQuota float64) (balance float64, quotaRemaining float64) {
-	if userBalance < 0 {
-		userBalance = 0
-	}
-	if quotaUSD <= 0 {
-		return userBalance, userBalance
-	}
-	quotaRemaining = quotaUSD - usedQuota
-	if quotaRemaining < 0 {
-		quotaRemaining = 0
-	}
-	if userBalance < quotaRemaining {
-		return userBalance, quotaRemaining
-	}
-	return quotaRemaining, quotaRemaining
+	return billing.AvailableBalance(userBalance, quotaUSD, usedQuota)
 }
 
 // extractCCBearerKey 从 Authorization 头提取 Bearer token。

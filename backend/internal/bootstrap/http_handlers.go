@@ -21,6 +21,7 @@ import (
 	appgenerationtask "github.com/DouDOU-start/airgate-core/internal/app/generationtask"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 	appmodelpricing "github.com/DouDOU-start/airgate-core/internal/app/modelpricing"
+	appmcp "github.com/DouDOU-start/airgate-core/internal/app/mcp"
 	apponeclick "github.com/DouDOU-start/airgate-core/internal/app/oneclick"
 	appopenclaw "github.com/DouDOU-start/airgate-core/internal/app/openclaw"
 	apppluginadmin "github.com/DouDOU-start/airgate-core/internal/app/pluginadmin"
@@ -75,6 +76,7 @@ type HTTPHandlers struct {
 	GenerationTask *handler.GenerationTaskHandler
 	Referral       *handler.ReferralHandler
 	ModelPricing   *handler.ModelPricingHandler
+	MCP            *handler.MCPHandler
 	Blog           *handler.BlogHandler
 	Pricing        *handler.PricingHandler
 
@@ -152,6 +154,10 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 
 	// 用户实付价视图：模型目录（含覆盖层）× 可用分组 × 用户专属倍率
 	modelPricingService := appmodelpricing.NewService(pluginAdminService, groupStore, userService, apiKeyStore)
+	// MCP 管理面:key 验证经 auth 包完成(app 层不 import ent),经闭包注入 DB。
+	mcpService := appmcp.NewService(func(ctx context.Context, rawKey string) (*auth.APIKeyInfo, error) {
+		return auth.ValidateAPIKeyForManagement(ctx, dep.DB, rawKey)
+	}, modelPricingService, usageService)
 
 	upgradeService := upgrade.NewService(upgrade.DetectMode(), dep.Redis)
 
@@ -177,6 +183,7 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 		GenerationTask: handler.NewGenerationTaskHandler(generationTaskService),
 		Referral:       handler.NewReferralHandler(referralService),
 		ModelPricing:   handler.NewModelPricingHandler(modelPricingService),
+		MCP:            handler.NewMCPHandler(mcpService),
 		Blog:           handler.NewBlogHandler(blogService),
 		AccountService: accountService,
 

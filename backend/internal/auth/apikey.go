@@ -75,6 +75,13 @@ type APIKeyInfo struct {
 	QuotaUSD      float64
 	UsedQuota     float64
 
+	// 管理面(ValidateAPIKeyForManagement)补充字段;转发路径不填。
+	KeyHint      string
+	KeyStatus    string
+	KeyCreatedAt time.Time
+	KeyExpiresAt *time.Time
+	GroupName    string
+
 	// SellRate Reseller 设置的销售倍率（>0 时启用 markup，独立于平台计费）
 	SellRate float64
 
@@ -469,4 +476,79 @@ func ValidateAdminAPIKey(ctx context.Context, db *ent.Client, key string) error 
 		return ErrInvalidAPIKey
 	}
 	return nil
+}
+
+// mgmtCacheKeyPrefix 管理面验证结果的本地缓存 keyspace,与转发路径的缓存隔离——
+// 两者语义不同:管理面放行配额耗尽与未绑组的 key,混用同一 hash 会互相污染判定。
+const mgmtCacheKeyPrefix = "mgmt\x00"
+
+// ValidateAPIKeyForManagement 验证 API Key 用于只读管理面(MCP 等)。
+// 与 ValidateAPIKey 的差异均为有意为之:
+//   - 不拒绝配额耗尽——余额/额度状态正是管理面要查的内容;
+//   - 不要求绑定分组——管理查询不走计费链路;
+//
+// 保留 key 状态/过期/用户禁用检查,以及「DB 瞬时故障不得误判为凭证无效」的
+// 错误语义(ent.IsNotFound → ErrInvalidAPIKey,其余原样返回,调用方按 5xx 处理)。
+// 仅本地短 TTL 缓存(含负缓存),不写 Redis 共享缓存。
+func ValidateAPIKeyForManagement(ctx context.Context, db *ent.Client, key string) (*APIKeyInfo, error) {
+	cacheKey := mgmtCacheKeyPrefix + HashAPIKey(key)
+	if cached, ok := apiKeyCache.Load(cacheKey); ok {
+		if e := cached.(apiKeyCacheEntry); time.Now().Before(e.expiresAt) {
+			return e.info, e.err
+		}
+		apiKeyCache.Delete(cacheKey)
+	}
+
+	ak, err := db.APIKey.Query().
+		Where(
+			apikey.KeyHash(HashAPIKey(key)),
+			apikey.StatusEQ(apikey.StatusActive),
+		).
+		WithUser().
+		WithGroup().
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			storeAPIKeyLocalCache(cacheKey, nil, ErrInvalidAPIKey)
+			return nil, ErrInvalidAPIKey
+		}
+		slog.Error("api_key_lookup_failed", sdk.LogFieldError, err)
+		return nil, fmt.Errorf("查询 API Key 失败: %w", err)
+	}
+	if ak.ExpiresAt != nil && ak.ExpiresAt.Before(time.Now()) {
+		storeAPIKeyLocalCache(cacheKey, nil, ErrAPIKeyExpired)
+		return nil, ErrAPIKeyExpired
+	}
+	u, err := ak.Edges.UserOrErr()
+	if err != nil {
+		storeAPIKeyLocalCache(cacheKey, nil, ErrInvalidAPIKey)
+		return nil, ErrInvalidAPIKey
+	}
+	if u.Status != entuser.StatusActive {
+		storeAPIKeyLocalCache(cacheKey, nil, ErrUserDisabled)
+		return nil, ErrUserDisabled
+	}
+
+	info := &APIKeyInfo{
+		KeyID:             ak.ID,
+		KeyName:           ak.Name,
+		KeyHint:           ak.KeyHint,
+		KeyStatus:         string(ak.Status),
+		KeyCreatedAt:      ak.CreatedAt,
+		KeyExpiresAt:      ak.ExpiresAt,
+		KeyMaxConcurrency: ak.MaxConcurrency,
+		UserID:            u.ID,
+		UserEmail:         u.Email,
+		QuotaUSD:          ak.QuotaUsd,
+		UsedQuota:         ak.UsedQuota,
+		SellRate:          ak.SellRate,
+		UserBalance:       u.Balance,
+	}
+	if g := ak.Edges.Group; g != nil {
+		info.GroupID = g.ID
+		info.GroupPlatform = g.Platform
+		info.GroupName = g.Name
+	}
+	storeAPIKeyLocalCache(cacheKey, info, nil)
+	return info, nil
 }
