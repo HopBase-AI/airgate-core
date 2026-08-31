@@ -16,9 +16,9 @@ function marginPct(sell: number, cost: number): number | null {
   return ((sell - cost) / sell) * 100;
 }
 
-function fmtZhe(rate: number, fx: number): string {
+function fmtZhe(rate: number, fx: number, t: (k: string, o?: Record<string, unknown>) => string): string {
   const z = zheOfRate(rate, fx);
-  return z > 0 ? `${z} 折` : '—';
+  return z > 0 ? t('pricing.discount_label', { zhe: z, pct: Math.round(z * 10) }) : '—';
 }
 
 export default function PricingPage() {
@@ -128,12 +128,12 @@ export default function PricingPage() {
                     </span>
                   </CommonTable.Cell>
                   <CommonTable.Cell>
-                    <span className="font-mono">{fmtZhe(g.rate_multiplier, fx)}</span>
+                    <span className="font-mono">{fmtZhe(g.rate_multiplier, fx, t)}</span>
                   </CommonTable.Cell>
                   <CommonTable.Cell>
                     {g.cost_multiplier > 0 ? (
                       <div className="flex flex-col">
-                        <span className="font-mono">{fmtZhe(g.cost_multiplier, fx)}</span>
+                        <span className="font-mono">{fmtZhe(g.cost_multiplier, fx, t)}</span>
                         <span className="truncate text-xs text-text-tertiary" title={g.cost_account_name}>
                           {g.cost_account_name}
                           {g.routed_accounts > 1 ? ` +${g.routed_accounts - 1}` : ''}
@@ -202,7 +202,7 @@ export default function PricingPage() {
                         </div>
                       </CommonTable.Cell>
                       <CommonTable.Cell>
-                        <span className="font-mono">{fmtZhe(o.rate, fx)}</span>
+                        <span className="font-mono">{fmtZhe(o.rate, fx, t)}</span>
                       </CommonTable.Cell>
                       <CommonTable.Cell>{' '}</CommonTable.Cell>
                       <CommonTable.Cell>

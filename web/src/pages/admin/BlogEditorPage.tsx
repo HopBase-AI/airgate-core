@@ -373,7 +373,7 @@ export default function BlogEditorPage() {
             <Input
               value={form.tags}
               onChange={(e) => setForm({ ...form, tags: e.target.value })}
-              placeholder="AI, Claude, 教程"
+              placeholder={t('blog.tags_placeholder', 'AI, Claude, 教程')}
             />
           </HeroTextField>
 

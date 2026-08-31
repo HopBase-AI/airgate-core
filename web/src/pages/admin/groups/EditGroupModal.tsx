@@ -349,18 +349,18 @@ export function GroupFormModal({
 
         {isEdit ? (
           <div>
-            <p className="mb-1.5 text-xs font-medium uppercaser text-text-secondary">支持模型</p>
+            <p className="mb-1.5 text-xs font-medium uppercaser text-text-secondary">{t('groups.supported_models')}</p>
             {groupAccountsLoading ? (
-              <p className="text-[11px] text-text-tertiary">加载分组账号中…</p>
+              <p className="text-[11px] text-text-tertiary">{t('groups.loading_accounts')}</p>
             ) : groupAccountIds.length === 0 ? (
-              <p className="text-[11px] text-text-tertiary">请先为该分组分配账号后再配置支持模型。</p>
+              <p className="text-[11px] text-text-tertiary">{t('groups.assign_accounts_first')}</p>
             ) : (
               <>
                 <p className="mb-2 text-[11px] text-text-tertiary">
-                  仅勾选的模型会对本分组开放；取消勾选即从本分组下架该模型。不勾任何模型＝不限制（该平台模型全部开放）。
+                  {t('groups.model_whitelist_hint')}
                 </p>
                 {supportedModelIds.length === 0 ? (
-                  <p className="text-[11px] text-text-tertiary">正在加载账号的模型目录…若长时间为空，请确认账号已同步模型。</p>
+                  <p className="text-[11px] text-text-tertiary">{t('groups.loading_models_hint')}</p>
                 ) : (
                   <div className="flex flex-col gap-2">
                     {supportedModelIds.map((modelId) => (
@@ -695,9 +695,9 @@ export function GroupFormModal({
             isSelected={claudeCodeOnly}
             label={(
               <span>
-                <span className="block text-sm">仅 Claude Code 客户端</span>
+                <span className="block text-sm">{t('groups.cli_only_label')}</span>
                 <span className="mt-1 block text-[11px] text-text-tertiary">
-                  开启后，本分组的账号只接受官方 Claude CLI 发起的流量；非 CLI 请求返回 403。
+                  {t('groups.cli_only_hint')}
                 </span>
               </span>
             )}

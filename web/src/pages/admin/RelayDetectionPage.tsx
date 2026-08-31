@@ -7,6 +7,8 @@ import {
   useRef,
   useState,
 } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
@@ -95,16 +97,18 @@ interface CheckDefinition {
   title: string;
 }
 
-const platformOptions: Array<{ id: RelayPlatformType; label: string }> = [
-  { id: 'auto', label: '自动检测' },
-  { id: 'openai', label: 'OpenAI Compatible' },
-  { id: 'anthropic', label: 'Anthropic Claude' },
-  { id: 'aws-bedrock', label: 'AWS Bedrock' },
-  { id: 'aws-platform', label: 'AWS Platform' },
-  { id: 'claude-code', label: 'Claude Code / Max' },
-  { id: 'kiro', label: 'Kiro' },
-  { id: 'windsurf', label: 'Windsurf' },
-];
+function getPlatformOptions(t: TFunction): Array<{ id: RelayPlatformType; label: string }> {
+  return [
+    { id: 'auto', label: t('relay.platform_auto') },
+    { id: 'openai', label: 'OpenAI Compatible' },
+    { id: 'anthropic', label: 'Anthropic Claude' },
+    { id: 'aws-bedrock', label: 'AWS Bedrock' },
+    { id: 'aws-platform', label: 'AWS Platform' },
+    { id: 'claude-code', label: 'Claude Code / Max' },
+    { id: 'kiro', label: 'Kiro' },
+    { id: 'windsurf', label: 'Windsurf' },
+  ];
+}
 
 const statusTone: Record<string, Tone> = {
   blocked: 'warning',
@@ -122,24 +126,18 @@ const statusTone: Record<string, Tone> = {
   warn: 'warning',
 };
 
-const checkLabels: Record<NormalizedStatus, string> = {
-  blocked: '受阻',
-  fail: '失败',
-  inconclusive: '无结论',
-  not_applicable: 'N/A',
-  not_run: '未运行',
-  pass: '通过',
-  warn: '警告',
-};
-
-const taskLabels: Record<string, string> = {
-  cancelled: '已取消',
-  cancelling: '取消中',
-  completed: '已完成',
-  failed: '失败',
-  pending: '排队中',
-  processing: '检测中',
-};
+function checkLabel(t: TFunction, status: NormalizedStatus): string {
+  const labels: Record<NormalizedStatus, string> = {
+    blocked: t('relay.status_blocked'),
+    fail: t('relay.status_fail'),
+    inconclusive: t('relay.status_inconclusive'),
+    not_applicable: t('relay.status_not_applicable'),
+    not_run: t('relay.status_not_run'),
+    pass: t('relay.status_pass'),
+    warn: t('relay.status_warn'),
+  };
+  return labels[status];
+}
 
 const claudeOnlyCheckIDs = new Set([
   'anthropic_count_tokens',
@@ -187,8 +185,16 @@ function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ');
 }
 
-function statusLabel(status: string) {
-  return taskLabels[status] ?? status;
+function statusLabel(t: TFunction, status: string) {
+  const labels: Record<string, string> = {
+    cancelled: t('relay.task_cancelled'),
+    cancelling: t('relay.task_cancelling'),
+    completed: t('relay.task_completed'),
+    failed: t('relay.task_failed'),
+    pending: t('relay.task_pending'),
+    processing: t('relay.task_processing'),
+  };
+  return labels[status] ?? status;
 }
 
 function fmtTime(value?: string) {
@@ -369,7 +375,7 @@ function normalizedMatrixCells(rows: MatrixRowView[], platform: string) {
   return rows.flatMap((row) => row.checks.map((cell) => normalizeApplicability(cell, row.family, row.protocol, platform)));
 }
 
-function collectFailureItems(rows: MatrixRowView[], checks: RelayStandardCheck[], platform: string): FailureItem[] {
+function collectFailureItems(t: TFunction, rows: MatrixRowView[], checks: RelayStandardCheck[], platform: string): FailureItem[] {
   const matrixFailures = rows.flatMap((row) => row.checks.flatMap((check) => {
     const normalized = normalizeApplicability(check, row.family, row.protocol, platform);
     if (normalized.status !== 'fail' || !normalized.applicable || !normalized.executed || !normalized.conclusive || !normalized.score_eligible) return [];
@@ -378,7 +384,7 @@ function collectFailureItems(rows: MatrixRowView[], checks: RelayStandardCheck[]
       context: `${row.protocol} · ${row.endpoint}`,
       key: `matrix:${row.model}:${check.id}`,
       model: row.model,
-      summary: check.summary || normalized.eligibility_reason || '检查返回确定性失败。',
+      summary: check.summary || normalized.eligibility_reason || t('relay.deterministic_failure'),
       title: check.title,
     }];
   }));
@@ -389,7 +395,7 @@ function collectFailureItems(rows: MatrixRowView[], checks: RelayStandardCheck[]
       check,
       context: [check.family, check.protocol, check.endpoint].filter(Boolean).join(' · ') || check.category,
       key: `standard:${check.id}:${check.family || ''}:${check.protocol || ''}:${check.endpoint || ''}`,
-      summary: check.conclusion || normalized.eligibility_reason || '检查返回确定性失败。',
+      summary: check.conclusion || normalized.eligibility_reason || t('relay.deterministic_failure'),
       title: check.title,
     }];
   });
@@ -419,28 +425,28 @@ function isCoverage(value: RelayCoverageSummary | undefined): value is RelayCove
     && Number.isFinite(value.ratio));
 }
 
-function buildLegacyChecks(task?: RelayDetectionTask): RelayStandardCheck[] {
+function buildLegacyChecks(t: TFunction, task?: RelayDetectionTask): RelayStandardCheck[] {
   const summary = task?.output?.summary;
   if (!summary) return [];
   return [
     {
       applicable: true,
-      category: '基础可用性',
-      conclusion: `枚举到 ${summary.model_count} 个模型。`,
+      category: t('relay.legacy_category_basic'),
+      conclusion: t('relay.legacy_catalog_conclusion', { count: summary.model_count }),
       conclusive: true,
-      evidence: ['历史报告未包含完整标准检查目录。'],
+      evidence: [t('relay.legacy_catalog_evidence')],
       executed: true,
       id: 'model_catalog',
       score_eligible: true,
       severity: summary.model_count > 0 ? 'low' : 'high',
       source: 'legacy-compatibility',
       status: summary.model_count > 0 ? 'pass' : 'fail',
-      title: '模型目录枚举',
+      title: t('relay.legacy_catalog_title'),
     },
     {
       applicable: true,
-      category: '基础可用性',
-      conclusion: `${summary.available_models}/${summary.model_count} 个模型可用。`,
+      category: t('relay.legacy_category_basic'),
+      conclusion: t('relay.legacy_availability_conclusion', { available: summary.available_models, total: summary.model_count }),
       conclusive: true,
       executed: true,
       id: 'model_availability',
@@ -448,27 +454,27 @@ function buildLegacyChecks(task?: RelayDetectionTask): RelayStandardCheck[] {
       severity: 'medium',
       source: 'legacy-compatibility',
       status: summary.available_models === summary.model_count ? 'pass' : 'warn',
-      title: '模型基础可用性',
+      title: t('relay.legacy_availability_title'),
     },
     {
       applicable: true,
-      category: '覆盖缺口',
-      conclusion: '历史任务没有保存完整探针覆盖信息。',
+      category: t('relay.coverage_gap'),
+      conclusion: t('relay.legacy_coverage_conclusion'),
       conclusive: false,
-      eligibility_reason: '请重新检测以生成 applicability 与 coverage。',
+      eligibility_reason: t('relay.legacy_coverage_reason'),
       executed: false,
       id: 'legacy_probe_coverage',
-      missing: ['请重新检测以生成完整覆盖报告。'],
+      missing: [t('relay.legacy_coverage_missing')],
       score_eligible: false,
       severity: 'medium',
       source: 'legacy-compatibility',
       status: 'not_run',
-      title: '完整探针覆盖',
+      title: t('relay.legacy_coverage_title'),
     },
   ];
 }
 
-function buildLegacyMatrix(report: RelayReport): MatrixRowView[] {
+function buildLegacyMatrix(t: TFunction, report: RelayReport): MatrixRowView[] {
   return (report.models ?? []).map((model) => {
     const checks: RelayModelMatrixCell[] = [];
     const add = (cell: RelayModelMatrixCell) => checks.push(cell);
@@ -480,20 +486,20 @@ function buildLegacyMatrix(report: RelayReport): MatrixRowView[] {
       score_eligible: true,
       status: model.available ? 'pass' : 'fail',
       summary: model.available ? `HTTP ${model.http_status || 200}` : model.error || `HTTP ${model.http_status || '-'}`,
-      title: '可用性',
+      title: t('relay.check_availability'),
     });
     const returned = model.returned_model;
     const identityConclusive = Boolean(returned);
     add({
       applicable: true,
       conclusive: identityConclusive,
-      eligibility_reason: identityConclusive ? undefined : '响应没有返回 model 字段。',
+      eligibility_reason: identityConclusive ? undefined : t('relay.no_model_field'),
       executed: true,
       id: 'model_purity',
       score_eligible: identityConclusive,
       status: !identityConclusive ? 'inconclusive' : model.model_matched ? 'pass' : 'fail',
-      summary: `${model.requested_model || model.model} -> ${returned || '未返回 model'}`,
-      title: '模型身份',
+      summary: `${model.requested_model || model.model} -> ${returned || t('relay.model_not_returned')}`,
+      title: t('relay.check_model_identity'),
     });
     const probes: Array<{
       applicable?: boolean;
@@ -504,15 +510,15 @@ function buildLegacyMatrix(report: RelayReport): MatrixRowView[] {
       tested?: boolean;
       title: string;
     }> = [
-      { error: model.injection?.samples?.find((item) => item.error)?.error, id: 'prompt_injection', ok: model.injection?.ok, summary: `隐藏注入 token ${model.hidden_injection_tokens ?? 0}`, tested: model.injection?.tested, title: '注入检测' },
-      { error: model.cache?.error, id: 'prompt_cache', ok: model.cache?.ok, summary: `warm 命中率 ${Math.round((model.cache?.warm_hit_rate ?? 0) * 100)}%`, tested: model.cache?.tested, title: '缓存' },
-      { error: model.stability?.error_classes ? safeJSON(model.stability.error_classes) : undefined, id: 'stability', ok: model.stability?.ok, summary: `成功率 ${Math.round((model.stability?.success_rate ?? 0) * 100)}%`, tested: model.stability?.tested, title: '稳定性' },
-      { error: model.stream?.error, id: 'stream_shape', ok: model.stream?.ok, summary: `${model.stream?.event_count ?? 0} 个流事件`, tested: model.stream?.tested, title: '流式协议' },
-      { applicable: inferApplicable('thinking_signature', model.family, model.protocol, report.platform_type), error: model.thinking_probe?.error, id: 'thinking_signature', ok: model.thinking_probe?.ok, summary: model.thinking_probe?.events?.slice(0, 4).join(' / ') || 'Thinking 签名', tested: model.thinking_probe?.tested, title: 'Thinking 签名' },
-      { error: model.token_precision?.error, id: 'token_precision', ok: model.token_precision?.ok, summary: `偏差 ${model.token_precision?.delta ?? '-'}`, tested: model.token_precision?.tested, title: 'Token 精度' },
-      { error: model.source_probe?.error, id: 'source_identity', ok: model.source_probe?.ok, summary: `${model.source_probe?.expected || '-'} -> ${model.source_probe?.claimed_source || 'unknown'}`, tested: model.source_probe?.tested, title: '来源身份' },
-      { applicable: model.cache_ttl?.applicable, error: model.cache_ttl?.error, id: 'cache_ttl', ok: model.cache_ttl?.ok, summary: `5m ${model.cache_ttl?.supports_5m ? '支持' : '未证实'} · 1h ${model.cache_ttl?.supports_1h ? '支持' : '未证实'}`, tested: model.cache_ttl?.tested, title: '缓存 TTL' },
-      { applicable: model.quality?.applicable, error: model.quality?.error, id: 'quality', ok: model.quality?.ok, summary: `${model.quality?.passed ?? 0}/${model.quality?.total ?? 0} 质量用例`, tested: model.quality?.tested, title: '输出质量' },
+      { error: model.injection?.samples?.find((item) => item.error)?.error, id: 'prompt_injection', ok: model.injection?.ok, summary: t('relay.injection_summary', { count: model.hidden_injection_tokens ?? 0 }), tested: model.injection?.tested, title: t('relay.check_injection') },
+      { error: model.cache?.error, id: 'prompt_cache', ok: model.cache?.ok, summary: t('relay.cache_summary', { percent: Math.round((model.cache?.warm_hit_rate ?? 0) * 100) }), tested: model.cache?.tested, title: t('relay.check_cache') },
+      { error: model.stability?.error_classes ? safeJSON(model.stability.error_classes) : undefined, id: 'stability', ok: model.stability?.ok, summary: t('relay.stability_summary', { percent: Math.round((model.stability?.success_rate ?? 0) * 100) }), tested: model.stability?.tested, title: t('relay.check_stability') },
+      { error: model.stream?.error, id: 'stream_shape', ok: model.stream?.ok, summary: t('relay.stream_summary', { count: model.stream?.event_count ?? 0 }), tested: model.stream?.tested, title: t('relay.check_stream') },
+      { applicable: inferApplicable('thinking_signature', model.family, model.protocol, report.platform_type), error: model.thinking_probe?.error, id: 'thinking_signature', ok: model.thinking_probe?.ok, summary: model.thinking_probe?.events?.slice(0, 4).join(' / ') || t('relay.check_thinking'), tested: model.thinking_probe?.tested, title: t('relay.check_thinking') },
+      { error: model.token_precision?.error, id: 'token_precision', ok: model.token_precision?.ok, summary: t('relay.token_precision_summary', { delta: model.token_precision?.delta ?? '-' }), tested: model.token_precision?.tested, title: t('relay.check_token_precision') },
+      { error: model.source_probe?.error, id: 'source_identity', ok: model.source_probe?.ok, summary: `${model.source_probe?.expected || '-'} -> ${model.source_probe?.claimed_source || 'unknown'}`, tested: model.source_probe?.tested, title: t('relay.check_source_identity') },
+      { applicable: model.cache_ttl?.applicable, error: model.cache_ttl?.error, id: 'cache_ttl', ok: model.cache_ttl?.ok, summary: t('relay.cache_ttl_summary', { five: model.cache_ttl?.supports_5m ? t('relay.supported') : t('relay.unverified'), one: model.cache_ttl?.supports_1h ? t('relay.supported') : t('relay.unverified') }), tested: model.cache_ttl?.tested, title: t('relay.check_cache_ttl') },
+      { applicable: model.quality?.applicable, error: model.quality?.error, id: 'quality', ok: model.quality?.ok, summary: t('relay.quality_summary', { passed: model.quality?.passed ?? 0, total: model.quality?.total ?? 0 }), tested: model.quality?.tested, title: t('relay.check_quality') },
     ];
     probes.forEach((probe) => {
       const applicable = probe.applicable ?? inferApplicable(probe.id, model.family, model.protocol, report.platform_type);
@@ -520,7 +526,7 @@ function buildLegacyMatrix(report: RelayReport): MatrixRowView[] {
       add({
         applicable,
         conclusive: applicable && Boolean(probe.tested),
-        eligibility_reason: !applicable ? `不适用于 ${model.family || model.protocol} 模型。` : !probe.tested ? probe.error || '历史任务未运行此探针。' : undefined,
+        eligibility_reason: !applicable ? t('relay.not_applicable_family', { family: model.family || model.protocol }) : !probe.tested ? probe.error || t('relay.probe_not_run_legacy') : undefined,
         evidence: probe.error ? [probe.error] : undefined,
         executed: applicable && Boolean(probe.tested),
         id: probe.id,
@@ -544,8 +550,8 @@ function buildLegacyMatrix(report: RelayReport): MatrixRowView[] {
   });
 }
 
-function buildMatrixRows(report: RelayReport): MatrixRowView[] {
-  if (!report.model_issue_matrix?.length) return buildLegacyMatrix(report);
+function buildMatrixRows(t: TFunction, report: RelayReport): MatrixRowView[] {
+  if (!report.model_issue_matrix?.length) return buildLegacyMatrix(t, report);
   const modelByID = new Map((report.models ?? []).map((model) => [model.model, model]));
   return report.model_issue_matrix.map((row) => {
     const model = modelByID.get(row.model);
@@ -575,19 +581,19 @@ function matrixCatalog(rows: MatrixRowView[], report: RelayReport): CheckDefinit
   return result;
 }
 
-function findMatrixCell(row: MatrixRowView, definition: CheckDefinition, platform: string): MatrixCheck {
+function findMatrixCell(t: TFunction, row: MatrixRowView, definition: CheckDefinition, platform: string): MatrixCheck {
   const cell = row.checks.find((item) => item.id === definition.id);
   if (cell) return cell;
   const applicable = inferApplicable(definition.id, row.family, row.protocol, platform);
   return {
     applicable,
     conclusive: false,
-    eligibility_reason: applicable ? '检查目录包含此项，但本模型没有返回探针结果。' : `不适用于 ${row.family || row.protocol} 模型。`,
+    eligibility_reason: applicable ? t('relay.catalog_no_result') : t('relay.not_applicable_family', { family: row.family || row.protocol }),
     executed: false,
     id: definition.id,
     score_eligible: false,
     status: applicable ? 'not_run' : 'not_applicable',
-    summary: applicable ? '未返回探针结果' : '模型家族不适用',
+    summary: applicable ? t('relay.no_probe_result') : t('relay.family_not_applicable'),
     title: definition.title,
     virtual: true,
   };
@@ -665,25 +671,27 @@ function DetectionForm({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onParse: (raw: string) => void;
 }) {
+  const { t } = useTranslation();
   const [showParser, setShowParser] = useState(false);
   const [raw, setRaw] = useState('');
   const canSubmit = Boolean(form.base_url.trim() && form.api_key.trim()) && !isPending;
-  const selectedPlatform = platformOptions.find((item) => item.id === form.platform_type)?.label ?? '自动检测';
+  const platformOptions = getPlatformOptions(t);
+  const selectedPlatform = platformOptions.find((item) => item.id === form.platform_type)?.label ?? t('relay.platform_auto');
 
   return (
     <Panel
       extra={(
         <Button size="sm" variant="ghost" onPress={() => setShowParser((value) => !value)}>
           <ClipboardPaste className="h-4 w-4" />
-          解析凭据
+          {t('relay.parse_credentials')}
         </Button>
       )}
-      title="创建检测"
+      title={t('relay.create_detection')}
     >
       {showParser ? (
         <div className="mb-4 space-y-2 border-b border-border-subtle pb-4">
           <TextField fullWidth>
-            <Label>JSON / 文本</Label>
+            <Label>{t('relay.json_or_text')}</Label>
             <TextArea
               className="min-h-[92px] w-full resize-y font-mono text-xs"
               placeholder='{"base_url":"https://relay.example.com","api_key":"sk-..."}'
@@ -699,7 +707,7 @@ function DetectionForm({
             onPress={() => onParse(raw)}
           >
             <ClipboardPaste className="h-4 w-4" />
-            填入表单
+            {t('relay.fill_form')}
           </Button>
         </div>
       ) : null}
@@ -728,7 +736,7 @@ function DetectionForm({
           selectedKey={form.platform_type}
           onSelectionChange={(key) => onChange({ ...form, platform_type: String(key ?? 'auto') as RelayPlatformType })}
         >
-          <Label>平台与协议</Label>
+          <Label>{t('relay.platform_protocol')}</Label>
           <Select.Trigger>
             <Select.Value>{selectedPlatform}</Select.Value>
             <Select.Indicator />
@@ -741,7 +749,7 @@ function DetectionForm({
         </Select>
         <Button className="min-h-11 w-full" isDisabled={!canSubmit} type="submit" variant="primary">
           {isPending ? <Spinner size="sm" /> : <Play className="h-4 w-4" />}
-          开始检测
+          {t('relay.start_detection')}
         </Button>
       </Form>
     </Panel>
@@ -749,14 +757,15 @@ function DetectionForm({
 }
 
 function ProgressBar({ progress, status }: { progress: number; status: string }) {
+  const { t } = useTranslation();
   const determinate = status !== 'pending' && Number.isFinite(progress) && progress > 0;
   return (
     <div
-      aria-label={status === 'pending' ? '任务正在排队' : `检测进度 ${progress}%`}
+      aria-label={status === 'pending' ? t('relay.queue_pending_aria') : t('relay.progress_aria', { percent: progress })}
       aria-valuemax={100}
       aria-valuemin={0}
       aria-valuenow={determinate ? Math.max(0, Math.min(100, progress)) : undefined}
-      aria-valuetext={status === 'pending' ? '正在排队，进度未知' : undefined}
+      aria-valuetext={status === 'pending' ? t('relay.queueing_unknown') : undefined}
       className="ag-relay-progress"
       role="progressbar"
     >
@@ -785,19 +794,20 @@ function TaskQueue({
   onSelect: (id: number) => void;
   selectedID: number | null;
 }) {
+  const { t } = useTranslation();
   const activeCount = items.filter((item) => activeTaskStatuses.has(item.status)).length;
   return (
     <Panel
       extra={(
         <div className="flex items-center gap-2">
-          <Chip color={activeCount ? 'warning' : 'default'} size="sm">{activeCount} 执行中</Chip>
+          <Chip color={activeCount ? 'warning' : 'default'} size="sm">{t('relay.running_count', { count: activeCount })}</Chip>
           <Button size="sm" variant="ghost" onPress={onRefresh}>
             <RefreshCw className="h-4 w-4" />
-            刷新
+            {t('relay.refresh')}
           </Button>
         </div>
       )}
-      title="任务"
+      title={t('relay.tasks_title')}
     >
       <div className="ag-relay-task-list" aria-busy={loading}>
         {loading ? Array.from({ length: 3 }, (_, index) => (
@@ -808,7 +818,7 @@ function TaskQueue({
         )) : items.length === 0 ? (
           <div className="flex min-h-32 flex-col items-center justify-center gap-2 border border-dashed border-border px-4 py-6 text-center text-sm text-text-tertiary">
             <Radar className="h-5 w-5" />
-            <span>暂无检测任务</span>
+            <span>{t('relay.no_tasks')}</span>
           </div>
         ) : items.map((item) => {
           const selected = selectedID === item.id;
@@ -818,14 +828,14 @@ function TaskQueue({
             <div className={cx('ag-relay-task-row', selected && 'ag-relay-task-row--selected')} key={item.id}>
               <button
                 aria-current={selected ? 'true' : undefined}
-                aria-label={`查看任务 ${item.id}，${item.base_url}，${statusLabel(item.status)}`}
+                aria-label={t('relay.view_task_aria', { id: item.id, url: item.base_url, status: statusLabel(t, item.status) })}
                 className="ag-relay-task-select"
                 onClick={() => onSelect(item.id)}
                 type="button"
               >
                 <span className="flex min-w-0 items-center justify-between gap-2">
                   <span className="min-w-0 break-all font-mono text-xs font-semibold text-text">{item.base_url}</span>
-                  <Chip color={statusTone[item.status] ?? 'default'} size="sm">{statusLabel(item.status)}</Chip>
+                  <Chip color={statusTone[item.status] ?? 'default'} size="sm">{statusLabel(t, item.status)}</Chip>
                 </span>
                 <span className="mt-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[11px] text-text-tertiary">
                   <span>#{item.id} · {item.platform_type} · {fmtTime(item.created_at)}</span>
@@ -841,12 +851,12 @@ function TaskQueue({
                 {active ? (
                   <Button size="sm" variant="ghost" onPress={() => onCancel(item.id)}>
                     <XCircle className="h-4 w-4" />
-                    取消
+                    {t('relay.cancel')}
                   </Button>
                 ) : canRetest ? (
                   <Button size="sm" variant="ghost" onPress={() => onRetest(item.id)}>
                     <RotateCcw className="h-4 w-4" />
-                    重测
+                    {t('relay.retest')}
                   </Button>
                 ) : null}
               </div>
@@ -873,35 +883,36 @@ function DecisionStrip({
   scoreEligible: boolean;
   scoreReason?: string;
 }) {
+  const { t } = useTranslation();
   const score = report.summary.overall_score ?? report.overall_score;
   const available = report.summary.available_models;
   const total = report.summary.model_count;
   const percent = coveragePercent(coverage.ratio);
   const verdict = scoreEligible
     ? report.summary.channel_label || `Grade ${report.summary.overall_grade || '-'}`
-    : '无法评分 / Unable to score';
+    : t('relay.unable_to_score');
   return (
-    <section aria-label="检测判定" className="ag-relay-decision">
+    <section aria-label={t('relay.decision_aria')} className="ag-relay-decision">
       <div className="ag-relay-decision-grid">
         <div className="ag-relay-decision-cell">
-          <span className="ag-relay-decision-label">资格 / 结论</span>
+          <span className="ag-relay-decision-label">{t('relay.verdict_label')}</span>
           <span className="ag-relay-decision-value">{verdict}</span>
           <span className="ag-relay-decision-meta">
-            {scoreEligible ? `${score !== undefined ? `${formatNumber(score, 1)} 分 · ` : ''}Grade ${report.summary.overall_grade || '-'}` : scoreReason || '没有有效完成的检查'}
+            {scoreEligible ? `${score !== undefined ? `${t('relay.score_value', { score: formatNumber(score, 1) })} · ` : ''}Grade ${report.summary.overall_grade || '-'}` : scoreReason || t('relay.no_valid_checks')}
           </span>
         </div>
         <div className="ag-relay-decision-cell">
-          <span className="ag-relay-decision-label">确定性失败</span>
+          <span className="ag-relay-decision-label">{t('relay.deterministic_failures')}</span>
           <span className="ag-relay-decision-value font-mono">{failedCount}</span>
-          <span className="ag-relay-decision-meta">仅计入可评分且有结论的失败</span>
+          <span className="ag-relay-decision-meta">{t('relay.score_counted_note')}</span>
         </div>
         <div className="ag-relay-decision-cell">
-          <span className="ag-relay-decision-label">可用性 / 延迟</span>
+          <span className="ag-relay-decision-label">{t('relay.availability_latency')}</span>
           <span className="ag-relay-decision-value font-mono">{available}/{total} · {Math.round(report.summary.average_latency_ms || 0)}ms</span>
           <span className="ag-relay-decision-meta">{report.platform_type} · {report.summary.confidence || 'confidence unknown'}</span>
         </div>
       </div>
-      <div className="ag-relay-evidence-rail" aria-label="评分资格与覆盖摘要">
+      <div className="ag-relay-evidence-rail" aria-label={t('relay.eligibility_rail_aria')}>
         <span>{scoreEligible ? 'Eligible' : 'Ineligible'}</span>
         <span>{coverage.conclusive}/{coverage.applicable} conclusive</span>
         <span>{percent}% coverage</span>
@@ -921,20 +932,21 @@ function FailureRegister({
   failures: FailureItem[];
   onEvidence: (selection: EvidenceSelection, origin: HTMLButtonElement) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <section className="ag-relay-section" aria-labelledby="failure-heading">
       <div className="ag-relay-section-heading">
         <div>
-          <h3 id="failure-heading">本次失败项</h3>
-          <p>只列出有结论且会影响评分的失败；完整响应请在证据详情中查看</p>
+          <h3 id="failure-heading">{t('relay.failures_title')}</h3>
+          <p>{t('relay.failures_subtitle')}</p>
         </div>
-        <Chip color={failures.length ? 'danger' : 'success'} size="sm">{failures.length} 项</Chip>
+        <Chip color={failures.length ? 'danger' : 'success'} size="sm">{t('relay.failures_count', { count: failures.length })}</Chip>
       </div>
       {failures.length ? (
         <div className="ag-relay-failure-list">
           {failures.map((failure) => (
             <button
-              aria-label={`查看失败证据：${failure.model ? `${failure.model}，` : ''}${failure.title}`}
+              aria-label={t('relay.view_failure_evidence_aria', { name: failure.model ? t('relay.failure_name_with_model', { model: failure.model, title: failure.title }) : failure.title })}
               className="ag-relay-failure-row"
               key={failure.key}
               onClick={(event) => onEvidence(failure, event.currentTarget)}
@@ -942,12 +954,12 @@ function FailureRegister({
             >
               <span className="ag-relay-failure-identity">
                 <strong>{failure.title}</strong>
-                <span>{failure.model || failure.context || '全局检查'}</span>
+                <span>{failure.model || failure.context || t('relay.global_check')}</span>
               </span>
               <span className="ag-relay-failure-summary">{failure.summary}</span>
               <span className="ag-relay-failure-action">
-                <Chip color="danger" size="sm">失败</Chip>
-                <span><Eye className="h-3.5 w-3.5" />查看证据</span>
+                <Chip color="danger" size="sm">{t('relay.status_fail')}</Chip>
+                <span><Eye className="h-3.5 w-3.5" />{t('relay.view_evidence')}</span>
               </span>
             </button>
           ))}
@@ -955,7 +967,7 @@ function FailureRegister({
       ) : (
         <div className="ag-relay-failure-empty">
           <CheckCircle2 className="h-4 w-4 text-success" />
-          <span>本次未发现计分失败项</span>
+          <span>{t('relay.no_scored_failures')}</span>
         </div>
       )}
     </section>
@@ -963,6 +975,7 @@ function FailureRegister({
 }
 
 function CoverageBreakdown({ coverage, platform, rows }: { coverage: RelayCoverageSummary; platform: string; rows: MatrixRowView[] }) {
+  const { t } = useTranslation();
   const cells = normalizedMatrixCells(rows, platform);
   const statusCounts = cells.reduce<Record<NormalizedStatus, number>>((accumulator, cell) => {
     const status = cell.status;
@@ -971,18 +984,18 @@ function CoverageBreakdown({ coverage, platform, rows }: { coverage: RelayCovera
   }, { blocked: 0, fail: 0, inconclusive: 0, not_applicable: 0, not_run: 0, pass: 0, warn: 0 });
   const total = Math.max(1, cells.length);
   const segments: Array<{ className: string; count: number; label: string }> = [
-    { className: 'is-pass', count: statusCounts.pass, label: '通过' },
-    { className: 'is-warn', count: statusCounts.warn, label: '警告' },
-    { className: 'is-fail', count: statusCounts.fail, label: '失败' },
-    { className: 'is-gap', count: statusCounts.blocked + statusCounts.not_run + statusCounts.inconclusive, label: '覆盖缺口' },
-    { className: 'is-na', count: statusCounts.not_applicable, label: 'N/A' },
+    { className: 'is-pass', count: statusCounts.pass, label: t('relay.status_pass') },
+    { className: 'is-warn', count: statusCounts.warn, label: t('relay.status_warn') },
+    { className: 'is-fail', count: statusCounts.fail, label: t('relay.status_fail') },
+    { className: 'is-gap', count: statusCounts.blocked + statusCounts.not_run + statusCounts.inconclusive, label: t('relay.coverage_gap') },
+    { className: 'is-na', count: statusCounts.not_applicable, label: t('relay.status_not_applicable') },
   ];
   return (
     <section className="ag-relay-section" aria-labelledby="coverage-heading">
       <div className="ag-relay-section-heading">
         <div>
-          <h3 id="coverage-heading">本次覆盖</h3>
-          <p>{coverage.conclusive}/{coverage.applicable} 个适用检查已有确定结论</p>
+          <h3 id="coverage-heading">{t('relay.coverage_title')}</h3>
+          <p>{t('relay.coverage_subtitle', { conclusive: coverage.conclusive, applicable: coverage.applicable })}</p>
         </div>
         <Chip color={coveragePercent(coverage.ratio) === 100 ? 'success' : 'warning'} size="sm">{coveragePercent(coverage.ratio)}%</Chip>
       </div>
@@ -991,7 +1004,7 @@ function CoverageBreakdown({ coverage, platform, rows }: { coverage: RelayCovera
           <span className={segment.className} key={segment.label} style={{ width: `${(segment.count / total) * 100}%` }} />
         ) : null)}
       </div>
-      <div className="ag-relay-coverage-values" aria-label="覆盖状态计数">
+      <div className="ag-relay-coverage-values" aria-label={t('relay.coverage_counts_aria')}>
         {segments.map((segment) => (
           <span key={segment.label}><strong>{segment.count}</strong> {segment.label}</span>
         ))}
@@ -1013,18 +1026,19 @@ function MatrixCellButton({
   platform: string;
   protocol: string;
 }) {
+  const { t } = useTranslation();
   const normalized = normalizeApplicability(cell, family, protocol, platform);
   const reason = normalized.eligibility_reason || cell.summary;
   return (
     <button
-      aria-label={`${cell.title}：${checkLabels[normalized.status]}。${reason}`}
+      aria-label={t('relay.matrix_cell_aria', { title: cell.title, status: checkLabel(t, normalized.status), reason })}
       className={cx('ag-relay-matrix-cell', `is-${normalized.status}`)}
       onClick={onOpen}
       type="button"
     >
       <span className="flex flex-wrap items-center gap-1.5">
-        <Chip color={statusTone[normalized.status]} size="sm">{checkLabels[normalized.status]}</Chip>
-        {normalized.score_eligible && normalized.status === 'fail' ? <span className="text-[10px] font-semibold text-danger">计分</span> : null}
+        <Chip color={statusTone[normalized.status]} size="sm">{checkLabel(t, normalized.status)}</Chip>
+        {normalized.score_eligible && normalized.status === 'fail' ? <span className="text-[10px] font-semibold text-danger">{t('relay.scored')}</span> : null}
       </span>
       <span className="line-clamp-3 text-left text-[11px] leading-4 text-text-tertiary">{reason}</span>
     </button>
@@ -1042,6 +1056,7 @@ function ModelProblemMatrix({
   report: RelayReport;
   rows: MatrixRowView[];
 }) {
+  const { t } = useTranslation();
   const mobile = useMediaQuery('(max-width: 639px)');
   const catalog = useMemo(() => matrixCatalog(rows, report), [report, rows]);
   const [family, setFamily] = useState('all');
@@ -1053,7 +1068,7 @@ function ModelProblemMatrix({
   const protocolValues = [...new Set(rows.map((row) => row.protocol).filter(Boolean))];
   const endpointValues = [...new Set(rows.map((row) => row.endpoint).filter(Boolean))];
   const statusMatches = (row: MatrixRowView, definition: CheckDefinition) => {
-    const cell = findMatrixCell(row, definition, platform);
+    const cell = findMatrixCell(t, row, definition, platform);
     const normalized = normalizeApplicability(cell, row.family, row.protocol, platform);
     const matchesState = state === 'all' || normalized.status === state;
     const matchesEligibility = eligibility === 'all'
@@ -1076,30 +1091,30 @@ function ModelProblemMatrix({
 
   const filters = (
     <div className="ag-relay-matrix-filters">
-      <SelectControl label="家族" value={family} onChange={setFamily} options={[{ id: 'all', label: '全部家族' }, ...familyValues.map((value) => ({ id: value, label: value }))]} />
+      <SelectControl label={t('relay.filter_family')} value={family} onChange={setFamily} options={[{ id: 'all', label: t('relay.all_families') }, ...familyValues.map((value) => ({ id: value, label: value }))]} />
       <SelectControl
-        label="协议 / 端点"
+        label={t('relay.filter_protocol_endpoint')}
         value={scope}
         onChange={setScope}
         options={[
-          { id: 'all', label: '全部协议与端点' },
-          ...protocolValues.map((value) => ({ id: `protocol:${value}`, label: `协议 · ${value}` })),
-          ...endpointValues.map((value) => ({ id: `endpoint:${value}`, label: `端点 · ${value}` })),
+          { id: 'all', label: t('relay.all_protocols_endpoints') },
+          ...protocolValues.map((value) => ({ id: `protocol:${value}`, label: t('relay.protocol_option', { value }) })),
+          ...endpointValues.map((value) => ({ id: `endpoint:${value}`, label: t('relay.endpoint_option', { value }) })),
         ]}
       />
-      <SelectControl label="状态" value={state} onChange={setState} options={[
-        { id: 'all', label: '全部状态' },
-        { id: 'fail', label: '失败' },
-        { id: 'warn', label: '警告' },
-        { id: 'blocked', label: '受阻' },
-        { id: 'not_run', label: '未运行' },
-        { id: 'not_applicable', label: 'N/A' },
-        { id: 'pass', label: '通过' },
+      <SelectControl label={t('relay.filter_status')} value={state} onChange={setState} options={[
+        { id: 'all', label: t('relay.all_statuses') },
+        { id: 'fail', label: t('relay.status_fail') },
+        { id: 'warn', label: t('relay.status_warn') },
+        { id: 'blocked', label: t('relay.status_blocked') },
+        { id: 'not_run', label: t('relay.status_not_run') },
+        { id: 'not_applicable', label: t('relay.status_not_applicable') },
+        { id: 'pass', label: t('relay.status_pass') },
       ]} />
-      <SelectControl label="评分资格" value={eligibility} onChange={setEligibility} options={[
-        { id: 'all', label: '全部检查' },
-        { id: 'eligible', label: '可影响评分' },
-        { id: 'ineligible', label: '不影响评分' },
+      <SelectControl label={t('relay.filter_eligibility')} value={eligibility} onChange={setEligibility} options={[
+        { id: 'all', label: t('relay.all_checks') },
+        { id: 'eligible', label: t('relay.affects_score') },
+        { id: 'ineligible', label: t('relay.no_score_impact') },
       ]} />
     </div>
   );
@@ -1110,14 +1125,14 @@ function ModelProblemMatrix({
       <section className="ag-relay-section" aria-labelledby="matrix-heading-mobile">
         <div className="ag-relay-section-heading">
           <div>
-            <h3 id="matrix-heading-mobile">模型问题矩阵</h3>
-            <p>{filteredRows.length} 个模型 · {visibleCatalog.length} 个检查</p>
+            <h3 id="matrix-heading-mobile">{t('relay.matrix_title')}</h3>
+            <p>{t('relay.matrix_subtitle', { models: filteredRows.length, checks: visibleCatalog.length })}</p>
           </div>
         </div>
         {filters}
         {filteredRows.length ? (
           <SelectControl
-            label="模型"
+            label={t('relay.model')}
             onChange={setMobileModel}
             options={filteredRows.map((item) => ({ id: item.model, label: item.model }))}
             value={row?.model ?? ''}
@@ -1130,7 +1145,7 @@ function ModelProblemMatrix({
               <div className="mt-1 text-[11px] text-text-tertiary">{row.family} · {row.protocol} · {row.endpoint}</div>
             </div>
             {visibleCatalog.map((definition) => {
-              const cell = findMatrixCell(row, definition, platform);
+              const cell = findMatrixCell(t, row, definition, platform);
               return (
                 <div className="grid grid-cols-[minmax(96px,0.36fr)_minmax(0,0.64fr)] gap-2 border-b border-border-subtle py-2" key={definition.id}>
                   <span className="break-words text-xs font-semibold text-text">{definition.title}</span>
@@ -1145,7 +1160,7 @@ function ModelProblemMatrix({
               );
             })}
           </div>
-        ) : <div className="py-10 text-center text-sm text-text-tertiary">没有符合筛选条件的模型</div>}
+        ) : <div className="py-10 text-center text-sm text-text-tertiary">{t('relay.no_matching_models')}</div>}
       </section>
     );
   }
@@ -1154,16 +1169,16 @@ function ModelProblemMatrix({
     <section className="ag-relay-section" aria-labelledby="matrix-heading">
       <div className="ag-relay-section-heading">
         <div>
-          <h3 id="matrix-heading">模型问题矩阵</h3>
-          <p>{filteredRows.length} 个模型 · {visibleCatalog.length} 个检查</p>
+          <h3 id="matrix-heading">{t('relay.matrix_title')}</h3>
+          <p>{t('relay.matrix_subtitle', { models: filteredRows.length, checks: visibleCatalog.length })}</p>
         </div>
       </div>
       {filters}
-      <div aria-label="模型检测证据矩阵，可横向滚动" className="ag-relay-matrix-scroll" role="region" tabIndex={0}>
+      <div aria-label={t('relay.matrix_scroll_aria')} className="ag-relay-matrix-scroll" role="region" tabIndex={0}>
         <table className="ag-relay-matrix-table">
           <thead>
             <tr>
-              <th scope="col">模型</th>
+              <th scope="col">{t('relay.model')}</th>
               {visibleCatalog.map((definition) => <th key={definition.id} scope="col">{definition.title}</th>)}
             </tr>
           </thead>
@@ -1175,7 +1190,7 @@ function ModelProblemMatrix({
                   <span className="mt-1 block break-words text-[11px] font-normal text-text-tertiary">{row.family} · {row.protocol}</span>
                 </th>
                 {visibleCatalog.map((definition) => {
-                  const cell = findMatrixCell(row, definition, platform);
+                  const cell = findMatrixCell(t, row, definition, platform);
                   return (
                     <td key={definition.id}>
                       <MatrixCellButton
@@ -1192,7 +1207,7 @@ function ModelProblemMatrix({
             ))}
           </tbody>
         </table>
-        {filteredRows.length === 0 ? <div className="py-12 text-center text-sm text-text-tertiary">没有符合筛选条件的模型</div> : null}
+        {filteredRows.length === 0 ? <div className="py-12 text-center text-sm text-text-tertiary">{t('relay.no_matching_models')}</div> : null}
       </div>
     </section>
   );
@@ -1207,12 +1222,13 @@ function ChecksView({
   onEvidence: (selection: EvidenceSelection, origin: HTMLButtonElement) => void;
   platform: string;
 }) {
+  const { t } = useTranslation();
   return (
     <section className="ag-relay-section" aria-labelledby="checks-heading">
       <div className="ag-relay-section-heading">
         <div>
-          <h3 id="checks-heading">标准检查</h3>
-          <p>{checks.length} 个检查，N/A 不进入评分分母</p>
+          <h3 id="checks-heading">{t('relay.checks_title')}</h3>
+          <p>{t('relay.checks_subtitle', { count: checks.length })}</p>
         </div>
       </div>
       <div className="ag-relay-check-list">
@@ -1220,7 +1236,7 @@ function ChecksView({
           const normalized = normalizeApplicability(check, check.family, check.protocol, platform);
           return (
             <button
-              aria-label={`查看 ${check.title} 的证据`}
+              aria-label={t('relay.view_check_evidence_aria', { title: check.title })}
               className="ag-relay-check-row"
               key={check.id}
               onClick={(event) => onEvidence({ check, context: `${check.category} · ${check.source}` }, event.currentTarget)}
@@ -1229,25 +1245,26 @@ function ChecksView({
               <span className="min-w-0">
                 <span className="flex flex-wrap items-center gap-2">
                   <strong className="text-xs text-text">{check.title}</strong>
-                  <Chip color={statusTone[normalized.status]} size="sm">{checkLabels[normalized.status]}</Chip>
-                  {normalized.score_eligible && normalized.status === 'fail' ? <span className="text-[10px] font-semibold text-danger">计入评分</span> : null}
+                  <Chip color={statusTone[normalized.status]} size="sm">{checkLabel(t, normalized.status)}</Chip>
+                  {normalized.score_eligible && normalized.status === 'fail' ? <span className="text-[10px] font-semibold text-danger">{t('relay.counted_in_score')}</span> : null}
                 </span>
                 <span className="mt-1 block break-words text-[11px] leading-4 text-text-tertiary">{check.conclusion}</span>
               </span>
               <Eye className="h-4 w-4 shrink-0 text-text-tertiary" aria-hidden="true" />
             </button>
           );
-        }) : <div className="py-10 text-center text-sm text-text-tertiary">暂无标准检查</div>}
+        }) : <div className="py-10 text-center text-sm text-text-tertiary">{t('relay.no_standard_checks')}</div>}
       </div>
     </section>
   );
 }
 
 function BaselinesView({ rows }: { rows: NonNullable<RelayReport['baselines']> }) {
+  const { t } = useTranslation();
   return (
     <section className="ag-relay-section" aria-labelledby="baselines-heading">
       <div className="ag-relay-section-heading">
-        <div><h3 id="baselines-heading">官方基线</h3><p>{rows.length} 个对比</p></div>
+        <div><h3 id="baselines-heading">{t('relay.baselines_title')}</h3><p>{t('relay.baselines_subtitle', { count: rows.length })}</p></div>
       </div>
       <div className="divide-y divide-border-subtle">
         {rows.length ? rows.map((row, index) => (
@@ -1256,20 +1273,21 @@ function BaselinesView({ rows }: { rows: NonNullable<RelayReport['baselines']> }
               <div className="font-mono text-xs text-text">{row.model || row.provider}</div>
               <div className="mt-1 text-[11px] text-text-tertiary">{row.protocol} · {row.source}</div>
             </div>
-            <div><Chip color={statusTone[mapLegacyStatus(row.status)]} size="sm">{checkLabels[mapLegacyStatus(row.status)]}</Chip></div>
+            <div><Chip color={statusTone[mapLegacyStatus(row.status)]} size="sm">{checkLabel(t, mapLegacyStatus(row.status))}</Chip></div>
             <div className="break-words text-xs text-text-secondary">{row.conclusion}</div>
           </div>
-        )) : <div className="py-10 text-center text-sm text-text-tertiary">暂无官方基线数据</div>}
+        )) : <div className="py-10 text-center text-sm text-text-tertiary">{t('relay.no_baselines')}</div>}
       </div>
     </section>
   );
 }
 
 function RisksView({ rows }: { rows: RelayReport['risks'] }) {
+  const { t } = useTranslation();
   return (
     <section className="ag-relay-section" aria-labelledby="risks-heading">
       <div className="ag-relay-section-heading">
-        <div><h3 id="risks-heading">风险发现</h3><p>{rows.length} 条证据化风险</p></div>
+        <div><h3 id="risks-heading">{t('relay.risks_title')}</h3><p>{t('relay.risks_subtitle', { count: rows.length })}</p></div>
       </div>
       <div className="divide-y divide-border-subtle">
         {rows.length ? rows.map((row, index) => (
@@ -1283,17 +1301,18 @@ function RisksView({ rows }: { rows: RelayReport['risks'] }) {
               {row.model ? <div className="mt-1 break-all font-mono text-[11px] text-text-tertiary">{row.model}</div> : null}
             </div>
           </div>
-        )) : <div className="flex min-h-36 items-center justify-center gap-2 text-sm text-success"><CheckCircle2 className="h-4 w-4" />暂无风险发现</div>}
+        )) : <div className="flex min-h-36 items-center justify-center gap-2 text-sm text-success"><CheckCircle2 className="h-4 w-4" />{t('relay.no_risks')}</div>}
       </div>
     </section>
   );
 }
 
 function EvidenceView({ report }: { report: RelayReport }) {
+  const { t } = useTranslation();
   return (
     <section className="ag-relay-section" aria-labelledby="evidence-heading">
       <div className="ag-relay-section-heading">
-        <div><h3 id="evidence-heading">已脱敏证据</h3><p>{report.evidence?.length ?? 0} 条报告证据</p></div>
+        <div><h3 id="evidence-heading">{t('relay.evidence_title')}</h3><p>{t('relay.evidence_subtitle', { count: report.evidence?.length ?? 0 })}</p></div>
       </div>
       <div className="divide-y divide-border-subtle">
         {report.evidence?.length ? report.evidence.map((item, index) => (
@@ -1305,13 +1324,14 @@ function EvidenceView({ report }: { report: RelayReport }) {
             <p className="mt-2 break-words text-xs text-text-secondary">{item.message}</p>
             {item.detail ? <pre className="ag-relay-json mt-2">{safeJSON(item.detail)}</pre> : null}
           </div>
-        )) : <div className="py-10 text-center text-sm text-text-tertiary">暂无报告证据</div>}
+        )) : <div className="py-10 text-center text-sm text-text-tertiary">{t('relay.no_evidence')}</div>}
       </div>
     </section>
   );
 }
 
 function EvidenceDetail({ onClose, selection }: { onClose: () => void; selection: EvidenceSelection | null }) {
+  const { t } = useTranslation();
   const state = useOverlayState({
     isOpen: Boolean(selection),
     onOpenChange: (open) => {
@@ -1340,37 +1360,37 @@ function EvidenceDetail({ onClose, selection }: { onClose: () => void; selection
             <Modal.Body>
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Chip color={statusTone[applicability.status]} size="sm">{checkLabels[applicability.status]}</Chip>
-                  <Chip color={applicability.score_eligible ? 'warning' : 'default'} size="sm">{applicability.score_eligible ? '可影响评分' : '不影响评分'}</Chip>
+                  <Chip color={statusTone[applicability.status]} size="sm">{checkLabel(t, applicability.status)}</Chip>
+                  <Chip color={applicability.score_eligible ? 'warning' : 'default'} size="sm">{applicability.score_eligible ? t('relay.affects_score') : t('relay.no_score_impact')}</Chip>
                   {selection.model ? <span className="break-all font-mono text-xs text-text-tertiary">{selection.model}</span> : null}
                 </div>
                 {selection.context ? <div className="break-words text-xs text-text-tertiary">{selection.context}</div> : null}
                 <dl className="ag-relay-detail-grid">
-                  <div><dt>适用</dt><dd>{applicability.applicable ? '是' : '否'}</dd></div>
-                  <div><dt>已执行</dt><dd>{applicability.executed ? '是' : '否'}</dd></div>
-                  <div><dt>确定结论</dt><dd>{applicability.conclusive ? '是' : '否'}</dd></div>
-                  <div><dt>权重 / 影响</dt><dd>{applicability.score_weight ?? '-'} / {applicability.score_impact ?? '-'}</dd></div>
+                  <div><dt>{t('relay.applicable')}</dt><dd>{applicability.applicable ? t('relay.yes') : t('relay.no')}</dd></div>
+                  <div><dt>{t('relay.executed')}</dt><dd>{applicability.executed ? t('relay.yes') : t('relay.no')}</dd></div>
+                  <div><dt>{t('relay.conclusive_label')}</dt><dd>{applicability.conclusive ? t('relay.yes') : t('relay.no')}</dd></div>
+                  <div><dt>{t('relay.weight_impact')}</dt><dd>{applicability.score_weight ?? '-'} / {applicability.score_impact ?? '-'}</dd></div>
                 </dl>
                 <div>
-                  <div className="text-xs font-semibold text-text">结论</div>
+                  <div className="text-xs font-semibold text-text">{t('relay.conclusion')}</div>
                   <p className="mt-1 break-words text-sm text-text-secondary">{'conclusion' in selection.check ? selection.check.conclusion : selection.check.summary}</p>
                 </div>
                 {applicability.eligibility_reason ? (
                   <div>
-                    <div className="text-xs font-semibold text-text">资格说明</div>
+                    <div className="text-xs font-semibold text-text">{t('relay.eligibility_note')}</div>
                     <p className="mt-1 break-words text-sm text-text-secondary">{applicability.eligibility_reason}</p>
                   </div>
                 ) : null}
                 {'threshold' in selection.check && selection.check.threshold !== undefined ? (
-                  <div><div className="text-xs font-semibold text-text">阈值</div><pre className="ag-relay-json mt-1">{safeJSON(selection.check.threshold)}</pre></div>
+                  <div><div className="text-xs font-semibold text-text">{t('relay.threshold')}</div><pre className="ag-relay-json mt-1">{safeJSON(selection.check.threshold)}</pre></div>
                 ) : null}
                 <div>
-                  <div className="text-xs font-semibold text-text">脱敏证据</div>
+                  <div className="text-xs font-semibold text-text">{t('relay.sanitized_evidence')}</div>
                   <pre className="ag-relay-json mt-1 max-h-80">{safeJSON(excerpt)}</pre>
                 </div>
               </div>
             </Modal.Body>
-            <Modal.Footer><Button variant="primary" onPress={onClose}>关闭</Button></Modal.Footer>
+            <Modal.Footer><Button variant="primary" onPress={onClose}>{t('relay.close')}</Button></Modal.Footer>
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
@@ -1393,6 +1413,7 @@ function ReportHeader({
   onRetest: () => void;
   task: RelayDetectionTask;
 }) {
+  const { t } = useTranslation();
   const active = activeTaskStatuses.has(task.status);
   const completedModels = Number(task.execution?.completed_models ?? task.execution?.completed ?? 0);
   const totalModels = Number(task.execution?.total_models ?? task.execution?.total ?? 0);
@@ -1401,29 +1422,29 @@ function ReportHeader({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <Chip color={statusTone[task.status] ?? 'default'} size="sm">{statusLabel(task.status)}</Chip>
+            <Chip color={statusTone[task.status] ?? 'default'} size="sm">{statusLabel(t, task.status)}</Chip>
             <span className="font-mono text-xs text-text-tertiary">#{task.id}</span>
           </div>
           <div className="mt-2 break-all font-mono text-sm font-semibold text-text">{task.base_url}</div>
-          <div className="mt-1 text-xs text-text-tertiary">{task.platform_type} · 更新 {fmtTime(task.updated_at)}</div>
+          <div className="mt-1 text-xs text-text-tertiary">{task.platform_type} · {t('relay.updated_at', { time: fmtTime(task.updated_at) })}</div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="ghost" onPress={onRefresh}><RefreshCw className="h-4 w-4" />刷新</Button>
-          {task.output ? <Button size="sm" variant="secondary" onPress={onExport}><Download className="h-4 w-4" />导出 JSON</Button> : null}
-          {active ? <Button size="sm" variant="danger" onPress={onCancel}><XCircle className="h-4 w-4" />取消</Button> : null}
-          {['completed', 'failed', 'cancelled'].includes(task.status) ? <Button size="sm" variant="primary" onPress={onRetest}><RotateCcw className="h-4 w-4" />重测</Button> : null}
+          <Button size="sm" variant="ghost" onPress={onRefresh}><RefreshCw className="h-4 w-4" />{t('relay.refresh')}</Button>
+          {task.output ? <Button size="sm" variant="secondary" onPress={onExport}><Download className="h-4 w-4" />{t('relay.export_json')}</Button> : null}
+          {active ? <Button size="sm" variant="danger" onPress={onCancel}><XCircle className="h-4 w-4" />{t('relay.cancel')}</Button> : null}
+          {['completed', 'failed', 'cancelled'].includes(task.status) ? <Button size="sm" variant="primary" onPress={onRetest}><RotateCcw className="h-4 w-4" />{t('relay.retest')}</Button> : null}
         </div>
       </div>
       {offline ? (
         <div className="mt-3 flex items-center gap-2 border border-warning/35 bg-warning-subtle px-3 py-2 text-xs text-warning" role="status">
-          <WifiOff className="h-4 w-4" />离线，已暂停轮询并保留当前报告
+          <WifiOff className="h-4 w-4" />{t('relay.offline_notice')}
         </div>
       ) : null}
       {active ? (
         <div className="mt-3 space-y-2">
           <div className="flex flex-wrap justify-between gap-2 text-xs text-text-tertiary" aria-live="polite">
-            <span>{task.stage || (task.status === 'pending' ? '等待执行' : '检测执行中')}</span>
-            <span>{totalModels > 0 ? `${completedModels}/${totalModels} · ` : ''}{task.status === 'pending' ? '等待分配' : `${task.progress}%`}</span>
+            <span>{task.stage || (task.status === 'pending' ? t('relay.waiting_execution') : t('relay.detection_running'))}</span>
+            <span>{totalModels > 0 ? `${completedModels}/${totalModels} · ` : ''}{task.status === 'pending' ? t('relay.waiting_assignment') : `${task.progress}%`}</span>
           </div>
           <ProgressBar progress={task.progress} status={task.status} />
         </div>
@@ -1434,6 +1455,7 @@ function ReportHeader({
 }
 
 function EmptyReportState({ task }: { task?: RelayDetectionTask }) {
+  const { t } = useTranslation();
   const active = task && activeTaskStatuses.has(task.status);
   const failed = task?.status === 'failed';
   const cancelled = task?.status === 'cancelled';
@@ -1443,8 +1465,8 @@ function EmptyReportState({ task }: { task?: RelayDetectionTask }) {
         {active ? <Spinner size="sm" /> : failed ? <XCircle className="h-5 w-5 text-danger" /> : cancelled ? <Ban className="h-5 w-5" /> : <ScanSearch className="h-5 w-5" />}
       </div>
       <div>
-        <div className="text-sm font-semibold text-text">{active ? statusLabel(task.status) : failed ? '检测失败' : cancelled ? '检测已取消' : '暂无检测报告'}</div>
-        <div className="mt-1 max-w-sm text-xs text-text-tertiary">{active ? task.stage || '报告会在探针返回后自动更新' : task?.error_message || '选择已有任务或创建新检测'}</div>
+        <div className="text-sm font-semibold text-text">{active ? statusLabel(t, task.status) : failed ? t('relay.detection_failed') : cancelled ? t('relay.detection_cancelled') : t('relay.no_report')}</div>
+        <div className="mt-1 max-w-sm text-xs text-text-tertiary">{active ? task.stage || t('relay.report_auto_update') : task?.error_message || t('relay.select_or_create')}</div>
       </div>
     </div>
   );
@@ -1463,6 +1485,7 @@ function ReportWorkspace({
   onRetry: () => void;
   task: RelayDetectionTask;
 }) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<ReportTab>('decision');
   const [selection, setSelection] = useState<EvidenceSelection | null>(null);
   const originRef = useRef<HTMLButtonElement | null>(null);
@@ -1473,7 +1496,7 @@ function ReportWorkspace({
   const report = rawReport && Array.isArray(rawReport.models) && rawReport.summary && typeof rawReport.summary === 'object'
     ? rawReport
     : undefined;
-  const rawChecks = report?.standard_checks?.length ? report.standard_checks : buildLegacyChecks(task);
+  const rawChecks = report?.standard_checks?.length ? report.standard_checks : buildLegacyChecks(t, task);
   const checks = useMemo(() => rawChecks.map((check) => {
     const normalized = normalizeApplicability(check, check.family, check.protocol, report?.platform_type ?? task.platform_type);
     return {
@@ -1488,14 +1511,14 @@ function ReportWorkspace({
       status: normalized.status,
     };
   }), [rawChecks, report?.platform_type, task.platform_type]);
-  const matrixRows = useMemo(() => report ? buildMatrixRows(report) : [], [report]);
+  const matrixRows = useMemo(() => report ? buildMatrixRows(t, report) : [], [report, t]);
   const calculatedCoverage = useMemo(
     () => calculateCoverage(matrixRows, report?.platform_type ?? task.platform_type),
     [matrixRows, report?.platform_type, task.platform_type],
   );
   const failures = useMemo(
-    () => collectFailureItems(matrixRows, checks, report?.platform_type ?? task.platform_type),
-    [checks, matrixRows, report?.platform_type, task.platform_type],
+    () => collectFailureItems(t, matrixRows, checks, report?.platform_type ?? task.platform_type),
+    [checks, matrixRows, report?.platform_type, t, task.platform_type],
   );
   const returnedCoverage = report?.summary.coverage ?? report?.coverage ?? report?.coverage_summary ?? task.coverage;
   const coverage = isCoverage(returnedCoverage) ? returnedCoverage : calculatedCoverage;
@@ -1544,19 +1567,19 @@ function ReportWorkspace({
           {coveragePercent(coverage.ratio) < 100 ? (
             <div className="flex items-start gap-2 border-b border-warning/30 bg-warning-subtle px-4 py-2.5 text-xs text-warning">
               <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>报告覆盖不完整：受阻、未运行和无结论检查会降低覆盖率，但不会作为失败扣分。</span>
+              <span>{t('relay.coverage_incomplete_notice')}</span>
             </div>
           ) : null}
           <Tabs selectedKey={tab} onSelectionChange={(key) => setTab(String(key) as ReportTab)}>
             <div className="border-b border-border-subtle px-3 pt-3">
               <Tabs.ListContainer className="ag-page-tabs w-full">
                 <Tabs.List>
-                  <Tabs.Tab id="decision"><Tabs.Indicator /><ShieldCheck className="h-4 w-4" />结论</Tabs.Tab>
-                  <Tabs.Tab id="matrix"><Tabs.Separator /><Tabs.Indicator /><Radar className="h-4 w-4" />矩阵</Tabs.Tab>
-                  <Tabs.Tab id="checks"><Tabs.Separator /><Tabs.Indicator /><ListChecks className="h-4 w-4" />检查</Tabs.Tab>
-                  <Tabs.Tab id="baselines"><Tabs.Separator /><Tabs.Indicator /><Gauge className="h-4 w-4" />基线</Tabs.Tab>
-                  <Tabs.Tab id="risks"><Tabs.Separator /><Tabs.Indicator /><ShieldAlert className="h-4 w-4" />风险</Tabs.Tab>
-                  <Tabs.Tab id="evidence"><Tabs.Separator /><Tabs.Indicator /><FileJson className="h-4 w-4" />证据</Tabs.Tab>
+                  <Tabs.Tab id="decision"><Tabs.Indicator /><ShieldCheck className="h-4 w-4" />{t('relay.tab_decision')}</Tabs.Tab>
+                  <Tabs.Tab id="matrix"><Tabs.Separator /><Tabs.Indicator /><Radar className="h-4 w-4" />{t('relay.tab_matrix')}</Tabs.Tab>
+                  <Tabs.Tab id="checks"><Tabs.Separator /><Tabs.Indicator /><ListChecks className="h-4 w-4" />{t('relay.tab_checks')}</Tabs.Tab>
+                  <Tabs.Tab id="baselines"><Tabs.Separator /><Tabs.Indicator /><Gauge className="h-4 w-4" />{t('relay.tab_baselines')}</Tabs.Tab>
+                  <Tabs.Tab id="risks"><Tabs.Separator /><Tabs.Indicator /><ShieldAlert className="h-4 w-4" />{t('relay.tab_risks')}</Tabs.Tab>
+                  <Tabs.Tab id="evidence"><Tabs.Separator /><Tabs.Indicator /><FileJson className="h-4 w-4" />{t('relay.tab_evidence')}</Tabs.Tab>
                 </Tabs.List>
               </Tabs.ListContainer>
             </div>
@@ -1581,13 +1604,14 @@ function ReportWorkspace({
 }
 
 function MobileSegments({ onChange, value }: { onChange: (value: MobileSegment) => void; value: MobileSegment }) {
+  const { t } = useTranslation();
   const items: Array<{ id: MobileSegment; label: string }> = [
-    { id: 'configure', label: '配置' },
-    { id: 'tasks', label: '任务' },
-    { id: 'report', label: '报告' },
+    { id: 'configure', label: t('relay.segment_configure') },
+    { id: 'tasks', label: t('relay.tasks_title') },
+    { id: 'report', label: t('relay.segment_report') },
   ];
   return (
-    <div aria-label="中继检测视图" className="ag-relay-mobile-segments" role="tablist">
+    <div aria-label={t('relay.mobile_view_aria')} className="ag-relay-mobile-segments" role="tablist">
       {items.map((item) => (
         <button
           aria-selected={value === item.id}
@@ -1605,6 +1629,7 @@ function MobileSegments({ onChange, value }: { onChange: (value: MobileSegment) 
 }
 
 export default function RelayDetectionPage() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const mobile = useMediaQuery('(max-width: 639px)');
@@ -1647,7 +1672,7 @@ export default function RelayDetectionPage() {
     mutationFn: relayDetectionApi.create,
     onError: (error: Error) => toast('error', error.message),
     onSuccess: (task) => {
-      toast('success', `检测任务 #${task.id} 已创建`);
+      toast('success', t('relay.task_created_toast', { id: task.id }));
       setSelectedID(task.id);
       setMobileSegment('report');
       void queryClient.invalidateQueries({ queryKey: queryKeys.relayDetections() });
@@ -1676,7 +1701,7 @@ export default function RelayDetectionPage() {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!form.base_url.trim() || !form.api_key.trim()) {
-      toast('error', '请填写 Base URL 和 API Key');
+      toast('error', t('relay.fill_required_toast'));
       return;
     }
     const request = {
@@ -1691,11 +1716,11 @@ export default function RelayDetectionPage() {
   function handleParse(raw: string) {
     const parsed = parseCredentialInput(raw);
     if (!parsed.base_url && !parsed.api_key) {
-      toast('error', '没有解析到 Base URL 或 API Key');
+      toast('error', t('relay.parse_failed_toast'));
       return;
     }
     setForm((current) => ({ ...current, ...parsed }));
-    toast('success', '凭据已填入表单');
+    toast('success', t('relay.credentials_filled_toast'));
   }
 
   const configure = <DetectionForm form={form} isPending={createMutation.isPending} onChange={setForm} onParse={handleParse} onSubmit={handleSubmit} />;
@@ -1714,9 +1739,9 @@ export default function RelayDetectionPage() {
     <Card className="ag-dashboard-panel">
       <div className="flex min-h-[360px] flex-col items-center justify-center gap-3 p-6 text-center">
         <TriangleAlert className="h-6 w-6 text-danger" />
-        <div className="text-sm font-semibold text-text">报告加载失败</div>
+        <div className="text-sm font-semibold text-text">{t('relay.report_load_failed')}</div>
         <div className="text-xs text-text-tertiary">{(detailQuery.error).message}</div>
-        <Button variant="primary" onPress={() => void detailQuery.refetch()}><RefreshCw className="h-4 w-4" />重试</Button>
+        <Button variant="primary" onPress={() => void detailQuery.refetch()}><RefreshCw className="h-4 w-4" />{t('relay.retry')}</Button>
       </div>
     </Card>
   ) : detailQuery.data ? (

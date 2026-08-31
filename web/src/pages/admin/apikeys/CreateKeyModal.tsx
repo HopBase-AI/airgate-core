@@ -67,7 +67,7 @@ export function CreateKeyModal({ open, groups, onClose, onSubmit, loading }: Cre
                 <span className="font-medium text-primary">{override}x</span>
               </>
             ) : (
-              <>{group.rate_multiplier}x 倍率</>
+              <>{t('api_keys.rate_multiplier_label', { rate: group.rate_multiplier })}</>
             )}
           </span>
         </div>

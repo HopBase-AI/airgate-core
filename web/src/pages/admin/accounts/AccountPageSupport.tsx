@@ -751,7 +751,7 @@ export function AccountStatusCell({ row }: { row: AccountResp }) {
       t('accounts.degraded_tooltip', '上游池抖动，软降级仅做兜底，到期自动恢复'),
     );
   } else if (row.state === 'disabled') {
-    const reason = row.error_msg?.trim() === '管理员手动关闭调度' ? '手动关闭' : row.error_msg?.trim();
+    const reason = row.error_msg?.trim() === '管理员手动关闭调度' ? t('accounts.manual_disabled', '手动关闭') : row.error_msg?.trim();
     mainBadge = (
       <div className="inline-flex min-w-0 max-w-full flex-col items-center gap-0.5">
         <StatusPill status="disabled" tooltip={reason || undefined} />
