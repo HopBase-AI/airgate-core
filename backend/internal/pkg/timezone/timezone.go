@@ -45,3 +45,17 @@ func EndOfDay(t time.Time) time.Time {
 func ParseDate(s string, loc *time.Location) (time.Time, error) {
 	return time.ParseInLocation("2006-01-02", s, loc)
 }
+
+// ParseDateOrDateTime 解析日期或日期时间。接受三种形态:
+// "2006-01-02"、"2006-01-02T15:04:05"(前端秒粒度 DateRangePicker 的输出)、
+// "2006-01-02 15:04:05"。withTime 标记输入是否携带时刻,调用方据此决定
+// 右边界语义——整日输入右界 +1 天(含当日全天),精确时刻右界 +1 秒(含该秒)。
+func ParseDateOrDateTime(s string, loc *time.Location) (t time.Time, withTime bool, err error) {
+	for _, layout := range []string{"2006-01-02T15:04:05", "2006-01-02 15:04:05"} {
+		if parsed, perr := time.ParseInLocation(layout, s, loc); perr == nil {
+			return parsed, true, nil
+		}
+	}
+	parsed, err := time.ParseInLocation("2006-01-02", s, loc)
+	return parsed, false, err
+}

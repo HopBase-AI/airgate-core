@@ -1,6 +1,6 @@
 import { Button, DateField, DateRangePicker, Label, RangeCalendar } from '@heroui/react';
 import type { DateValue } from '@internationalized/date';
-import { parseDate } from '@internationalized/date';
+import { parseDate, parseDateTime, toCalendarDateTime } from '@internationalized/date';
 import { useMemo } from 'react';
 import { X } from 'lucide-react';
 
@@ -20,10 +20,16 @@ type DateRangeValue = {
 
 function toDateValue(value?: string): DateValue | null {
   if (!value) return null;
+  // 秒粒度输出为 "2026-08-31T14:30:05";旧值/预设可能是纯日期,归一到
+  // CalendarDateTime(00:00:00) 以免同一 range 里混两种粒度。
   try {
-    return parseDate(value);
+    return parseDateTime(value);
   } catch {
-    return null;
+    try {
+      return toCalendarDateTime(parseDate(value));
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -46,6 +52,8 @@ export function UsageDateRangeFilter({
       aria-label={label}
       className={`ag-usage-date-range ${className}`}
       endName="endDate"
+      granularity="second"
+      hideTimeZone
       startName="startDate"
       value={value}
       onChange={(nextValue) => {
