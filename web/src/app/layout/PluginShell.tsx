@@ -3,12 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@heroui/react';
 import { useAuth } from '../providers/AuthProvider';
 import { getTokenRole } from '../../shared/api/client';
-import { setStoredLanguage } from '../../i18n';
 import { useTheme } from '../providers/ThemeProvider';
 import { PluginBreadcrumbs, type PluginBreadcrumbItem } from '../../shared/components/PluginBreadcrumbs';
 import { AnnouncementBanner } from '../../shared/components/AnnouncementBanner';
+import { LanguageSwitcher } from '../../shared/components/LanguageSwitcher';
 import {
-  Languages,
   LogOut,
   Moon,
   ShieldCheck,
@@ -34,7 +33,7 @@ export function PluginShell({
   breadcrumbs,
 }: PluginShellProps) {
   const { user, logout, isAPIKeySession } = useAuth();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
@@ -57,16 +56,6 @@ export function PluginShell({
   const isAdmin = !isAPIKeySession && (getTokenRole() === 'admin' || user?.role === 'admin');
   const displayName = user?.api_key_name || user?.username || user?.email?.split('@')[0] || 'User';
 
-  const LANG_CYCLE = ['en', 'zh', 'zh-HK', 'ja', 'es'] as const;
-  const LANG_SHORT: Record<string, string> = { en: 'EN', zh: '简', 'zh-HK': '繁', ja: '日' };
-  const currentLang = (LANG_CYCLE as readonly string[]).includes(i18n.language) ? i18n.language : 'en';
-  const toggleLanguage = () => {
-    const idx = LANG_CYCLE.indexOf(currentLang as typeof LANG_CYCLE[number]);
-    const nextLang = LANG_CYCLE[(idx + 1) % LANG_CYCLE.length] ?? 'en';
-    i18n.changeLanguage(nextLang);
-    setStoredLanguage(nextLang);
-  };
-
   return (
     <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden bg-bg text-text">
       <header className="ag-topbar flex h-12 shrink-0 items-center justify-between gap-3 px-2.5 sm:px-4">
@@ -75,18 +64,7 @@ export function PluginShell({
         </div>
 
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-          <Button
-            aria-label="Switch language"
-            className="h-10 px-2 sm:px-3"
-            size="sm"
-            variant="ghost"
-            onPress={toggleLanguage}
-          >
-            <Languages className="h-5 w-5" />
-            <span className="hidden w-8 text-center font-mono text-xs uppercase sm:inline-block">
-              {LANG_SHORT[currentLang] ?? 'EN'}
-            </span>
-          </Button>
+          <LanguageSwitcher />
 
           <Button
             aria-label={theme === 'dark' ? t('legal.theme_to_light') : t('legal.theme_to_dark')}

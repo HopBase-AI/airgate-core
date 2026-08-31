@@ -12,6 +12,7 @@ import { queryKeys } from '../shared/queryKeys';
 import { useTheme } from '../app/providers/ThemeProvider';
 import { getOriginSite } from '../shared/originSite';
 import { clearInviteCode, getInviteCode, getInviteCodeFromURL } from '../shared/inviteCode';
+import { LanguageSwitcher } from '../shared/components/LanguageSwitcher';
 import {
   ApiError,
   beginAuthenticationAttempt,
@@ -956,17 +957,19 @@ export default function LoginPage() {
           className="pointer-events-none absolute left-1/2 top-[12%] h-[420px] w-[560px] -translate-x-1/2 rounded-full blur-3xl"
           style={{ background: theme === 'dark' ? 'rgba(255,255,255,0.045)' : 'rgba(0,0,0,0.028)' }}
         />
-        {/* 主题切换按钮 */}
-        <Button
-          aria-label={theme === 'dark' ? 'Light mode' : 'Dark mode'}
-          className="absolute top-4 right-4 z-10"
-          isIconOnly
-          size="sm"
-          variant="ghost"
-          onPress={toggleTheme}
-        >
-          {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-        </Button>
+        {/* 语言切换(地球图标,游客可选,注册后延续)+ 主题切换 */}
+        <div className="absolute top-4 right-4 z-10 flex items-center gap-1">
+          <LanguageSwitcher />
+          <Button
+            aria-label={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+            isIconOnly
+            size="sm"
+            variant="ghost"
+            onPress={toggleTheme}
+          >
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </Button>
+        </div>
         <div className="relative w-full max-w-[420px]">
           {/* 移动端 Logo */}
           <div className="mb-8 flex justify-center text-text lg:hidden">
