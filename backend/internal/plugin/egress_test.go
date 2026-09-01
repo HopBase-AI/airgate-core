@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
@@ -650,5 +652,64 @@ func TestEgressWriter_IdempotentAcrossWrites(t *testing.T) {
 	}
 	if got := recorder.Header().Get("X-Request-Id"); got != "ours-7f3c" {
 		t.Fatalf("X-Request-Id = %q", got)
+	}
+}
+
+// TestEgressWriter_KeepsOwnRetryAfterMs 我方在闸门之后生成的 Retry-After-Ms 必须出网。
+//
+// protocolRateLimitError 在 installEgressWriter 之后才 Set 这个头，它不在 owned 快照里，
+// 只能靠白名单放行。漏掉会让 Anthropic SDK 这类优先读 retry-after-ms 的客户端
+// 退化成整秒退避——这是闸门最容易误伤自己人的地方。
+func TestEgressWriter_KeepsOwnRetryAfterMs(t *testing.T) {
+	c, recorder := newGatedContext(t, nil)
+
+	protocolRateLimitError(c, http.StatusTooManyRequests, "openai", "rate limited", 1500*time.Millisecond)
+
+	if got := recorder.Header().Get("Retry-After-Ms"); got != "1500" {
+		t.Fatalf("Retry-After-Ms = %q, want \"1500\"（被闸门剥掉即为回归）", got)
+	}
+	if got := recorder.Header().Get("Retry-After"); got != "2" {
+		t.Fatalf("Retry-After = %q, want \"2\"", got)
+	}
+}
+
+// TestReplaceFold_ByteLengthChangingRunes ToLower 改变字节长度的字符不得让下标错位。
+//
+// İ Ⱥ Ⱦ ẞ Ω K Å 这七个字符 ToLower 后字节长度会变。旧实现拿 ToLower(text) 的下标
+// 去切原串，土耳其语大写文本会被删错位置（İÇERİK acme → İÇERİ），
+// 字符再多一点直接 slice 越界 panic。
+func TestReplaceFold_ByteLengthChangingRunes(t *testing.T) {
+	cases := []struct {
+		name string
+		text string
+		want string
+	}{
+		{"土耳其语大写", "İÇERİK acme reddedildi", "İÇERİK  reddedildi"},
+		{"土耳其语长句", strings.Repeat("İ", 40) + " acme", strings.Repeat("İ", 40) + " "},
+		{"开尔文符号", "Temperature 300K acme rejected", "Temperature 300K  rejected"},
+		{"德语大写eszett", "GROẞE ANFRAGE acme abgelehnt", "GROẞE ANFRAGE  abgelehnt"},
+		{"埃符号", "Wavelength 5000Å acme rejected", "Wavelength 5000Å  rejected"},
+		{"大小写混合命中", "ACME and AcMe and acme", " and  and "},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := replaceFold(tc.text, "acme", "")
+			if got != tc.want {
+				t.Fatalf("replaceFold = %q, want %q", got, tc.want)
+			}
+			if !utf8.ValidString(got) {
+				t.Fatalf("输出不是合法 UTF-8: %q", got)
+			}
+		})
+	}
+}
+
+// TestScrubText_TurkishTextSurvives 上游回显的土耳其语 prompt 不得被清洗改坏。
+func TestScrubText_TurkishTextSurvives(t *testing.T) {
+	scrubber := newIdentityScrubber(&ent.Account{Name: "acme-upstream"}, "gpt-5.6")
+	in := "Your prompt was rejected: İSTANBUL İÇİN İYİ BİR İŞ İMKANI İSTİYORUM"
+	got := scrubber.scrubText(in)
+	if got != in {
+		t.Fatalf("与供应商无关的土耳其语正文被改写:\n in = %q\nout = %q", in, got)
 	}
 }

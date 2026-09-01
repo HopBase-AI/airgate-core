@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/DouDOU-start/airgate-core/ent"
 )
@@ -222,27 +224,68 @@ func (s *identityScrubber) scrubText(text string) string {
 }
 
 // replaceFold 大小写不敏感地删除 token（Go 标准库没有现成的 fold 替换）。
+//
+// ⚠️ 下标必须取自原串：不能用 strings.Index(strings.ToLower(text), token) 的结果去切 text。
+// ToLower 会改变字节长度（İ Ⱥ Ⱦ ẞ Ω K Å 七个字符），下标一旦错位，轻则删错位置、
+// 输出非法 UTF-8（土耳其语大写文本实测「İÇERİK acme」被删成「İÇERİ」），
+// 重则 text[:idx] 越界 panic。这里逐 rune 折叠比较，匹配区间始终是原串的字节下标。
 func replaceFold(text, token, replacement string) string {
 	if token == "" {
 		return text
 	}
-	lowerText := strings.ToLower(text)
-	lowerToken := strings.ToLower(token)
+	folded := foldRunes(token)
 	var b strings.Builder
 	for {
-		idx := strings.Index(lowerText, lowerToken)
-		if idx < 0 {
+		start, end := indexFold(text, folded)
+		if start < 0 {
 			b.WriteString(text)
 			return b.String()
 		}
-		b.WriteString(text[:idx])
+		b.WriteString(text[:start])
 		b.WriteString(replacement)
-		rest := text[idx+len(token):]
 		// 连带吃掉紧邻的连接符：new_api_error 删掉 new_api 后不该剩 "_error"
-		trimmed := strings.TrimLeft(rest, "_-")
-		text = trimmed
-		lowerText = strings.ToLower(trimmed)
+		text = strings.TrimLeft(text[end:], "_-")
 	}
+}
+
+// foldRunes 把字符串逐 rune 折叠成小写，供 indexFold 做等长比较。
+func foldRunes(s string) []rune {
+	runes := make([]rune, 0, len(s))
+	for _, r := range s {
+		runes = append(runes, unicode.ToLower(r))
+	}
+	return runes
+}
+
+// indexFold 在 text 中大小写不敏感地查找 token（已折叠为小写 rune 序列），
+// 返回匹配在 text 中的起止字节下标；未命中返回 -1, -1。
+func indexFold(text string, token []rune) (int, int) {
+	if len(token) == 0 {
+		return -1, -1
+	}
+	// range string 的下标天然落在 rune 边界上，不会切出半个字符。
+	for start := range text {
+		if end, ok := matchFoldAt(text, start, token); ok {
+			return start, end
+		}
+	}
+	return -1, -1
+}
+
+// matchFoldAt 判断 text 从 start 起是否折叠后匹配 token，返回匹配结束的字节下标。
+func matchFoldAt(text string, start int, token []rune) (int, bool) {
+	pos := start
+	for _, want := range token {
+		if pos >= len(text) {
+			return 0, false
+		}
+		got, size := utf8.DecodeRuneInString(text[pos:])
+		if unicode.ToLower(got) != want {
+			return 0, false
+		}
+		pos += size
+	}
+	return pos, true
 }
 
 // scrubErrorBody 清洗上游错误体。保留错误体结构（error.type / code / param 等

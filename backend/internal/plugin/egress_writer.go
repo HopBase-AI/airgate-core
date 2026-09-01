@@ -40,7 +40,11 @@ var egressHeaderAllowExact = map[string]struct{}{
 	"content-range": {},
 	"accept-ranges": {},
 	// 客户端重试与限流语义：SDK 会读，剥掉会让客户端退化成盲目重试
-	"retry-after":    {},
+	"retry-after": {},
+	// Retry-After-Ms 是我方在 protocolRateLimitError 里生成的毫秒级退避（error_format.go），
+	// 但它在 installEgressWriter 之后才 Set，不在 owned 快照里——不显式放行会被闸门剥掉，
+	// 精度敏感的客户端（Anthropic SDK 优先读 retry-after-ms）退化成整秒。
+	"retry-after-ms": {},
 	"x-should-retry": {}, // Anthropic SDK 依据此头决定是否重试
 	// 反代缓冲控制：插件为 SSE 设置，剥掉会让 nginx/Caddy 缓冲流式响应
 	"x-accel-buffering": {},
