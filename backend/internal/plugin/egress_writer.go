@@ -148,7 +148,7 @@ func (w *egressWriter) Flush() {
 // sanitizeHeaders 幂等；只在响应头写出前执行一次。
 func (w *egressWriter) sanitizeHeaders() {
 	w.once.Do(func() {
-		header := w.ResponseWriter.Header()
+		header := w.Header()
 		for key := range header {
 			canonical := textproto.CanonicalMIMEHeaderKey(key)
 			if _, ours := w.owned[canonical]; ours {
