@@ -966,6 +966,8 @@
     "by_group": "Por grupo",
     "start_date": "Fecha de inicio",
     "end_date": "Fecha de fin",
+    "start_time": "Hora de inicio",
+    "end_time": "Hora de fin",
     "platform": "Plataforma",
     "platform_placeholder": "p. ej. openai",
     "model": "Modelo",

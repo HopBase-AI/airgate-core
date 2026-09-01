@@ -966,6 +966,8 @@
     "by_group": "按分组",
     "start_date": "开始日期",
     "end_date": "结束日期",
+    "start_time": "开始时间",
+    "end_time": "结束时间",
     "platform": "平台",
     "platform_placeholder": "例如：openai",
     "model": "模型",

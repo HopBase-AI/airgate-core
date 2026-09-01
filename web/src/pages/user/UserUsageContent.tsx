@@ -370,8 +370,10 @@ export default function UserUsageContent() {
           <UsageDateRangeFilter
             clearLabel={t('common.clear')}
             endDate={filters.end_date}
+            endTimeLabel={t('usage.end_time')}
             label={t('usage.time_range')}
             startDate={filters.start_date}
+            startTimeLabel={t('usage.start_time')}
             onChange={(startDate, endDate) => {
               setPage(1);
               setFilters((prev) => ({ ...prev, start_date: startDate, end_date: endDate }));
