@@ -31,11 +31,12 @@ func (h *UsageHandler) UserUsage(c *gin.Context) {
 		scoped = true
 	}
 
+	// account_id 不接受用户侧筛选：响应体已不含上游账号身份，若还留着这个筛选，
+	// 用户可以按 ID 逐个试出「哪条请求由哪个上游账号供货」，等于换个姿势拿回同样的信息。
 	result, err := h.service.ListUser(c.Request.Context(), int64(userID), appusage.ListFilter{
 		Page:        query.Page,
 		PageSize:    query.PageSize,
 		APIKeyID:    apiKeyFilter,
-		AccountID:   query.AccountID,
 		GroupID:     query.GroupID,
 		Platform:    query.Platform,
 		Model:       query.Model,

@@ -92,6 +92,9 @@ func toUsageLogResp(record appusage.LogRecord) dto.UsageLogResp {
 //
 // 这里采用允许列表构造响应，保留普通用户原有费用明细，但不返回
 // total_cost、account_cost 和 account_rate_multiplier。
+//
+// 上游账号身份（account_id / account_name / account_email）同样不返回：
+// 用户只需要知道这次请求成功还是失败、失败属于哪一类，供应商是谁与他无关。
 func toUserUsageLogResp(record appusage.LogRecord) dto.UserUsageLogResp {
 	return dto.UserUsageLogResp{
 		ID:                    record.ID,
@@ -102,9 +105,6 @@ func toUserUsageLogResp(record appusage.LogRecord) dto.UserUsageLogResp {
 		APIKeyName:            record.APIKeyName,
 		APIKeyHint:            record.APIKeyHint,
 		APIKeyDeleted:         record.APIKeyDeleted,
-		AccountID:             record.AccountID,
-		AccountName:           record.AccountName,
-		AccountEmail:          record.AccountEmail,
 		GroupID:               record.GroupID,
 		Platform:              record.Platform,
 		Model:                 record.Model,

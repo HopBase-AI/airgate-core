@@ -706,7 +706,11 @@ export interface UsageLogResp {
   created_at: string;
 }
 
-/** 普通登录用户视角：保留费用明细，但不返回原始总成本与账号计费字段。 */
+/**
+ * 普通登录用户视角：保留费用明细，但不返回原始总成本与账号计费字段。
+ * 也不返回上游账号身份（account_id / account_name / account_email）——
+ * 那是平台内部信息，只在管理员视角的 UsageLogResp 里出现。
+ */
 export interface UserUsageLogResp {
   id: number;
   user_id: number;
@@ -716,9 +720,6 @@ export interface UserUsageLogResp {
   api_key_name?: string;
   api_key_hint?: string;
   api_key_deleted: boolean;
-  account_id: number;
-  account_name?: string;
-  account_email?: string;
   group_id: number;
   platform: string;
   model: string;
