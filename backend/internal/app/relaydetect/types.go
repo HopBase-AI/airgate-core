@@ -50,22 +50,23 @@ type TaskSummary struct {
 }
 
 type Report struct {
-	Version        string           `json:"version"`
-	BaseURL        string           `json:"base_url"`
-	PlatformType   string           `json:"platform_type"`
-	StartedAt      string           `json:"started_at"`
-	CompletedAt    string           `json:"completed_at,omitempty"`
-	Summary        ReportSummary    `json:"summary"`
-	ModelCatalog   ModelCatalog     `json:"model_catalog"`
-	Models         []ModelResult    `json:"models"`
-	ModelMatrix    []ModelMatrixRow `json:"model_issue_matrix,omitempty"`
-	Risks          []RiskFinding    `json:"risks"`
-	Evidence       []EvidenceItem   `json:"evidence"`
-	StandardChecks []StandardCheck  `json:"standard_checks"`
-	Baselines      []BaselineDiff   `json:"baselines,omitempty"`
-	Charts         ChartData        `json:"charts"`
-	Raw            map[string]any   `json:"raw,omitempty"`
-	NextMilestone  []string         `json:"next_milestone,omitempty"`
+	Version             string                      `json:"version"`
+	BaseURL             string                      `json:"base_url"`
+	PlatformType        string                      `json:"platform_type"`
+	StartedAt           string                      `json:"started_at"`
+	CompletedAt         string                      `json:"completed_at,omitempty"`
+	Summary             ReportSummary               `json:"summary"`
+	ModelCatalog        ModelCatalog                `json:"model_catalog"`
+	Models              []ModelResult               `json:"models"`
+	ModelMatrix         []ModelMatrixRow            `json:"model_issue_matrix,omitempty"`
+	Risks               []RiskFinding               `json:"risks"`
+	Evidence            []EvidenceItem              `json:"evidence"`
+	StandardChecks      []StandardCheck             `json:"standard_checks"`
+	Baselines           []BaselineDiff              `json:"baselines,omitempty"`
+	ReferenceComparison *MaxPoolReferenceComparison `json:"reference_comparison,omitempty"`
+	Charts              ChartData                   `json:"charts"`
+	Raw                 map[string]any              `json:"raw,omitempty"`
+	NextMilestone       []string                    `json:"next_milestone,omitempty"`
 }
 
 type ReportSummary struct {
