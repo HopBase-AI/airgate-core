@@ -98,6 +98,9 @@ func (f *Forwarder) Forward(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// 出网闸门：响应头按白名单裁剪、我方头恒为准。必须装在 ttftWriter 之前——
+	// ttftWriter 要留在最外层，streamHeartbeatOnlyWritten 等处对 c.Writer 做类型断言。
+	installEgressWriter(c, f.manager.ResponseHeadersAllow(state.plugin.Name))
 	// TTFT 埋点：包装 writer 记录首字节写出客户端的时刻（recordUsage 汇总 ttft_breakdown）
 	installTTFTWriter(c)
 	// 对外错误格式跟随目标插件/路由声明（Metadata["error_format"]），

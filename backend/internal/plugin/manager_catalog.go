@@ -186,6 +186,20 @@ func (m *Manager) GetRoutes(pluginName string) []sdk.RouteDefinition {
 // 优先级：路由级 Metadata["error_format"]（精确路径命中优先于前缀命中）→
 // 插件级 PluginInfo.Metadata["error_format"]；均未声明返回空串，调用方回退
 // OpenAI 兼容格式。
+// ResponseHeadersAllow 返回插件经 Metadata["response_headers_allow"] 声明的额外放行
+// 响应头（逗号分隔）。出网闸门默认白名单之外的头一律剥离，插件确有客户端必须读到的
+// 自定义头时经此声明放行——core 因此不必为某个平台写特判。
+func (m *Manager) ResponseHeadersAllow(pluginName string) []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	name := m.resolveNameLocked(pluginName)
+	inst, ok := m.instances[name]
+	if !ok {
+		return nil
+	}
+	return parseHeaderAllowList(inst.Metadata["response_headers_allow"])
+}
+
 func (m *Manager) ErrorFormat(pluginName, path string) string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
