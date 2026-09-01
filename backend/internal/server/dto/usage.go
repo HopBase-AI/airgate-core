@@ -67,6 +67,10 @@ type UsageLogResp struct {
 //
 // 保留原有费用拆分、单价和倍率，只移除原始总成本与账号计费字段；
 // 这两类内部字段仅通过管理员接口的 UsageLogResp 返回。
+//
+// ⚠️ 禁止再加回 account_id / account_name / account_email：上游账号身份（供应商名、
+// 上游邮箱）属于平台内部信息，前端虽只在 adminView 渲染，但字段留在响应体里，
+// 用户在 devtools 或直接调 /api/v1/user/usage 就能看到是哪家上游在供货。
 type UserUsageLogResp struct {
 	ID                    int64                 `json:"id"`
 	UserID                int64                 `json:"user_id"`
@@ -76,9 +80,6 @@ type UserUsageLogResp struct {
 	APIKeyName            string                `json:"api_key_name,omitempty"`
 	APIKeyHint            string                `json:"api_key_hint,omitempty"`
 	APIKeyDeleted         bool                  `json:"api_key_deleted"`
-	AccountID             int64                 `json:"account_id"`
-	AccountName           string                `json:"account_name,omitempty"`
-	AccountEmail          string                `json:"account_email,omitempty"`
 	GroupID               int64                 `json:"group_id"`
 	Platform              string                `json:"platform"`
 	Model                 string                `json:"model"`
