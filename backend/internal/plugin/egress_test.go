@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -240,7 +241,7 @@ func testScrubber() *identityScrubber {
 			"base_url": "https://api.aijws.com",
 			"email":    "pool@aijws.com",
 		},
-	})
+	}, "gpt-5.6")
 }
 
 // TestScrubText_ProductionSamples 生产实测的客户可见 4xx 文案：
@@ -508,5 +509,146 @@ func TestHostForwardPayload_ScrubsOnlyErrors(t *testing.T) {
 	}
 	if !strings.Contains(got, "invalid image size") {
 		t.Fatalf("插件侧 4xx 体丢失报错语义: %s", got)
+	}
+}
+
+// TestScrubText_KeepsModelNameWhenAccountNamedAfterModel 账号常按模型命名
+// （生产上有 seedance-inference-1 / 腾讯tokenhub-GLM5.3-7折 这类）。
+// 账号名恰好等于模型名时不得抹掉——那是客户自己传的模型，谈不上泄漏，
+// 抹了反而把「哪个模型不支持什么」这条最有用的信息删掉。
+func TestScrubText_KeepsModelNameWhenAccountNamedAfterModel(t *testing.T) {
+	scrubber := newIdentityScrubber(&ent.Account{
+		Name:        "kimi-k3",
+		Credentials: map[string]string{"base_url": "https://api.relay-vendor.com"},
+	}, "kimi-k3")
+
+	got := scrubber.scrubText("n must be 1 for kimi-k3")
+	if got != "n must be 1 for kimi-k3" {
+		t.Fatalf("模型名被误删: %q", got)
+	}
+
+	// 同一个 scrubber 仍要剥上游域名
+	if out := scrubber.scrubText("rejected by api.relay-vendor.com"); strings.Contains(out, "relay-vendor") {
+		t.Fatalf("上游域名未剥: %q", out)
+	}
+}
+
+// TestEgressWriter_ConcurrentKeepAliveAndBody SSE 保活心跳来自独立 goroutine
+// （openai 插件生图同步保活即如此），闸门必须在并发写下只裁剪一次且不炸。
+// 本用例的价值在 -race 下体现。
+func TestEgressWriter_ConcurrentKeepAliveAndBody(t *testing.T) {
+	c, recorder := newGatedContext(t, nil)
+	for key, values := range leakyUpstreamHeaders() {
+		for _, v := range values {
+			c.Writer.Header().Set(key, v)
+		}
+	}
+
+	writer := &synchronizedTestWriter{ResponseWriter: c.Writer}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { // 保活心跳
+		defer wg.Done()
+		for i := 0; i < 20; i++ {
+			_, _ = writer.Write([]byte(": ping\n\n"))
+		}
+	}()
+	go func() { // 正文
+		defer wg.Done()
+		for i := 0; i < 20; i++ {
+			_, _ = writer.Write([]byte("data: {\"delta\":\"x\"}\n\n"))
+		}
+	}()
+	wg.Wait()
+
+	for _, name := range mustStripHeaders {
+		if got := recorder.Header().Get(name); got != "" {
+			t.Errorf("并发写下身份头未剥离: %s = %q", name, got)
+		}
+	}
+	if got := recorder.Header().Get("X-Request-Id"); got != "ours-7f3c" {
+		t.Errorf("并发写下我方头丢失: %q", got)
+	}
+}
+
+// synchronizedTestWriter 模拟插件侧的写串行化（openai 插件的 synchronizedResponseWriter）。
+type synchronizedTestWriter struct {
+	gin.ResponseWriter
+	mu sync.Mutex
+}
+
+func (w *synchronizedTestWriter) Write(b []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.ResponseWriter.Write(b)
+}
+
+// TestEgressWriter_RateLimitResponseKeepsClientSignals 429 场景：
+// 客户端自适应退避要用的信号必须全部保留，上游身份仍要剥净。
+func TestEgressWriter_RateLimitResponseKeepsClientSignals(t *testing.T) {
+	c, recorder := newGatedContext(t, nil)
+
+	headers := leakyUpstreamHeaders()
+	headers.Set("Retry-After", "30")
+	headers.Set("X-Ratelimit-Remaining-Requests", "0")
+	writeUpstream(c, sdk.UpstreamResponse{
+		StatusCode: http.StatusTooManyRequests,
+		Headers:    headers,
+		Body:       []byte(`{"error":{"message":"rate limit reached","type":"rate_limit_error"}}`),
+	})
+
+	if recorder.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429", recorder.Code)
+	}
+	if got := recorder.Header().Get("Retry-After"); got != "30" {
+		t.Fatalf("Retry-After 被误剥: %q", got)
+	}
+	if got := recorder.Header().Get("X-Ratelimit-Remaining-Requests"); got != "0" {
+		t.Fatalf("限流剩余量被误剥: %q", got)
+	}
+	for _, name := range mustStripHeaders {
+		if got := recorder.Header().Get(name); got != "" {
+			t.Errorf("429 响应仍带身份头 %s = %q", name, got)
+		}
+	}
+}
+
+// TestEgressWriter_MultiValueHeaders 多值头：放行的保留全部取值，剥离的一个不留。
+func TestEgressWriter_MultiValueHeaders(t *testing.T) {
+	c, recorder := newGatedContext(t, nil)
+
+	c.Writer.Header().Add("Vary", "Accept-Encoding")
+	c.Writer.Header().Add("Vary", "Origin")
+	c.Writer.Header().Add("Set-Cookie", "session=abc")
+	c.Writer.Header().Add("Set-Cookie", "trace=upstream-9931")
+	c.Writer.WriteHeader(http.StatusOK)
+
+	if got := recorder.Header().Values("Vary"); len(got) != 2 {
+		t.Fatalf("放行的多值头丢值: %v", got)
+	}
+	if got := recorder.Header().Values("Set-Cookie"); len(got) != 0 {
+		t.Fatalf("上游 Set-Cookie 未剥净: %v", got)
+	}
+}
+
+// TestEgressWriter_IdempotentAcrossWrites 多次写只裁剪一次，且不会把后写入的我方头吃掉。
+func TestEgressWriter_IdempotentAcrossWrites(t *testing.T) {
+	c, recorder := newGatedContext(t, nil)
+	c.Writer.Header().Set("Cf-Ray", "leak-1")
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+
+	for i := 0; i < 3; i++ {
+		if _, err := c.Writer.Write([]byte(": ping\n\n")); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	if got := recorder.Header().Get("Cf-Ray"); got != "" {
+		t.Fatalf("Cf-Ray 未剥离: %q", got)
+	}
+	if got := recorder.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	if got := recorder.Header().Get("X-Request-Id"); got != "ours-7f3c" {
+		t.Fatalf("X-Request-Id = %q", got)
 	}
 }

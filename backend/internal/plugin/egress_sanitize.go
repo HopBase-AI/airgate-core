@@ -86,13 +86,22 @@ type identityScrubber struct {
 	tokens []string // 全小写，按长度降序，先长后短避免残留
 }
 
-func newIdentityScrubber(acc *ent.Account) *identityScrubber {
+// newIdentityScrubber 按账号推导要抹掉的标识。model 是本次请求的模型名，
+// 用来防呆：账号常按模型命名（生产上有 seedance-inference-1、腾讯tokenhub-GLM5.3-7折
+// 这类），万一账号名恰好就是模型名，抹掉它会把客户最需要看的"哪个模型不支持什么"
+// 一起删掉——而模型名本来就是客户自己传的，也谈不上泄漏。
+func newIdentityScrubber(acc *ent.Account, model string) *identityScrubber {
 	s := &identityScrubber{}
 	seen := make(map[string]struct{})
+	lowerModel := strings.ToLower(strings.TrimSpace(model))
 	add := func(token string) {
 		token = strings.ToLower(strings.TrimSpace(token))
 		// 太短的 token（如账号名 "a"）会把正常文本打穿，直接跳过。
 		if len([]rune(token)) < 3 {
+			return
+		}
+		// 与模型名重合的 token 不抹（见函数注释）。
+		if lowerModel != "" && (strings.Contains(lowerModel, token) || strings.Contains(token, lowerModel)) {
 			return
 		}
 		if _, dup := seen[token]; dup {
@@ -112,8 +121,14 @@ func newIdentityScrubber(acc *ent.Account) *identityScrubber {
 		}
 		add(acc.Credentials["email"])
 	}
+	// 中继产品名与模型无关，不走上面的模型防呆。
 	for _, token := range upstreamVendorTokens {
-		add(token)
+		token = strings.ToLower(token)
+		if _, dup := seen[token]; dup {
+			continue
+		}
+		seen[token] = struct{}{}
+		s.tokens = append(s.tokens, token)
 	}
 
 	// 长 token 先替换，避免 "api.example.com" 被 "example.com" 先吃掉一半。

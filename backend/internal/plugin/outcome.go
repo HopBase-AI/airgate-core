@@ -76,7 +76,7 @@ func (f *Forwarder) writeClientErrorResult(c *gin.Context, state *forwardState, 
 		"reason", execution.outcome.Reason)
 	// 上游 4xx 原文要给客户端看（参数错误必须让调用方看懂），但先剥掉供应商标识：
 	// 中继产品名、供应商工单号、上游域名、厂商专有错误码前缀。
-	scrubber := newIdentityScrubber(state.account)
+	scrubber := newIdentityScrubber(state.account, state.model)
 	if state.stream && streamHeartbeatOnlyWritten(c) {
 		protocolStreamError(c, sanitizedClientErrorStatus(execution.outcome), "invalid_request_error", "invalid_request", sanitizedClientErrorMessage(execution.outcome, scrubber))
 	} else if !state.stream || !c.Writer.Written() {

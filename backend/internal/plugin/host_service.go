@@ -1169,7 +1169,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 			if returnableUpstream(outcome.Upstream) {
 				lastUpstream = outcome.Upstream
 				hasLastUpstream = true
-				lastUpstreamScrubber = newIdentityScrubber(accFull)
+				lastUpstreamScrubber = newIdentityScrubber(accFull, model)
 			}
 			if cerr := hostContextError(fwdErr); cerr != nil {
 				return nil, cerr
@@ -1180,7 +1180,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 				if replayableClient && returnableUpstream(outcome.Upstream) {
 					lastClientUpstream = outcome.Upstream
 					hasLastClientUpstream = true
-					lastClientUpstreamScrubber = newIdentityScrubber(accFull)
+					lastClientUpstreamScrubber = newIdentityScrubber(accFull, model)
 				}
 				failureSummary.recordExecution(forwardExecution{outcome: outcome, err: fwdErr, duration: duration})
 				slog.Warn("host_forward_attempt_failed",
@@ -1203,7 +1203,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 					sdk.LogFieldStatus, outcome.Upstream.StatusCode,
 					sdk.LogFieldReason, outcome.Reason,
 				)
-				scrubber := newIdentityScrubber(accFull)
+				scrubber := newIdentityScrubber(accFull, model)
 				if returnableUpstream(outcome.Upstream) {
 					return hostForwardPayload(outcome, scrubber), nil
 				}
@@ -1217,7 +1217,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 					sdk.LogFieldReason, outcome.Reason,
 				)
 				if returnableUpstream(outcome.Upstream) {
-					return hostForwardPayload(outcome, newIdentityScrubber(accFull)), nil
+					return hostForwardPayload(outcome, newIdentityScrubber(accFull, model)), nil
 				}
 				break
 			}
@@ -1354,7 +1354,7 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 		return nil, hostForwardContextError(fwdCtx, fwdErr)
 	}
 	if fwdErr != nil {
-		payload, terminalErr := hostPinnedGatewayError(outcome, fwdErr, newIdentityScrubber(accFull))
+		payload, terminalErr := hostPinnedGatewayError(outcome, fwdErr, newIdentityScrubber(accFull, model))
 		if terminalErr != nil {
 			slog.Warn("host_forward_pinned_failed",
 				sdk.LogFieldAccountID, accFull.ID, sdk.LogFieldError, fwdErr)
@@ -1370,7 +1370,7 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 		return nil, hostForwardGenericError()
 	}
 
-	resp := hostForwardPayload(outcome, newIdentityScrubber(accFull))
+	resp := hostForwardPayload(outcome, newIdentityScrubber(accFull, model))
 	if outcome.Kind == sdk.OutcomeSuccess && outcome.Usage != nil {
 		if usageID, err := h.recordHostForwardUsage(ctx, req, route, accFull.ID, route.Platform, model, accFull, userEmail, outcome, duration); err != nil {
 			slog.Error("host_forward_pinned_record_usage_failed",
@@ -1553,7 +1553,7 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 				if replayableClient {
 					snapshot := outcome
 					lastClientError = &snapshot
-					lastClientErrorScrubber = newIdentityScrubber(accFull)
+					lastClientErrorScrubber = newIdentityScrubber(accFull, model)
 				}
 				failureSummary.recordExecution(forwardExecution{outcome: outcome, err: fwdErr, duration: duration})
 				slog.Warn("host_forward_stream_attempt_failed",
@@ -1576,7 +1576,7 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 					sdk.LogFieldStatus, outcome.Upstream.StatusCode,
 					sdk.LogFieldReason, outcome.Reason,
 				)
-				return hostForwardClientError(outcome, newIdentityScrubber(accFull))
+				return hostForwardClientError(outcome, newIdentityScrubber(accFull, model))
 			}
 
 			if !fw.committed {
