@@ -877,3 +877,60 @@ func TestAllRoutesFailureSummaryRecordsTimeout(t *testing.T) {
 		t.Fatalf("upstreamFailureSeen = true, want false")
 	}
 }
+
+// 响应流中断：零字节且客户端仍在时应换账号重试（生产 95% 的 stream_aborted 属此类）；
+// 已写出应用数据或客户端已断开时不得重试。
+func TestCanFailoverStreamAborted(t *testing.T) {
+	t.Parallel()
+
+	newCtx := func(canceled bool, write func(*gin.Context)) *gin.Context {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+		if canceled {
+			ctx, cancel := context.WithCancel(req.Context())
+			cancel()
+			req = req.WithContext(ctx)
+		}
+		c.Request = req
+		installTTFTWriter(c)
+		if write != nil {
+			write(c)
+		}
+		return c
+	}
+
+	f := &Forwarder{}
+	state := &forwardState{stream: true, keyInfo: &auth.APIKeyInfo{}, account: &ent.Account{}}
+	aborted := forwardExecution{outcome: sdk.ForwardOutcome{Kind: sdk.OutcomeStreamAborted}}
+
+	// 未写任何字节 + 客户端在线 → 重试
+	if !f.canFailover(newCtx(false, nil), state, aborted) {
+		t.Error("零字节中断且客户端在线，应允许 failover")
+	}
+
+	// 只写过 SSE 心跳注释（不算应用数据）→ 仍可重试
+	heartbeat := func(c *gin.Context) { _, _ = c.Writer.WriteString(": ping\n\n") }
+	if !f.canFailover(newCtx(false, heartbeat), state, aborted) {
+		t.Error("仅写出心跳注释时，应允许 failover")
+	}
+
+	// 已写出真实应用数据 → 禁止重试（否则客户端会收到重复内容）
+	payload := func(c *gin.Context) { _, _ = c.Writer.WriteString("data: {\"delta\":\"hi\"}\n\n") }
+	if f.canFailover(newCtx(false, payload), state, aborted) {
+		t.Error("已写出应用数据时，禁止 failover")
+	}
+
+	// 客户端已断开 → 不重试（重试只烧上游成本）
+	if f.canFailover(newCtx(true, nil), state, aborted) {
+		t.Error("客户端已断开时，禁止 failover")
+	}
+
+	// 其余判决语义不变
+	if f.canFailover(newCtx(false, nil), state, forwardExecution{outcome: sdk.ForwardOutcome{Kind: sdk.OutcomeSuccess}}) {
+		t.Error("Success 不应 failover")
+	}
+	if !f.canFailover(newCtx(false, nil), state, forwardExecution{outcome: sdk.ForwardOutcome{Kind: sdk.OutcomeUpstreamTransient}}) {
+		t.Error("UpstreamTransient 应 failover")
+	}
+}
