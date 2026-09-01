@@ -222,7 +222,7 @@ func TestWriteClientErrorResponse_StreamBeforeResponseStarts(t *testing.T) {
 			},
 		},
 		Reason: "模型不支持",
-	})
+	}, nil)
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
@@ -230,6 +230,8 @@ func TestWriteClientErrorResponse_StreamBeforeResponseStarts(t *testing.T) {
 	if body := recorder.Body.String(); !strings.Contains(body, "模型不支持") {
 		t.Fatalf("body = %q, want contain '模型不支持'", body)
 	}
+	// 这一层仍照抄上游头；剥离由出网闸门 egressWriter 统一负责，
+	// 见 TestEgressWriter_StripsUpstreamIdentityHeaders。
 	if got := recorder.Header().Get("X-Upstream-Request-ID"); got != "req-empty-400" {
 		t.Fatalf("X-Upstream-Request-ID = %q, want req-empty-400", got)
 	}
@@ -259,7 +261,7 @@ func TestWriteClientErrorResponse_PassesThroughUpstreamBody(t *testing.T) {
 			Body:       []byte(body),
 		},
 		Reason: "HTTP 400: 模型不存在",
-	})
+	}, nil)
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
@@ -431,7 +433,7 @@ func TestSanitizedClientErrorMessage_ImageTooLarge(t *testing.T) {
 	if got := sanitizedClientErrorStatus(outcome); got != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status = %d, want %d", got, http.StatusRequestEntityTooLarge)
 	}
-	if got := sanitizedClientErrorMessage(outcome); got != imageTooLargeMessage {
+	if got := sanitizedClientErrorMessage(outcome, nil); got != imageTooLargeMessage {
 		t.Fatalf("message = %q, want %q", got, imageTooLargeMessage)
 	}
 }
@@ -451,7 +453,7 @@ func TestSanitizedClientErrorMessage_UsesUpstreamMessage(t *testing.T) {
 	if got := sanitizedClientErrorStatus(outcome); got != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", got, http.StatusBadRequest)
 	}
-	if got := sanitizedClientErrorMessage(outcome); got != "messages 中未找到用户消息" {
+	if got := sanitizedClientErrorMessage(outcome, nil); got != "messages 中未找到用户消息" {
 		t.Fatalf("message = %q, want upstream message", got)
 	}
 }
@@ -464,7 +466,7 @@ func TestSanitizedClientErrorMessage_DefaultWhenNoMessage(t *testing.T) {
 		Upstream: sdk.UpstreamResponse{StatusCode: http.StatusBadRequest},
 	}
 
-	if got := sanitizedClientErrorMessage(outcome); got != defaultClientErrorMessage {
+	if got := sanitizedClientErrorMessage(outcome, nil); got != defaultClientErrorMessage {
 		t.Fatalf("message = %q, want %q", got, defaultClientErrorMessage)
 	}
 }

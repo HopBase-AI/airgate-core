@@ -342,7 +342,7 @@ func TestHostPinnedGatewayErrorPreservesStatusHeadersAndEmptyBody(t *testing.T) 
 					Headers:    http.Header{"Retry-After": []string{"3"}},
 				},
 			}
-			payload, err := hostPinnedGatewayError(outcome, errors.New("gateway transport error"))
+			payload, err := hostPinnedGatewayError(outcome, errors.New("gateway transport error"), nil)
 			if err != nil {
 				t.Fatalf("hostPinnedGatewayError: %v", err)
 			}

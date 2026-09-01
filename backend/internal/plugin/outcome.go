@@ -74,10 +74,13 @@ func (f *Forwarder) writeClientErrorResult(c *gin.Context, state *forwardState, 
 		"group_id", state.keyInfo.GroupID,
 		"status_code", execution.outcome.Upstream.StatusCode,
 		"reason", execution.outcome.Reason)
+	// 上游 4xx 原文要给客户端看（参数错误必须让调用方看懂），但先剥掉供应商标识：
+	// 中继产品名、供应商工单号、上游域名、厂商专有错误码前缀。
+	scrubber := newIdentityScrubber(state.account, state.model)
 	if state.stream && streamHeartbeatOnlyWritten(c) {
-		protocolStreamError(c, sanitizedClientErrorStatus(execution.outcome), "invalid_request_error", "invalid_request", sanitizedClientErrorMessage(execution.outcome))
+		protocolStreamError(c, sanitizedClientErrorStatus(execution.outcome), "invalid_request_error", "invalid_request", sanitizedClientErrorMessage(execution.outcome, scrubber))
 	} else if !state.stream || !c.Writer.Written() {
-		writeClientErrorResponse(c, execution.outcome)
+		writeClientErrorResponse(c, execution.outcome, scrubber)
 	}
 	// 上游对这次 4xx 也计了费时照常落计费记录（费用必须与扣款一致），
 	// 但同时打上错误码，用户仍能在使用日志里认出它是一次失败请求。
@@ -102,16 +105,25 @@ func sanitizedClientErrorStatus(outcome sdk.ForwardOutcome) int {
 	return http.StatusBadRequest
 }
 
-func writeClientErrorResponse(c *gin.Context, outcome sdk.ForwardOutcome) {
-	if len(outcome.Upstream.Body) > 0 && writeUpstreamIfPresent(c, outcome.Upstream) {
-		return
+// writeClientErrorResponse 写出上游 4xx。上游体先过 identityScrubber：
+// 结构（error.type / code / param）原样保留，字符串值剥供应商标识；
+// 清洗后无信息量（非 JSON、或只剩空串）时回落我方生成的协议错误体。
+func writeClientErrorResponse(c *gin.Context, outcome sdk.ForwardOutcome, scrubber *identityScrubber) {
+	if len(outcome.Upstream.Body) > 0 {
+		if cleaned, ok := scrubber.scrubErrorBody(outcome.Upstream.Body); ok {
+			upstream := outcome.Upstream
+			upstream.Body = cleaned
+			if writeUpstreamIfPresent(c, upstream) {
+				return
+			}
+		}
 	}
 	copyUpstreamHeadersForGeneratedBody(c, outcome.Upstream.Headers)
 	statusCode := sanitizedClientErrorStatus(outcome)
-	protocolError(c, statusCode, "invalid_request_error", "invalid_request", sanitizedClientErrorMessage(outcome))
+	protocolError(c, statusCode, "invalid_request_error", "invalid_request", sanitizedClientErrorMessage(outcome, scrubber))
 }
 
-func sanitizedClientErrorMessage(outcome sdk.ForwardOutcome) string {
+func sanitizedClientErrorMessage(outcome sdk.ForwardOutcome, scrubber *identityScrubber) string {
 	message := extractErrorMessage(outcome.Upstream.Body)
 	if message == "" {
 		message = outcome.Reason
@@ -119,8 +131,8 @@ func sanitizedClientErrorMessage(outcome sdk.ForwardOutcome) string {
 	if containsImageTooLargeSignal(message) || outcome.Upstream.StatusCode == http.StatusRequestEntityTooLarge {
 		return imageTooLargeMessage
 	}
-	if message != "" {
-		return message
+	if cleaned := scrubber.scrubText(message); cleaned != "" {
+		return cleaned
 	}
 	return defaultClientErrorMessage
 }

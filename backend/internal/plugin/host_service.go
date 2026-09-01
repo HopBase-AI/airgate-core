@@ -1042,10 +1042,13 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 	hardExclude := make([]int, 0, maxHostForwardAttempts*len(routes))
 	var lastUpstream sdk.UpstreamResponse
 	hasLastUpstream := false
+	// 回放上游 4xx 体时要按「当时那个账号」剥供应商标识，账号在循环外已不可见，随快照一起捕获。
+	var lastUpstreamScrubber *identityScrubber
 	// 与 Forwarder 一致：4xx 判决也换号重试；穷尽后优先回放最后一次客户端错误
 	// 响应（而不是中途某次 5xx 的响应体），真实错误信息必须完整到达调用方。
 	var lastClientUpstream sdk.UpstreamResponse
 	hasLastClientUpstream := false
+	var lastClientUpstreamScrubber *identityScrubber
 	failureSummary := allRoutesFailureSummary{}
 	for _, route := range routes {
 		model := h.resolveHostModel(route.Platform, req.Model)
@@ -1166,6 +1169,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 			if returnableUpstream(outcome.Upstream) {
 				lastUpstream = outcome.Upstream
 				hasLastUpstream = true
+				lastUpstreamScrubber = newIdentityScrubber(accFull, model)
 			}
 			if cerr := hostContextError(fwdErr); cerr != nil {
 				return nil, cerr
@@ -1176,6 +1180,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 				if replayableClient && returnableUpstream(outcome.Upstream) {
 					lastClientUpstream = outcome.Upstream
 					hasLastClientUpstream = true
+					lastClientUpstreamScrubber = newIdentityScrubber(accFull, model)
 				}
 				failureSummary.recordExecution(forwardExecution{outcome: outcome, err: fwdErr, duration: duration})
 				slog.Warn("host_forward_attempt_failed",
@@ -1198,10 +1203,11 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 					sdk.LogFieldStatus, outcome.Upstream.StatusCode,
 					sdk.LogFieldReason, outcome.Reason,
 				)
+				scrubber := newIdentityScrubber(accFull, model)
 				if returnableUpstream(outcome.Upstream) {
-					return hostForwardPayload(outcome), nil
+					return hostForwardPayload(outcome, scrubber), nil
 				}
-				return nil, hostForwardClientError(outcome)
+				return nil, hostForwardClientError(outcome, scrubber)
 			}
 			if outcome.Kind != sdk.OutcomeSuccess {
 				slog.Warn("host_forward_outcome_failed",
@@ -1211,12 +1217,12 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 					sdk.LogFieldReason, outcome.Reason,
 				)
 				if returnableUpstream(outcome.Upstream) {
-					return hostForwardPayload(outcome), nil
+					return hostForwardPayload(outcome, newIdentityScrubber(accFull, model)), nil
 				}
 				break
 			}
 
-			resp := hostForwardPayload(outcome)
+			resp := hostForwardPayload(outcome, nil)
 
 			if outcome.Usage != nil {
 				if usageID, err := h.recordHostForwardUsage(ctx, req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration); err != nil {
@@ -1237,8 +1243,9 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 
 	if hasLastClientUpstream {
 		lastUpstream, hasLastUpstream = lastClientUpstream, true
+		lastUpstreamScrubber = lastClientUpstreamScrubber
 	}
-	return hostAllRoutesFailurePayload(failureSummary, lastUpstream, hasLastUpstream), nil
+	return hostAllRoutesFailurePayload(failureSummary, lastUpstream, hasLastUpstream, lastUpstreamScrubber), nil
 }
 
 // forwardPinned 钉选账号转发：异步任务型平台（提交任务后必须回到同一账号查询/取产物）
@@ -1347,7 +1354,7 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 		return nil, hostForwardContextError(fwdCtx, fwdErr)
 	}
 	if fwdErr != nil {
-		payload, terminalErr := hostPinnedGatewayError(outcome, fwdErr)
+		payload, terminalErr := hostPinnedGatewayError(outcome, fwdErr, newIdentityScrubber(accFull, model))
 		if terminalErr != nil {
 			slog.Warn("host_forward_pinned_failed",
 				sdk.LogFieldAccountID, accFull.ID, sdk.LogFieldError, fwdErr)
@@ -1363,7 +1370,7 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 		return nil, hostForwardGenericError()
 	}
 
-	resp := hostForwardPayload(outcome)
+	resp := hostForwardPayload(outcome, newIdentityScrubber(accFull, model))
 	if outcome.Kind == sdk.OutcomeSuccess && outcome.Usage != nil {
 		if usageID, err := h.recordHostForwardUsage(ctx, req, route, accFull.ID, route.Platform, model, accFull, userEmail, outcome, duration); err != nil {
 			slog.Error("host_forward_pinned_record_usage_failed",
@@ -1419,6 +1426,7 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 	failureSummary := allRoutesFailureSummary{}
 	// 与 Forwarder 一致：4xx 判决也换号重试，穷尽后回放最后一次客户端错误。
 	var lastClientError *sdk.ForwardOutcome
+	var lastClientErrorScrubber *identityScrubber
 
 	for _, route := range routes {
 		model := h.resolveHostModel(route.Platform, req.Model)
@@ -1545,6 +1553,7 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 				if replayableClient {
 					snapshot := outcome
 					lastClientError = &snapshot
+					lastClientErrorScrubber = newIdentityScrubber(accFull, model)
 				}
 				failureSummary.recordExecution(forwardExecution{outcome: outcome, err: fwdErr, duration: duration})
 				slog.Warn("host_forward_stream_attempt_failed",
@@ -1567,7 +1576,7 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 					sdk.LogFieldStatus, outcome.Upstream.StatusCode,
 					sdk.LogFieldReason, outcome.Reason,
 				)
-				return hostForwardClientError(outcome)
+				return hostForwardClientError(outcome, newIdentityScrubber(accFull, model))
 			}
 
 			if !fw.committed {
@@ -1619,7 +1628,7 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 	}
 
 	if lastClientError != nil {
-		return hostForwardClientError(*lastClientError)
+		return hostForwardClientError(*lastClientError, lastClientErrorScrubber)
 	}
 	return sendHostStreamFailure(stream, failureSummary)
 }
@@ -1688,12 +1697,13 @@ func (h *HostService) waitForHostAccountSlot(ctx context.Context, acc *ent.Accou
 	}
 }
 
-func hostAllRoutesFailurePayload(summary allRoutesFailureSummary, lastUpstream sdk.UpstreamResponse, hasLastUpstream bool) map[string]interface{} {
+func hostAllRoutesFailurePayload(summary allRoutesFailureSummary, lastUpstream sdk.UpstreamResponse, hasLastUpstream bool, lastUpstreamScrubber *identityScrubber) map[string]interface{} {
 	if !summary.allViableRoutesRateLimited() && hasLastUpstream && lastUpstream.StatusCode != http.StatusTooManyRequests {
-		return hostForwardPayload(sdk.ForwardOutcome{Upstream: lastUpstream})
+		return hostForwardPayload(sdk.ForwardOutcome{Upstream: lastUpstream}, lastUpstreamScrubber)
 	}
 	response := selectAllRoutesFailureResponse(summary)
-	return hostForwardPayload(hostStructuredFailureOutcome(response.status, response.code, response.message, response.retryAfter))
+	// 我方生成的失败文案，不含上游原文，无需清洗。
+	return hostForwardPayload(hostStructuredFailureOutcome(response.status, response.code, response.message, response.retryAfter), nil)
 }
 
 func hostAccountGatePayload(decision scheduler.AccountGateDecision) map[string]interface{} {
@@ -1709,15 +1719,15 @@ func hostAccountGatePayload(decision scheduler.AccountGateDecision) map[string]i
 	if retryAfter < 0 {
 		retryAfter = 0
 	}
-	return hostForwardPayload(hostStructuredFailureOutcome(statusCode, code, message, retryAfter))
+	return hostForwardPayload(hostStructuredFailureOutcome(statusCode, code, message, retryAfter), nil)
 }
 
-func hostPinnedGatewayError(outcome sdk.ForwardOutcome, forwardErr error) (map[string]interface{}, error) {
+func hostPinnedGatewayError(outcome sdk.ForwardOutcome, forwardErr error, scrubber *identityScrubber) (map[string]interface{}, error) {
 	if forwardErr == nil {
 		return nil, nil
 	}
 	if returnableUpstream(outcome.Upstream) {
-		return hostForwardPayload(outcome), nil
+		return hostForwardPayload(outcome, scrubber), nil
 	}
 	return nil, hostForwardGenericError()
 }
@@ -3010,15 +3020,24 @@ func hostCanceledRequestStatus(ctx context.Context, forwardErr error) int {
 	return 0
 }
 
-func hostForwardClientError(outcome sdk.ForwardOutcome) error {
-	return status.Error(codes.InvalidArgument, sanitizedClientErrorMessage(outcome))
+func hostForwardClientError(outcome sdk.ForwardOutcome, scrubber *identityScrubber) error {
+	return status.Error(codes.InvalidArgument, sanitizedClientErrorMessage(outcome, scrubber))
 }
 
-func hostForwardPayload(outcome sdk.ForwardOutcome) map[string]interface{} {
+// hostForwardPayload 回给插件的上游响应。4xx 体会经 identityScrubber 剥供应商标识——
+// 插件（工作坊 / AI Chat）通常把这段文案直接展示给用户。
+// 成功响应体一律不动：插件要从里面解析任务 ID、素材 URL 等，清洗会把功能改坏。
+func hostForwardPayload(outcome sdk.ForwardOutcome, scrubber *identityScrubber) map[string]interface{} {
+	body := outcome.Upstream.Body
+	if scrubber != nil && outcome.Upstream.StatusCode >= http.StatusBadRequest && len(body) > 0 {
+		if cleaned, ok := scrubber.scrubErrorBody(body); ok {
+			body = cleaned
+		}
+	}
 	return map[string]interface{}{
 		"status_code": outcome.Upstream.StatusCode,
 		"headers":     httpHeadersToProtoHost(outcome.Upstream.Headers),
-		"body":        string(outcome.Upstream.Body),
+		"body":        string(body),
 	}
 }
 
