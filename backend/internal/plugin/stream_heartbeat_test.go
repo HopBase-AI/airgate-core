@@ -99,7 +99,10 @@ func TestCanFailoverOutcomeMatrixBeforeResponseCommit(t *testing.T) {
 		{name: "client 4xx", kind: sdk.OutcomeClientError, status: http.StatusBadRequest, want: true},
 		{name: "client 404 model not found", kind: sdk.OutcomeClientError, status: http.StatusNotFound, want: true},
 		{name: "client 504 gateway timeout not replayable", kind: sdk.OutcomeClientError, status: http.StatusGatewayTimeout, want: false},
-		{name: "committed stream abort", kind: sdk.OutcomeStreamAborted, want: false},
+		// 该用例未写出任何字节:2026-09-01 起零字节中断改为可重试(生产 95% 的
+		// stream_aborted 属此类)。真正"已写出应用数据"与"客户端已断开"两种禁止重试
+		// 的场景见 TestCanFailoverStreamAborted。
+		{name: "uncommitted stream abort is retryable", kind: sdk.OutcomeStreamAborted, want: true},
 		{name: "success", kind: sdk.OutcomeSuccess, want: false},
 		{name: "unknown without plugin error", kind: sdk.OutcomeUnknown, want: false},
 		{name: "plugin transport failure", kind: sdk.OutcomeUnknown, err: io.ErrUnexpectedEOF, want: true},

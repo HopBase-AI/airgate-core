@@ -947,7 +947,34 @@ func (f *Forwarder) canFailover(c *gin.Context, state *forwardState, execution f
 	if execution.outcome.Kind == sdk.OutcomeClientError {
 		return replayableClientError(execution.outcome)
 	}
+	if execution.outcome.Kind == sdk.OutcomeStreamAborted {
+		return streamAbortRetryable(c)
+	}
 	return execution.outcome.Kind.ShouldFailover()
+}
+
+// streamAbortRetryable 判定一次「响应流中断」是否值得换账号重试。
+//
+// StreamAborted 默认不 failover 的理由是「字节已经流给客户端，重试会产生重复内容」，
+// 但生产实测这个前提大多不成立：近 30 天 371 次 stream_aborted 里 353 次（95%）
+// 在中断时**一个 token 都没吐给客户端**，此前一律直接回 502。
+//
+// 判据两条，缺一不可：
+//  1. 没有任何应用数据写给客户端（心跳/SSE 注释不算）——重试不会重复内容；
+//  2. 客户端连接还在——ctx 已取消说明是客户自己走了（近 30 天该类占 ~129 次，
+//     错误原文「读取上游 SSE 失败: context canceled」），重试纯烧上游成本。
+//
+// 剩下的就是上游侧中断，典型如中继先发保活帧把 HTTP 状态定死、真响应到达后无法回写
+// （2026-09-01 生产实例：「upstream response arrived after synthetic frame;
+// original HTTP status is already committed」），换账号大概率一次即好。
+func streamAbortRetryable(c *gin.Context) bool {
+	if c == nil || c.Request == nil {
+		return false
+	}
+	if streamApplicationResponseCommitted(c) {
+		return false
+	}
+	return canceledRequestStatus(c.Request.Context().Err()) == 0
 }
 
 // replayableClientError 判定一次 4xx 判决是否值得换账号重放。
