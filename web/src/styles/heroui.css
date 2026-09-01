@@ -402,6 +402,40 @@
   gap: 0;
 }
 
+/* 秒粒度的起止两段在窄屏一行放不下(zh 约 397px、en 空态达 497px),单行会被
+   上面的 overflow:hidden 连同 suffix 列一起压成 0 宽——结束时间和清除/日历
+   按钮直接消失。窄屏改成起止各占一行,按钮跨两行贴右。 */
+@media (width < 40rem) {
+  /* HeroUI 给控件写死了单行高度(36px),两行内容会被上面的 overflow:hidden
+     从下方裁掉,所以窄屏必须同时放开外层与 group 的高度。 */
+  .ag-usage-date-range,
+  .ag-usage-date-range .date-input-group {
+    height: auto !important;
+  }
+
+  .ag-usage-date-range .date-input-group {
+    grid-template-columns: max-content minmax(0, 1fr) max-content;
+    row-gap: 0.125rem;
+    padding-block: 0.25rem;
+  }
+
+  .ag-usage-date-range .date-input-group__input[slot='start'] {
+    grid-area: 1 / 1 / 2 / 3;
+  }
+
+  .ag-usage-date-range .date-range-picker__range-separator {
+    grid-area: 2 / 1 / 3 / 2;
+  }
+
+  .ag-usage-date-range .date-input-group__input[slot='end'] {
+    grid-area: 2 / 2 / 3 / 3;
+  }
+
+  .ag-usage-date-range .date-input-group__suffix {
+    grid-area: 1 / 3 / 3 / 4;
+  }
+}
+
 .ag-date-range-clear,
 .ag-date-range-trigger {
   display: inline-flex !important;

@@ -35,7 +35,10 @@ function toDateValue(value?: string): DateValue | null {
 
 export function UsageDateRangeFilter({
   clearLabel = 'Clear',
-  className = 'w-full sm:w-64',
+  // 秒粒度下起止两段的自然宽度随语言差异很大(zh 约 397px、zh-HK 456px、
+  // en 空态 497px:mm/dd/yyyy , --:--:-- AM 两组)。固定宽度不是裁英文就是
+  // 让中文白占半行,所以桌面按内容自适应,窄屏才退回占满一行。
+  className = 'w-full sm:w-auto',
   endDate,
   label,
   onChange,
