@@ -13,6 +13,10 @@ import (
 // forwardState 一次转发请求在 Core 内的上下文。
 // 跨 failover attempt 稳定的字段（body / model / keyInfo / plugin）+ 每次 attempt 会被覆盖的字段（account / requestID）。
 type forwardState struct {
+	// attemptNo 本次 callPlugin 是整条 failover 链里的第几次尝试(1-based)。
+	// 经 X-Airgate-Attempt 头交给插件:插件据此在重试时放宽首字看门狗——首次 30s 快速识别真卡死,
+	// 换号重试时上游缓存必然未命中、合法首字更慢,同样的 30s 会把「慢而活着」的请求连杀三次后 502。
+	attemptNo   int
 	startedAt   time.Time
 	requestPath string
 	requestID   string

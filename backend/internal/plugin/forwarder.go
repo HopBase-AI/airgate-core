@@ -338,6 +338,7 @@ func (f *Forwarder) Forward(c *gin.Context) {
 					state.requestID,
 				)
 			}
+			state.attemptNo = totalAttempts + 1
 			execution := f.callPlugin(c, state)
 			stopProbeLease()
 			attempt++
