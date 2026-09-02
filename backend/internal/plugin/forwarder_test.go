@@ -934,3 +934,28 @@ func TestCanFailoverStreamAborted(t *testing.T) {
 		t.Error("UpstreamTransient 应 failover")
 	}
 }
+
+// TestBuildPluginRequestCarriesAttemptHeader failover 序号经 X-Airgate-Attempt 交给插件
+// (插件据此在重试时放宽首字看门狗);客户端自带的同名头必须被剥掉,不能让调用方自选序号。
+func TestBuildPluginRequestCarriesAttemptHeader(t *testing.T) {
+	t.Parallel()
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Request.Header.Set("X-Airgate-Attempt", "9")
+	state := &forwardState{
+		requestPath: "/v1/responses",
+		stream:      true,
+		keyInfo:     &auth.APIKeyInfo{},
+		account:     &ent.Account{},
+	}
+
+	if got := buildPluginRequest(c, state).Headers.Get("X-Airgate-Attempt"); got != "" {
+		t.Fatalf("attemptNo=0 时不应带序号(且客户端伪造头应被剥掉),got %q", got)
+	}
+	state.attemptNo = 2
+	if got := buildPluginRequest(c, state).Headers.Get("X-Airgate-Attempt"); got != "2" {
+		t.Fatalf("X-Airgate-Attempt = %q, want 2", got)
+	}
+}

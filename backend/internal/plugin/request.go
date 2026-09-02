@@ -507,6 +507,11 @@ func buildPluginRequest(c *gin.Context, state *forwardState) *sdk.ForwardRequest
 		headers.Set("X-Forwarded-Query", qs)
 	}
 	applyAccountCapabilityHeaders(headers, state.account)
+	// 第几次尝试:插件据此在换号重试时放宽首字看门狗(见 forwardState.attemptNo)。
+	// 插件向上游透传头走白名单,此内部头不会泄给上游。
+	if state.attemptNo > 0 {
+		headers.Set("X-Airgate-Attempt", strconv.Itoa(state.attemptNo))
+	}
 
 	req := &sdk.ForwardRequest{
 		Account: buildSDKAccount(state.account),
@@ -555,6 +560,7 @@ func buildHeaders(source http.Header, keyInfo *auth.APIKeyInfo) http.Header {
 		lower := strings.ToLower(k)
 		if lower == "authorization" || lower == "x-api-key" ||
 			lower == "x-airgate-internal" || lower == "x-airgate-test-mode" ||
+			lower == "x-airgate-attempt" ||
 			lower == "connection" || lower == "keep-alive" ||
 			lower == "proxy-authorization" || lower == "te" ||
 			lower == "transfer-encoding" || lower == "upgrade" {
