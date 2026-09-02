@@ -693,7 +693,7 @@ func TestReplaceFold_ByteLengthChangingRunes(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := replaceFold(tc.text, "acme", "")
+			got := replaceFold(tc.text, "acme", "", boundaryWord)
 			if got != tc.want {
 				t.Fatalf("replaceFold = %q, want %q", got, tc.want)
 			}

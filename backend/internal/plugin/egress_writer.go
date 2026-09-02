@@ -84,7 +84,7 @@ type egressWriter struct {
 // ttftWriter 需要保持在最外层，streamHeartbeatOnlyWritten 等处对 c.Writer 做
 // *ttftWriter 类型断言，包反了断言会静默失败。
 func installEgressWriter(c *gin.Context, extraAllow []string) *egressWriter {
-	if existing, ok := c.Writer.(*egressWriter); ok {
+	if existing := findEgressWriter(c.Writer); existing != nil {
 		return existing
 	}
 	w := &egressWriter{
@@ -94,6 +94,23 @@ func installEgressWriter(c *gin.Context, extraAllow []string) *egressWriter {
 	}
 	c.Writer = w
 	return w
+}
+
+// findEgressWriter 沿 ResponseWriter 包装链查找已安装的闸门。
+// 只认最外层会漏判：ttftWriter 装在外层后 c.Writer 已不是 *egressWriter，
+// 再装一次会在最外层多包一层，让 streamHeartbeatOnlyWritten 的 *ttftWriter 断言静默失败。
+func findEgressWriter(w gin.ResponseWriter) *egressWriter {
+	for w != nil {
+		switch typed := w.(type) {
+		case *egressWriter:
+			return typed
+		case *ttftWriter:
+			w = typed.ResponseWriter
+		default:
+			return nil
+		}
+	}
+	return nil
 }
 
 // normalizeHeaderAllowList 规范化插件声明的放行头：小写、去空白、丢弃空项。

@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -3029,14 +3030,20 @@ func hostForwardClientError(outcome sdk.ForwardOutcome, scrubber *identityScrubb
 // 成功响应体一律不动：插件要从里面解析任务 ID、素材 URL 等，清洗会把功能改坏。
 func hostForwardPayload(outcome sdk.ForwardOutcome, scrubber *identityScrubber) map[string]interface{} {
 	body := outcome.Upstream.Body
+	headers := outcome.Upstream.Headers
 	if scrubber != nil && outcome.Upstream.StatusCode >= http.StatusBadRequest && len(body) > 0 {
-		if cleaned, ok := scrubber.scrubErrorBody(body); ok {
+		if cleaned, ok := scrubber.scrubErrorBody(body); ok && !bytes.Equal(cleaned, body) {
 			body = cleaned
+			// body 变了，上游描述原始长度的头就过期了。插件若把这份头原样写出，
+			// net/http 会按旧 Content-Length 拒写或截断——正是 2026-08-29 CF 520 的形状。
+			headers = headers.Clone()
+			headers.Del("Content-Length")
+			headers.Del("Transfer-Encoding")
 		}
 	}
 	return map[string]interface{}{
 		"status_code": outcome.Upstream.StatusCode,
-		"headers":     httpHeadersToProtoHost(outcome.Upstream.Headers),
+		"headers":     httpHeadersToProtoHost(headers),
 		"body":        string(body),
 	}
 }
