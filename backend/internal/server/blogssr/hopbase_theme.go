@@ -63,7 +63,8 @@ const hopBaseFooterStr = `<footer class="ft"><div class="ft-in">
 <div class="ft-taxonomy" aria-label="Model directory">
 <div class="ft-col ft-model-col">
 <h4>Claude</h4>
-<a class="ft-model-featured" href="/models#claude-fable-5">claude-fable-5</a>
+<a class="ft-model-featured" href="/models#claude-fable-5-1">claude-fable-5-1</a>
+<a href="/models#claude-fable-5">claude-fable-5</a>
 <a href="/models#claude-opus-5">claude-opus-5</a>
 <a href="/models#claude-sonnet-5">claude-sonnet-5</a>
 <a href="/models#claude-opus-4-8">claude-opus-4-8</a>
