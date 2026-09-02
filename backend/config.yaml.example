@@ -38,3 +38,9 @@ plugins:
   # dev:
   #   - name: airgate-openai
   #     path: ../../airgate-openai/backend
+
+forward:
+  # 流式请求的对冲重试:主尝试超过该时长仍未向客户端提交任何内容时,并行向组内另一个账号
+  # 发起同样的请求,谁先出内容用谁,另一路取消(跑满该时长仍零输出的输家按瞬时故障降级)。
+  # Go duration 字符串;留空沿用内置默认 15s;"0" 关闭。环境变量 FORWARD_HEDGE_DELAY 可覆盖。
+  hedge_delay: ""

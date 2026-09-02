@@ -339,10 +339,123 @@ func (f *Forwarder) Forward(c *gin.Context) {
 				)
 			}
 			state.attemptNo = totalAttempts + 1
-			execution := f.callPlugin(c, state)
-			stopProbeLease()
-			attempt++
-			totalAttempts++
+			var execution forwardExecution
+			if hedgeDelay := ForwardHedgeDelay(); f.hedgeEligible(state, hedgeDelay, attempt) {
+				// 对冲重试(见 hedge.go):主尝试与对冲尝试各持一份 state 副本与独立 writer,
+				// 赢家的归属写回共享 state,之后的判决 / 计费 / 日志都落到真正服务了请求的那一路。
+				arb := newHedgeArbiter(c.Writer)
+				primaryState := *state
+				primary := f.newHedgeAttempt(1, &primaryState, arb, releaseAccountSlot, stopProbeLease)
+				primaryAccountID := accountID
+				acquireHedge := func() *hedgeAttempt {
+					hs := *state
+					hs.attemptNo = totalAttempts + 2
+					exclude := make([]int, 0, len(hardExclude)+len(softExclude)+1)
+					exclude = append(exclude, hardExclude...)
+					exclude = append(exclude, softExclude...)
+					exclude = append(exclude, primaryAccountID)
+					if err := f.pickAccount(c, &hs, exclude...); err != nil {
+						logger.Debug("forward_hedge_no_candidate", sdk.LogFieldError, err)
+						return nil
+					}
+					hedgeRelease, ok := f.acquireAccountSlot(c, &hs)
+					if !ok {
+						return nil
+					}
+					hedgeGate, hedgeGateErr := f.scheduler.ClaimAccountGate(
+						ctx,
+						hs.account.ID,
+						hs.account.Platform,
+						hs.modelForScheduling(),
+						hs.requestID,
+					)
+					if hedgeGateErr != nil || !hedgeGate.Allowed() {
+						hedgeRelease()
+						f.scheduler.DecrementRPM(context.Background(), hs.account.ID)
+						f.releaseFamilyProbe(&hs)
+						return nil
+					}
+					stopHedgeProbe := func() {}
+					if hedgeGate.ProbeClaimed {
+						stopHedgeProbe = f.scheduler.MaintainFamilyProbe(
+							ctx,
+							hs.account.ID,
+							hs.account.Platform,
+							hs.modelForScheduling(),
+							hs.requestID,
+						)
+					}
+					return f.newHedgeAttempt(2, &hs, arb, hedgeRelease, stopHedgeProbe)
+				}
+				onLoserFailed := func(a *hedgeAttempt) {
+					failureSummary.recordExecution(a.execution)
+					attrs := []any{
+						"attempt", a.state.attemptNo,
+						"kind", a.execution.outcome.Kind,
+						"hedge_loser", true,
+						sdk.LogFieldDurationMs, a.execution.duration.Milliseconds(),
+						sdk.LogFieldReason, judgmentReason(a.execution),
+					}
+					if s := a.execution.outcome.Upstream.StatusCode; s > 0 {
+						attrs = append(attrs, "upstream_status", s)
+					}
+					if a.execution.err != nil {
+						attrs = append(attrs, sdk.LogFieldError, a.execution.err)
+					}
+					logger.With(sdk.LogFieldAccountID, a.accountID()).Warn("forward_attempt_failed", attrs...)
+					a.releaseSlot()
+					if !f.applyOutcome(ctx, a.state, a.execution) {
+						return
+					}
+					if a.execution.outcome.Kind == sdk.OutcomeClientError {
+						lastClientError = &clientErrorReplay{
+							execution: a.execution,
+							account:   a.state.account,
+							keyInfo:   a.state.keyInfo,
+							route:     a.state.selectedRoute,
+						}
+					}
+					if a.execution.outcome.Kind.IsAccountFault() {
+						hardExclude = append(hardExclude, a.accountID())
+					} else {
+						softExclude = append(softExclude, a.accountID())
+					}
+				}
+				onLoserTimedOut := func(a *hedgeAttempt, ranFor time.Duration) {
+					// 被淘汰且跑满对冲延迟仍零输出:与首字看门狗同一种判决,只是阈值更早。
+					a.execution = forwardExecution{
+						outcome: sdk.ForwardOutcome{
+							Kind:     sdk.OutcomeUpstreamTransient,
+							Reason:   "对冲落败:上游 " + strconv.FormatInt(int64(ranFor.Seconds()), 10) + "s 未产出任何内容,已由其它账号服务",
+							Upstream: sdk.UpstreamResponse{StatusCode: http.StatusBadGateway},
+						},
+						duration: ranFor,
+					}
+					onLoserFailed(a)
+				}
+				winner, launched := f.runHedgedAttempts(c, primary, hedgeDelay, f.callPluginWith, hedgeCallbacks{
+					acquireHedge:    acquireHedge,
+					onLoserFailed:   onLoserFailed,
+					onLoserTimedOut: onLoserTimedOut,
+					retryable:       func(a *hedgeAttempt) bool { return failoverAllowed(c, a.execution) },
+				})
+				state.account = winner.state.account
+				state.requestID = winner.state.requestID
+				state.schedulingModel = winner.state.schedulingModel
+				state.attemptNo = winner.state.attemptNo
+				state.grpcCallAt = winner.state.grpcCallAt
+				accountID = state.account.ID
+				attemptLogger = logger.With(sdk.LogFieldAccountID, accountID)
+				releaseAccountSlot = winner.releaseSlot
+				execution = winner.execution
+				attempt += launched
+				totalAttempts += launched
+			} else {
+				execution = f.callPlugin(c, state)
+				stopProbeLease()
+				attempt++
+				totalAttempts++
+			}
 			slotReleased := false
 			endCalled := false
 			releaseSlot := func() {
@@ -945,6 +1058,12 @@ func (f *Forwarder) canFailover(c *gin.Context, state *forwardState, execution f
 	if state.stream && streamApplicationResponseCommitted(c) {
 		return false
 	}
+	return failoverAllowed(c, execution)
+}
+
+// failoverAllowed 在「尚未向客户端提交任何应用数据」的前提下,判定一次执行结果是否允许换号。
+// 对冲重试的每一路各有自己的 writer,「是否已提交」由各路自己判断,这里只看结果本身。
+func failoverAllowed(c *gin.Context, execution forwardExecution) bool {
 	if execution.err != nil {
 		return true
 	}
@@ -952,9 +1071,16 @@ func (f *Forwarder) canFailover(c *gin.Context, state *forwardState, execution f
 		return replayableClientError(execution.outcome)
 	}
 	if execution.outcome.Kind == sdk.OutcomeStreamAborted {
-		return streamAbortRetryable(c)
+		// 客户端自己走了就别再烧上游;否则(上游侧中断)换号大概率一次即好。
+		return c != nil && c.Request != nil && canceledRequestStatus(c.Request.Context().Err()) == 0
 	}
 	return execution.outcome.Kind.ShouldFailover()
+}
+
+// hedgeEligible 本次尝试是否值得对冲:只对流式请求;对冲自身算一次 attempt,须留在上限内。
+func (f *Forwarder) hedgeEligible(state *forwardState, delay time.Duration, attempt int) bool {
+	return f != nil && f.scheduler != nil && state != nil && state.realtime &&
+		delay > 0 && attempt+1 < maxFailoverAttempts
 }
 
 // streamAbortRetryable 判定一次「响应流中断」是否值得换账号重试。

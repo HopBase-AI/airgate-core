@@ -50,6 +50,31 @@ type Config struct {
 	Log      LogConfig      `yaml:"log"`
 	Plugins  PluginsConfig  `yaml:"plugins"`
 	Billing  BillingConfig  `yaml:"billing"`
+	Forward  ForwardConfig  `yaml:"forward"`
+}
+
+// ForwardConfig 转发管线配置
+type ForwardConfig struct {
+	// HedgeDelay 流式请求的对冲重试延迟(Go duration 字符串,如 "15s"):主尝试超过该时长仍未向
+	// 客户端提交任何应用数据时,并行向另一个账号发起同样的请求,谁先出内容用谁。
+	// 留空沿用内置默认 15s;"0" 关闭对冲。
+	HedgeDelay string `yaml:"hedge_delay"`
+}
+
+// HedgeDelayDuration 解析对冲延迟;未配置或非法返回 ok=false(沿用内置默认)。
+func (c ForwardConfig) HedgeDelayDuration() (time.Duration, bool) {
+	raw := strings.TrimSpace(c.HedgeDelay)
+	if raw == "" {
+		return 0, false
+	}
+	if raw == "0" {
+		return 0, true
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d < 0 {
+		return 0, false
+	}
+	return d, true
 }
 
 // BillingConfig 计费配置
@@ -254,6 +279,8 @@ func applyEnvOverrides(cfg *Config) {
 
 	// 计费
 	envStr("BILLING_WAL_DIR", &cfg.Billing.WALDir)
+	// 转发
+	envStr("FORWARD_HEDGE_DELAY", &cfg.Forward.HedgeDelay)
 }
 
 // envStr 如果环境变量存在，覆盖目标字符串
