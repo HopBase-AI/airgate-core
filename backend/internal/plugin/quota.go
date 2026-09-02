@@ -55,6 +55,10 @@ func (f *Forwarder) isMetadataOnlyPath(path string) bool {
 	return false
 }
 
+// concurrencyRetryAfter 并发闸门 429 给客户端的退避提示。并发槽位随在途请求完成即释放，
+// 1s 足够；不带 Retry-After 的 429 会让 SDK 退化成盲目重试（或干脆不重试）。
+const concurrencyRetryAfter = time.Second
+
 // acquireClientQuota 获取用户级 + API Key 级两层并发槽。返回 release 回调；
 // 任意一层超限都直接写 429 并返回 nil（调用方看到 nil 立即 return）。
 //
@@ -69,7 +73,7 @@ func (f *Forwarder) acquireClientQuota(c *gin.Context, state *forwardState) func
 	userHeld := false
 	if max := state.keyInfo.UserMaxConcurrency; max > 0 {
 		if err := f.concurrency.AcquireUserSlot(ctx, userID, slotID, max, 0); err != nil {
-			protocolError(c, http.StatusTooManyRequests, "rate_limit_error", "user_concurrency_limit", "用户并发已达上限，请稍后重试")
+			protocolRateLimitError(c, http.StatusTooManyRequests, "user_concurrency_limit", "用户并发已达上限，请稍后重试", concurrencyRetryAfter)
 			f.recordFailureUsage(c, state, usageFailure{
 				code:    appusage.ErrorCodeConcurrencyLimit,
 				status:  http.StatusTooManyRequests,
@@ -86,7 +90,7 @@ func (f *Forwarder) acquireClientQuota(c *gin.Context, state *forwardState) func
 			if userHeld {
 				f.concurrency.ReleaseUserSlot(ctx, userID, slotID)
 			}
-			protocolError(c, http.StatusTooManyRequests, "rate_limit_error", "apikey_concurrency_limit", "API Key 并发已达上限，请稍后重试")
+			protocolRateLimitError(c, http.StatusTooManyRequests, "apikey_concurrency_limit", "API Key 并发已达上限，请稍后重试", concurrencyRetryAfter)
 			f.recordFailureUsage(c, state, usageFailure{
 				code:    appusage.ErrorCodeConcurrencyLimit,
 				status:  http.StatusTooManyRequests,

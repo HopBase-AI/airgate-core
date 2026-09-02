@@ -1,7 +1,9 @@
 package plugin
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/url"
 	"regexp"
 	"strings"
@@ -19,6 +21,11 @@ import (
 //
 // 落库不清洗：usage_logs.error_message 仍存原文，管理员排障要靠它；
 // 只有对外那一路过清洗，与 appusage.ErrorMessageVisibleToUser 的口径一致。
+//
+// 设计取舍（2026-09-02 加固）：这套清洗跑在自然语言上，错误模式是双向的——漏了泄漏、
+// 过了把客户的报错改花。30 天生产语料回放显示全部防泄漏效果都来自通用规则，账号推导
+// token 一次都没多剥掉任何东西；所以账号推导这一半按「宁可漏、不可误伤」收紧：
+// 词边界匹配、短 ASCII 名不当 token、通用词停用。
 
 var (
 	// 供应商工单号尾注：(Request-ID: USA-20434252906100) / [trace-id: xxx]
@@ -30,9 +37,15 @@ var (
 	reUpstreamFailedPrefix = regexp.MustCompile(`(?i)upstream\s+(?:request|submit)\s+failed\s*(?:\([^)]*\))?\s*[:：]\s*`)
 	// 厂商专有错误码前缀：<400> InternalError.Algo.InvalidParameter:
 	reVendorCodePrefix = regexp.MustCompile(`^\s*<\d{3}>\s*[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+\s*[:：]\s*`)
-	// 裸 URL 与裸域名
-	reURL        = regexp.MustCompile(`(?i)\bhttps?://[^\s"'<>)）\]]+`)
-	reBareDomain = regexp.MustCompile(`(?i)\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:com|cn|net|org|io|ai|co|dev|app|xyz|top|me|tech)\b`)
+	// 裸 URL
+	reURL = regexp.MustCompile(`(?i)\bhttps?://[^\s"'<>)）\]]+`)
+	// 裸域名。分两档：
+	//   - com/cn/net/org 这类几乎只当域名用的 TLD，一级即认（aijws.com）；
+	//   - io/ai/co/me/top/app/dev/tech 这类同时是常见英文词/JSON 路径尾段的 TLD，
+	//     至少两级才认（api.minimax.io 认，parameters.top / data.io 不认）。
+	// 我方上游的主机名另由账号 base_url 推导（见 newIdentityScrubber），这里只兜第三方。
+	reBareDomainStrict = regexp.MustCompile(`(?i)\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:com|cn|net|org)\b`)
+	reBareDomainLoose  = regexp.MustCompile(`(?i)\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.){2,}(?:io|ai|co|dev|app|xyz|top|me|tech)\b`)
 	// 上游 HTML 错误页：从第一个 HTML 标签起整段截断。
 	// 生产实测：中继 502/429 时会把 nginx/openresty 的错误页原样塞进报错文案，
 	// 里面带着上游 Web 服务器指纹。
@@ -46,6 +59,10 @@ var (
 	// 连续空白
 	reSpaces = regexp.MustCompile(`[ \t]{2,}`)
 )
+
+// urlPlaceholder 删 URL 时的占位。直接删空会留下断句（生产实测腾讯 402 的
+// "…enable postpaid billing. See: https://console.cloud.tencent.com/…" 被删成结尾一个光秃秃的 See）。
+const urlPlaceholder = "[link removed]"
 
 // upstreamVendorTokens 账号数据里推导不出、但会出现在上游错误文案里的中继/供应商标识。
 // 绝大多数标识由 identityScrubber 从当前请求的账号（名称、base_url、邮箱）自动推导，
@@ -61,15 +78,27 @@ var upstreamVendorTokens = []string{
 	"onehub",
 }
 
-// upstreamInfraSignals 上游把自己的基础设施内部错误（数据库连接、进程崩溃栈）
+// upstreamInfraHardSignals 上游把自己的基础设施内部错误（数据库连接串、进程崩溃栈）
 // 当成 4xx 文案回给我们。这类文案对客户毫无用处，却会暴露上游的技术栈与内网结构，
-// 命中即整条判为不可用，回落我方兜底文案。
+// 命中即整条判为不可用，回落我方兜底文案。这一档是「只会出现在内部错误里」的强信号。
 // 生产实测样本：failed to connect to `user=postgres database=new-api`: 10.0.1.10:5432 …
 // no pg_hba.conf entry for host "10.0.25.41"。
-var upstreamInfraSignals = []string{
-	"pg_hba", "user=postgres", "postgresql", "mysql", "redis://",
-	"goroutine ", "panic:", "traceback (most recent call last)",
-	"connection refused", "no such host",
+var upstreamInfraHardSignals = []string{
+	"pg_hba", "user=postgres", "dial tcp",
+	"goroutine ", "traceback (most recent call last)",
+}
+
+// upstreamInfraSoftSignals 同样指向上游内部故障，但这些词也可能出现在上游回显用户
+// prompt 的审核/校验类 4xx 里（"prompt mentions mysql injection"、"connection refused by
+// policy engine"）。单独出现不判废，须与内网地址 / 连接串特征同时出现才整条判废。
+var upstreamInfraSoftSignals = []string{
+	"postgresql", "mysql", "redis://",
+	"connection refused", "no such host", "panic:",
+}
+
+// upstreamInfraCorroboration 佐证软信号确实是基础设施错误的特征：连接串键、常见数据库端口。
+var upstreamInfraCorroboration = []string{
+	"host=", "dbname=", "database=", ":5432", ":3306", ":6379",
 }
 
 // upstreamIDBodyKeys 上游错误体里纯属供应商内部追踪的键，直接删掉而不是清洗值。
@@ -82,28 +111,47 @@ var upstreamIDBodyKeys = map[string]struct{}{
 	"upstream_request_id": {},
 }
 
+// scrubGenericTokens 账号名恰好是协议/报错常用词时不能当 token：
+// 一个叫 stream 的账号会把客户看的 "stream_options must be…" 删成 "options must be…"，
+// 且只在该账号被调度到时发生、落库还是原文，几乎不可能靠日志发现。
+var scrubGenericTokens = map[string]struct{}{
+	"stream": {}, "tokens": {}, "server": {}, "client": {}, "models": {},
+	"request": {}, "response": {}, "default": {}, "message": {}, "messages": {},
+	"content": {}, "function": {}, "functions": {}, "system": {}, "assistant": {},
+	"gateway": {}, "upstream": {}, "provider": {}, "channel": {}, "account": {},
+	"balance": {}, "quota": {}, "timeout": {}, "invalid": {}, "unknown": {},
+	"internal": {}, "error": {}, "errors": {}, "openai": {}, "claude": {},
+	"gemini": {}, "codex": {}, "standard": {}, "premium": {}, "enterprise": {},
+}
+
+// minASCIITokenLen 纯 ASCII 的账号推导 token 至少这么长才参与清洗：
+// max / pro / api / new / tool / luna / spark 这类短名与正文词高度重合。
+// 含 CJK 的名字（贾克斯 / 小草）三个字就足够独特，按 rune 数 ≥ 3 放行。
+const minASCIITokenLen = 6
+
 // identityScrubber 按「当前这次请求实际用的上游账号」推导要抹掉的标识。
 // 相比维护一张全局供应商名单，这样零维护、也不会误伤无关文本。
 type identityScrubber struct {
-	tokens []string // 全小写，按长度降序，先长后短避免残留
+	tokens []string // 账号推导 token：全小写，按长度降序，先长后短避免残留；词边界严格
 }
 
 // newIdentityScrubber 按账号推导要抹掉的标识。model 是本次请求的模型名，
 // 用来防呆：账号常按模型命名（生产上有 seedance-inference-1、腾讯tokenhub-GLM5.3-7折
-// 这类），万一账号名恰好就是模型名，抹掉它会把客户最需要看的"哪个模型不支持什么"
-// 一起删掉——而模型名本来就是客户自己传的，也谈不上泄漏。
+// 这类），万一账号名恰好就是模型名（或模型名的一段），抹掉它会把客户最需要看的
+// "哪个模型不支持什么"一起删掉——而模型名本来就是客户自己传的，也谈不上泄漏。
+//
+// 只在「token 是模型名的子串」时跳过；账号名**包含**模型名（腾讯tokenhub-GLM5.3-7折）
+// 仍是完整的供应商标识，照常剥。早先双向 Contains 会让这类命名整个退出清洗。
 func newIdentityScrubber(acc *ent.Account, model string) *identityScrubber {
 	s := &identityScrubber{}
 	seen := make(map[string]struct{})
 	lowerModel := strings.ToLower(strings.TrimSpace(model))
 	add := func(token string) {
 		token = strings.ToLower(strings.TrimSpace(token))
-		// 太短的 token（如账号名 "a"）会把正常文本打穿，直接跳过。
-		if len([]rune(token)) < 3 {
+		if !eligibleIdentityToken(token) {
 			return
 		}
-		// 与模型名重合的 token 不抹（见函数注释）。
-		if lowerModel != "" && (strings.Contains(lowerModel, token) || strings.Contains(token, lowerModel)) {
+		if lowerModel != "" && strings.Contains(lowerModel, token) {
 			return
 		}
 		if _, dup := seen[token]; dup {
@@ -123,16 +171,6 @@ func newIdentityScrubber(acc *ent.Account, model string) *identityScrubber {
 		}
 		add(acc.Credentials["email"])
 	}
-	// 中继产品名与模型无关，不走上面的模型防呆。
-	for _, token := range upstreamVendorTokens {
-		token = strings.ToLower(token)
-		if _, dup := seen[token]; dup {
-			continue
-		}
-		seen[token] = struct{}{}
-		s.tokens = append(s.tokens, token)
-	}
-
 	// 长 token 先替换，避免 "api.example.com" 被 "example.com" 先吃掉一半。
 	for i := 1; i < len(s.tokens); i++ {
 		for j := i; j > 0 && len(s.tokens[j]) > len(s.tokens[j-1]); j-- {
@@ -140,6 +178,27 @@ func newIdentityScrubber(acc *ent.Account, model string) *identityScrubber {
 		}
 	}
 	return s
+}
+
+// eligibleIdentityToken 账号推导 token 的准入：太短、纯 ASCII 太短、通用词一律不要。
+func eligibleIdentityToken(token string) bool {
+	if utf8.RuneCountInString(token) < 3 {
+		return false
+	}
+	if _, generic := scrubGenericTokens[token]; generic {
+		return false
+	}
+	ascii := true
+	for i := 0; i < len(token); i++ {
+		if token[i] >= utf8.RuneSelf {
+			ascii = false
+			break
+		}
+	}
+	if ascii && len(token) < minASCIITokenLen {
+		return false
+	}
+	return true
 }
 
 func hostFromBaseURL(base string) string {
@@ -176,8 +235,6 @@ func (s *identityScrubber) scrubText(text string) string {
 	var tokens []string
 	if s != nil {
 		tokens = s.tokens
-	} else {
-		tokens = upstreamVendorTokens
 	}
 	out := text
 
@@ -188,11 +245,8 @@ func (s *identityScrubber) scrubText(text string) string {
 	out = reUpstreamRequestIDNote.ReplaceAllString(out, "")
 
 	// 2. 上游基础设施内部错误整条判废
-	lowerAll := strings.ToLower(out)
-	for _, signal := range upstreamInfraSignals {
-		if strings.Contains(lowerAll, signal) {
-			return ""
-		}
+	if looksLikeUpstreamInfraError(out) {
+		return ""
 	}
 
 	// 3. 上游 HTML 错误页整段截断（保留我方加的前缀，如 "Asset provider returned non-JSON:"）
@@ -201,14 +255,20 @@ func (s *identityScrubber) scrubText(text string) string {
 	}
 
 	// 4. URL、域名、Web 服务器指纹与内网地址
-	out = reURL.ReplaceAllString(out, "")
-	out = reBareDomain.ReplaceAllString(out, "")
+	out = reURL.ReplaceAllString(out, urlPlaceholder)
+	out = reBareDomainStrict.ReplaceAllString(out, "")
+	out = reBareDomainLoose.ReplaceAllString(out, "")
 	out = reServerFingerprint.ReplaceAllString(out, "")
 	out = reIPv4.ReplaceAllString(out, "")
 
-	// 5. 账号推导出的供应商标识 + 产品名兜底清单（大小写不敏感）
+	// 5. 账号推导出的供应商标识（严格词边界：账号名是自由文本，宁漏勿伤）
+	//    + 产品名兜底清单（宽松边界：new_api_error 这种带下划线的自称也要剥，
+	//    产品名是固定短表，不存在撞上客户正文的风险）
 	for _, token := range tokens {
-		out = replaceFold(out, token, "")
+		out = replaceFold(out, token, "", boundaryWord)
+	}
+	for _, token := range upstreamVendorTokens {
+		out = replaceFold(out, token, "", boundaryAlnum)
 	}
 
 	// 6. 收尾：清掉替换后残留的空括号、空白与孤立标点
@@ -223,29 +283,89 @@ func (s *identityScrubber) scrubText(text string) string {
 	return out
 }
 
+// looksLikeUpstreamInfraError 判断文案是不是上游基础设施内部错误：
+// 强信号单独命中即是；软信号须有内网 IPv4 或连接串特征佐证。
+func looksLikeUpstreamInfraError(text string) bool {
+	lowerAll := strings.ToLower(text)
+	for _, signal := range upstreamInfraHardSignals {
+		if strings.Contains(lowerAll, signal) {
+			return true
+		}
+	}
+	soft := false
+	for _, signal := range upstreamInfraSoftSignals {
+		if strings.Contains(lowerAll, signal) {
+			soft = true
+			break
+		}
+	}
+	if !soft {
+		return false
+	}
+	if reIPv4.MatchString(lowerAll) {
+		return true
+	}
+	for _, mark := range upstreamInfraCorroboration {
+		if strings.Contains(lowerAll, mark) {
+			return true
+		}
+	}
+	return false
+}
+
 // replaceFold 大小写不敏感地删除 token（Go 标准库没有现成的 fold 替换）。
+//
+// 只在词边界上匹配：token 两侧不能紧邻 ASCII 字母 / 数字 / 下划线。否则一个叫 max 的
+// 账号会把客户看的 "max_tokens must be…" 删成 "tokens must be…"。CJK 没有词边界，
+// 所以边界只看 ASCII 词字符——"账号贾克斯拒绝" 里的 贾克斯 照常命中。
 //
 // ⚠️ 下标必须取自原串：不能用 strings.Index(strings.ToLower(text), token) 的结果去切 text。
 // ToLower 会改变字节长度（İ Ⱥ Ⱦ ẞ Ω K Å 七个字符），下标一旦错位，轻则删错位置、
 // 输出非法 UTF-8（土耳其语大写文本实测「İÇERİK acme」被删成「İÇERİ」），
 // 重则 text[:idx] 越界 panic。这里逐 rune 折叠比较，匹配区间始终是原串的字节下标。
-func replaceFold(text, token, replacement string) string {
+func replaceFold(text, token, replacement string, mode boundaryMode) string {
 	if token == "" {
 		return text
 	}
 	folded := foldRunes(token)
 	var b strings.Builder
 	for {
-		start, end := indexFold(text, folded)
+		start, end := indexFold(text, folded, mode)
 		if start < 0 {
 			b.WriteString(text)
 			return b.String()
 		}
 		b.WriteString(text[:start])
 		b.WriteString(replacement)
-		// 连带吃掉紧邻的连接符：new_api_error 删掉 new_api 后不该剩 "_error"
-		text = strings.TrimLeft(text[end:], "_-")
+		// 连带吃掉紧邻的连接符：贾克斯-pro 删掉后不该剩 "-0.15"，new_api 删掉后不该剩 "_error"
+		text = strings.TrimLeft(text[end:], mode.connectors())
 	}
+}
+
+// boundaryMode 词边界口径。
+type boundaryMode int
+
+const (
+	// boundaryWord 字母 / 数字 / 下划线都算词字符（正则 \w 的 ASCII 子集）：
+	// 账号推导 token 用，max 不能命中 max_tokens。
+	boundaryWord boundaryMode = iota
+	// boundaryAlnum 只有字母 / 数字算词字符，下划线视为边界：
+	// 产品名固定表用，new_api 要能命中 new_api_error。
+	boundaryAlnum
+)
+
+func (m boundaryMode) isWordByte(b byte) bool {
+	if b == '_' {
+		return m == boundaryWord
+	}
+	return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
+
+func (m boundaryMode) connectors() string {
+	if m == boundaryAlnum {
+		return "_-"
+	}
+	return "-"
 }
 
 // foldRunes 把字符串逐 rune 折叠成小写，供 indexFold 做等长比较。
@@ -257,17 +377,22 @@ func foldRunes(s string) []rune {
 	return runes
 }
 
-// indexFold 在 text 中大小写不敏感地查找 token（已折叠为小写 rune 序列），
+// indexFold 在 text 中大小写不敏感、按词边界查找 token（已折叠为小写 rune 序列），
 // 返回匹配在 text 中的起止字节下标；未命中返回 -1, -1。
-func indexFold(text string, token []rune) (int, int) {
+func indexFold(text string, token []rune, mode boundaryMode) (int, int) {
 	if len(token) == 0 {
 		return -1, -1
 	}
 	// range string 的下标天然落在 rune 边界上，不会切出半个字符。
 	for start := range text {
-		if end, ok := matchFoldAt(text, start, token); ok {
-			return start, end
+		end, ok := matchFoldAt(text, start, token)
+		if !ok {
+			continue
 		}
+		if (start > 0 && mode.isWordByte(text[start-1])) || (end < len(text) && mode.isWordByte(text[end])) {
+			continue
+		}
+		return start, end
 	}
 	return -1, -1
 }
@@ -297,25 +422,44 @@ func (s *identityScrubber) scrubErrorBody(body []byte) ([]byte, bool) {
 	if len(body) == 0 {
 		return nil, false
 	}
-	var payload any
-	if err := json.Unmarshal(body, &payload); err != nil {
+	payload, ok := decodeJSONPreservingNumbers(body)
+	if !ok {
 		return nil, false
 	}
 	walk := &scrubWalk{scrubber: s}
 	cleaned, kept := walk.value(payload)
-	if !kept {
-		return nil, false
-	}
 	// 没有任何内容被改动时返回原始字节：不重新序列化，避免无谓地改变
 	// 键序与格式——绝大多数上游 4xx 本来就不含供应商标识。
+	// 这一判断必须先于 kept：{"code":400,"success":false} 这种没有字符串的体
+	// 同样"没信息可清洗"，但它是客户端要读的合法错误体，不能被当成空体回落我方文案。
 	if !walk.changed {
 		return body, true
+	}
+	if !kept {
+		return nil, false
 	}
 	encoded, err := json.Marshal(cleaned)
 	if err != nil {
 		return nil, false
 	}
 	return encoded, true
+}
+
+// decodeJSONPreservingNumbers 解析错误体，数字以 json.Number 原样保留：
+// 默认 float64 会把 task_id 这类大整数改值（9007199254740993 → …992），
+// 而 hostForwardPayload 服务的异步任务型平台恰恰最可能在 4xx 体里带任务 ID。
+func decodeJSONPreservingNumbers(body []byte) (any, bool) {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	var payload any
+	if err := dec.Decode(&payload); err != nil {
+		return nil, false
+	}
+	// 与 json.Unmarshal 口径一致：正文后不得有多余内容。
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, false
+	}
+	return payload, true
 }
 
 // scrubWalk 递归清洗时携带「是否真的改动过」，用于零改动时保留原始字节。
@@ -356,7 +500,7 @@ func (w *scrubWalk) value(value any) (any, bool) {
 		}
 		return out, kept
 	default:
-		// 数字 / 布尔 / null 不承载供应商身份，原样保留但不单独构成"有信息"。
+		// 数字（json.Number）/ 布尔 / null 不承载供应商身份，原样保留但不单独构成"有信息"。
 		return value, false
 	}
 }
