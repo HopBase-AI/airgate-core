@@ -25,20 +25,38 @@ function initialVisibility(group?: GroupResp): Visibility {
   return (group.allowed_users?.length ?? 0) > 0 ? 'specific' : 'admin';
 }
 
-function parseQuotas(quotas?: Record<string, unknown>): { daily: string; weekly: string; monthly: string } {
-  return {
-    daily: quotas?.daily ? String(quotas.daily) : '',
-    monthly: quotas?.monthly ? String(quotas.monthly) : '',
-    weekly: quotas?.weekly ? String(quotas.weekly) : '',
-  };
+// 订阅制分组的套餐权益（后端 billing.PlanQuotas 契约）：表单里统一存字符串，提交时转数值；
+// 留空 / 0 = 不限或不提供。video_enabled 缺省 true。
+const PLAN_NUMBER_KEYS = [
+  'monthly_credits',
+  'credits_per_unit',
+  'per_request_credits',
+  'image_monthly_limit',
+  'price_monthly',
+  'price_annual',
+  'topup_credits',
+  'topup_price',
+] as const;
+type PlanNumberKey = (typeof PLAN_NUMBER_KEYS)[number];
+type PlanForm = Record<PlanNumberKey, string> & { video_enabled: boolean };
+
+function parseQuotas(quotas?: Record<string, unknown>): PlanForm {
+  const form = { video_enabled: quotas?.video_enabled !== false && quotas?.video_enabled !== 'false' } as PlanForm;
+  for (const key of PLAN_NUMBER_KEYS) {
+    const raw = quotas?.[key];
+    const num = typeof raw === 'number' ? raw : Number(raw ?? 0);
+    form[key] = Number.isFinite(num) && num > 0 ? String(num) : '';
+  }
+  return form;
 }
 
-function buildQuotas(q: { daily: string; weekly: string; monthly: string }): Record<string, unknown> | undefined {
-  const result: Record<string, number> = {};
-  if (q.daily && Number(q.daily) > 0) result.daily = Number(q.daily);
-  if (q.weekly && Number(q.weekly) > 0) result.weekly = Number(q.weekly);
-  if (q.monthly && Number(q.monthly) > 0) result.monthly = Number(q.monthly);
-  return Object.keys(result).length > 0 ? result : undefined;
+function buildQuotas(q: PlanForm): Record<string, unknown> | undefined {
+  const result: Record<string, unknown> = { video_enabled: q.video_enabled };
+  for (const key of PLAN_NUMBER_KEYS) {
+    const num = Number(q[key]);
+    if (q[key] && Number.isFinite(num) && num > 0) result[key] = num;
+  }
+  return result;
 }
 
 // 多语言文案覆盖支持的语言（zh 基准即 name / note 本身，不在此列）。
@@ -744,38 +762,29 @@ export function GroupFormModal({
         {form.subscription_type === 'subscription' ? (
           <div>
             <p className="mb-1.5 text-xs font-medium uppercaser text-text-secondary">
-              {t('groups.quotas')}
+              {t('groups.plan_config')}
             </p>
-            <p className="mb-2 text-[11px] text-text-tertiary">{t('groups.quota_hint')}</p>
-            <div className="grid grid-cols-3 gap-3">
-              <HeroTextField fullWidth>
-                <Label>{t('groups.quota_daily')}</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={quotas.daily}
-                  onChange={(e) => setQuotas({ ...quotas, daily: e.target.value })}
-                />
-              </HeroTextField>
-              <HeroTextField fullWidth>
-                <Label>{t('groups.quota_weekly')}</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={quotas.weekly}
-                  onChange={(e) => setQuotas({ ...quotas, weekly: e.target.value })}
-                />
-              </HeroTextField>
-              <HeroTextField fullWidth>
-                <Label>{t('groups.quota_monthly')}</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={quotas.monthly}
-                  onChange={(e) => setQuotas({ ...quotas, monthly: e.target.value })}
-                />
-              </HeroTextField>
+            <p className="mb-2 text-[11px] text-text-tertiary">{t('groups.plan_hint')}</p>
+            <div className="grid grid-cols-2 gap-3">
+              {PLAN_NUMBER_KEYS.map((key) => (
+                <HeroTextField key={key} fullWidth>
+                  <Label>{t(`groups.plan_${key}`)}</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={quotas[key]}
+                    onChange={(e) => setQuotas({ ...quotas, [key]: e.target.value })}
+                  />
+                </HeroTextField>
+              ))}
             </div>
+            <NativeSwitch
+              className="mt-3"
+              isSelected={quotas.video_enabled}
+              label={<span className="text-sm text-text">{t('groups.plan_video_enabled')}</span>}
+              onChange={(selected) => setQuotas({ ...quotas, video_enabled: selected })}
+            />
           </div>
         ) : null}
       </div>

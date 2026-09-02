@@ -10,6 +10,7 @@ import (
 	entaccount "github.com/DouDOU-start/airgate-core/ent/account"
 	entapikey "github.com/DouDOU-start/airgate-core/ent/apikey"
 	entgroup "github.com/DouDOU-start/airgate-core/ent/group"
+	"github.com/DouDOU-start/airgate-core/ent/predicate"
 	entusagelog "github.com/DouDOU-start/airgate-core/ent/usagelog"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
 	entusersubscription "github.com/DouDOU-start/airgate-core/ent/usersubscription"
@@ -60,6 +61,8 @@ func (s *GroupStore) ListAvailable(ctx context.Context, filter appgroup.Availabl
 				entgroup.HasAllowedUsersWith(entuser.IDEQ(filter.UserID)),
 			),
 		),
+		// 订阅制分组只对持有有效订阅的用户可见；购买入口走 /account/plans。
+		subscriptionGroupVisibleTo(filter.UserID, time.Now()),
 	)
 	query = applyGroupListFilters(query, filter.Keyword, filter.Platform, "")
 
@@ -845,4 +848,18 @@ func appgroupClonePluginSettings(input map[string]map[string]string) map[string]
 		cloned[plugin] = inner
 	}
 	return cloned
+}
+
+// subscriptionGroupVisibleTo 分组可见性谓词：普通分组恒可见；订阅制分组
+// （subscription_type=subscription）仅当该用户持有未到期的 active 订阅时可见。
+// 用户可用分组列表、API Key 绑组校验、自动路由三处共用同一口径。
+func subscriptionGroupVisibleTo(userID int, now time.Time) predicate.Group {
+	return entgroup.Or(
+		entgroup.SubscriptionTypeNEQ(entgroup.SubscriptionTypeSubscription),
+		entgroup.HasSubscriptionsWith(
+			entusersubscription.HasUserWith(entuser.IDEQ(userID)),
+			entusersubscription.StatusEQ(entusersubscription.StatusActive),
+			entusersubscription.ExpiresAtGT(now),
+		),
+	)
 }

@@ -128,12 +128,17 @@ func TestSubscriptionMappersCloneUsageAndWindows(t *testing.T) {
 	}
 
 	progress := toSubscriptionProgressRespFromDomain(appsubscription.SubscriptionProgress{
-		GroupID:   3,
-		GroupName: "高级组",
-		Daily:     &appsubscription.UsageWindow{Used: 1, Limit: 10, Reset: "tomorrow"},
+		SubscriptionID: 1,
+		GroupID:        3,
+		GroupName:      "高级组",
+		Credits:        appsubscription.UsageWindow{Used: 1, Limit: 10, Reset: now},
+		Images:         &appsubscription.UsageWindow{Used: 2, Limit: 20, Reset: now},
 	})
-	if progress.Daily == nil || progress.Daily.Used != 1 || progress.Weekly != nil {
+	if progress.Credits.Used != 1 || progress.Credits.Reset != now.Format(time.RFC3339) || progress.Images == nil || progress.Images.Limit != 20 {
 		t.Fatalf("订阅进度响应异常: %+v", progress)
+	}
+	if progress.PeriodEnd != "" {
+		t.Fatalf("零值时间应输出空串，得到 %q", progress.PeriodEnd)
 	}
 }
 

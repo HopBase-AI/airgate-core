@@ -149,6 +149,9 @@ func (s *Server) registerRoutes() {
 		accountGroup.GET("/subscriptions", handlers.Subscription.UserSubscriptions)
 		accountGroup.GET("/subscriptions/active", handlers.Subscription.ActiveSubscriptions)
 		accountGroup.GET("/subscriptions/progress", handlers.Subscription.SubscriptionProgress)
+		accountGroup.GET("/plans", handlers.Subscription.Plans)
+		accountGroup.POST("/subscriptions/purchase", handlers.Subscription.Purchase)
+		accountGroup.POST("/subscriptions/:id/topup", handlers.Subscription.Topup)
 
 		// 使用记录
 		userGroup.GET("/usage", handlers.Usage.UserUsage)

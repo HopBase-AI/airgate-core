@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	sdkgrpc "github.com/DouDOU-start/airgate-sdk/runtimego/grpc"
@@ -173,6 +174,31 @@ func (m *Manager) ModelHasCapability(modelID, capability string) bool {
 		}
 	}
 	return false
+}
+
+// ModelInputPrice 读取目录里插件声明的官方输入价（Metadata["price.input"]，USD / 1M tokens）。
+// 该元数据契约上仅供展示；这里只用于订阅「单次请求点数上限」的保守预估，查不到即不判。
+func (m *Manager) ModelInputPrice(modelID string) (float64, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, models := range m.modelCache {
+		for i := range models {
+			if models[i].ID != modelID {
+				continue
+			}
+			if models[i].Metadata == nil {
+				return 0, false
+			}
+			raw := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(models[i].Metadata["price.input"]), "$"))
+			raw = strings.ReplaceAll(raw, ",", "")
+			value, err := strconv.ParseFloat(raw, 64)
+			if err != nil || value <= 0 {
+				return 0, false
+			}
+			return value, true
+		}
+	}
+	return 0, false
 }
 
 // GetRoutes 获取指定插件的路由声明。

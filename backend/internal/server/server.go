@@ -18,6 +18,7 @@ import (
 	entapikey "github.com/DouDOU-start/airgate-core/ent/apikey"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
 	appreferral "github.com/DouDOU-start/airgate-core/internal/app/referral"
+	appsubscription "github.com/DouDOU-start/airgate-core/internal/app/subscription"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
@@ -122,7 +123,8 @@ func NewServer(cfg *config.Config, db *ent.Client, rdb *redis.Client) *Server {
 	// users.notify_topup（充值入账事件）→ 分销返利；settings store 直接满足
 	// referral.SettingsReader（与 settings.Service.List 同签名），无需整个设置服务。
 	hostReferralSvc := appreferral.NewService(store.NewReferralStore(db), hostUserSvc, store.NewSettingsStore(db))
-	pluginMgr.SetHostService(plugin.NewHostService(db, pluginMgr, sched, concurrency, calculator, recorder, hostUserSvc, hostReferralSvc))
+	hostSvc := plugin.NewHostService(db, pluginMgr, sched, concurrency, calculator, recorder, hostUserSvc, hostReferralSvc)
+	pluginMgr.SetHostService(hostSvc)
 	// 通用签名媒体中继（host method relay.sign_url + 公开路由 /relay/v1/:token）。
 	// 密钥复用 api_key_secret：换密钥会使已签发的中继链接失效，属可接受语义。
 	if relaySvc, err := plugin.NewRelayService(pluginMgr, cfg.APIKeySecret()); err != nil {
@@ -131,6 +133,11 @@ func NewServer(cfg *config.Config, db *ent.Client, rdb *redis.Client) *Server {
 		pluginMgr.SetRelayService(relaySvc)
 	}
 	forwarder := plugin.NewForwarder(db, pluginMgr, sched, concurrency, calculator, recorder)
+	// 订阅制分组的转发前准入：API Key 转发与 Host 转发共用同一实例，
+	// 惰性到期 / 换期都在这里落库（没有独立定时任务）。
+	subscriptionSvc := appsubscription.NewService(store.NewSubscriptionStore(db))
+	forwarder.SetSubscriptionService(subscriptionSvc)
+	hostSvc.SetSubscriptionService(subscriptionSvc)
 
 	marketOpts := []plugin.MarketplaceOption{
 		plugin.WithGithubToken(cfg.Plugins.Marketplace.GithubToken),

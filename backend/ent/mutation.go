@@ -21518,23 +21518,32 @@ func (m *UserIdentityMutation) ResetEdge(name string) error {
 // UserSubscriptionMutation represents an operation that mutates the UserSubscription nodes in the graph.
 type UserSubscriptionMutation struct {
 	config
-	op            Op
-	typ           string
-	id            *int
-	effective_at  *time.Time
-	expires_at    *time.Time
-	usage         *map[string]interface{}
-	status        *usersubscription.Status
-	created_at    *time.Time
-	updated_at    *time.Time
-	clearedFields map[string]struct{}
-	user          *int
-	cleareduser   bool
-	group         *int
-	clearedgroup  bool
-	done          bool
-	oldValue      func(context.Context) (*UserSubscription, error)
-	predicates    []predicate.UserSubscription
+	op               Op
+	typ              string
+	id               *int
+	effective_at     *time.Time
+	expires_at       *time.Time
+	usage            *map[string]interface{}
+	status           *usersubscription.Status
+	period_start     *time.Time
+	period_end       *time.Time
+	credits_used     *float64
+	addcredits_used  *float64
+	extra_credits    *float64
+	addextra_credits *float64
+	images_used      *int
+	addimages_used   *int
+	billing_cycle    *usersubscription.BillingCycle
+	created_at       *time.Time
+	updated_at       *time.Time
+	clearedFields    map[string]struct{}
+	user             *int
+	cleareduser      bool
+	group            *int
+	clearedgroup     bool
+	done             bool
+	oldValue         func(context.Context) (*UserSubscription, error)
+	predicates       []predicate.UserSubscription
 }
 
 var _ ent.Mutation = (*UserSubscriptionMutation)(nil)
@@ -21792,6 +21801,308 @@ func (m *UserSubscriptionMutation) ResetStatus() {
 	m.status = nil
 }
 
+// SetPeriodStart sets the "period_start" field.
+func (m *UserSubscriptionMutation) SetPeriodStart(t time.Time) {
+	m.period_start = &t
+}
+
+// PeriodStart returns the value of the "period_start" field in the mutation.
+func (m *UserSubscriptionMutation) PeriodStart() (r time.Time, exists bool) {
+	v := m.period_start
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPeriodStart returns the old "period_start" field's value of the UserSubscription entity.
+// If the UserSubscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserSubscriptionMutation) OldPeriodStart(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPeriodStart is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPeriodStart requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPeriodStart: %w", err)
+	}
+	return oldValue.PeriodStart, nil
+}
+
+// ClearPeriodStart clears the value of the "period_start" field.
+func (m *UserSubscriptionMutation) ClearPeriodStart() {
+	m.period_start = nil
+	m.clearedFields[usersubscription.FieldPeriodStart] = struct{}{}
+}
+
+// PeriodStartCleared returns if the "period_start" field was cleared in this mutation.
+func (m *UserSubscriptionMutation) PeriodStartCleared() bool {
+	_, ok := m.clearedFields[usersubscription.FieldPeriodStart]
+	return ok
+}
+
+// ResetPeriodStart resets all changes to the "period_start" field.
+func (m *UserSubscriptionMutation) ResetPeriodStart() {
+	m.period_start = nil
+	delete(m.clearedFields, usersubscription.FieldPeriodStart)
+}
+
+// SetPeriodEnd sets the "period_end" field.
+func (m *UserSubscriptionMutation) SetPeriodEnd(t time.Time) {
+	m.period_end = &t
+}
+
+// PeriodEnd returns the value of the "period_end" field in the mutation.
+func (m *UserSubscriptionMutation) PeriodEnd() (r time.Time, exists bool) {
+	v := m.period_end
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPeriodEnd returns the old "period_end" field's value of the UserSubscription entity.
+// If the UserSubscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserSubscriptionMutation) OldPeriodEnd(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPeriodEnd is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPeriodEnd requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPeriodEnd: %w", err)
+	}
+	return oldValue.PeriodEnd, nil
+}
+
+// ClearPeriodEnd clears the value of the "period_end" field.
+func (m *UserSubscriptionMutation) ClearPeriodEnd() {
+	m.period_end = nil
+	m.clearedFields[usersubscription.FieldPeriodEnd] = struct{}{}
+}
+
+// PeriodEndCleared returns if the "period_end" field was cleared in this mutation.
+func (m *UserSubscriptionMutation) PeriodEndCleared() bool {
+	_, ok := m.clearedFields[usersubscription.FieldPeriodEnd]
+	return ok
+}
+
+// ResetPeriodEnd resets all changes to the "period_end" field.
+func (m *UserSubscriptionMutation) ResetPeriodEnd() {
+	m.period_end = nil
+	delete(m.clearedFields, usersubscription.FieldPeriodEnd)
+}
+
+// SetCreditsUsed sets the "credits_used" field.
+func (m *UserSubscriptionMutation) SetCreditsUsed(f float64) {
+	m.credits_used = &f
+	m.addcredits_used = nil
+}
+
+// CreditsUsed returns the value of the "credits_used" field in the mutation.
+func (m *UserSubscriptionMutation) CreditsUsed() (r float64, exists bool) {
+	v := m.credits_used
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreditsUsed returns the old "credits_used" field's value of the UserSubscription entity.
+// If the UserSubscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserSubscriptionMutation) OldCreditsUsed(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreditsUsed is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreditsUsed requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreditsUsed: %w", err)
+	}
+	return oldValue.CreditsUsed, nil
+}
+
+// AddCreditsUsed adds f to the "credits_used" field.
+func (m *UserSubscriptionMutation) AddCreditsUsed(f float64) {
+	if m.addcredits_used != nil {
+		*m.addcredits_used += f
+	} else {
+		m.addcredits_used = &f
+	}
+}
+
+// AddedCreditsUsed returns the value that was added to the "credits_used" field in this mutation.
+func (m *UserSubscriptionMutation) AddedCreditsUsed() (r float64, exists bool) {
+	v := m.addcredits_used
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCreditsUsed resets all changes to the "credits_used" field.
+func (m *UserSubscriptionMutation) ResetCreditsUsed() {
+	m.credits_used = nil
+	m.addcredits_used = nil
+}
+
+// SetExtraCredits sets the "extra_credits" field.
+func (m *UserSubscriptionMutation) SetExtraCredits(f float64) {
+	m.extra_credits = &f
+	m.addextra_credits = nil
+}
+
+// ExtraCredits returns the value of the "extra_credits" field in the mutation.
+func (m *UserSubscriptionMutation) ExtraCredits() (r float64, exists bool) {
+	v := m.extra_credits
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExtraCredits returns the old "extra_credits" field's value of the UserSubscription entity.
+// If the UserSubscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserSubscriptionMutation) OldExtraCredits(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExtraCredits is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExtraCredits requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExtraCredits: %w", err)
+	}
+	return oldValue.ExtraCredits, nil
+}
+
+// AddExtraCredits adds f to the "extra_credits" field.
+func (m *UserSubscriptionMutation) AddExtraCredits(f float64) {
+	if m.addextra_credits != nil {
+		*m.addextra_credits += f
+	} else {
+		m.addextra_credits = &f
+	}
+}
+
+// AddedExtraCredits returns the value that was added to the "extra_credits" field in this mutation.
+func (m *UserSubscriptionMutation) AddedExtraCredits() (r float64, exists bool) {
+	v := m.addextra_credits
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetExtraCredits resets all changes to the "extra_credits" field.
+func (m *UserSubscriptionMutation) ResetExtraCredits() {
+	m.extra_credits = nil
+	m.addextra_credits = nil
+}
+
+// SetImagesUsed sets the "images_used" field.
+func (m *UserSubscriptionMutation) SetImagesUsed(i int) {
+	m.images_used = &i
+	m.addimages_used = nil
+}
+
+// ImagesUsed returns the value of the "images_used" field in the mutation.
+func (m *UserSubscriptionMutation) ImagesUsed() (r int, exists bool) {
+	v := m.images_used
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldImagesUsed returns the old "images_used" field's value of the UserSubscription entity.
+// If the UserSubscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserSubscriptionMutation) OldImagesUsed(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldImagesUsed is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldImagesUsed requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldImagesUsed: %w", err)
+	}
+	return oldValue.ImagesUsed, nil
+}
+
+// AddImagesUsed adds i to the "images_used" field.
+func (m *UserSubscriptionMutation) AddImagesUsed(i int) {
+	if m.addimages_used != nil {
+		*m.addimages_used += i
+	} else {
+		m.addimages_used = &i
+	}
+}
+
+// AddedImagesUsed returns the value that was added to the "images_used" field in this mutation.
+func (m *UserSubscriptionMutation) AddedImagesUsed() (r int, exists bool) {
+	v := m.addimages_used
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetImagesUsed resets all changes to the "images_used" field.
+func (m *UserSubscriptionMutation) ResetImagesUsed() {
+	m.images_used = nil
+	m.addimages_used = nil
+}
+
+// SetBillingCycle sets the "billing_cycle" field.
+func (m *UserSubscriptionMutation) SetBillingCycle(uc usersubscription.BillingCycle) {
+	m.billing_cycle = &uc
+}
+
+// BillingCycle returns the value of the "billing_cycle" field in the mutation.
+func (m *UserSubscriptionMutation) BillingCycle() (r usersubscription.BillingCycle, exists bool) {
+	v := m.billing_cycle
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBillingCycle returns the old "billing_cycle" field's value of the UserSubscription entity.
+// If the UserSubscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserSubscriptionMutation) OldBillingCycle(ctx context.Context) (v usersubscription.BillingCycle, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBillingCycle is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBillingCycle requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBillingCycle: %w", err)
+	}
+	return oldValue.BillingCycle, nil
+}
+
+// ResetBillingCycle resets all changes to the "billing_cycle" field.
+func (m *UserSubscriptionMutation) ResetBillingCycle() {
+	m.billing_cycle = nil
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (m *UserSubscriptionMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -21976,7 +22287,7 @@ func (m *UserSubscriptionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserSubscriptionMutation) Fields() []string {
-	fields := make([]string, 0, 6)
+	fields := make([]string, 0, 12)
 	if m.effective_at != nil {
 		fields = append(fields, usersubscription.FieldEffectiveAt)
 	}
@@ -21988,6 +22299,24 @@ func (m *UserSubscriptionMutation) Fields() []string {
 	}
 	if m.status != nil {
 		fields = append(fields, usersubscription.FieldStatus)
+	}
+	if m.period_start != nil {
+		fields = append(fields, usersubscription.FieldPeriodStart)
+	}
+	if m.period_end != nil {
+		fields = append(fields, usersubscription.FieldPeriodEnd)
+	}
+	if m.credits_used != nil {
+		fields = append(fields, usersubscription.FieldCreditsUsed)
+	}
+	if m.extra_credits != nil {
+		fields = append(fields, usersubscription.FieldExtraCredits)
+	}
+	if m.images_used != nil {
+		fields = append(fields, usersubscription.FieldImagesUsed)
+	}
+	if m.billing_cycle != nil {
+		fields = append(fields, usersubscription.FieldBillingCycle)
 	}
 	if m.created_at != nil {
 		fields = append(fields, usersubscription.FieldCreatedAt)
@@ -22011,6 +22340,18 @@ func (m *UserSubscriptionMutation) Field(name string) (ent.Value, bool) {
 		return m.Usage()
 	case usersubscription.FieldStatus:
 		return m.Status()
+	case usersubscription.FieldPeriodStart:
+		return m.PeriodStart()
+	case usersubscription.FieldPeriodEnd:
+		return m.PeriodEnd()
+	case usersubscription.FieldCreditsUsed:
+		return m.CreditsUsed()
+	case usersubscription.FieldExtraCredits:
+		return m.ExtraCredits()
+	case usersubscription.FieldImagesUsed:
+		return m.ImagesUsed()
+	case usersubscription.FieldBillingCycle:
+		return m.BillingCycle()
 	case usersubscription.FieldCreatedAt:
 		return m.CreatedAt()
 	case usersubscription.FieldUpdatedAt:
@@ -22032,6 +22373,18 @@ func (m *UserSubscriptionMutation) OldField(ctx context.Context, name string) (e
 		return m.OldUsage(ctx)
 	case usersubscription.FieldStatus:
 		return m.OldStatus(ctx)
+	case usersubscription.FieldPeriodStart:
+		return m.OldPeriodStart(ctx)
+	case usersubscription.FieldPeriodEnd:
+		return m.OldPeriodEnd(ctx)
+	case usersubscription.FieldCreditsUsed:
+		return m.OldCreditsUsed(ctx)
+	case usersubscription.FieldExtraCredits:
+		return m.OldExtraCredits(ctx)
+	case usersubscription.FieldImagesUsed:
+		return m.OldImagesUsed(ctx)
+	case usersubscription.FieldBillingCycle:
+		return m.OldBillingCycle(ctx)
 	case usersubscription.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	case usersubscription.FieldUpdatedAt:
@@ -22073,6 +22426,48 @@ func (m *UserSubscriptionMutation) SetField(name string, value ent.Value) error 
 		}
 		m.SetStatus(v)
 		return nil
+	case usersubscription.FieldPeriodStart:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPeriodStart(v)
+		return nil
+	case usersubscription.FieldPeriodEnd:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPeriodEnd(v)
+		return nil
+	case usersubscription.FieldCreditsUsed:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreditsUsed(v)
+		return nil
+	case usersubscription.FieldExtraCredits:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExtraCredits(v)
+		return nil
+	case usersubscription.FieldImagesUsed:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetImagesUsed(v)
+		return nil
+	case usersubscription.FieldBillingCycle:
+		v, ok := value.(usersubscription.BillingCycle)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBillingCycle(v)
+		return nil
 	case usersubscription.FieldCreatedAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -22094,13 +22489,31 @@ func (m *UserSubscriptionMutation) SetField(name string, value ent.Value) error 
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *UserSubscriptionMutation) AddedFields() []string {
-	return nil
+	var fields []string
+	if m.addcredits_used != nil {
+		fields = append(fields, usersubscription.FieldCreditsUsed)
+	}
+	if m.addextra_credits != nil {
+		fields = append(fields, usersubscription.FieldExtraCredits)
+	}
+	if m.addimages_used != nil {
+		fields = append(fields, usersubscription.FieldImagesUsed)
+	}
+	return fields
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *UserSubscriptionMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case usersubscription.FieldCreditsUsed:
+		return m.AddedCreditsUsed()
+	case usersubscription.FieldExtraCredits:
+		return m.AddedExtraCredits()
+	case usersubscription.FieldImagesUsed:
+		return m.AddedImagesUsed()
+	}
 	return nil, false
 }
 
@@ -22109,6 +22522,27 @@ func (m *UserSubscriptionMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *UserSubscriptionMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case usersubscription.FieldCreditsUsed:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCreditsUsed(v)
+		return nil
+	case usersubscription.FieldExtraCredits:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddExtraCredits(v)
+		return nil
+	case usersubscription.FieldImagesUsed:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddImagesUsed(v)
+		return nil
 	}
 	return fmt.Errorf("unknown UserSubscription numeric field %s", name)
 }
@@ -22119,6 +22553,12 @@ func (m *UserSubscriptionMutation) ClearedFields() []string {
 	var fields []string
 	if m.FieldCleared(usersubscription.FieldUsage) {
 		fields = append(fields, usersubscription.FieldUsage)
+	}
+	if m.FieldCleared(usersubscription.FieldPeriodStart) {
+		fields = append(fields, usersubscription.FieldPeriodStart)
+	}
+	if m.FieldCleared(usersubscription.FieldPeriodEnd) {
+		fields = append(fields, usersubscription.FieldPeriodEnd)
 	}
 	return fields
 }
@@ -22136,6 +22576,12 @@ func (m *UserSubscriptionMutation) ClearField(name string) error {
 	switch name {
 	case usersubscription.FieldUsage:
 		m.ClearUsage()
+		return nil
+	case usersubscription.FieldPeriodStart:
+		m.ClearPeriodStart()
+		return nil
+	case usersubscription.FieldPeriodEnd:
+		m.ClearPeriodEnd()
 		return nil
 	}
 	return fmt.Errorf("unknown UserSubscription nullable field %s", name)
@@ -22156,6 +22602,24 @@ func (m *UserSubscriptionMutation) ResetField(name string) error {
 		return nil
 	case usersubscription.FieldStatus:
 		m.ResetStatus()
+		return nil
+	case usersubscription.FieldPeriodStart:
+		m.ResetPeriodStart()
+		return nil
+	case usersubscription.FieldPeriodEnd:
+		m.ResetPeriodEnd()
+		return nil
+	case usersubscription.FieldCreditsUsed:
+		m.ResetCreditsUsed()
+		return nil
+	case usersubscription.FieldExtraCredits:
+		m.ResetExtraCredits()
+		return nil
+	case usersubscription.FieldImagesUsed:
+		m.ResetImagesUsed()
+		return nil
+	case usersubscription.FieldBillingCycle:
+		m.ResetBillingCycle()
 		return nil
 	case usersubscription.FieldCreatedAt:
 		m.ResetCreatedAt()
