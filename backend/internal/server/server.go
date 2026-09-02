@@ -131,6 +131,10 @@ func NewServer(cfg *config.Config, db *ent.Client, rdb *redis.Client) *Server {
 		pluginMgr.SetRelayService(relaySvc)
 	}
 	forwarder := plugin.NewForwarder(db, pluginMgr, sched, concurrency, calculator, recorder)
+	if hedgeDelay, ok := cfg.Forward.HedgeDelayDuration(); ok {
+		plugin.SetForwardHedgeDelay(hedgeDelay)
+	}
+	slog.Info("forward_hedge_config", "hedge_delay", plugin.ForwardHedgeDelay().String())
 
 	marketOpts := []plugin.MarketplaceOption{
 		plugin.WithGithubToken(cfg.Plugins.Marketplace.GithubToken),
