@@ -22,6 +22,7 @@ import {
   InvitePage,
   TeamPage,
   TeamAuditPage,
+  PlansPage,
   DocsPage,
   LegalTermsPage,
   GroupsPage,
@@ -335,6 +336,7 @@ const accountPageBeforeLoad = () => {
 };
 const profileRoute = createRoute({ getParentRoute: () => authLayout, path: '/profile', beforeLoad: accountPageBeforeLoad, component: renderPage(ProfilePage) });
 const inviteRoute = createRoute({ getParentRoute: () => authLayout, path: '/invite', beforeLoad: accountPageBeforeLoad, component: renderPage(InvitePage) });
+const plansRoute = createRoute({ getParentRoute: () => authLayout, path: '/plans', beforeLoad: accountPageBeforeLoad, component: renderPage(PlansPage) });
 const userKeysRoute = createRoute({ getParentRoute: () => authLayout, path: '/keys', beforeLoad: accountPageBeforeLoad, component: renderPage(UserKeysPage) });
 const teamRoute = createRoute({
   getParentRoute: () => authLayout,
@@ -450,6 +452,7 @@ const routeTree = rootRoute.addChildren([
     ]),
     profileRoute,
     inviteRoute,
+  plansRoute,
     userKeysRoute,
     teamRoute,
     teamAuditRoute,

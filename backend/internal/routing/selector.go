@@ -5,12 +5,14 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"time"
 
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/user"
+	"github.com/DouDOU-start/airgate-core/ent/usersubscription"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
 )
 
@@ -28,6 +30,10 @@ type Candidate struct {
 	GroupPluginSettings    map[string]map[string]string
 	UserPluginSettings     map[string]map[string]string
 	SortWeight             int
+	// SubscriptionType / Quotas 订阅制分组的类型与权益配置，供转发前准入（点数/张数/视频）判定；
+	// 普通分组 SubscriptionType 为 "standard"，Quotas 为空。
+	SubscriptionType string
+	Quotas           map[string]any
 }
 
 func ListEligibleGroups(ctx context.Context, db *ent.Client, userID int, platform string, userGroupRates map[int64]float64, userGroupPluginSettings map[int64]map[string]map[string]string, requirements Requirements) ([]Candidate, error) {
@@ -65,6 +71,30 @@ func ListEligibleGroups(ctx context.Context, db *ent.Client, userID int, platfor
 				continue
 			}
 		}
+		// 订阅制分组：没有未到期 active 订阅的用户不参与自动路由，
+		// 否则会被路由进去再被准入拒绝（或更糟：漏到余额扣费）。
+		if g.SubscriptionType == group.SubscriptionTypeSubscription {
+			subscribed, err := db.UserSubscription.Query().
+				Where(
+					usersubscription.HasUserWith(user.IDEQ(userID)),
+					usersubscription.HasGroupWith(group.IDEQ(g.ID)),
+					usersubscription.StatusEQ(usersubscription.StatusActive),
+					usersubscription.ExpiresAtGT(time.Now()),
+				).
+				Exist(ctx)
+			if err != nil {
+				slog.Error("routing_load_failed",
+					sdk.LogFieldPlatform, platform,
+					sdk.LogFieldUserID, userID,
+					sdk.LogFieldGroupID, g.ID,
+					"stage", "subscription_check",
+					sdk.LogFieldError, err)
+				return nil, err
+			}
+			if !subscribed {
+				continue
+			}
+		}
 		candidates = append(candidates, Candidate{
 			GroupID:                g.ID,
 			Platform:               g.Platform,
@@ -75,6 +105,8 @@ func ListEligibleGroups(ctx context.Context, db *ent.Client, userID int, platfor
 			GroupPluginSettings:    clonePluginSettings(g.PluginSettings),
 			UserPluginSettings:     clonePluginSettings(userGroupPluginSettings[int64(g.ID)]),
 			SortWeight:             g.SortWeight,
+			SubscriptionType:       string(g.SubscriptionType),
+			Quotas:                 g.Quotas,
 		})
 	}
 

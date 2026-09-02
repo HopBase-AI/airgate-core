@@ -25,6 +25,10 @@ func (f *Forwarder) checkBalance(c *gin.Context, state *forwardState) bool {
 	if f.isMetadataOnlyPath(state.requestPath) {
 		return true
 	}
+	// 订阅制分组：不看余额，走订阅点数账本准入。
+	if state.keyInfo.IsSubscriptionGroup() {
+		return f.checkSubscription(c, state)
+	}
 	if state.keyInfo.UserBalance <= 0 {
 		protocolError(c, http.StatusPaymentRequired, "insufficient_quota", "insufficient_quota", i18n.Tc(c, "gw.insufficient_quota"))
 		f.recordFailureUsage(c, state, usageFailure{

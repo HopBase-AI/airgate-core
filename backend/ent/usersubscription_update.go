@@ -84,6 +84,123 @@ func (usu *UserSubscriptionUpdate) SetNillableStatus(u *usersubscription.Status)
 	return usu
 }
 
+// SetPeriodStart sets the "period_start" field.
+func (usu *UserSubscriptionUpdate) SetPeriodStart(t time.Time) *UserSubscriptionUpdate {
+	usu.mutation.SetPeriodStart(t)
+	return usu
+}
+
+// SetNillablePeriodStart sets the "period_start" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillablePeriodStart(t *time.Time) *UserSubscriptionUpdate {
+	if t != nil {
+		usu.SetPeriodStart(*t)
+	}
+	return usu
+}
+
+// ClearPeriodStart clears the value of the "period_start" field.
+func (usu *UserSubscriptionUpdate) ClearPeriodStart() *UserSubscriptionUpdate {
+	usu.mutation.ClearPeriodStart()
+	return usu
+}
+
+// SetPeriodEnd sets the "period_end" field.
+func (usu *UserSubscriptionUpdate) SetPeriodEnd(t time.Time) *UserSubscriptionUpdate {
+	usu.mutation.SetPeriodEnd(t)
+	return usu
+}
+
+// SetNillablePeriodEnd sets the "period_end" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillablePeriodEnd(t *time.Time) *UserSubscriptionUpdate {
+	if t != nil {
+		usu.SetPeriodEnd(*t)
+	}
+	return usu
+}
+
+// ClearPeriodEnd clears the value of the "period_end" field.
+func (usu *UserSubscriptionUpdate) ClearPeriodEnd() *UserSubscriptionUpdate {
+	usu.mutation.ClearPeriodEnd()
+	return usu
+}
+
+// SetCreditsUsed sets the "credits_used" field.
+func (usu *UserSubscriptionUpdate) SetCreditsUsed(f float64) *UserSubscriptionUpdate {
+	usu.mutation.ResetCreditsUsed()
+	usu.mutation.SetCreditsUsed(f)
+	return usu
+}
+
+// SetNillableCreditsUsed sets the "credits_used" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillableCreditsUsed(f *float64) *UserSubscriptionUpdate {
+	if f != nil {
+		usu.SetCreditsUsed(*f)
+	}
+	return usu
+}
+
+// AddCreditsUsed adds f to the "credits_used" field.
+func (usu *UserSubscriptionUpdate) AddCreditsUsed(f float64) *UserSubscriptionUpdate {
+	usu.mutation.AddCreditsUsed(f)
+	return usu
+}
+
+// SetExtraCredits sets the "extra_credits" field.
+func (usu *UserSubscriptionUpdate) SetExtraCredits(f float64) *UserSubscriptionUpdate {
+	usu.mutation.ResetExtraCredits()
+	usu.mutation.SetExtraCredits(f)
+	return usu
+}
+
+// SetNillableExtraCredits sets the "extra_credits" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillableExtraCredits(f *float64) *UserSubscriptionUpdate {
+	if f != nil {
+		usu.SetExtraCredits(*f)
+	}
+	return usu
+}
+
+// AddExtraCredits adds f to the "extra_credits" field.
+func (usu *UserSubscriptionUpdate) AddExtraCredits(f float64) *UserSubscriptionUpdate {
+	usu.mutation.AddExtraCredits(f)
+	return usu
+}
+
+// SetImagesUsed sets the "images_used" field.
+func (usu *UserSubscriptionUpdate) SetImagesUsed(i int) *UserSubscriptionUpdate {
+	usu.mutation.ResetImagesUsed()
+	usu.mutation.SetImagesUsed(i)
+	return usu
+}
+
+// SetNillableImagesUsed sets the "images_used" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillableImagesUsed(i *int) *UserSubscriptionUpdate {
+	if i != nil {
+		usu.SetImagesUsed(*i)
+	}
+	return usu
+}
+
+// AddImagesUsed adds i to the "images_used" field.
+func (usu *UserSubscriptionUpdate) AddImagesUsed(i int) *UserSubscriptionUpdate {
+	usu.mutation.AddImagesUsed(i)
+	return usu
+}
+
+// SetBillingCycle sets the "billing_cycle" field.
+func (usu *UserSubscriptionUpdate) SetBillingCycle(uc usersubscription.BillingCycle) *UserSubscriptionUpdate {
+	usu.mutation.SetBillingCycle(uc)
+	return usu
+}
+
+// SetNillableBillingCycle sets the "billing_cycle" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillableBillingCycle(uc *usersubscription.BillingCycle) *UserSubscriptionUpdate {
+	if uc != nil {
+		usu.SetBillingCycle(*uc)
+	}
+	return usu
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (usu *UserSubscriptionUpdate) SetUpdatedAt(t time.Time) *UserSubscriptionUpdate {
 	usu.mutation.SetUpdatedAt(t)
@@ -172,6 +289,11 @@ func (usu *UserSubscriptionUpdate) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "UserSubscription.status": %w`, err)}
 		}
 	}
+	if v, ok := usu.mutation.BillingCycle(); ok {
+		if err := usersubscription.BillingCycleValidator(v); err != nil {
+			return &ValidationError{Name: "billing_cycle", err: fmt.Errorf(`ent: validator failed for field "UserSubscription.billing_cycle": %w`, err)}
+		}
+	}
 	if _, ok := usu.mutation.UserID(); usu.mutation.UserCleared() && !ok {
 		return errors.New(`ent: clearing a required unique edge "UserSubscription.user"`)
 	}
@@ -207,6 +329,39 @@ func (usu *UserSubscriptionUpdate) sqlSave(ctx context.Context) (n int, err erro
 	}
 	if value, ok := usu.mutation.Status(); ok {
 		_spec.SetField(usersubscription.FieldStatus, field.TypeEnum, value)
+	}
+	if value, ok := usu.mutation.PeriodStart(); ok {
+		_spec.SetField(usersubscription.FieldPeriodStart, field.TypeTime, value)
+	}
+	if usu.mutation.PeriodStartCleared() {
+		_spec.ClearField(usersubscription.FieldPeriodStart, field.TypeTime)
+	}
+	if value, ok := usu.mutation.PeriodEnd(); ok {
+		_spec.SetField(usersubscription.FieldPeriodEnd, field.TypeTime, value)
+	}
+	if usu.mutation.PeriodEndCleared() {
+		_spec.ClearField(usersubscription.FieldPeriodEnd, field.TypeTime)
+	}
+	if value, ok := usu.mutation.CreditsUsed(); ok {
+		_spec.SetField(usersubscription.FieldCreditsUsed, field.TypeFloat64, value)
+	}
+	if value, ok := usu.mutation.AddedCreditsUsed(); ok {
+		_spec.AddField(usersubscription.FieldCreditsUsed, field.TypeFloat64, value)
+	}
+	if value, ok := usu.mutation.ExtraCredits(); ok {
+		_spec.SetField(usersubscription.FieldExtraCredits, field.TypeFloat64, value)
+	}
+	if value, ok := usu.mutation.AddedExtraCredits(); ok {
+		_spec.AddField(usersubscription.FieldExtraCredits, field.TypeFloat64, value)
+	}
+	if value, ok := usu.mutation.ImagesUsed(); ok {
+		_spec.SetField(usersubscription.FieldImagesUsed, field.TypeInt, value)
+	}
+	if value, ok := usu.mutation.AddedImagesUsed(); ok {
+		_spec.AddField(usersubscription.FieldImagesUsed, field.TypeInt, value)
+	}
+	if value, ok := usu.mutation.BillingCycle(); ok {
+		_spec.SetField(usersubscription.FieldBillingCycle, field.TypeEnum, value)
 	}
 	if value, ok := usu.mutation.UpdatedAt(); ok {
 		_spec.SetField(usersubscription.FieldUpdatedAt, field.TypeTime, value)
@@ -343,6 +498,123 @@ func (usuo *UserSubscriptionUpdateOne) SetNillableStatus(u *usersubscription.Sta
 	return usuo
 }
 
+// SetPeriodStart sets the "period_start" field.
+func (usuo *UserSubscriptionUpdateOne) SetPeriodStart(t time.Time) *UserSubscriptionUpdateOne {
+	usuo.mutation.SetPeriodStart(t)
+	return usuo
+}
+
+// SetNillablePeriodStart sets the "period_start" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillablePeriodStart(t *time.Time) *UserSubscriptionUpdateOne {
+	if t != nil {
+		usuo.SetPeriodStart(*t)
+	}
+	return usuo
+}
+
+// ClearPeriodStart clears the value of the "period_start" field.
+func (usuo *UserSubscriptionUpdateOne) ClearPeriodStart() *UserSubscriptionUpdateOne {
+	usuo.mutation.ClearPeriodStart()
+	return usuo
+}
+
+// SetPeriodEnd sets the "period_end" field.
+func (usuo *UserSubscriptionUpdateOne) SetPeriodEnd(t time.Time) *UserSubscriptionUpdateOne {
+	usuo.mutation.SetPeriodEnd(t)
+	return usuo
+}
+
+// SetNillablePeriodEnd sets the "period_end" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillablePeriodEnd(t *time.Time) *UserSubscriptionUpdateOne {
+	if t != nil {
+		usuo.SetPeriodEnd(*t)
+	}
+	return usuo
+}
+
+// ClearPeriodEnd clears the value of the "period_end" field.
+func (usuo *UserSubscriptionUpdateOne) ClearPeriodEnd() *UserSubscriptionUpdateOne {
+	usuo.mutation.ClearPeriodEnd()
+	return usuo
+}
+
+// SetCreditsUsed sets the "credits_used" field.
+func (usuo *UserSubscriptionUpdateOne) SetCreditsUsed(f float64) *UserSubscriptionUpdateOne {
+	usuo.mutation.ResetCreditsUsed()
+	usuo.mutation.SetCreditsUsed(f)
+	return usuo
+}
+
+// SetNillableCreditsUsed sets the "credits_used" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillableCreditsUsed(f *float64) *UserSubscriptionUpdateOne {
+	if f != nil {
+		usuo.SetCreditsUsed(*f)
+	}
+	return usuo
+}
+
+// AddCreditsUsed adds f to the "credits_used" field.
+func (usuo *UserSubscriptionUpdateOne) AddCreditsUsed(f float64) *UserSubscriptionUpdateOne {
+	usuo.mutation.AddCreditsUsed(f)
+	return usuo
+}
+
+// SetExtraCredits sets the "extra_credits" field.
+func (usuo *UserSubscriptionUpdateOne) SetExtraCredits(f float64) *UserSubscriptionUpdateOne {
+	usuo.mutation.ResetExtraCredits()
+	usuo.mutation.SetExtraCredits(f)
+	return usuo
+}
+
+// SetNillableExtraCredits sets the "extra_credits" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillableExtraCredits(f *float64) *UserSubscriptionUpdateOne {
+	if f != nil {
+		usuo.SetExtraCredits(*f)
+	}
+	return usuo
+}
+
+// AddExtraCredits adds f to the "extra_credits" field.
+func (usuo *UserSubscriptionUpdateOne) AddExtraCredits(f float64) *UserSubscriptionUpdateOne {
+	usuo.mutation.AddExtraCredits(f)
+	return usuo
+}
+
+// SetImagesUsed sets the "images_used" field.
+func (usuo *UserSubscriptionUpdateOne) SetImagesUsed(i int) *UserSubscriptionUpdateOne {
+	usuo.mutation.ResetImagesUsed()
+	usuo.mutation.SetImagesUsed(i)
+	return usuo
+}
+
+// SetNillableImagesUsed sets the "images_used" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillableImagesUsed(i *int) *UserSubscriptionUpdateOne {
+	if i != nil {
+		usuo.SetImagesUsed(*i)
+	}
+	return usuo
+}
+
+// AddImagesUsed adds i to the "images_used" field.
+func (usuo *UserSubscriptionUpdateOne) AddImagesUsed(i int) *UserSubscriptionUpdateOne {
+	usuo.mutation.AddImagesUsed(i)
+	return usuo
+}
+
+// SetBillingCycle sets the "billing_cycle" field.
+func (usuo *UserSubscriptionUpdateOne) SetBillingCycle(uc usersubscription.BillingCycle) *UserSubscriptionUpdateOne {
+	usuo.mutation.SetBillingCycle(uc)
+	return usuo
+}
+
+// SetNillableBillingCycle sets the "billing_cycle" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillableBillingCycle(uc *usersubscription.BillingCycle) *UserSubscriptionUpdateOne {
+	if uc != nil {
+		usuo.SetBillingCycle(*uc)
+	}
+	return usuo
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (usuo *UserSubscriptionUpdateOne) SetUpdatedAt(t time.Time) *UserSubscriptionUpdateOne {
 	usuo.mutation.SetUpdatedAt(t)
@@ -444,6 +716,11 @@ func (usuo *UserSubscriptionUpdateOne) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "UserSubscription.status": %w`, err)}
 		}
 	}
+	if v, ok := usuo.mutation.BillingCycle(); ok {
+		if err := usersubscription.BillingCycleValidator(v); err != nil {
+			return &ValidationError{Name: "billing_cycle", err: fmt.Errorf(`ent: validator failed for field "UserSubscription.billing_cycle": %w`, err)}
+		}
+	}
 	if _, ok := usuo.mutation.UserID(); usuo.mutation.UserCleared() && !ok {
 		return errors.New(`ent: clearing a required unique edge "UserSubscription.user"`)
 	}
@@ -496,6 +773,39 @@ func (usuo *UserSubscriptionUpdateOne) sqlSave(ctx context.Context) (_node *User
 	}
 	if value, ok := usuo.mutation.Status(); ok {
 		_spec.SetField(usersubscription.FieldStatus, field.TypeEnum, value)
+	}
+	if value, ok := usuo.mutation.PeriodStart(); ok {
+		_spec.SetField(usersubscription.FieldPeriodStart, field.TypeTime, value)
+	}
+	if usuo.mutation.PeriodStartCleared() {
+		_spec.ClearField(usersubscription.FieldPeriodStart, field.TypeTime)
+	}
+	if value, ok := usuo.mutation.PeriodEnd(); ok {
+		_spec.SetField(usersubscription.FieldPeriodEnd, field.TypeTime, value)
+	}
+	if usuo.mutation.PeriodEndCleared() {
+		_spec.ClearField(usersubscription.FieldPeriodEnd, field.TypeTime)
+	}
+	if value, ok := usuo.mutation.CreditsUsed(); ok {
+		_spec.SetField(usersubscription.FieldCreditsUsed, field.TypeFloat64, value)
+	}
+	if value, ok := usuo.mutation.AddedCreditsUsed(); ok {
+		_spec.AddField(usersubscription.FieldCreditsUsed, field.TypeFloat64, value)
+	}
+	if value, ok := usuo.mutation.ExtraCredits(); ok {
+		_spec.SetField(usersubscription.FieldExtraCredits, field.TypeFloat64, value)
+	}
+	if value, ok := usuo.mutation.AddedExtraCredits(); ok {
+		_spec.AddField(usersubscription.FieldExtraCredits, field.TypeFloat64, value)
+	}
+	if value, ok := usuo.mutation.ImagesUsed(); ok {
+		_spec.SetField(usersubscription.FieldImagesUsed, field.TypeInt, value)
+	}
+	if value, ok := usuo.mutation.AddedImagesUsed(); ok {
+		_spec.AddField(usersubscription.FieldImagesUsed, field.TypeInt, value)
+	}
+	if value, ok := usuo.mutation.BillingCycle(); ok {
+		_spec.SetField(usersubscription.FieldBillingCycle, field.TypeEnum, value)
 	}
 	if value, ok := usuo.mutation.UpdatedAt(); ok {
 		_spec.SetField(usersubscription.FieldUpdatedAt, field.TypeTime, value)

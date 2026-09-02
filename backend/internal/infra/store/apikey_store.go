@@ -185,6 +185,7 @@ func (s *APIKeyStore) GetGroupAccess(ctx context.Context, userID, groupID int) (
 					entgroup.HasAllowedUsersWith(entuser.IDEQ(userID)),
 				),
 			),
+			subscriptionGroupVisibleTo(userID, time.Now()),
 		).
 		Exist(ctx)
 	if err != nil {

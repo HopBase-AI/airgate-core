@@ -28,6 +28,18 @@ type UserSubscription struct {
 	Usage map[string]interface{} `json:"usage,omitempty"`
 	// Status holds the value of the "status" field.
 	Status usersubscription.Status `json:"status,omitempty"`
+	// PeriodStart holds the value of the "period_start" field.
+	PeriodStart time.Time `json:"period_start,omitempty"`
+	// PeriodEnd holds the value of the "period_end" field.
+	PeriodEnd time.Time `json:"period_end,omitempty"`
+	// CreditsUsed holds the value of the "credits_used" field.
+	CreditsUsed float64 `json:"credits_used,omitempty"`
+	// ExtraCredits holds the value of the "extra_credits" field.
+	ExtraCredits float64 `json:"extra_credits,omitempty"`
+	// ImagesUsed holds the value of the "images_used" field.
+	ImagesUsed int `json:"images_used,omitempty"`
+	// BillingCycle holds the value of the "billing_cycle" field.
+	BillingCycle usersubscription.BillingCycle `json:"billing_cycle,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -80,11 +92,13 @@ func (*UserSubscription) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case usersubscription.FieldUsage:
 			values[i] = new([]byte)
-		case usersubscription.FieldID:
+		case usersubscription.FieldCreditsUsed, usersubscription.FieldExtraCredits:
+			values[i] = new(sql.NullFloat64)
+		case usersubscription.FieldID, usersubscription.FieldImagesUsed:
 			values[i] = new(sql.NullInt64)
-		case usersubscription.FieldStatus:
+		case usersubscription.FieldStatus, usersubscription.FieldBillingCycle:
 			values[i] = new(sql.NullString)
-		case usersubscription.FieldEffectiveAt, usersubscription.FieldExpiresAt, usersubscription.FieldCreatedAt, usersubscription.FieldUpdatedAt:
+		case usersubscription.FieldEffectiveAt, usersubscription.FieldExpiresAt, usersubscription.FieldPeriodStart, usersubscription.FieldPeriodEnd, usersubscription.FieldCreatedAt, usersubscription.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
 		case usersubscription.ForeignKeys[0]: // group_subscriptions
 			values[i] = new(sql.NullInt64)
@@ -136,6 +150,42 @@ func (us *UserSubscription) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field status", values[i])
 			} else if value.Valid {
 				us.Status = usersubscription.Status(value.String)
+			}
+		case usersubscription.FieldPeriodStart:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field period_start", values[i])
+			} else if value.Valid {
+				us.PeriodStart = value.Time
+			}
+		case usersubscription.FieldPeriodEnd:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field period_end", values[i])
+			} else if value.Valid {
+				us.PeriodEnd = value.Time
+			}
+		case usersubscription.FieldCreditsUsed:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field credits_used", values[i])
+			} else if value.Valid {
+				us.CreditsUsed = value.Float64
+			}
+		case usersubscription.FieldExtraCredits:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field extra_credits", values[i])
+			} else if value.Valid {
+				us.ExtraCredits = value.Float64
+			}
+		case usersubscription.FieldImagesUsed:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field images_used", values[i])
+			} else if value.Valid {
+				us.ImagesUsed = int(value.Int64)
+			}
+		case usersubscription.FieldBillingCycle:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field billing_cycle", values[i])
+			} else if value.Valid {
+				us.BillingCycle = usersubscription.BillingCycle(value.String)
 			}
 		case usersubscription.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -220,6 +270,24 @@ func (us *UserSubscription) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(fmt.Sprintf("%v", us.Status))
+	builder.WriteString(", ")
+	builder.WriteString("period_start=")
+	builder.WriteString(us.PeriodStart.Format(time.ANSIC))
+	builder.WriteString(", ")
+	builder.WriteString("period_end=")
+	builder.WriteString(us.PeriodEnd.Format(time.ANSIC))
+	builder.WriteString(", ")
+	builder.WriteString("credits_used=")
+	builder.WriteString(fmt.Sprintf("%v", us.CreditsUsed))
+	builder.WriteString(", ")
+	builder.WriteString("extra_credits=")
+	builder.WriteString(fmt.Sprintf("%v", us.ExtraCredits))
+	builder.WriteString(", ")
+	builder.WriteString("images_used=")
+	builder.WriteString(fmt.Sprintf("%v", us.ImagesUsed))
+	builder.WriteString(", ")
+	builder.WriteString("billing_cycle=")
+	builder.WriteString(fmt.Sprintf("%v", us.BillingCycle))
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(us.CreatedAt.Format(time.ANSIC))

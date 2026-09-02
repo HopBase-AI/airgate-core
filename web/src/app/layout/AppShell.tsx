@@ -7,6 +7,7 @@ import { useAuth } from '../providers/AuthProvider';
 import { getTokenRole } from '../../shared/api/client';
 import { resolveTeamAccess } from '../../shared/teamAccess';
 import { pluginsApi } from '../../shared/api/plugins';
+import { subscriptionsApi } from '../../shared/api/subscriptions';
 import { queryKeys } from '../../shared/queryKeys';
 import { useTheme } from '../providers/ThemeProvider';
 import { useSiteSettings } from '../providers/SiteSettingsProvider';
@@ -67,6 +68,7 @@ import {
   Video,
   Store,
   LayoutGrid,
+  Crown,
 } from 'lucide-react';
 
 /**
@@ -142,6 +144,9 @@ const userMenuItems: MenuItem[] = [
 const teamMenuItem: MenuItem = { path: '/team', labelKey: 'nav.my_team', icon: <UsersRound className="h-5 w-5" />, sectionKey: 'nav.section_team' };
 // 操作记录:组织 / 成员 / 额度 / 密钥变更全程可查,内容与「团队管理」的额度管理是两件事,单独成页挂在「团队」段下。
 const teamAuditMenuItem: MenuItem = { path: '/team/audit', labelKey: 'nav.my_team_audit', icon: <History className="h-5 w-5" /> };
+
+// 「我的套餐」仅在后台配置了订阅计划时显示。
+const plansMenuItem: MenuItem = { path: '/plans', labelKey: 'nav.my_plan', icon: <Crown className="h-5 w-5" /> };
 
 // 「我的邀请」仅在分销开关（公开设置 referral_enabled）打开时挂进「账户」段(与充值 / 充值记录同段)。
 const inviteMenuItem: MenuItem = { path: '/invite', labelKey: 'nav.my_invite', icon: <Gift className="h-5 w-5" />, sectionKey: 'nav.section_account' };
@@ -280,6 +285,14 @@ export function AppShell({ children }: AppShellProps) {
   const isEnterpriseOwner = !isAPIKeySession && !isTeamMember && !isAdmin && !!user?.is_enterprise_owner;
   const hideBillingPages = isTeamMember || isEnterpriseOwner;
   const { adminItems: pluginAdminItems, userItems: pluginUserItems } = usePluginMenuItems(isAdmin, isAPIKeySession, hideBillingPages);
+  const { data: plans } = useQuery({
+    queryKey: queryKeys.plans(),
+    queryFn: () => subscriptionsApi.plans(),
+    enabled: !!user && !isAPIKeySession && !hideBillingPages,
+    staleTime: 5 * 60 * 1000,
+    meta: { globalLoading: false },
+  });
+  const hasPlans = (plans?.length ?? 0) > 0;
   const sections = useMemo(() => {
     const showTeam = teamAccess.canOpenTeam;
     const teamItems = showTeam ? [teamMenuItem, ...(teamAccess.canViewAudit ? [teamAuditMenuItem] : [])] : [];
@@ -291,9 +304,12 @@ export function AppShell({ children }: AppShellProps) {
     const stripSection = (item: MenuItem): MenuItem => ({ path: item.path, labelKey: item.labelKey, icon: item.icon });
     // 「账户」段:我的邀请在前、充值类插件页在后;只有段首项带 sectionKey,避免渲染出两个同名段头。
     const accountSectionItems = [
+      ...(hasPlans ? [plansMenuItem] : []),
       ...(showInvite ? [inviteMenuItem] : []),
-      ...pluginAccountItems.map((item, i) => (showInvite && i === 0 ? stripSection(item) : item)),
-    ];
+      ...pluginAccountItems,
+    ].map((item, i) => i === 0
+      ? { ...stripSection(item), sectionKey: 'nav.section_account' }
+      : stripSection(item));
     // 管理员视图:管理分组 + 插件分组之后,个人项合成一个「个人中心」块(沿用旧结构,只是不再有个人资料)。
     const adminUserItems = [
       ...userMenuItems.filter((item) => item.path !== '/'),
@@ -330,7 +346,7 @@ export function AppShell({ children }: AppShellProps) {
     });
 
     return nextSections;
-  }, [isAPIKeySession, hideBillingPages, isAdmin, teamAccess.canOpenTeam, teamAccess.canViewAudit, user?.can_author_blog, pluginAdminItems, pluginUserItems, site.referral_enabled]);
+  }, [isAPIKeySession, hideBillingPages, isAdmin, teamAccess.canOpenTeam, teamAccess.canViewAudit, user?.can_author_blog, pluginAdminItems, pluginUserItems, site.referral_enabled, hasPlans]);
 
   // 团队成员的密钥会话优先显示成员名，其次才是密钥名
   const displayName = user?.member_name || user?.api_key_name || user?.username || user?.email?.split('@')[0] || site.site_name || 'HopBase';
