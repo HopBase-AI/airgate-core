@@ -2,10 +2,10 @@ package plugin
 
 import (
 	"net/http"
-
-	"github.com/gin-gonic/gin"
 	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
