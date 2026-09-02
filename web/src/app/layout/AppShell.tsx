@@ -6,6 +6,7 @@ import { Button, Link as HeroLink, Tooltip } from '@heroui/react';
 import { useAuth } from '../providers/AuthProvider';
 import { getTokenRole } from '../../shared/api/client';
 import { pluginsApi } from '../../shared/api/plugins';
+import { subscriptionsApi } from '../../shared/api/subscriptions';
 import { queryKeys } from '../../shared/queryKeys';
 import { useTheme } from '../providers/ThemeProvider';
 import { useSiteSettings } from '../providers/SiteSettingsProvider';
@@ -51,6 +52,7 @@ import {
   Route,
   Bell,
   Tags,
+  Crown,
 } from 'lucide-react';
 
 interface AppShellProps {
@@ -92,6 +94,9 @@ const userMenuItems: MenuItem[] = [
   { path: '/keys', labelKey: 'nav.my_keys', icon: <KeyRound className="h-5 w-5" /> },
   { path: '/usage', labelKey: 'nav.my_usage', icon: <ReceiptText className="h-5 w-5" /> },
 ];
+
+// 「我的套餐」仅在后台配置了订阅制分组（/account/plans 非空）时挂进个人菜单，ToB 实例无套餐则不出现。
+const plansMenuItem: MenuItem = { path: '/plans', labelKey: 'nav.my_plan', icon: <Crown className="h-5 w-5" /> };
 
 // 「我的邀请」仅在分销开关（公开设置 referral_enabled）打开时挂进个人菜单。
 const inviteMenuItem: MenuItem = { path: '/invite', labelKey: 'nav.my_invite', icon: <Gift className="h-5 w-5" /> };
@@ -211,8 +216,17 @@ export function AppShell({ children }: AppShellProps) {
   const isAdmin = !isAPIKeySession && (getTokenRole() === 'admin' || user?.role === 'admin');
 
   const { adminItems: pluginAdminItems, userItems: pluginUserItems } = usePluginMenuItems(isAdmin, isAPIKeySession);
+  const { data: plans } = useQuery({
+    queryKey: queryKeys.plans(),
+    queryFn: () => subscriptionsApi.plans(),
+    enabled: !!user && !isAPIKeySession,
+    staleTime: 5 * 60 * 1000,
+    meta: { globalLoading: false },
+  });
+  const hasPlans = (plans?.length ?? 0) > 0;
   const sections = useMemo(() => {
-    const userItemsWithInvite = site.referral_enabled ? [...userMenuItems, inviteMenuItem] : userMenuItems;
+    const userItemsWithPlans = hasPlans ? [...userMenuItems, plansMenuItem] : userMenuItems;
+    const userItemsWithInvite = site.referral_enabled ? [...userItemsWithPlans, inviteMenuItem] : userItemsWithPlans;
     const adminUserItems = userItemsWithInvite
       .filter((item) => item.path !== '/')
       .map((item, i) => (i === 0 ? { ...item, sectionKey: 'nav.personal' } : item));
@@ -246,7 +260,7 @@ export function AppShell({ children }: AppShellProps) {
     });
 
     return nextSections;
-  }, [isAPIKeySession, isAdmin, user?.can_author_blog, pluginAdminItems, pluginUserItems, site.referral_enabled]);
+  }, [isAPIKeySession, isAdmin, user?.can_author_blog, pluginAdminItems, pluginUserItems, site.referral_enabled, hasPlans]);
 
   const displayName = user?.api_key_name || user?.username || user?.email?.split('@')[0] || site.site_name || 'HopBase';
   const notificationIdentity = isAPIKeySession

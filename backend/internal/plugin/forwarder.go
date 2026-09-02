@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/DouDOU-start/airgate-core/ent"
+	appsubscription "github.com/DouDOU-start/airgate-core/internal/app/subscription"
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
@@ -39,6 +40,8 @@ type Forwarder struct {
 	concurrency *scheduler.ConcurrencyManager
 	calculator  *billing.Calculator
 	recorder    *billing.Recorder
+	// subscriptions 订阅制分组准入（可为 nil：未装配时放行）。
+	subscriptions *appsubscription.Service
 }
 
 // NewForwarder 创建转发器。

@@ -24,7 +24,9 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/setting"
 	entusagelog "github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
+	entusersubscription "github.com/DouDOU-start/airgate-core/ent/usersubscription"
 	appreferral "github.com/DouDOU-start/airgate-core/internal/app/referral"
+	appsubscription "github.com/DouDOU-start/airgate-core/internal/app/subscription"
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
@@ -55,6 +57,8 @@ type HostService struct {
 	recorder    *billing.Recorder
 	users       *appuser.Service
 	referral    *appreferral.Service
+	// subscriptions 订阅制分组准入（可为 nil：未装配时放行）。
+	subscriptions *appsubscription.Service
 }
 
 // NewHostService 构造 HostService 工厂。
@@ -2727,6 +2731,12 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 				return nil, "", hostForwardGenericError()
 			}
 		}
+		// 订阅制分组：显式指定同样要过订阅准入（有效订阅 / 点数 / 张数 / 视频权益）。
+		if string(g.SubscriptionType) == "subscription" {
+			if err := h.entitleSubscriptionRoute(ctx, req, g.ID, g.Quotas); err != nil {
+				return nil, "", err
+			}
+		}
 		return []routing.Candidate{{
 			GroupID:                g.ID,
 			Platform:               g.Platform,
@@ -2737,6 +2747,8 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 			GroupPluginSettings:    clonePluginSettingsHost(g.PluginSettings),
 			UserPluginSettings:     clonePluginSettingsHost(u.GroupPluginSettings[int64(g.ID)]),
 			SortWeight:             g.SortWeight,
+			SubscriptionType:       string(g.SubscriptionType),
+			Quotas:                 g.Quotas,
 		}}, u.Email, nil
 	}
 
@@ -2765,7 +2777,12 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 		)
 		return nil, "", hostForwardGenericError()
 	}
+	// 自动路由候选里的订阅制分组逐个过准入；全被拒时把订阅语义的原因回给调用方。
+	routes, gateErr := h.filterSubscriptionRoutes(ctx, req, routes)
 	if len(routes) == 0 {
+		if gateErr != nil {
+			return nil, "", gateErr
+		}
 		slog.Warn("host_forward_no_eligible_route",
 			sdk.LogFieldPlatform, platform,
 			sdk.LogFieldUserID, req.UserID,
@@ -2964,9 +2981,34 @@ func (h *HostService) checkHostForwardBalance(ctx context.Context, userID int64)
 		return hostForwardGenericError()
 	}
 	if u.Balance <= 0 {
+		// 订阅用户余额常为 0（余额已换成套餐）：持有未到期的 active 订阅即放行，
+		// 点数/张数等具体准入在路由阶段按分组判定。
+		subscribed, err := h.db.UserSubscription.Query().
+			Where(
+				entusersubscription.HasUserWith(user.IDEQ(int(userID))),
+				entusersubscription.StatusEQ(entusersubscription.StatusActive),
+				entusersubscription.ExpiresAtGT(time.Now()),
+			).
+			Exist(ctx)
+		if err != nil {
+			if cerr := hostContextError(err); cerr != nil {
+				return cerr
+			}
+			slog.Error("host_forward_balance_check_subscription_lookup_failed",
+				sdk.LogFieldUserID, userID, sdk.LogFieldError, err)
+			return hostForwardGenericError()
+		}
+		if subscribed {
+			return nil
+		}
 		return hostForwardInsufficientQuotaError()
 	}
 	return nil
+}
+
+// hostSubscriptionDeniedError 订阅准入拒绝：与余额不足同用 FailedPrecondition，插件侧按业务错误呈现。
+func hostSubscriptionDeniedError(message string) error {
+	return status.Error(codes.FailedPrecondition, message)
 }
 
 // checkHostForwardBalanceOrReplay lets an already-recorded non-stream request

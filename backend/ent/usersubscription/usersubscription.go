@@ -23,6 +23,18 @@ const (
 	FieldUsage = "usage"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
+	// FieldPeriodStart holds the string denoting the period_start field in the database.
+	FieldPeriodStart = "period_start"
+	// FieldPeriodEnd holds the string denoting the period_end field in the database.
+	FieldPeriodEnd = "period_end"
+	// FieldCreditsUsed holds the string denoting the credits_used field in the database.
+	FieldCreditsUsed = "credits_used"
+	// FieldExtraCredits holds the string denoting the extra_credits field in the database.
+	FieldExtraCredits = "extra_credits"
+	// FieldImagesUsed holds the string denoting the images_used field in the database.
+	FieldImagesUsed = "images_used"
+	// FieldBillingCycle holds the string denoting the billing_cycle field in the database.
+	FieldBillingCycle = "billing_cycle"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
@@ -56,6 +68,12 @@ var Columns = []string{
 	FieldExpiresAt,
 	FieldUsage,
 	FieldStatus,
+	FieldPeriodStart,
+	FieldPeriodEnd,
+	FieldCreditsUsed,
+	FieldExtraCredits,
+	FieldImagesUsed,
+	FieldBillingCycle,
 	FieldCreatedAt,
 	FieldUpdatedAt,
 }
@@ -83,6 +101,12 @@ func ValidColumn(column string) bool {
 }
 
 var (
+	// DefaultCreditsUsed holds the default value on creation for the "credits_used" field.
+	DefaultCreditsUsed float64
+	// DefaultExtraCredits holds the default value on creation for the "extra_credits" field.
+	DefaultExtraCredits float64
+	// DefaultImagesUsed holds the default value on creation for the "images_used" field.
+	DefaultImagesUsed int
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -118,6 +142,32 @@ func StatusValidator(s Status) error {
 	}
 }
 
+// BillingCycle defines the type for the "billing_cycle" enum field.
+type BillingCycle string
+
+// BillingCycleMonthly is the default value of the BillingCycle enum.
+const DefaultBillingCycle = BillingCycleMonthly
+
+// BillingCycle values.
+const (
+	BillingCycleMonthly BillingCycle = "monthly"
+	BillingCycleAnnual  BillingCycle = "annual"
+)
+
+func (bc BillingCycle) String() string {
+	return string(bc)
+}
+
+// BillingCycleValidator is a validator for the "billing_cycle" field enum values. It is called by the builders before save.
+func BillingCycleValidator(bc BillingCycle) error {
+	switch bc {
+	case BillingCycleMonthly, BillingCycleAnnual:
+		return nil
+	default:
+		return fmt.Errorf("usersubscription: invalid enum value for billing_cycle field: %q", bc)
+	}
+}
+
 // OrderOption defines the ordering options for the UserSubscription queries.
 type OrderOption func(*sql.Selector)
 
@@ -139,6 +189,36 @@ func ByExpiresAt(opts ...sql.OrderTermOption) OrderOption {
 // ByStatus orders the results by the status field.
 func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
+}
+
+// ByPeriodStart orders the results by the period_start field.
+func ByPeriodStart(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPeriodStart, opts...).ToFunc()
+}
+
+// ByPeriodEnd orders the results by the period_end field.
+func ByPeriodEnd(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPeriodEnd, opts...).ToFunc()
+}
+
+// ByCreditsUsed orders the results by the credits_used field.
+func ByCreditsUsed(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreditsUsed, opts...).ToFunc()
+}
+
+// ByExtraCredits orders the results by the extra_credits field.
+func ByExtraCredits(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldExtraCredits, opts...).ToFunc()
+}
+
+// ByImagesUsed orders the results by the images_used field.
+func ByImagesUsed(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldImagesUsed, opts...).ToFunc()
+}
+
+// ByBillingCycle orders the results by the billing_cycle field.
+func ByBillingCycle(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBillingCycle, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

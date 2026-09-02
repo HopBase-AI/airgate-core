@@ -642,6 +642,12 @@ var (
 		{Name: "expires_at", Type: field.TypeTime},
 		{Name: "usage", Type: field.TypeJSON, Nullable: true},
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "expired", "suspended"}, Default: "active"},
+		{Name: "period_start", Type: field.TypeTime, Nullable: true},
+		{Name: "period_end", Type: field.TypeTime, Nullable: true},
+		{Name: "credits_used", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "extra_credits", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "images_used", Type: field.TypeInt, Default: 0},
+		{Name: "billing_cycle", Type: field.TypeEnum, Enums: []string{"monthly", "annual"}, Default: "monthly"},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "group_subscriptions", Type: field.TypeInt},
@@ -655,13 +661,13 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "user_subscriptions_groups_subscriptions",
-				Columns:    []*schema.Column{UserSubscriptionsColumns[7]},
+				Columns:    []*schema.Column{UserSubscriptionsColumns[13]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "user_subscriptions_users_subscriptions",
-				Columns:    []*schema.Column{UserSubscriptionsColumns[8]},
+				Columns:    []*schema.Column{UserSubscriptionsColumns[14]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},

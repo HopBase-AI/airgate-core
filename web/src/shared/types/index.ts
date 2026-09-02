@@ -570,6 +570,8 @@ export interface UpdateAPIKeyReq {
 
 // ==================== Subscription ====================
 
+export type SubscriptionBillingCycle = 'monthly' | 'annual';
+
 export interface SubscriptionResp {
   id: number;
   user_id: number;
@@ -579,8 +581,71 @@ export interface SubscriptionResp {
   expires_at: string;
   usage: Record<string, unknown>;
   status: 'active' | 'expired' | 'suspended';
+  // 点数账本（订阅制分组按月计量）
+  period_start?: string;
+  period_end?: string;
+  credits_used: number;
+  extra_credits: number;
+  images_used: number;
+  billing_cycle: SubscriptionBillingCycle;
   created_at: string;
   updated_at: string;
+}
+
+// 套餐权益：订阅制分组 quotas JSON 的类型化投影（金额单位=余额单位；0 = 不限 / 不提供）
+export interface PlanQuotasResp {
+  monthly_credits: number;
+  credits_per_unit: number;
+  per_request_credits: number;
+  image_monthly_limit: number;
+  video_enabled: boolean;
+  price_monthly: number;
+  price_annual: number;
+  topup_credits: number;
+  topup_price: number;
+}
+
+export interface PlanResp {
+  group_id: number;
+  name: string;
+  name_i18n?: Record<string, string>;
+  platform: string;
+  note?: string;
+  note_i18n?: Record<string, string>;
+  sort_weight: number;
+  quotas: PlanQuotasResp;
+  current?: SubscriptionResp;
+}
+
+export interface SubscriptionUsageWindow {
+  used: number;
+  limit: number;
+  reset: string;
+}
+
+export interface SubscriptionProgressResp {
+  subscription_id: number;
+  group_id: number;
+  group_name: string;
+  status: 'active' | 'expired' | 'suspended';
+  billing_cycle: SubscriptionBillingCycle;
+  expires_at: string;
+  period_start: string;
+  period_end: string;
+  credits: SubscriptionUsageWindow;
+  unlimited: boolean;
+  extra_credits: number;
+  images?: SubscriptionUsageWindow;
+  video_enabled: boolean;
+  per_request_credits: number;
+  topup_available: boolean;
+  topup_credits: number;
+  topup_price: number;
+}
+
+export interface PurchaseSubscriptionReq {
+  group_id: number;
+  cycle: SubscriptionBillingCycle;
 }
 
 

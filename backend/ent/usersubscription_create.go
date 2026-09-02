@@ -54,6 +54,90 @@ func (usc *UserSubscriptionCreate) SetNillableStatus(u *usersubscription.Status)
 	return usc
 }
 
+// SetPeriodStart sets the "period_start" field.
+func (usc *UserSubscriptionCreate) SetPeriodStart(t time.Time) *UserSubscriptionCreate {
+	usc.mutation.SetPeriodStart(t)
+	return usc
+}
+
+// SetNillablePeriodStart sets the "period_start" field if the given value is not nil.
+func (usc *UserSubscriptionCreate) SetNillablePeriodStart(t *time.Time) *UserSubscriptionCreate {
+	if t != nil {
+		usc.SetPeriodStart(*t)
+	}
+	return usc
+}
+
+// SetPeriodEnd sets the "period_end" field.
+func (usc *UserSubscriptionCreate) SetPeriodEnd(t time.Time) *UserSubscriptionCreate {
+	usc.mutation.SetPeriodEnd(t)
+	return usc
+}
+
+// SetNillablePeriodEnd sets the "period_end" field if the given value is not nil.
+func (usc *UserSubscriptionCreate) SetNillablePeriodEnd(t *time.Time) *UserSubscriptionCreate {
+	if t != nil {
+		usc.SetPeriodEnd(*t)
+	}
+	return usc
+}
+
+// SetCreditsUsed sets the "credits_used" field.
+func (usc *UserSubscriptionCreate) SetCreditsUsed(f float64) *UserSubscriptionCreate {
+	usc.mutation.SetCreditsUsed(f)
+	return usc
+}
+
+// SetNillableCreditsUsed sets the "credits_used" field if the given value is not nil.
+func (usc *UserSubscriptionCreate) SetNillableCreditsUsed(f *float64) *UserSubscriptionCreate {
+	if f != nil {
+		usc.SetCreditsUsed(*f)
+	}
+	return usc
+}
+
+// SetExtraCredits sets the "extra_credits" field.
+func (usc *UserSubscriptionCreate) SetExtraCredits(f float64) *UserSubscriptionCreate {
+	usc.mutation.SetExtraCredits(f)
+	return usc
+}
+
+// SetNillableExtraCredits sets the "extra_credits" field if the given value is not nil.
+func (usc *UserSubscriptionCreate) SetNillableExtraCredits(f *float64) *UserSubscriptionCreate {
+	if f != nil {
+		usc.SetExtraCredits(*f)
+	}
+	return usc
+}
+
+// SetImagesUsed sets the "images_used" field.
+func (usc *UserSubscriptionCreate) SetImagesUsed(i int) *UserSubscriptionCreate {
+	usc.mutation.SetImagesUsed(i)
+	return usc
+}
+
+// SetNillableImagesUsed sets the "images_used" field if the given value is not nil.
+func (usc *UserSubscriptionCreate) SetNillableImagesUsed(i *int) *UserSubscriptionCreate {
+	if i != nil {
+		usc.SetImagesUsed(*i)
+	}
+	return usc
+}
+
+// SetBillingCycle sets the "billing_cycle" field.
+func (usc *UserSubscriptionCreate) SetBillingCycle(uc usersubscription.BillingCycle) *UserSubscriptionCreate {
+	usc.mutation.SetBillingCycle(uc)
+	return usc
+}
+
+// SetNillableBillingCycle sets the "billing_cycle" field if the given value is not nil.
+func (usc *UserSubscriptionCreate) SetNillableBillingCycle(uc *usersubscription.BillingCycle) *UserSubscriptionCreate {
+	if uc != nil {
+		usc.SetBillingCycle(*uc)
+	}
+	return usc
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (usc *UserSubscriptionCreate) SetCreatedAt(t time.Time) *UserSubscriptionCreate {
 	usc.mutation.SetCreatedAt(t)
@@ -143,6 +227,22 @@ func (usc *UserSubscriptionCreate) defaults() {
 		v := usersubscription.DefaultStatus
 		usc.mutation.SetStatus(v)
 	}
+	if _, ok := usc.mutation.CreditsUsed(); !ok {
+		v := usersubscription.DefaultCreditsUsed
+		usc.mutation.SetCreditsUsed(v)
+	}
+	if _, ok := usc.mutation.ExtraCredits(); !ok {
+		v := usersubscription.DefaultExtraCredits
+		usc.mutation.SetExtraCredits(v)
+	}
+	if _, ok := usc.mutation.ImagesUsed(); !ok {
+		v := usersubscription.DefaultImagesUsed
+		usc.mutation.SetImagesUsed(v)
+	}
+	if _, ok := usc.mutation.BillingCycle(); !ok {
+		v := usersubscription.DefaultBillingCycle
+		usc.mutation.SetBillingCycle(v)
+	}
 	if _, ok := usc.mutation.CreatedAt(); !ok {
 		v := usersubscription.DefaultCreatedAt()
 		usc.mutation.SetCreatedAt(v)
@@ -167,6 +267,23 @@ func (usc *UserSubscriptionCreate) check() error {
 	if v, ok := usc.mutation.Status(); ok {
 		if err := usersubscription.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "UserSubscription.status": %w`, err)}
+		}
+	}
+	if _, ok := usc.mutation.CreditsUsed(); !ok {
+		return &ValidationError{Name: "credits_used", err: errors.New(`ent: missing required field "UserSubscription.credits_used"`)}
+	}
+	if _, ok := usc.mutation.ExtraCredits(); !ok {
+		return &ValidationError{Name: "extra_credits", err: errors.New(`ent: missing required field "UserSubscription.extra_credits"`)}
+	}
+	if _, ok := usc.mutation.ImagesUsed(); !ok {
+		return &ValidationError{Name: "images_used", err: errors.New(`ent: missing required field "UserSubscription.images_used"`)}
+	}
+	if _, ok := usc.mutation.BillingCycle(); !ok {
+		return &ValidationError{Name: "billing_cycle", err: errors.New(`ent: missing required field "UserSubscription.billing_cycle"`)}
+	}
+	if v, ok := usc.mutation.BillingCycle(); ok {
+		if err := usersubscription.BillingCycleValidator(v); err != nil {
+			return &ValidationError{Name: "billing_cycle", err: fmt.Errorf(`ent: validator failed for field "UserSubscription.billing_cycle": %w`, err)}
 		}
 	}
 	if _, ok := usc.mutation.CreatedAt(); !ok {
@@ -222,6 +339,30 @@ func (usc *UserSubscriptionCreate) createSpec() (*UserSubscription, *sqlgraph.Cr
 	if value, ok := usc.mutation.Status(); ok {
 		_spec.SetField(usersubscription.FieldStatus, field.TypeEnum, value)
 		_node.Status = value
+	}
+	if value, ok := usc.mutation.PeriodStart(); ok {
+		_spec.SetField(usersubscription.FieldPeriodStart, field.TypeTime, value)
+		_node.PeriodStart = value
+	}
+	if value, ok := usc.mutation.PeriodEnd(); ok {
+		_spec.SetField(usersubscription.FieldPeriodEnd, field.TypeTime, value)
+		_node.PeriodEnd = value
+	}
+	if value, ok := usc.mutation.CreditsUsed(); ok {
+		_spec.SetField(usersubscription.FieldCreditsUsed, field.TypeFloat64, value)
+		_node.CreditsUsed = value
+	}
+	if value, ok := usc.mutation.ExtraCredits(); ok {
+		_spec.SetField(usersubscription.FieldExtraCredits, field.TypeFloat64, value)
+		_node.ExtraCredits = value
+	}
+	if value, ok := usc.mutation.ImagesUsed(); ok {
+		_spec.SetField(usersubscription.FieldImagesUsed, field.TypeInt, value)
+		_node.ImagesUsed = value
+	}
+	if value, ok := usc.mutation.BillingCycle(); ok {
+		_spec.SetField(usersubscription.FieldBillingCycle, field.TypeEnum, value)
+		_node.BillingCycle = value
 	}
 	if value, ok := usc.mutation.CreatedAt(); ok {
 		_spec.SetField(usersubscription.FieldCreatedAt, field.TypeTime, value)

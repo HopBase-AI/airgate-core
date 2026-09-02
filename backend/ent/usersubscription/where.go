@@ -65,6 +65,31 @@ func ExpiresAt(v time.Time) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldEQ(FieldExpiresAt, v))
 }
 
+// PeriodStart applies equality check predicate on the "period_start" field. It's identical to PeriodStartEQ.
+func PeriodStart(v time.Time) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldPeriodStart, v))
+}
+
+// PeriodEnd applies equality check predicate on the "period_end" field. It's identical to PeriodEndEQ.
+func PeriodEnd(v time.Time) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldPeriodEnd, v))
+}
+
+// CreditsUsed applies equality check predicate on the "credits_used" field. It's identical to CreditsUsedEQ.
+func CreditsUsed(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldCreditsUsed, v))
+}
+
+// ExtraCredits applies equality check predicate on the "extra_credits" field. It's identical to ExtraCreditsEQ.
+func ExtraCredits(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldExtraCredits, v))
+}
+
+// ImagesUsed applies equality check predicate on the "images_used" field. It's identical to ImagesUsedEQ.
+func ImagesUsed(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldImagesUsed, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldEQ(FieldCreatedAt, v))
@@ -183,6 +208,246 @@ func StatusIn(vs ...Status) predicate.UserSubscription {
 // StatusNotIn applies the NotIn predicate on the "status" field.
 func StatusNotIn(vs ...Status) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldNotIn(FieldStatus, vs...))
+}
+
+// PeriodStartEQ applies the EQ predicate on the "period_start" field.
+func PeriodStartEQ(v time.Time) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldPeriodStart, v))
+}
+
+// PeriodStartNEQ applies the NEQ predicate on the "period_start" field.
+func PeriodStartNEQ(v time.Time) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldPeriodStart, v))
+}
+
+// PeriodStartIn applies the In predicate on the "period_start" field.
+func PeriodStartIn(vs ...time.Time) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIn(FieldPeriodStart, vs...))
+}
+
+// PeriodStartNotIn applies the NotIn predicate on the "period_start" field.
+func PeriodStartNotIn(vs ...time.Time) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotIn(FieldPeriodStart, vs...))
+}
+
+// PeriodStartGT applies the GT predicate on the "period_start" field.
+func PeriodStartGT(v time.Time) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGT(FieldPeriodStart, v))
+}
+
+// PeriodStartGTE applies the GTE predicate on the "period_start" field.
+func PeriodStartGTE(v time.Time) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGTE(FieldPeriodStart, v))
+}
+
+// PeriodStartLT applies the LT predicate on the "period_start" field.
+func PeriodStartLT(v time.Time) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLT(FieldPeriodStart, v))
+}
+
+// PeriodStartLTE applies the LTE predicate on the "period_start" field.
+func PeriodStartLTE(v time.Time) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLTE(FieldPeriodStart, v))
+}
+
+// PeriodStartIsNil applies the IsNil predicate on the "period_start" field.
+func PeriodStartIsNil() predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIsNull(FieldPeriodStart))
+}
+
+// PeriodStartNotNil applies the NotNil predicate on the "period_start" field.
+func PeriodStartNotNil() predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotNull(FieldPeriodStart))
+}
+
+// PeriodEndEQ applies the EQ predicate on the "period_end" field.
+func PeriodEndEQ(v time.Time) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldPeriodEnd, v))
+}
+
+// PeriodEndNEQ applies the NEQ predicate on the "period_end" field.
+func PeriodEndNEQ(v time.Time) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldPeriodEnd, v))
+}
+
+// PeriodEndIn applies the In predicate on the "period_end" field.
+func PeriodEndIn(vs ...time.Time) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIn(FieldPeriodEnd, vs...))
+}
+
+// PeriodEndNotIn applies the NotIn predicate on the "period_end" field.
+func PeriodEndNotIn(vs ...time.Time) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotIn(FieldPeriodEnd, vs...))
+}
+
+// PeriodEndGT applies the GT predicate on the "period_end" field.
+func PeriodEndGT(v time.Time) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGT(FieldPeriodEnd, v))
+}
+
+// PeriodEndGTE applies the GTE predicate on the "period_end" field.
+func PeriodEndGTE(v time.Time) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGTE(FieldPeriodEnd, v))
+}
+
+// PeriodEndLT applies the LT predicate on the "period_end" field.
+func PeriodEndLT(v time.Time) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLT(FieldPeriodEnd, v))
+}
+
+// PeriodEndLTE applies the LTE predicate on the "period_end" field.
+func PeriodEndLTE(v time.Time) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLTE(FieldPeriodEnd, v))
+}
+
+// PeriodEndIsNil applies the IsNil predicate on the "period_end" field.
+func PeriodEndIsNil() predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIsNull(FieldPeriodEnd))
+}
+
+// PeriodEndNotNil applies the NotNil predicate on the "period_end" field.
+func PeriodEndNotNil() predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotNull(FieldPeriodEnd))
+}
+
+// CreditsUsedEQ applies the EQ predicate on the "credits_used" field.
+func CreditsUsedEQ(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldCreditsUsed, v))
+}
+
+// CreditsUsedNEQ applies the NEQ predicate on the "credits_used" field.
+func CreditsUsedNEQ(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldCreditsUsed, v))
+}
+
+// CreditsUsedIn applies the In predicate on the "credits_used" field.
+func CreditsUsedIn(vs ...float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIn(FieldCreditsUsed, vs...))
+}
+
+// CreditsUsedNotIn applies the NotIn predicate on the "credits_used" field.
+func CreditsUsedNotIn(vs ...float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotIn(FieldCreditsUsed, vs...))
+}
+
+// CreditsUsedGT applies the GT predicate on the "credits_used" field.
+func CreditsUsedGT(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGT(FieldCreditsUsed, v))
+}
+
+// CreditsUsedGTE applies the GTE predicate on the "credits_used" field.
+func CreditsUsedGTE(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGTE(FieldCreditsUsed, v))
+}
+
+// CreditsUsedLT applies the LT predicate on the "credits_used" field.
+func CreditsUsedLT(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLT(FieldCreditsUsed, v))
+}
+
+// CreditsUsedLTE applies the LTE predicate on the "credits_used" field.
+func CreditsUsedLTE(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLTE(FieldCreditsUsed, v))
+}
+
+// ExtraCreditsEQ applies the EQ predicate on the "extra_credits" field.
+func ExtraCreditsEQ(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldExtraCredits, v))
+}
+
+// ExtraCreditsNEQ applies the NEQ predicate on the "extra_credits" field.
+func ExtraCreditsNEQ(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldExtraCredits, v))
+}
+
+// ExtraCreditsIn applies the In predicate on the "extra_credits" field.
+func ExtraCreditsIn(vs ...float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIn(FieldExtraCredits, vs...))
+}
+
+// ExtraCreditsNotIn applies the NotIn predicate on the "extra_credits" field.
+func ExtraCreditsNotIn(vs ...float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotIn(FieldExtraCredits, vs...))
+}
+
+// ExtraCreditsGT applies the GT predicate on the "extra_credits" field.
+func ExtraCreditsGT(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGT(FieldExtraCredits, v))
+}
+
+// ExtraCreditsGTE applies the GTE predicate on the "extra_credits" field.
+func ExtraCreditsGTE(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGTE(FieldExtraCredits, v))
+}
+
+// ExtraCreditsLT applies the LT predicate on the "extra_credits" field.
+func ExtraCreditsLT(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLT(FieldExtraCredits, v))
+}
+
+// ExtraCreditsLTE applies the LTE predicate on the "extra_credits" field.
+func ExtraCreditsLTE(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLTE(FieldExtraCredits, v))
+}
+
+// ImagesUsedEQ applies the EQ predicate on the "images_used" field.
+func ImagesUsedEQ(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldImagesUsed, v))
+}
+
+// ImagesUsedNEQ applies the NEQ predicate on the "images_used" field.
+func ImagesUsedNEQ(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldImagesUsed, v))
+}
+
+// ImagesUsedIn applies the In predicate on the "images_used" field.
+func ImagesUsedIn(vs ...int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIn(FieldImagesUsed, vs...))
+}
+
+// ImagesUsedNotIn applies the NotIn predicate on the "images_used" field.
+func ImagesUsedNotIn(vs ...int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotIn(FieldImagesUsed, vs...))
+}
+
+// ImagesUsedGT applies the GT predicate on the "images_used" field.
+func ImagesUsedGT(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGT(FieldImagesUsed, v))
+}
+
+// ImagesUsedGTE applies the GTE predicate on the "images_used" field.
+func ImagesUsedGTE(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGTE(FieldImagesUsed, v))
+}
+
+// ImagesUsedLT applies the LT predicate on the "images_used" field.
+func ImagesUsedLT(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLT(FieldImagesUsed, v))
+}
+
+// ImagesUsedLTE applies the LTE predicate on the "images_used" field.
+func ImagesUsedLTE(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLTE(FieldImagesUsed, v))
+}
+
+// BillingCycleEQ applies the EQ predicate on the "billing_cycle" field.
+func BillingCycleEQ(v BillingCycle) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldBillingCycle, v))
+}
+
+// BillingCycleNEQ applies the NEQ predicate on the "billing_cycle" field.
+func BillingCycleNEQ(v BillingCycle) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldBillingCycle, v))
+}
+
+// BillingCycleIn applies the In predicate on the "billing_cycle" field.
+func BillingCycleIn(vs ...BillingCycle) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIn(FieldBillingCycle, vs...))
+}
+
+// BillingCycleNotIn applies the NotIn predicate on the "billing_cycle" field.
+func BillingCycleNotIn(vs ...BillingCycle) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotIn(FieldBillingCycle, vs...))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

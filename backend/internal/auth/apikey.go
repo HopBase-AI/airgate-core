@@ -106,6 +106,16 @@ type APIKeyInfo struct {
 	// GroupModelRouting 分组的模型路由规则（model/glob → 账号 ID 列表），
 	// 随鉴权预载供转发入口做「模型-分组预校验」，零额外查询；只读消费，勿修改。
 	GroupModelRouting map[string][]int64
+
+	// GroupSubscriptionType / GroupQuotas 分组计费模式与订阅权益配置。
+	// "subscription" 时转发入口改走订阅点数准入（不看余额），扣费落订阅账本。
+	GroupSubscriptionType string
+	GroupQuotas           map[string]any
+}
+
+// IsSubscriptionGroup 当前 key 所属分组是否为订阅制。
+func (i *APIKeyInfo) IsSubscriptionGroup() bool {
+	return i != nil && i.GroupSubscriptionType == "subscription"
 }
 
 // UserGroupRate 返回当前 key 所属分组在 user.group_rates 中的倍率（若存在）。
@@ -299,6 +309,8 @@ func ValidateAPIKey(ctx context.Context, db *ent.Client, key string) (*APIKeyInf
 		GroupForceInstructions:  g.ForceInstructions,
 		GroupPluginSettings:     g.PluginSettings,
 		GroupModelRouting:       g.ModelRouting,
+		GroupSubscriptionType:   string(g.SubscriptionType),
+		GroupQuotas:             g.Quotas,
 	}
 	cacheAPIKeyResult(hash, info, nil)
 	return info, nil

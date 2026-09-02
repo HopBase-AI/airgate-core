@@ -810,12 +810,24 @@ func init() {
 	useridentity.DefaultCreatedAt = useridentityDescCreatedAt.Default.(func() time.Time)
 	usersubscriptionFields := schema.UserSubscription{}.Fields()
 	_ = usersubscriptionFields
+	// usersubscriptionDescCreditsUsed is the schema descriptor for credits_used field.
+	usersubscriptionDescCreditsUsed := usersubscriptionFields[6].Descriptor()
+	// usersubscription.DefaultCreditsUsed holds the default value on creation for the credits_used field.
+	usersubscription.DefaultCreditsUsed = usersubscriptionDescCreditsUsed.Default.(float64)
+	// usersubscriptionDescExtraCredits is the schema descriptor for extra_credits field.
+	usersubscriptionDescExtraCredits := usersubscriptionFields[7].Descriptor()
+	// usersubscription.DefaultExtraCredits holds the default value on creation for the extra_credits field.
+	usersubscription.DefaultExtraCredits = usersubscriptionDescExtraCredits.Default.(float64)
+	// usersubscriptionDescImagesUsed is the schema descriptor for images_used field.
+	usersubscriptionDescImagesUsed := usersubscriptionFields[8].Descriptor()
+	// usersubscription.DefaultImagesUsed holds the default value on creation for the images_used field.
+	usersubscription.DefaultImagesUsed = usersubscriptionDescImagesUsed.Default.(int)
 	// usersubscriptionDescCreatedAt is the schema descriptor for created_at field.
-	usersubscriptionDescCreatedAt := usersubscriptionFields[4].Descriptor()
+	usersubscriptionDescCreatedAt := usersubscriptionFields[10].Descriptor()
 	// usersubscription.DefaultCreatedAt holds the default value on creation for the created_at field.
 	usersubscription.DefaultCreatedAt = usersubscriptionDescCreatedAt.Default.(func() time.Time)
 	// usersubscriptionDescUpdatedAt is the schema descriptor for updated_at field.
-	usersubscriptionDescUpdatedAt := usersubscriptionFields[5].Descriptor()
+	usersubscriptionDescUpdatedAt := usersubscriptionFields[11].Descriptor()
 	// usersubscription.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	usersubscription.DefaultUpdatedAt = usersubscriptionDescUpdatedAt.Default.(func() time.Time)
 	// usersubscription.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

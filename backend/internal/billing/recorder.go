@@ -257,7 +257,14 @@ func (r *Recorder) RecordSync(ctx context.Context, record UsageRecord) (int, err
 	if err != nil {
 		return 0, fmt.Errorf("插入 UsageLog 失败: %w", err)
 	}
-	if err := applyUsageCharges(ctx, tx, []UsageRecord{record}, refs); err != nil {
+	metered, err := resolveSubscriptionMetering(ctx, tx, []UsageRecord{record})
+	if err != nil {
+		return 0, err
+	}
+	if err := applyUsageCharges(ctx, tx, []UsageRecord{record}, refs, metered); err != nil {
+		return 0, err
+	}
+	if err := applySubscriptionCharges(ctx, tx, metered); err != nil {
 		return 0, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -291,7 +298,16 @@ func (r *Recorder) RecordSyncCharge(ctx context.Context, record UsageRecord) (in
 	if err != nil {
 		return 0, fmt.Errorf("插入 UsageLog 失败: %w", err)
 	}
-	if record.ActualCost > 0 && refs.hasUser(record.UserID) {
+	metered, err := resolveSubscriptionMetering(ctx, tx, []UsageRecord{record})
+	if err != nil {
+		return 0, err
+	}
+	if m, ok := metered[0]; ok {
+		// 订阅制：从点数账本扣，余额不动。
+		if err := chargeSubscriptionSync(ctx, tx, m); err != nil {
+			return 0, err
+		}
+	} else if record.ActualCost > 0 && refs.hasUser(record.UserID) {
 		updated, err := tx.User.Update().
 			Where(entuser.IDEQ(record.UserID), entuser.BalanceGTE(record.ActualCost)).
 			AddBalance(-record.ActualCost).
@@ -436,7 +452,15 @@ func (r *Recorder) batchInsert(ctx context.Context, batch []UsageRecord) error {
 		return fmt.Errorf("批量插入 UsageLog 失败: %w", err)
 	}
 
-	if err := applyUsageCharges(ctx, tx, batch, refs); err != nil {
+	// 2. 扣费：订阅制分组的记录进订阅点数账本，其余扣用户余额；API Key 累加器两边都记。
+	metered, err := resolveSubscriptionMetering(ctx, tx, batch)
+	if err != nil {
+		return err
+	}
+	if err := applyUsageCharges(ctx, tx, batch, refs, metered); err != nil {
+		return err
+	}
+	if err := applySubscriptionCharges(ctx, tx, metered); err != nil {
 		return err
 	}
 
@@ -895,18 +919,20 @@ func parseCostMetadataPositiveInt(metadata map[string]string, key string) int {
 	return value
 }
 
-func applyUsageCharges(ctx context.Context, tx *ent.Tx, batch []UsageRecord, refs *usageLogRefs) error {
+func applyUsageCharges(ctx context.Context, tx *ent.Tx, batch []UsageRecord, refs *usageLogRefs, metered map[int]meteredRecord) error {
 	// 在同一事务中扣费 —— 三个独立累加器：
-	// - User.balance：按 actual_cost 扣减。
+	// - User.balance：按 actual_cost 扣减（metered 中的记录已改记订阅账本，跳过）。
 	// - APIKey.used_quota：按 billed_cost 累加。
 	// - APIKey.used_quota_actual：按 actual_cost 累加。
 	userActualCosts := make(map[int]float64)
 	keyBilledCosts := make(map[int]float64)
 	keyActualCosts := make(map[int]float64)
 
-	for _, rec := range batch {
+	for i, rec := range batch {
 		if rec.ActualCost > 0 && refs.hasUser(rec.UserID) {
-			userActualCosts[rec.UserID] += rec.ActualCost
+			if _, onSubscription := metered[i]; !onSubscription {
+				userActualCosts[rec.UserID] += rec.ActualCost
+			}
 			if refs.hasAPIKey(rec.APIKeyID) {
 				keyActualCosts[rec.APIKeyID] += rec.ActualCost
 			}
