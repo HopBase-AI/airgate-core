@@ -161,8 +161,8 @@ func (h *UsageHandler) UserUsageTrend(c *gin.Context) {
 	granularity := c.DefaultQuery("granularity", "day")
 	uid64 := int64(userID)
 
-	// API Key 登录场景：限定趋势范围
-	scopedKeyTrend, scopedMemberTrend, scoped := sessionUsageScope(c, nil, nil)
+	// 趋势同样跟随请求里的密钥/成员筛选；API Key 登录场景则被 sessionUsageScope 收敛掉。
+	scopedKeyTrend, scopedMemberTrend, scoped := sessionUsageScope(c, query.APIKeyID, query.MemberID)
 
 	result, err := h.service.AdminTrend(c.Request.Context(), appusage.TrendFilter{
 		StatsFilter: appusage.StatsFilter{

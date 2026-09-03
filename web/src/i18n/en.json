@@ -1022,6 +1022,7 @@
     "profit": "Profit",
     "image_size": "Image Size",
     "endpoint": "Endpoint",
+    "export_csv": "Export CSV",
     "trace_id": "Trace ID",
     "request_id": "Usage request ID",
     "group_id": "Group ID",

@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
+	"github.com/DouDOU-start/airgate-core/internal/server/middleware"
 )
 
 // usage_handler_routes_test.go —— 用户侧使用记录接口的保密边界：
@@ -17,8 +18,9 @@ import (
 // stubUsageRepo 只记录 ListUser 收到的筛选条件并回放固定记录，
 // 其余方法给零值——本文件只测用户侧列表接口。
 type stubUsageRepo struct {
-	lastFilter appusage.ListFilter
-	records    []appusage.LogRecord
+	lastFilter      appusage.ListFilter
+	lastTrendFilter appusage.TrendFilter
+	records         []appusage.LogRecord
 }
 
 func (s *stubUsageRepo) ListUser(_ context.Context, _ int64, filter appusage.ListFilter) ([]appusage.LogRecord, int64, error) {
@@ -54,7 +56,8 @@ func (s *stubUsageRepo) StatsByGroup(context.Context, appusage.StatsFilter) ([]a
 	return nil, nil
 }
 
-func (s *stubUsageRepo) TrendEntries(context.Context, appusage.TrendFilter) ([]appusage.TrendEntry, error) {
+func (s *stubUsageRepo) TrendEntries(_ context.Context, filter appusage.TrendFilter) ([]appusage.TrendEntry, error) {
+	s.lastTrendFilter = filter
 	return nil, nil
 }
 
@@ -139,5 +142,78 @@ func TestAdminUsageKeepsUpstreamIdentity(t *testing.T) {
 	}
 	if resp.ErrorMessage == "" {
 		t.Fatal("管理员视角应保留失败原文")
+	}
+}
+
+// TestUserUsageTrendFollowsMemberFilter 企业主给趋势筛成员时必须下传。
+// 之前 dto 收了 member_id 但 handler 传的是 nil，参数是死的。
+func TestUserUsageTrendFollowsMemberFilter(t *testing.T) {
+	repo := &stubUsageRepo{}
+	handler := NewUsageHandler(appusage.NewService(repo))
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest("GET", "/usage/trend?granularity=day&member_id=7&api_key_id=9", nil)
+	c.Set("user_id", 82)
+
+	handler.UserUsageTrend(c)
+
+	if recorder.Code != 200 {
+		t.Fatalf("状态码 = %d, want 200: %s", recorder.Code, recorder.Body.String())
+	}
+	if repo.lastTrendFilter.MemberID == nil || *repo.lastTrendFilter.MemberID != 7 {
+		t.Fatalf("member_id 未下传到趋势筛选: %+v", repo.lastTrendFilter.MemberID)
+	}
+	if repo.lastTrendFilter.APIKeyID == nil || *repo.lastTrendFilter.APIKeyID != 9 {
+		t.Fatalf("api_key_id 未下传到趋势筛选: %+v", repo.lastTrendFilter.APIKeyID)
+	}
+}
+
+// TestUserUsageTrendMemberSessionOverridesRequestedFilter 成员密钥会话收敛到本成员，
+// 请求里带别人的 member_id 一律无效——否则成员能查到同事的用量。
+func TestUserUsageTrendMemberSessionOverridesRequestedFilter(t *testing.T) {
+	repo := &stubUsageRepo{}
+	handler := NewUsageHandler(appusage.NewService(repo))
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest("GET", "/usage/trend?granularity=day&member_id=999", nil)
+	c.Set("user_id", 82)
+	c.Set(middleware.CtxKeyMemberID, 7)
+
+	handler.UserUsageTrend(c)
+
+	if recorder.Code != 200 {
+		t.Fatalf("状态码 = %d, want 200: %s", recorder.Code, recorder.Body.String())
+	}
+	if repo.lastTrendFilter.MemberID == nil || *repo.lastTrendFilter.MemberID != 7 {
+		t.Fatalf("成员会话应被收敛到 member=7，实际 = %+v", repo.lastTrendFilter.MemberID)
+	}
+	if repo.lastTrendFilter.APIKeyID != nil {
+		t.Fatalf("成员会话不该按单把密钥收敛，实际 = %d", *repo.lastTrendFilter.APIKeyID)
+	}
+}
+
+// TestUserUsageExportFollowsMemberFilter 导出跟随成员筛选：企业主给成员出账单时
+// 不能把整个账号的明细都导出去。
+func TestUserUsageExportFollowsMemberFilter(t *testing.T) {
+	repo := &stubUsageRepo{records: []appusage.LogRecord{upstreamIdentityRecord()}}
+	handler := NewUsageHandler(appusage.NewService(repo))
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest("GET", "/usage/export?start_time=2026-09-01T00:00:00Z&member_id=7", nil)
+	c.Set("user_id", 82)
+
+	handler.UserUsageExport(c)
+
+	if recorder.Code != 200 {
+		t.Fatalf("状态码 = %d, want 200: %s", recorder.Code, recorder.Body.String())
+	}
+	if repo.lastFilter.MemberID == nil || *repo.lastFilter.MemberID != 7 {
+		t.Fatalf("member_id 未下传到导出筛选: %+v", repo.lastFilter.MemberID)
 	}
 }

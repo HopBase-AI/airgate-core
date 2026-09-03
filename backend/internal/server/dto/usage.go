@@ -264,6 +264,13 @@ type UsageStatsQuery struct {
 	EndDate   string `form:"end_date"`
 }
 
+// UsageExportFilterQuery 导出的筛选参数（时间区间另经 parseExportRange 解析）。
+// 与列表页同名参数同义，让「页面上筛什么就导出什么」成立。
+type UsageExportFilterQuery struct {
+	APIKeyID *int64 `form:"api_key_id"`
+	MemberID *int64 `form:"member_id"`
+}
+
 // UsageTrendQuery Token 趋势查询参数
 type UsageTrendQuery struct {
 	Granularity string `form:"granularity" binding:"required,oneof=hour day"`
