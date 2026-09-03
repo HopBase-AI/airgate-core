@@ -93,9 +93,12 @@ const userMenuItems: MenuItem[] = [
   { path: '/models', labelKey: 'nav.model_plaza', icon: <Boxes className="h-5 w-5" /> },
   { path: '/profile', labelKey: 'nav.profile', icon: <UserRoundCog className="h-5 w-5" /> },
   { path: '/keys', labelKey: 'nav.my_keys', icon: <KeyRound className="h-5 w-5" /> },
-  { path: '/team', labelKey: 'nav.my_team', icon: <UsersRound className="h-5 w-5" /> },
   { path: '/usage', labelKey: 'nav.my_usage', icon: <ReceiptText className="h-5 w-5" /> },
 ];
+
+// 「团队成员」是企业客户专属能力：管理员天然可见，普通用户须被管理员授予 is_enterprise_owner。
+// 位置保持在「我的密钥」之后、「使用记录」之前，与授予前后的菜单次序一致。
+const teamMenuItem: MenuItem = { path: '/team', labelKey: 'nav.my_team', icon: <UsersRound className="h-5 w-5" /> };
 
 // 「我的邀请」仅在分销开关（公开设置 referral_enabled）打开时挂进个人菜单。
 const inviteMenuItem: MenuItem = { path: '/invite', labelKey: 'nav.my_invite', icon: <Gift className="h-5 w-5" /> };
@@ -216,7 +219,11 @@ export function AppShell({ children }: AppShellProps) {
 
   const { adminItems: pluginAdminItems, userItems: pluginUserItems } = usePluginMenuItems(isAdmin, isAPIKeySession);
   const sections = useMemo(() => {
-    const userItemsWithInvite = site.referral_enabled ? [...userMenuItems, inviteMenuItem] : userMenuItems;
+    const isEnterpriseOwner = !isAPIKeySession && (isAdmin || !!user?.is_enterprise_owner);
+    const userItemsWithTeam = isEnterpriseOwner
+      ? [...userMenuItems.slice(0, -1), teamMenuItem, ...userMenuItems.slice(-1)]
+      : userMenuItems;
+    const userItemsWithInvite = site.referral_enabled ? [...userItemsWithTeam, inviteMenuItem] : userItemsWithTeam;
     const adminUserItems = userItemsWithInvite
       .filter((item) => item.path !== '/')
       .map((item, i) => (i === 0 ? { ...item, sectionKey: 'nav.personal' } : item));
@@ -250,7 +257,7 @@ export function AppShell({ children }: AppShellProps) {
     });
 
     return nextSections;
-  }, [isAPIKeySession, isAdmin, user?.can_author_blog, pluginAdminItems, pluginUserItems, site.referral_enabled]);
+  }, [isAPIKeySession, isAdmin, user?.can_author_blog, user?.is_enterprise_owner, pluginAdminItems, pluginUserItems, site.referral_enabled]);
 
   // 团队成员的密钥会话优先显示成员名，其次才是密钥名
   const displayName = user?.member_name || user?.api_key_name || user?.username || user?.email?.split('@')[0] || site.site_name || 'HopBase';

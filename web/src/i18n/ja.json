@@ -553,6 +553,7 @@
     "disable_title": "ユーザーを無効化",
     "disable_confirm": "ユーザー {{email}} を無効化してもよろしいですか？無効化するとこのユーザーはログインおよび API の使用ができなくなります。",
     "can_author_blog": "ブログ執筆権限(ブログ管理画面で記事を作成可能)",
+    "is_enterprise_owner": "企業オーナー(チームメンバーを作成し予算を割り当て可能。消費はこのアカウントから引き落とし)",
     "quote": "価格設定",
     "quote_sheet": "見積シート",
     "quote_mode_standard": "標準価格",

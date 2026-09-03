@@ -325,6 +325,33 @@ func RequireBlogAuthor(db *ent.Client) gin.HandlerFunc {
 	}
 }
 
+// RequireEnterpriseOwner 允许「管理员 或 被授予 is_enterprise_owner 的用户」访问(需在 JWTAuth 之后)。
+// 团队成员是企业客户专属能力,普通用户不该看到也不该调得动;role 在 JWT 里,
+// is_enterprise_owner 是 DB 字段,故非管理员需按 user_id 查库判定,防绕过前端直接调接口。
+func RequireEnterpriseOwner(db *ent.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if role, _ := c.Get(CtxKeyRole); role == "admin" {
+			c.Next()
+			return
+		}
+		uid, ok := c.Get(CtxKeyUserID)
+		userID, ok2 := uid.(int)
+		if !ok || !ok2 || userID <= 0 {
+			response.Forbidden(c, "无权管理团队成员")
+			c.Abort()
+			return
+		}
+		u, err := db.User.Get(c.Request.Context(), userID)
+		if err != nil || !u.IsEnterpriseOwner {
+			slog.Warn("enterprise_owner_access_denied", sdk.LogFieldUserID, userID, sdk.LogFieldRequestID, RequestIDFromGinContext(c))
+			response.Forbidden(c, "无权管理团队成员")
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
 // RequireOfficialPromoter 允许「管理员 或 官方推广官(referral_tier=official)」访问(需在 JWTAuth 之后)。
 // 用于官方推广官专属能力(如「分享文章」列表)。tier 是 DB 字段,故非管理员需按 user_id 查库判定;
 // 与前端 InvitePage 的 isOfficial gate 一致,防绕过前端直接调接口。

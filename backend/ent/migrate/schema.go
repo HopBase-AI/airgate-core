@@ -635,6 +635,7 @@ var (
 		{Name: "balance", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "role", Type: field.TypeEnum, Enums: []string{"admin", "user"}, Default: "user"},
 		{Name: "can_author_blog", Type: field.TypeBool, Default: false},
+		{Name: "is_enterprise_owner", Type: field.TypeBool, Default: false},
 		{Name: "max_concurrency", Type: field.TypeInt, Default: 0},
 		{Name: "totp_secret", Type: field.TypeString, Nullable: true},
 		{Name: "group_rates", Type: field.TypeJSON, Nullable: true},
@@ -661,7 +662,7 @@ var (
 			{
 				Name:    "user_inviter_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsersColumns[18]},
+				Columns: []*schema.Column{UsersColumns[19]},
 			},
 		},
 	}

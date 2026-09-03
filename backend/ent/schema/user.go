@@ -25,6 +25,9 @@ func (User) Fields() []ent.Field {
 		field.Enum("role").Values("admin", "user").Default("user"),
 		field.Bool("can_author_blog").Default(false).
 			Comment("是否可进入后台撰写/管理博客(授予非管理员的营销/运营用户);管理员天然可写。"),
+		field.Bool("is_enterprise_owner").Default(false).
+			Comment("是否为企业主:可在控制台创建团队成员并分配额度(成员消耗统一从本账号余额扣)。" +
+				"管理员天然拥有该能力;普通用户须由管理员在后台授予。"),
 		field.Int("max_concurrency").Default(0).Min(0).
 			Comment("用户级并发上限：同一 user 所有 API Key 加起来同时在途的请求数。0 表示不限制（默认）。与 api_key.max_concurrency 是 AND 关系，两者都会检查。"),
 		field.String("totp_secret").Optional().Nillable().Sensitive(),

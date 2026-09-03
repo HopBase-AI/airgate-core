@@ -293,6 +293,9 @@ func backfillResellerMarkupColumns(drv *entsql.Driver) {
 		// 历史 account_rate 全是 1.0，account_cost 等价 total_cost
 		{"usage_logs.account_cost", "UPDATE usage_logs SET account_cost = total_cost WHERE account_cost = 0 AND total_cost > 0"},
 		{"api_keys.used_quota_actual", "UPDATE api_keys SET used_quota_actual = used_quota WHERE used_quota_actual = 0 AND used_quota > 0"},
+		// 团队成员上线时不设门槛，任何用户都能建成员；补上 is_enterprise_owner 门禁后，
+		// 已经建过成员的用户必须继续可用，否则功能会被这次发版从他们手里收走。
+		{"users.is_enterprise_owner", "UPDATE users SET is_enterprise_owner = true WHERE is_enterprise_owner = false AND id IN (SELECT user_members FROM members WHERE user_members IS NOT NULL)"},
 	}
 
 	for _, stmt := range statements {

@@ -553,6 +553,7 @@
     "disable_title": "Deshabilitar usuario",
     "disable_confirm": "¿Seguro que desea deshabilitar al usuario {{email}}? El usuario no podrá iniciar sesión ni usar las API.",
     "can_author_blog": "Autor de blog (puede acceder al panel del blog para escribir publicaciones)",
+    "is_enterprise_owner": "Titular de empresa (puede crear miembros y asignar presupuestos; el consumo se carga a esta cuenta)",
     "quote": "Precios",
     "quote_sheet": "Hoja de cotización",
     "quote_mode_standard": "Precios estándar",

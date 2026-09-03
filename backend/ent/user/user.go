@@ -29,6 +29,8 @@ const (
 	FieldRole = "role"
 	// FieldCanAuthorBlog holds the string denoting the can_author_blog field in the database.
 	FieldCanAuthorBlog = "can_author_blog"
+	// FieldIsEnterpriseOwner holds the string denoting the is_enterprise_owner field in the database.
+	FieldIsEnterpriseOwner = "is_enterprise_owner"
 	// FieldMaxConcurrency holds the string denoting the max_concurrency field in the database.
 	FieldMaxConcurrency = "max_concurrency"
 	// FieldTotpSecret holds the string denoting the totp_secret field in the database.
@@ -136,6 +138,7 @@ var Columns = []string{
 	FieldBalance,
 	FieldRole,
 	FieldCanAuthorBlog,
+	FieldIsEnterpriseOwner,
 	FieldMaxConcurrency,
 	FieldTotpSecret,
 	FieldGroupRates,
@@ -185,6 +188,8 @@ var (
 	DefaultBalance float64
 	// DefaultCanAuthorBlog holds the default value on creation for the "can_author_blog" field.
 	DefaultCanAuthorBlog bool
+	// DefaultIsEnterpriseOwner holds the default value on creation for the "is_enterprise_owner" field.
+	DefaultIsEnterpriseOwner bool
 	// DefaultMaxConcurrency holds the default value on creation for the "max_concurrency" field.
 	DefaultMaxConcurrency int
 	// MaxConcurrencyValidator is a validator for the "max_concurrency" field. It is called by the builders before save.
@@ -356,6 +361,11 @@ func ByRole(opts ...sql.OrderTermOption) OrderOption {
 // ByCanAuthorBlog orders the results by the can_author_blog field.
 func ByCanAuthorBlog(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCanAuthorBlog, opts...).ToFunc()
+}
+
+// ByIsEnterpriseOwner orders the results by the is_enterprise_owner field.
+func ByIsEnterpriseOwner(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldIsEnterpriseOwner, opts...).ToFunc()
 }
 
 // ByMaxConcurrency orders the results by the max_concurrency field.
