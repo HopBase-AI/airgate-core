@@ -553,6 +553,7 @@
     "disable_title": "停用用戶",
     "disable_confirm": "確定要停用用戶 {{email}} 嗎？停用後該用戶將無法登入或使用 API。",
     "can_author_blog": "可寫博客(授權後可進入博客後台撰寫文章)",
+    "is_enterprise_owner": "企業主(可建立團隊成員並分配額度，消耗從本帳號扣)",
     "quote": "報價",
     "quote_sheet": "報價單",
     "quote_mode_standard": "標準牌價",

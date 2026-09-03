@@ -15,6 +15,7 @@ type User struct {
 	Balance             float64
 	Role                string
 	CanAuthorBlog       bool // 是否可进入后台撰写博客(管理员天然可)
+	IsEnterpriseOwner   bool // 是否为企业主(可建团队成员;管理员天然可)
 	MaxConcurrency      int
 	GroupRates          map[int64]float64
 	GroupPluginSettings map[int64]map[string]map[string]string
@@ -68,6 +69,7 @@ type UpdateInput struct {
 	Password               *string
 	Role                   *string
 	CanAuthorBlog          *bool
+	IsEnterpriseOwner      *bool
 	MaxConcurrency         *int
 	GroupRates             map[int64]float64
 	HasGroupRates          bool
@@ -170,6 +172,7 @@ type Mutation struct {
 	PasswordHash           *string
 	Role                   *string
 	CanAuthorBlog          *bool
+	IsEnterpriseOwner      *bool
 	MaxConcurrency         *int
 	GroupRates             map[int64]float64
 	HasGroupRates          bool

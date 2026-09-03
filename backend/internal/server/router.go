@@ -124,12 +124,15 @@ func (s *Server) registerRoutes() {
 		accountGroup.PUT("/users/me/balance-alert", handlers.User.UpdateBalanceAlert)
 		accountGroup.GET("/users/me/balance-history", handlers.User.GetMyBalanceHistory)
 
-		// 团队成员（企业子账号）：主账号侧增删改、分配额度、重置本期
-		accountGroup.GET("/members", handlers.Member.ListMembers)
-		accountGroup.POST("/members", handlers.Member.CreateMember)
-		accountGroup.PUT("/members/:id", handlers.Member.UpdateMember)
-		accountGroup.DELETE("/members/:id", handlers.Member.DeleteMember)
-		accountGroup.POST("/members/:id/reset-period", handlers.Member.ResetMemberPeriod)
+		// 团队成员（企业子账号）：主账号侧增删改、分配额度、重置本期。
+		// 企业客户专属能力,须管理员授予 is_enterprise_owner(管理员天然可用)。
+		memberGroup := accountGroup.Group("")
+		memberGroup.Use(middleware.RequireEnterpriseOwner(s.db))
+		memberGroup.GET("/members", handlers.Member.ListMembers)
+		memberGroup.POST("/members", handlers.Member.CreateMember)
+		memberGroup.PUT("/members/:id", handlers.Member.UpdateMember)
+		memberGroup.DELETE("/members/:id", handlers.Member.DeleteMember)
+		memberGroup.POST("/members/:id/reset-period", handlers.Member.ResetMemberPeriod)
 
 		// API Key 管理
 		accountGroup.GET("/api-keys", handlers.APIKey.ListKeys)

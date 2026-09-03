@@ -211,3 +211,67 @@ func TestAbortWithOpenAIError(t *testing.T) {
 		t.Fatal("请求应该被终止")
 	}
 }
+
+// TestRequireEnterpriseOwner 团队成员门禁:管理员天然放行;普通用户须被授予
+// is_enterprise_owner;未认证 / 用户不存在一律 403,防绕过前端直接调接口。
+func TestRequireEnterpriseOwner(t *testing.T) {
+	db := enttest.Open(t, "sqlite3", "file:mw_enterprise_owner?mode=memory&cache=shared&_fk=1", enttest.WithMigrateOptions(schema.WithGlobalUniqueID(false)))
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close db: %v", err)
+		}
+	}()
+
+	owner, err := db.User.Create().SetEmail("owner@example.com").SetPasswordHash("h").SetIsEnterpriseOwner(true).Save(t.Context())
+	if err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+	plain, err := db.User.Create().SetEmail("plain@example.com").SetPasswordHash("h").Save(t.Context())
+	if err != nil {
+		t.Fatalf("create plain user: %v", err)
+	}
+
+	cases := []struct {
+		name     string
+		setup    func(*gin.Context)
+		wantCode int
+	}{
+		{"管理员天然放行", func(c *gin.Context) { c.Set(CtxKeyRole, "admin") }, http.StatusOK},
+		{"已授予企业主放行", func(c *gin.Context) {
+			c.Set(CtxKeyRole, "user")
+			c.Set(CtxKeyUserID, owner.ID)
+		}, http.StatusOK},
+		{"未授予的普通用户拒绝", func(c *gin.Context) {
+			c.Set(CtxKeyRole, "user")
+			c.Set(CtxKeyUserID, plain.ID)
+		}, http.StatusForbidden},
+		{"用户不存在拒绝", func(c *gin.Context) {
+			c.Set(CtxKeyRole, "user")
+			c.Set(CtxKeyUserID, 999999)
+		}, http.StatusForbidden},
+		{"缺少用户上下文拒绝", func(c *gin.Context) { c.Set(CtxKeyRole, "user") }, http.StatusForbidden},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			nextCalled := false
+			router := gin.New()
+			router.Use(func(c *gin.Context) { tc.setup(c) })
+			router.Use(RequireEnterpriseOwner(db))
+			router.GET("/api/v1/members", func(c *gin.Context) {
+				nextCalled = true
+				c.String(http.StatusOK, "ok")
+			})
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/members", nil))
+
+			if w.Code != tc.wantCode {
+				t.Fatalf("状态码 = %d, 期望 %d", w.Code, tc.wantCode)
+			}
+			if (tc.wantCode == http.StatusOK) != nextCalled {
+				t.Fatalf("放行与否不符: next=%v, 期望放行=%v", nextCalled, tc.wantCode == http.StatusOK)
+			}
+		})
+	}
+}

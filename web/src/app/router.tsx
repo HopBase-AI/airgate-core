@@ -14,7 +14,7 @@ import { ErrorBoundary } from './providers/ErrorBoundary';
 import { getToken, getTokenRole } from '../shared/api/client';
 import { getInviteCodeFromURL } from '../shared/inviteCode';
 import { ChatPageLoading, FullPageLoading, PageLoading } from '../shared/components/PageLoading';
-import { checkAdmin, checkBlogAuthor, withSetupCheck } from './routeGuards';
+import { checkAdmin, checkBlogAuthor, checkEnterpriseOwner, withSetupCheck } from './routeGuards';
 import {
   AccountEventsPage,
   AccountsPage,
@@ -345,7 +345,15 @@ const accountPageBeforeLoad = () => {
 const profileRoute = createRoute({ getParentRoute: () => authLayout, path: '/profile', beforeLoad: accountPageBeforeLoad, component: renderPage(ProfilePage) });
 const inviteRoute = createRoute({ getParentRoute: () => authLayout, path: '/invite', beforeLoad: accountPageBeforeLoad, component: renderPage(InvitePage) });
 const userKeysRoute = createRoute({ getParentRoute: () => authLayout, path: '/keys', beforeLoad: accountPageBeforeLoad, component: renderPage(UserKeysPage) });
-const teamRoute = createRoute({ getParentRoute: () => authLayout, path: '/team', beforeLoad: accountPageBeforeLoad, component: renderPage(TeamPage) });
+const teamRoute = createRoute({
+  getParentRoute: () => authLayout,
+  path: '/team',
+  beforeLoad: () => {
+    accountPageBeforeLoad();
+    return checkEnterpriseOwner();
+  },
+  component: renderPage(TeamPage),
+});
 const userUsageRoute = createRoute({ getParentRoute: () => authLayout, path: '/usage', component: renderPage(UserUsagePage) });
 const modelPlazaRoute = createRoute({ getParentRoute: () => authLayout, path: '/models', component: renderPage(ModelPlazaPage) });
 

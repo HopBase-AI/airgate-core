@@ -553,6 +553,7 @@
     "disable_title": "Disable User",
     "disable_confirm": "Are you sure you want to disable user {{email}}? The user will not be able to log in or use APIs.",
     "can_author_blog": "Blog author (can access the blog admin to write posts)",
+    "is_enterprise_owner": "Enterprise owner (can create team members and allocate budgets; usage is charged to this account)",
     "quote": "Pricing",
     "quote_sheet": "Quote sheet",
     "quote_mode_standard": "Standard pricing",

@@ -20074,6 +20074,7 @@ type UserMutation struct {
 	addbalance                 *float64
 	role                       *user.Role
 	can_author_blog            *bool
+	is_enterprise_owner        *bool
 	max_concurrency            *int
 	addmax_concurrency         *int
 	totp_secret                *string
@@ -20489,6 +20490,42 @@ func (m *UserMutation) OldCanAuthorBlog(ctx context.Context) (v bool, err error)
 // ResetCanAuthorBlog resets all changes to the "can_author_blog" field.
 func (m *UserMutation) ResetCanAuthorBlog() {
 	m.can_author_blog = nil
+}
+
+// SetIsEnterpriseOwner sets the "is_enterprise_owner" field.
+func (m *UserMutation) SetIsEnterpriseOwner(b bool) {
+	m.is_enterprise_owner = &b
+}
+
+// IsEnterpriseOwner returns the value of the "is_enterprise_owner" field in the mutation.
+func (m *UserMutation) IsEnterpriseOwner() (r bool, exists bool) {
+	v := m.is_enterprise_owner
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIsEnterpriseOwner returns the old "is_enterprise_owner" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldIsEnterpriseOwner(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIsEnterpriseOwner is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIsEnterpriseOwner requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIsEnterpriseOwner: %w", err)
+	}
+	return oldValue.IsEnterpriseOwner, nil
+}
+
+// ResetIsEnterpriseOwner resets all changes to the "is_enterprise_owner" field.
+func (m *UserMutation) ResetIsEnterpriseOwner() {
+	m.is_enterprise_owner = nil
 }
 
 // SetMaxConcurrency sets the "max_concurrency" field.
@@ -21639,7 +21676,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 23)
+	fields := make([]string, 0, 24)
 	if m.email != nil {
 		fields = append(fields, user.FieldEmail)
 	}
@@ -21660,6 +21697,9 @@ func (m *UserMutation) Fields() []string {
 	}
 	if m.can_author_blog != nil {
 		fields = append(fields, user.FieldCanAuthorBlog)
+	}
+	if m.is_enterprise_owner != nil {
+		fields = append(fields, user.FieldIsEnterpriseOwner)
 	}
 	if m.max_concurrency != nil {
 		fields = append(fields, user.FieldMaxConcurrency)
@@ -21731,6 +21771,8 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.Role()
 	case user.FieldCanAuthorBlog:
 		return m.CanAuthorBlog()
+	case user.FieldIsEnterpriseOwner:
+		return m.IsEnterpriseOwner()
 	case user.FieldMaxConcurrency:
 		return m.MaxConcurrency()
 	case user.FieldTotpSecret:
@@ -21786,6 +21828,8 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldRole(ctx)
 	case user.FieldCanAuthorBlog:
 		return m.OldCanAuthorBlog(ctx)
+	case user.FieldIsEnterpriseOwner:
+		return m.OldIsEnterpriseOwner(ctx)
 	case user.FieldMaxConcurrency:
 		return m.OldMaxConcurrency(ctx)
 	case user.FieldTotpSecret:
@@ -21875,6 +21919,13 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetCanAuthorBlog(v)
+		return nil
+	case user.FieldIsEnterpriseOwner:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIsEnterpriseOwner(v)
 		return nil
 	case user.FieldMaxConcurrency:
 		v, ok := value.(int)
@@ -22159,6 +22210,9 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldCanAuthorBlog:
 		m.ResetCanAuthorBlog()
+		return nil
+	case user.FieldIsEnterpriseOwner:
+		m.ResetIsEnterpriseOwner()
 		return nil
 	case user.FieldMaxConcurrency:
 		m.ResetMaxConcurrency()

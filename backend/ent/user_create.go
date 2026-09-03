@@ -109,6 +109,20 @@ func (uc *UserCreate) SetNillableCanAuthorBlog(b *bool) *UserCreate {
 	return uc
 }
 
+// SetIsEnterpriseOwner sets the "is_enterprise_owner" field.
+func (uc *UserCreate) SetIsEnterpriseOwner(b bool) *UserCreate {
+	uc.mutation.SetIsEnterpriseOwner(b)
+	return uc
+}
+
+// SetNillableIsEnterpriseOwner sets the "is_enterprise_owner" field if the given value is not nil.
+func (uc *UserCreate) SetNillableIsEnterpriseOwner(b *bool) *UserCreate {
+	if b != nil {
+		uc.SetIsEnterpriseOwner(*b)
+	}
+	return uc
+}
+
 // SetMaxConcurrency sets the "max_concurrency" field.
 func (uc *UserCreate) SetMaxConcurrency(i int) *UserCreate {
 	uc.mutation.SetMaxConcurrency(i)
@@ -477,6 +491,10 @@ func (uc *UserCreate) defaults() {
 		v := user.DefaultCanAuthorBlog
 		uc.mutation.SetCanAuthorBlog(v)
 	}
+	if _, ok := uc.mutation.IsEnterpriseOwner(); !ok {
+		v := user.DefaultIsEnterpriseOwner
+		uc.mutation.SetIsEnterpriseOwner(v)
+	}
 	if _, ok := uc.mutation.MaxConcurrency(); !ok {
 		v := user.DefaultMaxConcurrency
 		uc.mutation.SetMaxConcurrency(v)
@@ -561,6 +579,9 @@ func (uc *UserCreate) check() error {
 	}
 	if _, ok := uc.mutation.CanAuthorBlog(); !ok {
 		return &ValidationError{Name: "can_author_blog", err: errors.New(`ent: missing required field "User.can_author_blog"`)}
+	}
+	if _, ok := uc.mutation.IsEnterpriseOwner(); !ok {
+		return &ValidationError{Name: "is_enterprise_owner", err: errors.New(`ent: missing required field "User.is_enterprise_owner"`)}
 	}
 	if _, ok := uc.mutation.MaxConcurrency(); !ok {
 		return &ValidationError{Name: "max_concurrency", err: errors.New(`ent: missing required field "User.max_concurrency"`)}
@@ -680,6 +701,10 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := uc.mutation.CanAuthorBlog(); ok {
 		_spec.SetField(user.FieldCanAuthorBlog, field.TypeBool, value)
 		_node.CanAuthorBlog = value
+	}
+	if value, ok := uc.mutation.IsEnterpriseOwner(); ok {
+		_spec.SetField(user.FieldIsEnterpriseOwner, field.TypeBool, value)
+		_node.IsEnterpriseOwner = value
 	}
 	if value, ok := uc.mutation.MaxConcurrency(); ok {
 		_spec.SetField(user.FieldMaxConcurrency, field.TypeInt, value)

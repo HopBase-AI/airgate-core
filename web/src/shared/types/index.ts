@@ -93,6 +93,7 @@ export interface UserResp {
   balance: number;
   role: SessionRole;
   can_author_blog?: boolean; // 是否可进入后台写博客(管理员天然可)
+  is_enterprise_owner?: boolean; // 是否为企业主(可建团队成员;管理员天然可)
   max_concurrency: number;
   // 注册来源站点 ID（ToC 落地页 ?site= 归因），用于品牌/文档链接兜底
   signup_source?: string;
@@ -148,6 +149,7 @@ export interface UpdateUserReq {
   password?: string;
   role?: UserRole;
   can_author_blog?: boolean;
+  is_enterprise_owner?: boolean;
   max_concurrency?: number;
   group_rates?: Record<number, number>;
   group_plugin_settings?: Record<number, Record<string, Record<string, string>>>;

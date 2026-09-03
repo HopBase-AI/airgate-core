@@ -85,6 +85,11 @@ func CanAuthorBlog(v bool) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldCanAuthorBlog, v))
 }
 
+// IsEnterpriseOwner applies equality check predicate on the "is_enterprise_owner" field. It's identical to IsEnterpriseOwnerEQ.
+func IsEnterpriseOwner(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldIsEnterpriseOwner, v))
+}
+
 // MaxConcurrency applies equality check predicate on the "max_concurrency" field. It's identical to MaxConcurrencyEQ.
 func MaxConcurrency(v int) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldMaxConcurrency, v))
@@ -468,6 +473,16 @@ func CanAuthorBlogEQ(v bool) predicate.User {
 // CanAuthorBlogNEQ applies the NEQ predicate on the "can_author_blog" field.
 func CanAuthorBlogNEQ(v bool) predicate.User {
 	return predicate.User(sql.FieldNEQ(FieldCanAuthorBlog, v))
+}
+
+// IsEnterpriseOwnerEQ applies the EQ predicate on the "is_enterprise_owner" field.
+func IsEnterpriseOwnerEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldIsEnterpriseOwner, v))
+}
+
+// IsEnterpriseOwnerNEQ applies the NEQ predicate on the "is_enterprise_owner" field.
+func IsEnterpriseOwnerNEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldIsEnterpriseOwner, v))
 }
 
 // MaxConcurrencyEQ applies the EQ predicate on the "max_concurrency" field.

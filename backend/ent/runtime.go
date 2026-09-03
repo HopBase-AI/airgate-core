@@ -823,42 +823,46 @@ func init() {
 	userDescCanAuthorBlog := userFields[6].Descriptor()
 	// user.DefaultCanAuthorBlog holds the default value on creation for the can_author_blog field.
 	user.DefaultCanAuthorBlog = userDescCanAuthorBlog.Default.(bool)
+	// userDescIsEnterpriseOwner is the schema descriptor for is_enterprise_owner field.
+	userDescIsEnterpriseOwner := userFields[7].Descriptor()
+	// user.DefaultIsEnterpriseOwner holds the default value on creation for the is_enterprise_owner field.
+	user.DefaultIsEnterpriseOwner = userDescIsEnterpriseOwner.Default.(bool)
 	// userDescMaxConcurrency is the schema descriptor for max_concurrency field.
-	userDescMaxConcurrency := userFields[7].Descriptor()
+	userDescMaxConcurrency := userFields[8].Descriptor()
 	// user.DefaultMaxConcurrency holds the default value on creation for the max_concurrency field.
 	user.DefaultMaxConcurrency = userDescMaxConcurrency.Default.(int)
 	// user.MaxConcurrencyValidator is a validator for the "max_concurrency" field. It is called by the builders before save.
 	user.MaxConcurrencyValidator = userDescMaxConcurrency.Validators[0].(func(int) error)
 	// userDescBalanceAlertThreshold is the schema descriptor for balance_alert_threshold field.
-	userDescBalanceAlertThreshold := userFields[12].Descriptor()
+	userDescBalanceAlertThreshold := userFields[13].Descriptor()
 	// user.DefaultBalanceAlertThreshold holds the default value on creation for the balance_alert_threshold field.
 	user.DefaultBalanceAlertThreshold = userDescBalanceAlertThreshold.Default.(float64)
 	// userDescBalanceAlertNotified is the schema descriptor for balance_alert_notified field.
-	userDescBalanceAlertNotified := userFields[13].Descriptor()
+	userDescBalanceAlertNotified := userFields[14].Descriptor()
 	// user.DefaultBalanceAlertNotified holds the default value on creation for the balance_alert_notified field.
 	user.DefaultBalanceAlertNotified = userDescBalanceAlertNotified.Default.(bool)
 	// userDescSignupSource is the schema descriptor for signup_source field.
-	userDescSignupSource := userFields[15].Descriptor()
+	userDescSignupSource := userFields[16].Descriptor()
 	// user.DefaultSignupSource holds the default value on creation for the signup_source field.
 	user.DefaultSignupSource = userDescSignupSource.Default.(string)
 	// user.SignupSourceValidator is a validator for the "signup_source" field. It is called by the builders before save.
 	user.SignupSourceValidator = userDescSignupSource.Validators[0].(func(string) error)
 	// userDescInviteCode is the schema descriptor for invite_code field.
-	userDescInviteCode := userFields[16].Descriptor()
+	userDescInviteCode := userFields[17].Descriptor()
 	// user.InviteCodeValidator is a validator for the "invite_code" field. It is called by the builders before save.
 	user.InviteCodeValidator = userDescInviteCode.Validators[0].(func(string) error)
 	// userDescReferralDisplayName is the schema descriptor for referral_display_name field.
-	userDescReferralDisplayName := userFields[20].Descriptor()
+	userDescReferralDisplayName := userFields[21].Descriptor()
 	// user.DefaultReferralDisplayName holds the default value on creation for the referral_display_name field.
 	user.DefaultReferralDisplayName = userDescReferralDisplayName.Default.(string)
 	// user.ReferralDisplayNameValidator is a validator for the "referral_display_name" field. It is called by the builders before save.
 	user.ReferralDisplayNameValidator = userDescReferralDisplayName.Validators[0].(func(string) error)
 	// userDescCreatedAt is the schema descriptor for created_at field.
-	userDescCreatedAt := userFields[21].Descriptor()
+	userDescCreatedAt := userFields[22].Descriptor()
 	// user.DefaultCreatedAt holds the default value on creation for the created_at field.
 	user.DefaultCreatedAt = userDescCreatedAt.Default.(func() time.Time)
 	// userDescUpdatedAt is the schema descriptor for updated_at field.
-	userDescUpdatedAt := userFields[22].Descriptor()
+	userDescUpdatedAt := userFields[23].Descriptor()
 	// user.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	user.DefaultUpdatedAt = userDescUpdatedAt.Default.(func() time.Time)
 	// user.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

@@ -448,6 +448,9 @@ func applyUserMutationCreate(builder *ent.UserCreate, mutation appuser.Mutation)
 	if mutation.Role != nil {
 		builder.SetRole(entuser.Role(*mutation.Role))
 	}
+	if mutation.IsEnterpriseOwner != nil {
+		builder.SetIsEnterpriseOwner(*mutation.IsEnterpriseOwner)
+	}
 	if mutation.CanAuthorBlog != nil {
 		builder.SetCanAuthorBlog(*mutation.CanAuthorBlog)
 	}
@@ -477,6 +480,9 @@ func applyUserMutationUpdate(builder *ent.UserUpdateOne, mutation appuser.Mutati
 	}
 	if mutation.Role != nil {
 		builder.SetRole(entuser.Role(*mutation.Role))
+	}
+	if mutation.IsEnterpriseOwner != nil {
+		builder.SetIsEnterpriseOwner(*mutation.IsEnterpriseOwner)
 	}
 	if mutation.CanAuthorBlog != nil {
 		builder.SetCanAuthorBlog(*mutation.CanAuthorBlog)
@@ -533,6 +539,7 @@ func mapUser(item *ent.User) appuser.User {
 		Balance:               item.Balance,
 		Role:                  item.Role.String(),
 		CanAuthorBlog:         item.CanAuthorBlog,
+		IsEnterpriseOwner:     item.IsEnterpriseOwner,
 		MaxConcurrency:        item.MaxConcurrency,
 		GroupRates:            cloneUserGroupRates(item.GroupRates),
 		GroupPluginSettings:   cloneUserGroupPluginSettings(item.GroupPluginSettings),

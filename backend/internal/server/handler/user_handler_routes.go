@@ -228,6 +228,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		Password:               req.Password,
 		Role:                   req.Role,
 		CanAuthorBlog:          req.CanAuthorBlog,
+		IsEnterpriseOwner:      req.IsEnterpriseOwner,
 		MaxConcurrency:         req.MaxConcurrency,
 		GroupRates:             req.GroupRates,
 		HasGroupRates:          req.GroupRates != nil,

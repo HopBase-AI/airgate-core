@@ -110,6 +110,43 @@ export function checkAdmin(): void | Promise<void> {
   });
 }
 
+// 团队成员守卫：管理员 或 被授予 is_enterprise_owner 的用户可进入 /team。
+// 与后端 RequireEnterpriseOwner 一致，防止直接敲 URL 进到一个必然 403 的空页面。
+let enterpriseOwnerVerified = false;
+let enterpriseOwnerVerifiedToken: string | null = null;
+let enterpriseOwnerCheckPromise: Promise<void> | null = null;
+let enterpriseOwnerCheckToken: string | null = null;
+
+export function checkEnterpriseOwner(): void | Promise<void> {
+  const token = getToken();
+  if (getTokenRole(token) === 'admin') {
+    enterpriseOwnerVerified = true;
+    enterpriseOwnerVerifiedToken = token;
+    return;
+  }
+
+  if (enterpriseOwnerVerified && enterpriseOwnerVerifiedToken === token) return;
+  if (enterpriseOwnerCheckPromise && enterpriseOwnerCheckToken === token) return enterpriseOwnerCheckPromise;
+
+  enterpriseOwnerCheckToken = token;
+  enterpriseOwnerCheckPromise = (async () => {
+    const user = await usersApi.me();
+    if (user.role !== 'admin' && !user.is_enterprise_owner) {
+      throw redirect({ to: '/' });
+    }
+    enterpriseOwnerVerified = true;
+    enterpriseOwnerVerifiedToken = token;
+  })();
+
+  const p = enterpriseOwnerCheckPromise;
+  return p.finally(() => {
+    if (enterpriseOwnerCheckPromise === p) {
+      enterpriseOwnerCheckPromise = null;
+      enterpriseOwnerCheckToken = null;
+    }
+  });
+}
+
 // 博客后台守卫：管理员 或 被授予 can_author_blog 的用户可进入 /admin/blog。
 let blogAuthorVerified = false;
 let blogAuthorVerifiedToken: string | null = null;
