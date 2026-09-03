@@ -254,6 +254,12 @@ func (s *Server) registerRoutes() {
 		adminGroup.POST("/proxies", handlers.Proxy.CreateProxy)
 		adminGroup.PUT("/proxies/:id", handlers.Proxy.UpdateProxy)
 		adminGroup.DELETE("/proxies/:id", handlers.Proxy.DeleteProxy)
+
+		// 客户入口码(香港直连入口 direct.hop-base.com/c/<码>/ 区分客户;仅管理员)
+		adminGroup.GET("/entry-codes", handlers.EntryCode.ListEntryCodes)
+		adminGroup.POST("/entry-codes", handlers.EntryCode.CreateEntryCode)
+		adminGroup.PUT("/entry-codes/:code", handlers.EntryCode.UpdateEntryCode)
+		adminGroup.DELETE("/entry-codes/:code", handlers.EntryCode.DeleteEntryCode)
 		adminGroup.POST("/proxies/:id/test", handlers.Proxy.TestProxy)
 
 		// 使用记录（管理员）

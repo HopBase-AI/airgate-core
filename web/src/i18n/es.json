@@ -154,7 +154,8 @@
     "blog": "Blog",
     "my_invite": "Mis referidos",
     "model_plaza": "Plaza de modelos",
-    "pricing": "Precios"
+    "pricing": "Precios",
+    "entry_codes": "Códigos de entrada"
   },
   "model_plaza": {
     "title": "Plaza de modelos",
@@ -2733,5 +2734,32 @@
     "credentials_filled_toast": "Credenciales rellenadas en el formulario",
     "report_load_failed": "Error al cargar el informe",
     "retry": "Reintentar"
+  },
+  "entryCodes": {
+    "title": "Códigos de entrada de clientes",
+    "subtitle": "La entrada directa de Hong Kong usa un código por cliente. Solo reemplaza el base_url del cliente por la dirección de abajo; la API key no cambia.",
+    "create": "Generar código",
+    "edit": "Editar código",
+    "delete": "Eliminar código",
+    "delete_confirm": "¿Eliminar el código de entrada {{code}}? La dirección deja de funcionar de inmediato.",
+    "customer": "Cliente / Nota",
+    "base_url": "Endpoint (base_url)",
+    "note": "Nota",
+    "note_placeholder": "Nombre del cliente / uso",
+    "user_id": "ID de usuario vinculado",
+    "user_id_placeholder": "ID de usuario del cliente (opcional)",
+    "invalid_user_id": "El ID de usuario debe ser un número",
+    "request_count": "Solicitudes",
+    "last_used": "Último uso",
+    "enabled": "Activo",
+    "disabled": "Inactivo",
+    "unbound": "Sin vincular",
+    "no_note": "(sin nota)",
+    "copy": "Copiar dirección",
+    "copied": "Endpoint copiado",
+    "copy_failed": "Error al copiar",
+    "create_success": "Código generado",
+    "update_success": "Actualizado",
+    "delete_success": "Eliminado"
   }
 }

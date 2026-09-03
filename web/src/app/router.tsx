@@ -37,6 +37,7 @@ import {
   PrivacyPolicyPage,
   ProfilePage,
   ProxiesPage,
+  EntryCodesPage,
   ReferralPage,
   BlogListPage,
   BlogEditorPage,
@@ -319,6 +320,7 @@ const adminAccountEventsRoute = createRoute({
 });
 const adminSubscriptionsRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/subscriptions', component: renderPage(SubscriptionsPage) });
 const adminProxiesRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/proxies', component: renderPage(ProxiesPage) });
+const adminEntryCodesRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/entry-codes', component: renderPage(EntryCodesPage) });
 const adminUsageRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/usage', component: renderPage(UsagePage) });
 const adminRelayDetectionRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/relay-detection', component: renderPage(RelayDetectionPage) });
 const adminPricingRoute = createRoute({ getParentRoute: () => adminLayout, path: '/admin/pricing', component: renderPage(PricingPage) });
@@ -431,6 +433,7 @@ const routeTree = rootRoute.addChildren([
       adminAccountEventsRoute,
       adminSubscriptionsRoute,
       adminProxiesRoute,
+      adminEntryCodesRoute,
       adminUsageRoute,
       adminRelayDetectionRoute,
       adminPricingRoute,

@@ -154,7 +154,8 @@
     "blog": "Blog",
     "my_invite": "My Referrals",
     "model_plaza": "Model Plaza",
-    "pricing": "Pricing"
+    "pricing": "Pricing",
+    "entry_codes": "Entry Codes"
   },
   "model_plaza": {
     "title": "Model Plaza",
@@ -2733,5 +2734,32 @@
     "credentials_filled_toast": "Credentials filled into the form",
     "report_load_failed": "Failed to load the report",
     "retry": "Retry"
+  },
+  "entryCodes": {
+    "title": "Customer Entry Codes",
+    "subtitle": "The Hong Kong direct entry uses a code per customer. Just replace the customer's base_url with the address below; the API key stays the same.",
+    "create": "Generate code",
+    "edit": "Edit entry code",
+    "delete": "Delete entry code",
+    "delete_confirm": "Delete entry code {{code}}? The address stops working immediately.",
+    "customer": "Customer / Note",
+    "base_url": "Endpoint (base_url)",
+    "note": "Note",
+    "note_placeholder": "Customer name / purpose",
+    "user_id": "Bound user ID",
+    "user_id_placeholder": "Optional customer user ID",
+    "invalid_user_id": "User ID must be a number",
+    "request_count": "Requests",
+    "last_used": "Last used",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "unbound": "Unbound",
+    "no_note": "(no note)",
+    "copy": "Copy address",
+    "copied": "Endpoint copied",
+    "copy_failed": "Copy failed",
+    "create_success": "Entry code generated",
+    "update_success": "Updated",
+    "delete_success": "Deleted"
   }
 }

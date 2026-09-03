@@ -154,7 +154,8 @@
     "blog": "ブログ",
     "my_invite": "友達招待",
     "model_plaza": "モデル広場",
-    "pricing": "価格管理"
+    "pricing": "価格管理",
+    "entry_codes": "入口コード"
   },
   "model_plaza": {
     "title": "モデル広場",
@@ -2733,5 +2734,32 @@
     "credentials_filled_toast": "資格情報をフォームに入力しました",
     "report_load_failed": "レポートの読み込みに失敗しました",
     "retry": "再試行"
+  },
+  "entryCodes": {
+    "title": "顧客入口コード",
+    "subtitle": "香港ダイレクト入口はコードで顧客を区別します。顧客の base_url を下記のアドレスに置き換えるだけで、API キーは変わりません。",
+    "create": "コードを生成",
+    "edit": "入口コードを編集",
+    "delete": "入口コードを削除",
+    "delete_confirm": "入口コード {{code}} を削除しますか?削除するとアドレスは即座に無効になります。",
+    "customer": "顧客 / メモ",
+    "base_url": "接続先(base_url)",
+    "note": "メモ",
+    "note_placeholder": "顧客名 / 用途",
+    "user_id": "紐付けユーザー ID",
+    "user_id_placeholder": "任意:顧客のユーザー ID",
+    "invalid_user_id": "ユーザー ID は数字で入力してください",
+    "request_count": "リクエスト数",
+    "last_used": "最終使用",
+    "enabled": "有効",
+    "disabled": "無効",
+    "unbound": "未紐付け",
+    "no_note": "(メモなし)",
+    "copy": "アドレスをコピー",
+    "copied": "接続先をコピーしました",
+    "copy_failed": "コピーに失敗しました",
+    "create_success": "入口コードを生成しました",
+    "update_success": "更新しました",
+    "delete_success": "削除しました"
   }
 }
