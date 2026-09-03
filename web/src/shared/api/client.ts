@@ -5,6 +5,10 @@ import { clearBlogSession, refreshBlogSessionExpiry } from '../blogSession';
 import { isExplicitRefreshRejection } from '../authSessionPolicy';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+
+// 需要绕过 request() 自己发请求的场景（如导出 CSV 拿 blob）复用同一个 base，
+// 免得两条路径的地址前缀不一致。
+export const API_BASE_URL = BASE_URL;
 const API_KEY_SECRET_STORAGE = 'apikey_session_secret';
 
 // Token 管理

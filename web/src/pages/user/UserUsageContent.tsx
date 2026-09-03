@@ -22,6 +22,7 @@ import { UsageModelFilterInput } from '../../shared/components/UsageModelFilterI
 import { CostValue } from '../../shared/components/CostValue';
 import { AutoRefreshControl } from '../../shared/components/AutoRefreshControl';
 import { FETCH_ALL_PARAMS } from '../../shared/constants';
+import { EXPORT_MAX_WINDOW_MS, usageFilterEndToRFC3339, usageFilterStartToRFC3339 } from '../../shared/usageExportRange';
 import { USER_AUTO_REFRESH_OPTIONS, usePersistentAutoRefresh } from '../../shared/hooks/usePersistentAutoRefresh';
 
 const USER_USAGE_AUTO_UPDATE_STORAGE_KEY = 'airgate.user.usage.auto_update';
@@ -272,10 +273,12 @@ export default function UserUsageContent() {
   ];
   const selectedApiKeyLabel = apiKeyOptions.find((item) => item.id === String(filters.api_key_id ?? ''))?.label ?? t('common.all');
 
+  // 同 UserKeysPage：/members 有企业主门禁，非企业主不发这个请求，免得留 403 + WARN
+  const isEnterpriseOwner = user?.role === 'admin' || !!user?.is_enterprise_owner;
   const { data: membersData } = useQuery({
     queryKey: queryKeys.membersForKeys(),
     queryFn: () => membersApi.list(FETCH_ALL_PARAMS),
-    enabled: !customerScope,
+    enabled: !customerScope && isEnterpriseOwner,
     staleTime: 60_000,
   });
   const memberOptions = [
@@ -317,36 +320,40 @@ export default function UserUsageContent() {
   // 日期筛选给的是本地时间字符串（"2026-09-01" 或 "2026-09-01T14:30:05"），
   // 纯日期按本地零点/当日 23:59:59 补齐再转 UTC；没选时间范围就默认最近 30 天。
   const [exporting, setExporting] = useState(false);
-  const toRFC3339 = (raw: string | undefined, endOfDay: boolean): string | undefined => {
-    if (!raw) return undefined;
-    const normalized = raw.includes('T') ? raw : `${raw}T${endOfDay ? '23:59:59' : '00:00:00'}`;
-    const parsed = new Date(normalized);
-    return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
-  };
   const handleExport = useCallback(async () => {
     setExporting(true);
     try {
-      const startTime = toRFC3339(filters.start_date, false)
-        ?? new Date(Date.now() - 30 * 86400_000).toISOString();
       const { blob, filename } = await usageApi.exportCsv({
-        start_time: startTime,
-        end_time: toRFC3339(filters.end_date, true),
+        // 未选时间范围时用后端允许的最长窗口，而不是悄悄只给最近 30 天——
+        // 页面列表与统计是全时段，导出少给会让 CSV 尾部合计和统计卡对不上。
+        start_time: usageFilterStartToRFC3339(filters.start_date) ?? new Date(Date.now() - EXPORT_MAX_WINDOW_MS).toISOString(),
+        // 导出后端是左闭右开(给充值区间用，相邻两笔不能重复计)，而列表右边界含所选那一秒，
+        // 所以这里把右界推后 1 秒，导出集合才与页面一致。
+        end_time: usageFilterEndToRFC3339(filters.end_date),
         member_id: filters.member_id,
         api_key_id: filters.api_key_id,
+        platform: filters.platform,
+        model: filters.model,
+        result: filters.result,
         tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
       const href = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = href;
       anchor.download = filename;
+      // 必须挂进 document 再点，且延后回收：同步 revoke 与 click 同处一个 tick 时，
+      // Firefox / Safari 可能还没开始读 blob 就被吊销，表现为点了没反应也不报错
+      // （与 extensions/airgate-epay 的导出同一处理）。
+      document.body.appendChild(anchor);
       anchor.click();
-      URL.revokeObjectURL(href);
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(href), 60_000);
     } catch (error) {
       toast('error', error instanceof Error ? error.message : t('common.error'));
     } finally {
       setExporting(false);
     }
-  }, [filters.api_key_id, filters.end_date, filters.member_id, filters.start_date, t, toast]);
+  }, [filters.api_key_id, filters.end_date, filters.member_id, filters.model, filters.platform, filters.result, filters.start_date, t, toast]);
 
   const handleManualRefresh = useCallback(() => {
     void refetchUsage({ cancelRefetch: false });

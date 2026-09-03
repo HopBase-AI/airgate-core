@@ -269,6 +269,9 @@ type UsageStatsQuery struct {
 type UsageExportFilterQuery struct {
 	APIKeyID *int64 `form:"api_key_id"`
 	MemberID *int64 `form:"member_id"`
+	Platform string `form:"platform"`
+	Model    string `form:"model"`
+	Result   string `form:"result" binding:"omitempty,oneof=success error"`
 }
 
 // UsageTrendQuery Token 趋势查询参数

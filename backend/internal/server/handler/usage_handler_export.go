@@ -83,6 +83,9 @@ func (h *UsageHandler) UserUsageExport(c *gin.Context) {
 		tz:           tz,
 		apiKeyFilter: apiKeyFilter,
 		memberFilter: memberFilter,
+		platform:     filters.Platform,
+		model:        filters.Model,
+		result:       filters.Result,
 		scoped:       scoped,
 	})
 	if err != nil {
@@ -105,6 +108,9 @@ type exportCollectParams struct {
 	tz           string
 	apiKeyFilter *int64
 	memberFilter *int64
+	platform     string
+	model        string
+	result       string
 	scoped       bool
 }
 
@@ -160,6 +166,9 @@ collect:
 			PageSize:    exportPageSize,
 			APIKeyID:    p.apiKeyFilter,
 			MemberID:    p.memberFilter,
+			Platform:    p.platform,
+			Model:       p.model,
+			Result:      p.result,
 			StartDate:   startDate,
 			EndDate:     endDate,
 			TZ:          p.tz,
