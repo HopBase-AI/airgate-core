@@ -154,7 +154,8 @@
     "blog": "博客",
     "my_invite": "我的邀请",
     "model_plaza": "模型广场",
-    "pricing": "价格管理"
+    "pricing": "价格管理",
+    "entry_codes": "客户入口"
   },
   "model_plaza": {
     "title": "模型广场",
@@ -2733,5 +2734,32 @@
     "credentials_filled_toast": "凭据已填入表单",
     "report_load_failed": "报告加载失败",
     "retry": "重试"
+  },
+  "entryCodes": {
+    "title": "客户入口码",
+    "subtitle": "香港直连入口按码区分客户;把客户的 base_url 换成下面的地址即可,API Key 不变。",
+    "create": "生成入口码",
+    "edit": "编辑入口码",
+    "delete": "删除入口码",
+    "delete_confirm": "确定删除入口码 {{code}}?删除后该地址立即失效。",
+    "customer": "客户 / 备注",
+    "base_url": "接入地址(base_url)",
+    "note": "备注",
+    "note_placeholder": "客户名 / 用途",
+    "user_id": "绑定客户用户 ID",
+    "user_id_placeholder": "选填,填客户的用户 ID",
+    "invalid_user_id": "用户 ID 必须是数字",
+    "request_count": "请求数",
+    "last_used": "最近使用",
+    "enabled": "启用",
+    "disabled": "停用",
+    "unbound": "未绑定客户",
+    "no_note": "(无备注)",
+    "copy": "复制地址",
+    "copied": "已复制接入地址",
+    "copy_failed": "复制失败",
+    "create_success": "入口码已生成",
+    "update_success": "已更新",
+    "delete_success": "已删除"
   }
 }

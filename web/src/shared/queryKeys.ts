@@ -8,6 +8,7 @@ export const queryKeys = {
   apikeys: (...args: unknown[]) => ['apikeys', ...args] as const,
   userKeys: (...args: unknown[]) => ['user-keys', ...args] as const,
   proxies: (...args: unknown[]) => ['proxies', ...args] as const,
+  entryCodes: () => ['entry-codes'] as const,
   subscriptions: (...args: unknown[]) => ['subscriptions', ...args] as const,
   plugins: () => ['plugins'] as const,
   pluginsMenu: () => ['plugins-menu'] as const,

@@ -18,6 +18,7 @@ import (
 	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
 	appblog "github.com/DouDOU-start/airgate-core/internal/app/blog"
 	appdashboard "github.com/DouDOU-start/airgate-core/internal/app/dashboard"
+	appentrycode "github.com/DouDOU-start/airgate-core/internal/app/entrycode"
 	appgenerationtask "github.com/DouDOU-start/airgate-core/internal/app/generationtask"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 	appmcp "github.com/DouDOU-start/airgate-core/internal/app/mcp"
@@ -64,6 +65,7 @@ type HTTPHandlers struct {
 	Subscription   *handler.SubscriptionHandler
 	Usage          *handler.UsageHandler
 	Proxy          *handler.ProxyHandler
+	EntryCode      *handler.EntryCodeHandler
 	Settings       *handler.SettingsHandler
 	Dashboard      *handler.DashboardHandler
 	Plugin         *handler.PluginHandler
@@ -171,6 +173,7 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 		Subscription:   handler.NewSubscriptionHandler(subscriptionService),
 		Usage:          handler.NewUsageHandler(usageService),
 		Proxy:          handler.NewProxyHandler(proxyService),
+		EntryCode:      handler.NewEntryCodeHandler(appentrycode.NewService(settingsService, userService)),
 		Settings:       handler.NewSettingsHandler(settingsService),
 		Dashboard:      handler.NewDashboardHandler(dashboardService),
 		Plugin:         handler.NewPluginHandler(pluginAdminService),

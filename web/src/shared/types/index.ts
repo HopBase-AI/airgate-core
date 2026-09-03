@@ -1225,3 +1225,26 @@ export type UpdateBlogPostReq = Partial<CreateBlogPostReq>;
 export interface BlogUploadResp {
   url: string;
 }
+
+// 客户入口码(香港直连入口 direct.hop-base.com/c/<码>/ 区分客户)
+export interface EntryCodeResp {
+  code: string;
+  base_url: string;
+  user_id: number;
+  user_email: string;
+  note: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  last_used_at: string;
+  request_count: number;
+}
+export interface CreateEntryCodeReq {
+  note?: string;
+  user_id?: number;
+}
+export interface UpdateEntryCodeReq {
+  note?: string;
+  enabled?: boolean;
+  user_id?: number;
+}

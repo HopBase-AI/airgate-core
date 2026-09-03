@@ -51,6 +51,7 @@ import {
   Route,
   Bell,
   Tags,
+  Link2,
 } from 'lucide-react';
 
 interface AppShellProps {
@@ -82,6 +83,7 @@ const adminMenuItems: MenuItem[] = [
   { path: '/admin/blog', labelKey: 'nav.blog', icon: <FileText className="h-5 w-5" /> },
   { path: '/admin/plugins', labelKey: 'nav.plugins', icon: <Puzzle className="h-5 w-5" />, sectionKey: 'nav.system' },
   { path: '/admin/notifications', labelKey: 'nav.notifications', icon: <Bell className="h-5 w-5" /> },
+  { path: '/admin/entry-codes', labelKey: 'nav.entry_codes', icon: <Link2 className="h-5 w-5" /> },
   { path: '/admin/settings', labelKey: 'nav.settings', icon: <Settings className="h-5 w-5" /> },
 ];
 
