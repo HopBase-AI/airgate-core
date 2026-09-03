@@ -245,6 +245,11 @@ func UserEmailSnapshot(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldUserEmailSnapshot, v))
 }
 
+// MemberID applies equality check predicate on the "member_id" field. It's identical to MemberIDEQ.
+func MemberID(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldMemberID, v))
+}
+
 // Status applies equality check predicate on the "status" field. It's identical to StatusEQ.
 func Status(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldStatus, v))
@@ -2058,6 +2063,46 @@ func UserEmailSnapshotEqualFold(v string) predicate.UsageLog {
 // UserEmailSnapshotContainsFold applies the ContainsFold predicate on the "user_email_snapshot" field.
 func UserEmailSnapshotContainsFold(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldContainsFold(FieldUserEmailSnapshot, v))
+}
+
+// MemberIDEQ applies the EQ predicate on the "member_id" field.
+func MemberIDEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldMemberID, v))
+}
+
+// MemberIDNEQ applies the NEQ predicate on the "member_id" field.
+func MemberIDNEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldMemberID, v))
+}
+
+// MemberIDIn applies the In predicate on the "member_id" field.
+func MemberIDIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldMemberID, vs...))
+}
+
+// MemberIDNotIn applies the NotIn predicate on the "member_id" field.
+func MemberIDNotIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldMemberID, vs...))
+}
+
+// MemberIDGT applies the GT predicate on the "member_id" field.
+func MemberIDGT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldMemberID, v))
+}
+
+// MemberIDGTE applies the GTE predicate on the "member_id" field.
+func MemberIDGTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldMemberID, v))
+}
+
+// MemberIDLT applies the LT predicate on the "member_id" field.
+func MemberIDLT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldMemberID, v))
+}
+
+// MemberIDLTE applies the LTE predicate on the "member_id" field.
+func MemberIDLTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldMemberID, v))
 }
 
 // StatusEQ applies the EQ predicate on the "status" field.

@@ -8,6 +8,8 @@ type APIKeyResp struct {
 	KeyPrefix       string   `json:"key_prefix"`    // sk-xxxx... 前缀展示
 	UserID          int64    `json:"user_id"`
 	GroupID         *int64   `json:"group_id"`
+	MemberID        *int64   `json:"member_id"`             // 所属团队成员，null 表示不归属
+	MemberName      string   `json:"member_name,omitempty"` // 成员名，仅归属时返回
 	IPWhitelist     []string `json:"ip_whitelist,omitempty"`
 	IPBlacklist     []string `json:"ip_blacklist,omitempty"`
 	QuotaUSD        float64  `json:"quota_usd"`
@@ -26,12 +28,14 @@ type APIKeyResp struct {
 type APIKeyListQuery struct {
 	PageReq
 	SearchScope string `form:"search_scope"`
+	MemberID    *int64 `form:"member_id"` // 只看某个团队成员名下的 key
 }
 
 // CreateAPIKeyReq 创建 API 密钥请求
 type CreateAPIKeyReq struct {
 	Name           string   `json:"name" binding:"required"`
 	GroupID        int64    `json:"group_id" binding:"required"`
+	MemberID       *int64   `json:"member_id"` // 归属团队成员；不传 / 0 表示不归属
 	IPWhitelist    []string `json:"ip_whitelist"`
 	IPBlacklist    []string `json:"ip_blacklist"`
 	QuotaUSD       float64  `json:"quota_usd"`
@@ -44,6 +48,7 @@ type CreateAPIKeyReq struct {
 type UpdateAPIKeyReq struct {
 	Name           *string  `json:"name"`
 	GroupID        *int64   `json:"group_id"`
+	MemberID       *int64   `json:"member_id"` // 不传不改动；传 0 解除成员归属
 	IPWhitelist    []string `json:"ip_whitelist"`
 	IPBlacklist    []string `json:"ip_blacklist"`
 	QuotaUSD       *float64 `json:"quota_usd"`

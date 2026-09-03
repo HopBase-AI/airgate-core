@@ -23,13 +23,8 @@ func (h *UsageHandler) UserUsage(c *gin.Context) {
 		return
 	}
 
-	// API Key 登录场景：强制只查该 Key 的记录，并打开 ScopedToKey 标志
-	apiKeyFilter := query.APIKeyID
-	scoped := false
-	if scopedKey := scopedAPIKeyID(c); scopedKey > 0 {
-		apiKeyFilter = &scopedKey
-		scoped = true
-	}
+	// API Key 登录场景：强制只查该 Key（或其所属团队成员名下全部 Key）的记录，并打开 ScopedToKey 标志
+	apiKeyFilter, memberFilter, scoped := sessionUsageScope(c, query.APIKeyID, query.MemberID)
 
 	// account_id 不接受用户侧筛选：响应体已不含上游账号身份，若还留着这个筛选，
 	// 用户可以按 ID 逐个试出「哪条请求由哪个上游账号供货」，等于换个姿势拿回同样的信息。
@@ -37,6 +32,7 @@ func (h *UsageHandler) UserUsage(c *gin.Context) {
 		Page:        query.Page,
 		PageSize:    query.PageSize,
 		APIKeyID:    apiKeyFilter,
+		MemberID:    memberFilter,
 		GroupID:     query.GroupID,
 		Platform:    query.Platform,
 		Model:       query.Model,
@@ -85,16 +81,12 @@ func (h *UsageHandler) UserUsageStats(c *gin.Context) {
 		return
 	}
 
-	apiKeyFilter := query.APIKeyID
-	scoped := false
-	if sk := scopedAPIKeyID(c); sk > 0 {
-		apiKeyFilter = &sk
-		scoped = true
-	}
+	apiKeyFilter, memberFilter, scoped := sessionUsageScope(c, query.APIKeyID, query.MemberID)
 
 	tz := c.Query("tz")
 	result, err := h.service.UserStatsWithModels(c.Request.Context(), int64(userID), appusage.StatsFilter{
 		APIKeyID:    apiKeyFilter,
+		MemberID:    memberFilter,
 		Platform:    query.Platform,
 		Model:       query.Model,
 		StartDate:   query.StartDate,
@@ -170,17 +162,13 @@ func (h *UsageHandler) UserUsageTrend(c *gin.Context) {
 	uid64 := int64(userID)
 
 	// API Key 登录场景：限定趋势范围
-	var scopedKeyTrend *int64
-	scoped := false
-	if sk := scopedAPIKeyID(c); sk > 0 {
-		scopedKeyTrend = &sk
-		scoped = true
-	}
+	scopedKeyTrend, scopedMemberTrend, scoped := sessionUsageScope(c, nil, nil)
 
 	result, err := h.service.AdminTrend(c.Request.Context(), appusage.TrendFilter{
 		StatsFilter: appusage.StatsFilter{
 			UserID:      &uid64,
 			APIKeyID:    scopedKeyTrend,
+			MemberID:    scopedMemberTrend,
 			Platform:    query.Platform,
 			Model:       query.Model,
 			StartDate:   query.StartDate,
@@ -230,6 +218,7 @@ func (h *UsageHandler) AdminUsage(c *gin.Context) {
 		PageSize:  query.PageSize,
 		UserID:    query.UserID,
 		APIKeyID:  query.APIKeyID,
+		MemberID:  query.MemberID,
 		AccountID: query.AccountID,
 		GroupID:   query.GroupID,
 		Platform:  query.Platform,
@@ -263,6 +252,7 @@ func (h *UsageHandler) AdminUsageStats(c *gin.Context) {
 	result, err := h.service.AdminStats(c.Request.Context(), appusage.StatsFilter{
 		UserID:    query.UserID,
 		APIKeyID:  query.APIKeyID,
+		MemberID:  query.MemberID,
 		Platform:  query.Platform,
 		Model:     query.Model,
 		StartDate: query.StartDate,
@@ -290,6 +280,7 @@ func (h *UsageHandler) AdminUsageTrend(c *gin.Context) {
 		StatsFilter: appusage.StatsFilter{
 			UserID:    query.UserID,
 			APIKeyID:  query.APIKeyID,
+			MemberID:  query.MemberID,
 			Platform:  query.Platform,
 			Model:     query.Model,
 			StartDate: query.StartDate,
@@ -314,6 +305,32 @@ func currentUserID(c *gin.Context) (int, bool) {
 	}
 	id, ok := userID.(int)
 	return id, ok
+}
+
+// scopedMemberID 返回 API Key 登录会话所属的团队成员 ID（中间件按 key 实时解析），0 表示无成员归属。
+func scopedMemberID(c *gin.Context) int64 {
+	if v, exists := c.Get(middleware.CtxKeyMemberID); exists {
+		if id, ok := v.(int); ok {
+			return int64(id)
+		}
+	}
+	return 0
+}
+
+// sessionUsageScope 把请求方的筛选与会话范围合并：
+//   - 普通登录：原样使用请求里的 api_key_id / member_id；
+//   - 成员的 key 登录：收敛到该成员名下全部 key（忽略请求里的 key 筛选）；
+//   - 非成员的 key 登录：收敛到该把 key。
+//
+// 后两种都打开 scoped（客户视角，剥离平台成本字段）。
+func sessionUsageScope(c *gin.Context, requestedKey, requestedMember *int64) (apiKeyFilter, memberFilter *int64, scoped bool) {
+	if mid := scopedMemberID(c); mid > 0 {
+		return nil, &mid, true
+	}
+	if sk := scopedAPIKeyID(c); sk > 0 {
+		return &sk, nil, true
+	}
+	return requestedKey, requestedMember, false
 }
 
 // scopedAPIKeyID 返回 JWT 中携带的 API Key ID（API Key 登录场景），0 表示普通登录。

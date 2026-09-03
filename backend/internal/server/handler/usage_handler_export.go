@@ -62,13 +62,8 @@ func (h *UsageHandler) UserUsageExport(c *gin.Context) {
 	tz := c.Query("tz")
 	loc := timezone.Resolve(tz)
 
-	// API Key 登录场景沿用列表接口的收敛规则：只能导出该 Key 自己的记录。
-	var apiKeyFilter *int64
-	scoped := false
-	if scopedKey := scopedAPIKeyID(c); scopedKey > 0 {
-		apiKeyFilter = &scopedKey
-		scoped = true
-	}
+	// API Key 登录场景沿用列表接口的收敛规则：只能导出该 Key（或所属成员）自己的记录。
+	apiKeyFilter, memberFilter, scoped := sessionUsageScope(c, nil, nil)
 
 	rows, truncated, err := h.collectExportRows(c, exportCollectParams{
 		userID:       int64(userID),
@@ -77,6 +72,7 @@ func (h *UsageHandler) UserUsageExport(c *gin.Context) {
 		loc:          loc,
 		tz:           tz,
 		apiKeyFilter: apiKeyFilter,
+		memberFilter: memberFilter,
 		scoped:       scoped,
 	})
 	if err != nil {
@@ -98,6 +94,7 @@ type exportCollectParams struct {
 	loc          *time.Location
 	tz           string
 	apiKeyFilter *int64
+	memberFilter *int64
 	scoped       bool
 }
 
@@ -152,6 +149,7 @@ collect:
 			Page:        page,
 			PageSize:    exportPageSize,
 			APIKeyID:    p.apiKeyFilter,
+			MemberID:    p.memberFilter,
 			StartDate:   startDate,
 			EndDate:     endDate,
 			TZ:          p.tz,

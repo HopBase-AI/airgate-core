@@ -19,6 +19,8 @@ var (
 	ErrInvalidAPIKey = errors.New("无效的 API Key")
 	// ErrAPIKeyExpired API Key 已过期。
 	ErrAPIKeyExpired = errors.New("API Key 已过期")
+	// ErrMemberDisabled API Key 所属团队成员已被主账号停用。
+	ErrMemberDisabled = errors.New("所属团队成员已被停用")
 	// ErrRegistrationDisabled 注册功能已关闭。
 	ErrRegistrationDisabled = errors.New("注册功能已关闭")
 	// ErrVerifyCodeRequired 需要验证码。

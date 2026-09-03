@@ -15,6 +15,7 @@ import (
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	entapikey "github.com/DouDOU-start/airgate-core/ent/apikey"
+	entmember "github.com/DouDOU-start/airgate-core/ent/member"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/server/response"
@@ -27,6 +28,9 @@ const (
 	CtxKeyEmail    = "email"
 	CtxKeyKeyInfo  = "api_key_info"
 	CtxKeyAPIKeyID = "jwt_api_key_id" // JWT 中的 API Key ID（API Key 登录场景）
+	// CtxKeyMemberID API Key 登录会话所属的团队成员 ID（按 key 实时解析，不进 JWT）。
+	// >0 时用户侧查询按成员范围收敛（成员名下全部 key），而非单把 key。
+	CtxKeyMemberID = "session_member_id"
 )
 
 // JWTAuth JWT 认证中间件
@@ -90,9 +94,9 @@ func jwtAuth(jwtMgr *auth.JWTManager, db *ent.Client, allowAdminAPIKey bool) gin
 				c.Abort()
 				return
 			}
-			resolvedUserID, resolveErr := resolveAPIKeySessionOwner(c.Request.Context(), db, claims.APIKeyID)
+			resolvedUserID, memberID, resolveErr := resolveAPIKeySessionOwner(c.Request.Context(), db, claims.APIKeyID)
 			if resolveErr != nil {
-				if errors.Is(resolveErr, auth.ErrInvalidAPIKey) || errors.Is(resolveErr, auth.ErrAPIKeyExpired) || errors.Is(resolveErr, auth.ErrUserDisabled) {
+				if errors.Is(resolveErr, auth.ErrInvalidAPIKey) || errors.Is(resolveErr, auth.ErrAPIKeyExpired) || errors.Is(resolveErr, auth.ErrUserDisabled) || errors.Is(resolveErr, auth.ErrMemberDisabled) {
 					response.Unauthorized(c, "API Key 登录会话已失效，请重新登录")
 				} else {
 					response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "认证服务暂不可用")
@@ -101,6 +105,9 @@ func jwtAuth(jwtMgr *auth.JWTManager, db *ent.Client, allowAdminAPIKey bool) gin
 				return
 			}
 			userID = resolvedUserID
+			if memberID > 0 {
+				c.Set(CtxKeyMemberID, memberID)
+			}
 		}
 
 		c.Set(CtxKeyUserID, userID)
@@ -124,9 +131,11 @@ func jwtAuth(jwtMgr *auth.JWTManager, db *ent.Client, allowAdminAPIKey bool) gin
 	}
 }
 
-func resolveAPIKeySessionOwner(ctx context.Context, db *ent.Client, keyID int) (int, error) {
+// resolveAPIKeySessionOwner 按 key 实时解析会话归属：返回 owner user id 与所属团队成员 id
+// （0 表示 key 不属于成员）。成员被停用时会话同样失效。
+func resolveAPIKeySessionOwner(ctx context.Context, db *ent.Client, keyID int) (int, int, error) {
 	if db == nil || keyID <= 0 {
-		return 0, auth.ErrInvalidAPIKey
+		return 0, 0, auth.ErrInvalidAPIKey
 	}
 	ak, err := db.APIKey.Query().
 		Where(
@@ -134,24 +143,32 @@ func resolveAPIKeySessionOwner(ctx context.Context, db *ent.Client, keyID int) (
 			entapikey.StatusEQ(entapikey.StatusActive),
 		).
 		WithUser().
+		WithMember().
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return 0, auth.ErrInvalidAPIKey
+			return 0, 0, auth.ErrInvalidAPIKey
 		}
-		return 0, err
+		return 0, 0, err
 	}
 	if ak.ExpiresAt != nil && ak.ExpiresAt.Before(time.Now()) {
-		return 0, auth.ErrAPIKeyExpired
+		return 0, 0, auth.ErrAPIKeyExpired
 	}
 	user, err := ak.Edges.UserOrErr()
 	if err != nil {
-		return 0, auth.ErrInvalidAPIKey
+		return 0, 0, auth.ErrInvalidAPIKey
 	}
 	if user.Status != entuser.StatusActive {
-		return 0, auth.ErrUserDisabled
+		return 0, 0, auth.ErrUserDisabled
 	}
-	return user.ID, nil
+	memberID := 0
+	if m := ak.Edges.Member; m != nil {
+		if m.Status != entmember.StatusActive {
+			return 0, 0, auth.ErrMemberDisabled
+		}
+		memberID = m.ID
+	}
+	return user.ID, memberID, nil
 }
 
 // APIKeyAuth API Key 认证中间件
@@ -196,6 +213,15 @@ func APIKeyAuth(db *ent.Client) gin.HandlerFunc {
 				code = "account_disabled"
 				status = http.StatusForbidden
 				reason = "user_disabled"
+			case auth.ErrMemberDisabled:
+				code = "member_disabled"
+				status = http.StatusForbidden
+				reason = "member_disabled"
+			case auth.ErrMemberQuota:
+				// 与 key 额度同码：客户端只需知道"额度用尽"，成员/密钥之分是主账号的事
+				code = "insufficient_quota"
+				status = http.StatusPaymentRequired
+				reason = "member_quota_exceeded"
 			default:
 				// DB 超时 / 连接池满 / ctx 取消 等服务端侧问题：返 503 让客户端重试，
 				// 绝不能误判为"凭证无效"让客户端以为 key 被吊销。

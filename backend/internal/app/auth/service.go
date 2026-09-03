@@ -161,6 +161,7 @@ func (s *Service) LoginByAPIKey(ctx context.Context, input LoginByAPIKeyInput) (
 	result.UsedQuota = brief.UsedQuota
 	result.ExpiresAt = brief.ExpiresAt
 	result.Platform = brief.Platform
+	result.Member = brief.Member
 	if brief.SellRate > 0 {
 		result.Rate = brief.SellRate
 	} else {

@@ -64,6 +64,8 @@ func (h *AuthHandler) handleAPIKeyLoginError(err error) (int, string) {
 		return 401, "API Key 登录会话已失效"
 	case errors.Is(err, appauth.ErrUserDisabled):
 		return 403, "用户已被禁用"
+	case errors.Is(err, appauth.ErrMemberDisabled):
+		return 403, err.Error()
 	default:
 		slog.Error("API Key 登录失败", "error", err)
 		return http.StatusServiceUnavailable, "认证服务暂不可用"

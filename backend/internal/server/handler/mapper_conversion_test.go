@@ -40,7 +40,7 @@ func TestUserToRespClonesAllowedGroupIDs(t *testing.T) {
 
 func TestAPIKeySessionUserRespJSONIsAllowlisted(t *testing.T) {
 	expiresAt := time.Date(2026, 8, 5, 10, 0, 0, 0, time.UTC)
-	resp := apiKeySessionUserResp(9, "customer-key", 20, 3.5, 2.8, &expiresAt, "openai")
+	resp := apiKeySessionUserResp(9, "customer-key", 20, 3.5, 2.8, &expiresAt, "openai", sessionMemberBrief{})
 	payload, err := json.Marshal(resp)
 	if err != nil {
 		t.Fatalf("序列化 API Key 会话失败: %v", err)

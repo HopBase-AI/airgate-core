@@ -14,6 +14,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
 	"github.com/DouDOU-start/airgate-core/ent/group"
+	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
@@ -29,6 +30,7 @@ type UserQuery struct {
 	inters            []Interceptor
 	predicates        []predicate.User
 	withAPIKeys       *APIKeyQuery
+	withMembers       *MemberQuery
 	withSubscriptions *UserSubscriptionQuery
 	withUsageLogs     *UsageLogQuery
 	withAllowedGroups *GroupQuery
@@ -85,6 +87,28 @@ func (uq *UserQuery) QueryAPIKeys() *APIKeyQuery {
 			sqlgraph.From(user.Table, user.FieldID, selector),
 			sqlgraph.To(apikey.Table, apikey.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, user.APIKeysTable, user.APIKeysColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(uq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryMembers chains the current query on the "members" edge.
+func (uq *UserQuery) QueryMembers() *MemberQuery {
+	query := (&MemberClient{config: uq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := uq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := uq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(member.Table, member.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.MembersTable, user.MembersColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(uq.driver.Dialect(), step)
 		return fromU, nil
@@ -395,6 +419,7 @@ func (uq *UserQuery) Clone() *UserQuery {
 		inters:            append([]Interceptor{}, uq.inters...),
 		predicates:        append([]predicate.User{}, uq.predicates...),
 		withAPIKeys:       uq.withAPIKeys.Clone(),
+		withMembers:       uq.withMembers.Clone(),
 		withSubscriptions: uq.withSubscriptions.Clone(),
 		withUsageLogs:     uq.withUsageLogs.Clone(),
 		withAllowedGroups: uq.withAllowedGroups.Clone(),
@@ -414,6 +439,17 @@ func (uq *UserQuery) WithAPIKeys(opts ...func(*APIKeyQuery)) *UserQuery {
 		opt(query)
 	}
 	uq.withAPIKeys = query
+	return uq
+}
+
+// WithMembers tells the query-builder to eager-load the nodes that are connected to
+// the "members" edge. The optional arguments are used to configure the query builder of the edge.
+func (uq *UserQuery) WithMembers(opts ...func(*MemberQuery)) *UserQuery {
+	query := (&MemberClient{config: uq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	uq.withMembers = query
 	return uq
 }
 
@@ -550,8 +586,9 @@ func (uq *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = uq.querySpec()
-		loadedTypes = [6]bool{
+		loadedTypes = [7]bool{
 			uq.withAPIKeys != nil,
+			uq.withMembers != nil,
 			uq.withSubscriptions != nil,
 			uq.withUsageLogs != nil,
 			uq.withAllowedGroups != nil,
@@ -581,6 +618,13 @@ func (uq *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 		if err := uq.loadAPIKeys(ctx, query, nodes,
 			func(n *User) { n.Edges.APIKeys = []*APIKey{} },
 			func(n *User, e *APIKey) { n.Edges.APIKeys = append(n.Edges.APIKeys, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := uq.withMembers; query != nil {
+		if err := uq.loadMembers(ctx, query, nodes,
+			func(n *User) { n.Edges.Members = []*Member{} },
+			func(n *User, e *Member) { n.Edges.Members = append(n.Edges.Members, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -648,6 +692,37 @@ func (uq *UserQuery) loadAPIKeys(ctx context.Context, query *APIKeyQuery, nodes 
 		node, ok := nodeids[*fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "user_api_keys" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (uq *UserQuery) loadMembers(ctx context.Context, query *MemberQuery, nodes []*User, init func(*User), assign func(*User, *Member)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	query.withFKs = true
+	query.Where(predicate.Member(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.MembersColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.user_members
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "user_members" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_members" returned %v for node %v`, *fk, n.ID)
 		}
 		assign(node, n)
 	}

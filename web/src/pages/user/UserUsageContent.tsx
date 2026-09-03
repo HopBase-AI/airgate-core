@@ -1,15 +1,17 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearch } from '@tanstack/react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Button, Card, ListBox, Meter, Select } from '@heroui/react';
 import { usageApi } from '../../shared/api/usage';
 import { apikeysApi } from '../../shared/api/apikeys';
+import { membersApi } from '../../shared/api/members';
 import { queryKeys } from '../../shared/queryKeys';
 import { usePagination } from '../../shared/hooks/usePagination';
 import { usePlatforms } from '../../shared/hooks/usePlatforms';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { useToast } from '../../shared/ui';
-import { Activity, Hash, Coins, Clock, Gauge, Percent, TriangleAlert, Upload } from 'lucide-react';
+import { Activity, Hash, Coins, Clock, Gauge, Percent, TriangleAlert, Upload, UsersRound } from 'lucide-react';
 import type { UsageQuery } from '../../shared/types';
 import { useUsageColumns, fmtNum, type UsageColumnConfig, type UsageRow } from '../../shared/columns/usageColumns';
 import { getSessionAPIKey } from '../../shared/api/client';
@@ -70,6 +72,12 @@ function APIKeyInfoBar() {
   const used = user.api_key_used_quota ?? 0;
   const expiresAt = user.api_key_expires_at;
   const pct = quota > 0 ? Math.min((used / quota) * 100, 100) : 0;
+  // 团队成员会话：额外展示成员本期额度（成员名下全部 key 共用），与单把 key 的额度并列
+  const memberName = user.member_name || '';
+  const memberQuota = user.member_quota_usd ?? 0;
+  const memberUsed = user.member_used_quota ?? 0;
+  const memberPct = memberQuota > 0 ? Math.min((memberUsed / memberQuota) * 100, 100) : 0;
+  const memberPeriodEnd = user.member_period_end ? new Date(user.member_period_end).toLocaleDateString() : '';
 
   // 原文 Key 仅在 API Key 登录当次会话内通过 sessionStorage 暂存；刷新页面后丢失，
   // 此时按钮会提示用户重新登录。
@@ -103,6 +111,38 @@ function APIKeyInfoBar() {
   return (
     <Card className="mb-5">
       <Card.Content className="flex items-center gap-4 px-4 py-3 text-sm flex-wrap">
+        {memberName && (
+          <div className="flex items-center gap-2">
+            <UsersRound className="w-3.5 h-3.5 text-text-tertiary" />
+            <span className="text-text-tertiary">{t('auth.apikey_member_badge')}:</span>
+            <span className="font-medium text-text">{memberName}</span>
+          </div>
+        )}
+        {memberName && memberQuota > 0 && (
+          <div className="flex items-center gap-2">
+            <Gauge className="w-3.5 h-3.5 text-text-tertiary" />
+            <span className="text-text-tertiary">{t('auth.member_quota')}:</span>
+            <span className={memberPct >= 90 ? 'text-danger font-medium' : 'text-text-secondary'}>
+              ${memberUsed.toFixed(4)} / ${memberQuota.toFixed(2)}
+            </span>
+            <Meter
+              aria-label={t('auth.member_quota')}
+              className="w-20"
+              color={memberPct >= 90 ? 'danger' : memberPct >= 70 ? 'warning' : 'accent'}
+              maxValue={100}
+              minValue={0}
+              size="sm"
+              value={memberPct}
+            >
+              <Meter.Track>
+                <Meter.Fill />
+              </Meter.Track>
+            </Meter>
+            {memberPeriodEnd ? (
+              <span className="text-xs text-text-tertiary">{t('auth.member_period_end')} {memberPeriodEnd}</span>
+            ) : null}
+          </div>
+        )}
         {quota > 0 && (
           <div className="flex items-center gap-2">
             <Gauge className="w-3.5 h-3.5 text-text-tertiary" />
@@ -186,7 +226,10 @@ export default function UserUsageContent() {
   const { user } = useAuth();
   const customerScope = !!user?.api_key_id;
   const { page, setPage, pageSize, setPageSize } = usePagination(20, 'user.usage');
-  const [filters, setFilters] = useState<Partial<UsageQuery>>({});
+  // 团队成员页「查看用量」经 ?member_id= 跳入：预置成员筛选
+  const search: { member_id?: number | string } = useSearch({ strict: false });
+  const initialMemberID = search.member_id != null && Number(search.member_id) > 0 ? Number(search.member_id) : undefined;
+  const [filters, setFilters] = useState<Partial<UsageQuery>>(initialMemberID ? { member_id: initialMemberID } : {});
   const [autoRefresh, setAutoRefresh] = usePersistentAutoRefresh(USER_USAGE_AUTO_UPDATE_STORAGE_KEY, 0, USER_AUTO_REFRESH_OPTIONS);
   const autoRefreshEnabled = autoRefresh > 0;
   const autoRefreshLabel = `${t('usage.auto_update')} `;
@@ -228,6 +271,19 @@ export default function UserUsageContent() {
   ];
   const selectedApiKeyLabel = apiKeyOptions.find((item) => item.id === String(filters.api_key_id ?? ''))?.label ?? t('common.all');
 
+  const { data: membersData } = useQuery({
+    queryKey: queryKeys.membersForKeys(),
+    queryFn: () => membersApi.list(FETCH_ALL_PARAMS),
+    enabled: !customerScope,
+    staleTime: 60_000,
+  });
+  const memberOptions = [
+    { id: '', label: t('common.all') },
+    ...(membersData?.list ?? []).map((member) => ({ id: String(member.id), label: member.name })),
+  ];
+  const hasMembers = (membersData?.list?.length ?? 0) > 0;
+  const selectedMemberLabel = memberOptions.find((item) => item.id === String(filters.member_id ?? ''))?.label ?? t('common.all');
+
   const {
     data,
     dataUpdatedAt,
@@ -266,7 +322,7 @@ export default function UserUsageContent() {
   }, [refetchUsage]);
 
   function updateFilter(key: string, value: string) {
-    const nextValue = key === 'api_key_id' && value ? Number(value) : value || undefined;
+    const nextValue = (key === 'api_key_id' || key === 'member_id') && value ? Number(value) : value || undefined;
     setFilters((prev) => ({ ...prev, [key]: nextValue }));
     setPage(1);
   }
@@ -315,10 +371,26 @@ export default function UserUsageContent() {
       );
     },
   };
+  const memberColumn: UsageColumnConfig<UsageRow> = {
+    key: 'member',
+    title: t('usage.member'),
+    width: '88px',
+    hideOnMobile: true,
+    render: (row) => {
+      const memberID = 'member_id' in row && row.member_id ? row.member_id : 0;
+      if (!memberID) return <span className="block text-xs text-text-tertiary">-</span>;
+      const name = 'member_name' in row && row.member_name ? row.member_name : t('usage.member_deleted');
+      return (
+        <span className="block max-w-full truncate text-xs text-text-secondary" title={name}>{name}</span>
+      );
+    },
+  };
+  // 有团队成员时才多一列，普通用户的表格保持原样
+  const ownerExtraColumns = customerScope ? [] : hasMembers ? [apiKeyColumn, memberColumn] : [apiKeyColumn];
   const columns = modelColumnIndex >= 0
     ? [
         ...sharedColumns.slice(0, timeColumnIndex + 1),
-        ...(customerScope ? [] : [apiKeyColumn]),
+        ...ownerExtraColumns,
         ...sharedColumns.slice(timeColumnIndex + 1, modelColumnIndex + 1),
         ...(streamColumn ? [streamColumn] : []),
         ...timingColumns,
@@ -328,7 +400,7 @@ export default function UserUsageContent() {
     : [
         ...sharedColumns,
         endpointColumn,
-        ...(customerScope ? [] : [apiKeyColumn]),
+        ...ownerExtraColumns,
       ];
 
   return (
@@ -450,6 +522,34 @@ export default function UserUsageContent() {
               </Select.Trigger>
               <Select.Popover>
                 <ListBox items={apiKeyOptions}>
+                  {(item) => (
+                    <ListBox.Item id={item.id} textValue={item.label}>
+                      {item.label}
+                    </ListBox.Item>
+                  )}
+                </ListBox>
+              </Select.Popover>
+            </Select>
+          </div>
+        )}
+        {!customerScope && hasMembers && (
+          <div className="w-full sm:w-44">
+            <Select
+              aria-label={t('team.filter_member')}
+              fullWidth
+              selectedKey={String(filters.member_id ?? '')}
+              onSelectionChange={(key) => updateFilter('member_id', key == null ? '' : String(key))}
+            >
+              <Select.Trigger>
+                <Select.Value>
+                  {filters.member_id ? selectedMemberLabel : (
+                    <span className="text-text-tertiary">{t('team.filter_member')}</span>
+                  )}
+                </Select.Value>
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox items={memberOptions}>
                   {(item) => (
                     <ListBox.Item id={item.id} textValue={item.label}>
                       {item.label}

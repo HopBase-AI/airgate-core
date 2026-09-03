@@ -31,12 +31,22 @@ func userToResp(user appauth.User) dto.UserResp {
 	}
 }
 
+// sessionMemberBrief API Key 会话所属团队成员的投影入参；ID 为 0 表示 key 不属于成员。
+type sessionMemberBrief struct {
+	ID        int
+	Name      string
+	QuotaUSD  float64
+	UsedQuota float64
+	PeriodEnd *time.Time
+}
+
 func apiKeySessionUserResp(
 	keyID int,
 	name string,
 	quotaUSD, usedQuota, rate float64,
 	expiresAt *time.Time,
 	platform string,
+	member sessionMemberBrief,
 ) dto.APIKeySessionUserResp {
 	resp := dto.APIKeySessionUserResp{
 		Role:            auth.APIKeySessionRole,
@@ -49,6 +59,15 @@ func apiKeySessionUserResp(
 	}
 	if expiresAt != nil {
 		resp.APIKeyExpiresAt = expiresAt.Format(time.RFC3339)
+	}
+	if member.ID > 0 {
+		resp.MemberID = int64(member.ID)
+		resp.MemberName = member.Name
+		resp.MemberQuotaUSD = member.QuotaUSD
+		resp.MemberUsedQuota = member.UsedQuota
+		if member.PeriodEnd != nil {
+			resp.MemberPeriodEnd = member.PeriodEnd.Format(time.RFC3339)
+		}
 	}
 	return resp
 }
@@ -66,5 +85,12 @@ func apiKeySessionUserRespFromBrief(keyID int, brief appuser.APIKeyBrief) dto.AP
 		rate,
 		brief.ExpiresAt,
 		brief.Platform,
+		sessionMemberBrief{
+			ID:        brief.MemberID,
+			Name:      brief.MemberName,
+			QuotaUSD:  brief.MemberQuotaUSD,
+			UsedQuota: brief.MemberUsedQuota,
+			PeriodEnd: brief.MemberPeriodEnd,
+		},
 	)
 }

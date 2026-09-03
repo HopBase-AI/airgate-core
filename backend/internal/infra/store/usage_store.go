@@ -9,6 +9,7 @@ import (
 	entaccount "github.com/DouDOU-start/airgate-core/ent/account"
 	entapikey "github.com/DouDOU-start/airgate-core/ent/apikey"
 	entgroup "github.com/DouDOU-start/airgate-core/ent/group"
+	entmember "github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
 	entusagelog "github.com/DouDOU-start/airgate-core/ent/usagelog"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
@@ -54,6 +55,9 @@ func (s *UsageStore) ListUser(ctx context.Context, userID int64, filter appusage
 	for _, item := range logs {
 		result = append(result, mapUsageLog(item))
 	}
+	if err := s.attachMemberNames(ctx, result); err != nil {
+		return nil, 0, err
+	}
 	return result, int64(total), nil
 }
 
@@ -87,7 +91,47 @@ func (s *UsageStore) ListAdmin(ctx context.Context, filter appusage.ListFilter) 
 	for _, item := range logs {
 		result = append(result, mapUsageLog(item))
 	}
+	if err := s.attachMemberNames(ctx, result); err != nil {
+		return nil, 0, err
+	}
 	return result, int64(total), nil
+}
+
+// attachMemberNames 按 member_id 快照列回填成员名。成员是快照关系（无外键），
+// 已删除的成员查不到名字，前端按 member_id>0 且无名展示为「已删除成员」。
+func (s *UsageStore) attachMemberNames(ctx context.Context, records []appusage.LogRecord) error {
+	ids := make([]int, 0, 8)
+	seen := make(map[int64]struct{}, 8)
+	for _, record := range records {
+		if record.MemberID <= 0 {
+			continue
+		}
+		if _, ok := seen[record.MemberID]; ok {
+			continue
+		}
+		seen[record.MemberID] = struct{}{}
+		ids = append(ids, int(record.MemberID))
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	members, err := s.db.Member.Query().
+		Where(entmember.IDIn(ids...)).
+		Select(entmember.FieldID, entmember.FieldName).
+		All(ctx)
+	if err != nil {
+		return err
+	}
+	names := make(map[int64]string, len(members))
+	for _, m := range members {
+		names[int64(m.ID)] = m.Name
+	}
+	for i := range records {
+		if records[i].MemberID > 0 {
+			records[i].MemberName = names[records[i].MemberID]
+		}
+	}
+	return nil
 }
 
 // SummaryUser 查询用户汇总统计。
@@ -469,6 +513,9 @@ func applyUsageListFilter(query *ent.UsageLogQuery, filter appusage.ListFilter) 
 	if filter.APIKeyID != nil {
 		query = query.Where(entusagelog.HasAPIKeyWith(entapikey.IDEQ(int(*filter.APIKeyID))))
 	}
+	if filter.MemberID != nil {
+		query = query.Where(entusagelog.MemberIDEQ(int(*filter.MemberID)))
+	}
 	if filter.AccountID != nil {
 		query = query.Where(entusagelog.HasAccountWith(entaccount.IDEQ(int(*filter.AccountID))))
 	}
@@ -512,6 +559,9 @@ func excludeFailedUsage(query *ent.UsageLogQuery) *ent.UsageLogQuery {
 func applyUsageStatsFilter(query *ent.UsageLogQuery, filter appusage.StatsFilter) *ent.UsageLogQuery {
 	if filter.APIKeyID != nil {
 		query = query.Where(entusagelog.HasAPIKeyWith(entapikey.IDEQ(int(*filter.APIKeyID))))
+	}
+	if filter.MemberID != nil {
+		query = query.Where(entusagelog.MemberIDEQ(int(*filter.MemberID)))
 	}
 	if filter.Platform != "" {
 		query = query.Where(entusagelog.PlatformEQ(filter.Platform))
@@ -648,6 +698,7 @@ func mapUsageLog(item *ent.UsageLog) appusage.LogRecord {
 		record.UserEmail = item.UserEmailSnapshot
 		record.UserDeleted = record.UserID > 0
 	}
+	record.MemberID = int64(item.MemberID)
 	record.APIKeyDeleted = item.Edges.APIKey == nil
 	if item.Edges.APIKey != nil {
 		record.APIKeyID = int64(item.Edges.APIKey.ID)

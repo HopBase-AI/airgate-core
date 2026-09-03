@@ -565,6 +565,20 @@ func (ulc *UsageLogCreate) SetNillableUserEmailSnapshot(s *string) *UsageLogCrea
 	return ulc
 }
 
+// SetMemberID sets the "member_id" field.
+func (ulc *UsageLogCreate) SetMemberID(i int) *UsageLogCreate {
+	ulc.mutation.SetMemberID(i)
+	return ulc
+}
+
+// SetNillableMemberID sets the "member_id" field if the given value is not nil.
+func (ulc *UsageLogCreate) SetNillableMemberID(i *int) *UsageLogCreate {
+	if i != nil {
+		ulc.SetMemberID(*i)
+	}
+	return ulc
+}
+
 // SetStatus sets the "status" field.
 func (ulc *UsageLogCreate) SetStatus(s string) *UsageLogCreate {
 	ulc.mutation.SetStatus(s)
@@ -886,6 +900,10 @@ func (ulc *UsageLogCreate) defaults() {
 		v := usagelog.DefaultUserEmailSnapshot
 		ulc.mutation.SetUserEmailSnapshot(v)
 	}
+	if _, ok := ulc.mutation.MemberID(); !ok {
+		v := usagelog.DefaultMemberID
+		ulc.mutation.SetMemberID(v)
+	}
 	if _, ok := ulc.mutation.Status(); !ok {
 		v := usagelog.DefaultStatus
 		ulc.mutation.SetStatus(v)
@@ -1030,6 +1048,9 @@ func (ulc *UsageLogCreate) check() error {
 	}
 	if _, ok := ulc.mutation.UserEmailSnapshot(); !ok {
 		return &ValidationError{Name: "user_email_snapshot", err: errors.New(`ent: missing required field "UsageLog.user_email_snapshot"`)}
+	}
+	if _, ok := ulc.mutation.MemberID(); !ok {
+		return &ValidationError{Name: "member_id", err: errors.New(`ent: missing required field "UsageLog.member_id"`)}
 	}
 	if _, ok := ulc.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "UsageLog.status"`)}
@@ -1239,6 +1260,10 @@ func (ulc *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := ulc.mutation.UserEmailSnapshot(); ok {
 		_spec.SetField(usagelog.FieldUserEmailSnapshot, field.TypeString, value)
 		_node.UserEmailSnapshot = value
+	}
+	if value, ok := ulc.mutation.MemberID(); ok {
+		_spec.SetField(usagelog.FieldMemberID, field.TypeInt, value)
+		_node.MemberID = value
 	}
 	if value, ok := ulc.mutation.Status(); ok {
 		_spec.SetField(usagelog.FieldStatus, field.TypeString, value)

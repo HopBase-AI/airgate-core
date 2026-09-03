@@ -13,6 +13,8 @@ type UsageLogResp struct {
 	APIKeyName            string                `json:"api_key_name,omitempty"`
 	APIKeyHint            string                `json:"api_key_hint,omitempty"`
 	APIKeyDeleted         bool                  `json:"api_key_deleted"`
+	MemberID              int64                 `json:"member_id,omitempty"`
+	MemberName            string                `json:"member_name,omitempty"`
 	AccountID             int64                 `json:"account_id"`
 	AccountName           string                `json:"account_name,omitempty"`
 	AccountEmail          string                `json:"account_email,omitempty"`
@@ -80,6 +82,8 @@ type UserUsageLogResp struct {
 	APIKeyName            string                `json:"api_key_name,omitempty"`
 	APIKeyHint            string                `json:"api_key_hint,omitempty"`
 	APIKeyDeleted         bool                  `json:"api_key_deleted"`
+	MemberID              int64                 `json:"member_id,omitempty"`
+	MemberName            string                `json:"member_name,omitempty"`
 	GroupID               int64                 `json:"group_id"`
 	Platform              string                `json:"platform"`
 	Model                 string                `json:"model"`
@@ -163,6 +167,7 @@ type UsageQuery struct {
 	PageReq
 	UserID    *int64 `form:"user_id"`
 	APIKeyID  *int64 `form:"api_key_id"`
+	MemberID  *int64 `form:"member_id"` // 按团队成员筛选
 	AccountID *int64 `form:"account_id"`
 	GroupID   *int64 `form:"group_id"`
 	Platform  string `form:"platform"`
@@ -176,6 +181,7 @@ type UsageQuery struct {
 // UsageFilterQuery 使用记录筛选参数（不含分页，用于聚合统计）
 type UsageFilterQuery struct {
 	APIKeyID  *int64 `form:"api_key_id"`
+	MemberID  *int64 `form:"member_id"` // 按团队成员筛选
 	Platform  string `form:"platform"`
 	Model     string `form:"model"`
 	StartDate string `form:"start_date"`
@@ -251,6 +257,7 @@ type UsageStatsQuery struct {
 	GroupBy   string `form:"group_by" binding:"required"` // 聚合维度，支持逗号分隔多值（如 model,group）
 	UserID    *int64 `form:"user_id"`
 	APIKeyID  *int64 `form:"api_key_id"`
+	MemberID  *int64 `form:"member_id"` // 按团队成员筛选
 	Platform  string `form:"platform"`
 	Model     string `form:"model"`
 	StartDate string `form:"start_date"`
@@ -262,6 +269,7 @@ type UsageTrendQuery struct {
 	Granularity string `form:"granularity" binding:"required,oneof=hour day"`
 	UserID      *int64 `form:"user_id"`
 	APIKeyID    *int64 `form:"api_key_id"`
+	MemberID    *int64 `form:"member_id"` // 按团队成员筛选
 	Platform    string `form:"platform"`
 	Model       string `form:"model"`
 	StartDate   string `form:"start_date"`

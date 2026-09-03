@@ -107,6 +107,8 @@ type UsageLog struct {
 	UserIDSnapshot int `json:"user_id_snapshot,omitempty"`
 	// 用户邮箱快照。用户硬删除后后台使用记录仍能展示历史归属。
 	UserEmailSnapshot string `json:"user_email_snapshot,omitempty"`
+	// 发起请求的 API Key 当时所属的团队成员 ID 快照；0 表示无成员归属。
+	MemberID int `json:"member_id,omitempty"`
 	// 请求结果：success（正常计费）/ error（失败，token 与费用为 0）
 	Status string `json:"status,omitempty"`
 	// 失败分类，取自转发判决（client_error/account_rate_limited/upstream_transient 等）或 Core 侧拦截原因；成功请求为空
@@ -197,7 +199,7 @@ func (*UsageLog) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case usagelog.FieldInputPrice, usagelog.FieldOutputPrice, usagelog.FieldCachedInputPrice, usagelog.FieldCacheCreationPrice, usagelog.FieldCacheCreation1hPrice, usagelog.FieldInputCost, usagelog.FieldOutputCost, usagelog.FieldCachedInputCost, usagelog.FieldCacheCreationCost, usagelog.FieldImageCost, usagelog.FieldTotalCost, usagelog.FieldActualCost, usagelog.FieldBilledCost, usagelog.FieldAccountCost, usagelog.FieldRateMultiplier, usagelog.FieldSellRate, usagelog.FieldAccountRateMultiplier:
 			values[i] = new(sql.NullFloat64)
-		case usagelog.FieldID, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldCachedInputTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCacheCreation5mTokens, usagelog.FieldCacheCreation1hTokens, usagelog.FieldReasoningOutputTokens, usagelog.FieldDurationMs, usagelog.FieldFirstTokenMs, usagelog.FieldUserIDSnapshot, usagelog.FieldErrorStatus:
+		case usagelog.FieldID, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldCachedInputTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCacheCreation5mTokens, usagelog.FieldCacheCreation1hTokens, usagelog.FieldReasoningOutputTokens, usagelog.FieldDurationMs, usagelog.FieldFirstTokenMs, usagelog.FieldUserIDSnapshot, usagelog.FieldMemberID, usagelog.FieldErrorStatus:
 			values[i] = new(sql.NullInt64)
 		case usagelog.FieldPlatform, usagelog.FieldModel, usagelog.FieldServiceTier, usagelog.FieldImageSize, usagelog.FieldUserAgent, usagelog.FieldIPAddress, usagelog.FieldEndpoint, usagelog.FieldReasoningEffort, usagelog.FieldRequestID, usagelog.FieldUserEmailSnapshot, usagelog.FieldStatus, usagelog.FieldErrorCode, usagelog.FieldErrorMessage:
 			values[i] = new(sql.NullString)
@@ -492,6 +494,12 @@ func (ul *UsageLog) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				ul.UserEmailSnapshot = value.String
 			}
+		case usagelog.FieldMemberID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field member_id", values[i])
+			} else if value.Valid {
+				ul.MemberID = int(value.Int64)
+			}
 		case usagelog.FieldStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field status", values[i])
@@ -731,6 +739,9 @@ func (ul *UsageLog) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("user_email_snapshot=")
 	builder.WriteString(ul.UserEmailSnapshot)
+	builder.WriteString(", ")
+	builder.WriteString("member_id=")
+	builder.WriteString(fmt.Sprintf("%v", ul.MemberID))
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(ul.Status)

@@ -7,10 +7,30 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
+	entmember "github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
+	"github.com/DouDOU-start/airgate-core/internal/pkg/period"
 )
+
+// memberPeriodUsed 成员本期已用与本期终点（monthly 跨期后按 0 起算），与鉴权闸门口径一致。
+func memberPeriodUsed(m *ent.Member, now time.Time) (used float64, periodEnd *time.Time) {
+	base := m.PeriodUsedBase
+	if m.QuotaPeriod == entmember.QuotaPeriodMonthly {
+		_, end, rolled := period.Window(m.PeriodAnchor, m.PeriodStart, now)
+		if rolled {
+			base = m.UsedQuota
+		}
+		periodEnd = &end
+	}
+	used = m.UsedQuota - base
+	if used < 0 {
+		used = 0
+	}
+	return used, periodEnd
+}
 
 // cc-switch 通用模板兼容端点
 //
@@ -50,6 +70,7 @@ func (s *Server) handleCCCompatUserBalance(c *gin.Context) {
 			apikey.StatusEQ(apikey.StatusActive),
 		).
 		WithUser().
+		WithMember().
 		Only(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -80,6 +101,19 @@ func (s *Server) handleCCCompatUserBalance(c *gin.Context) {
 	}
 
 	balance, quotaRemaining := ccCompatAvailableBalance(u.Balance, ak.QuotaUsd, ak.UsedQuota)
+	if m := ak.Edges.Member; m != nil {
+		// 团队成员的 key：成员停用即不可用；设了成员额度再按成员本期剩余压一层
+		if m.Status != entmember.StatusActive {
+			c.JSON(http.StatusOK, gin.H{
+				"is_active": false,
+				"balance":   0,
+				"message":   "member disabled",
+			})
+			return
+		}
+		used, _ := memberPeriodUsed(m, time.Now())
+		balance = billing.CapByMemberQuota(balance, m.QuotaUsd, used)
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"is_active": balance > 0,
 		"balance":   balance,

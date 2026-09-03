@@ -9,6 +9,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent"
 	entapikey "github.com/DouDOU-start/airgate-core/ent/apikey"
 	entgroup "github.com/DouDOU-start/airgate-core/ent/group"
+	entmember "github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
 	entusagelog "github.com/DouDOU-start/airgate-core/ent/usagelog"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
@@ -30,7 +31,11 @@ func (s *APIKeyStore) ListByUser(ctx context.Context, userID int, filter appapik
 	query := s.db.APIKey.Query().
 		Where(entapikey.HasUserWith(entuser.IDEQ(userID))).
 		WithUser().
-		WithGroup()
+		WithGroup().
+		WithMember()
+	if filter.MemberID != nil {
+		query = query.Where(entapikey.HasMemberWith(entmember.IDEQ(*filter.MemberID)))
+	}
 
 	query = applyAPIKeyKeyword(query, filter.Keyword, filter.SearchScope)
 
@@ -57,7 +62,7 @@ func (s *APIKeyStore) ListByUser(ctx context.Context, userID int, filter appapik
 
 // ListAdmin 查询全局 API Key 列表。
 func (s *APIKeyStore) ListAdmin(ctx context.Context, filter appapikey.ListFilter) ([]appapikey.Key, int64, error) {
-	query := applyAPIKeyKeyword(s.db.APIKey.Query().WithUser().WithGroup(), filter.Keyword, filter.SearchScope)
+	query := applyAPIKeyKeyword(s.db.APIKey.Query().WithUser().WithGroup().WithMember(), filter.Keyword, filter.SearchScope)
 
 	total, err := query.Count(ctx)
 	if err != nil {
@@ -134,6 +139,13 @@ func (s *APIKeyStore) GetGroupAccess(ctx context.Context, userID, groupID int) (
 	return appapikey.GroupAccess{Exists: true, Allowed: allowed}, nil
 }
 
+// MemberOwnedBy 团队成员是否存在且归属该用户。
+func (s *APIKeyStore) MemberOwnedBy(ctx context.Context, userID, memberID int) (bool, error) {
+	return s.db.Member.Query().
+		Where(entmember.IDEQ(memberID), entmember.HasOwnerWith(entuser.IDEQ(userID))).
+		Exist(ctx)
+}
+
 // Create 创建 API Key。
 func (s *APIKeyStore) Create(ctx context.Context, mutation appapikey.Mutation) (appapikey.Key, error) {
 	builder := s.db.APIKey.Create()
@@ -203,6 +215,7 @@ func (s *APIKeyStore) FindOwned(ctx context.Context, userID, id int) (appapikey.
 		Where(entapikey.IDEQ(id), entapikey.HasUserWith(entuser.IDEQ(userID))).
 		WithUser().
 		WithGroup().
+		WithMember().
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -230,6 +243,7 @@ func (s *APIKeyStore) loadByID(ctx context.Context, id int) (appapikey.Key, erro
 		Where(entapikey.IDEQ(id)).
 		WithUser().
 		WithGroup().
+		WithMember().
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -258,6 +272,9 @@ func applyAPIKeyMutationCreate(builder *ent.APIKeyCreate, mutation appapikey.Mut
 	}
 	if mutation.GroupID != nil {
 		builder.SetGroupID(*mutation.GroupID)
+	}
+	if mutation.HasMemberID && mutation.MemberID != nil {
+		builder.SetMemberID(*mutation.MemberID)
 	}
 	if mutation.HasIPWhitelist {
 		builder.SetIPWhitelist(cloneStringSlice(mutation.IPWhitelist))
@@ -288,6 +305,13 @@ func applyAPIKeyMutationUpdate(builder *ent.APIKeyUpdateOne, mutation appapikey.
 	}
 	if mutation.GroupID != nil {
 		builder.SetGroupID(*mutation.GroupID)
+	}
+	if mutation.HasMemberID {
+		if mutation.MemberID != nil {
+			builder.SetMemberID(*mutation.MemberID)
+		} else {
+			builder.ClearMember()
+		}
 	}
 	if mutation.HasIPWhitelist {
 		builder.SetIPWhitelist(cloneStringSlice(mutation.IPWhitelist))
@@ -344,6 +368,11 @@ func mapAPIKey(item *ent.APIKey) appapikey.Key {
 	if item.Edges.Group != nil {
 		groupID := item.Edges.Group.ID
 		result.GroupID = &groupID
+	}
+	if item.Edges.Member != nil {
+		memberID := item.Edges.Member.ID
+		result.MemberID = &memberID
+		result.MemberName = item.Edges.Member.Name
 	}
 	return result
 }

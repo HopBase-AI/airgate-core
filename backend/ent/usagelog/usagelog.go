@@ -98,6 +98,8 @@ const (
 	FieldUserIDSnapshot = "user_id_snapshot"
 	// FieldUserEmailSnapshot holds the string denoting the user_email_snapshot field in the database.
 	FieldUserEmailSnapshot = "user_email_snapshot"
+	// FieldMemberID holds the string denoting the member_id field in the database.
+	FieldMemberID = "member_id"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
 	// FieldErrorCode holds the string denoting the error_code field in the database.
@@ -193,6 +195,7 @@ var Columns = []string{
 	FieldRequestID,
 	FieldUserIDSnapshot,
 	FieldUserEmailSnapshot,
+	FieldMemberID,
 	FieldStatus,
 	FieldErrorCode,
 	FieldErrorStatus,
@@ -299,6 +302,8 @@ var (
 	DefaultUserIDSnapshot int
 	// DefaultUserEmailSnapshot holds the default value on creation for the "user_email_snapshot" field.
 	DefaultUserEmailSnapshot string
+	// DefaultMemberID holds the default value on creation for the "member_id" field.
+	DefaultMemberID int
 	// DefaultStatus holds the default value on creation for the "status" field.
 	DefaultStatus string
 	// DefaultErrorCode holds the default value on creation for the "error_code" field.
@@ -507,6 +512,11 @@ func ByUserIDSnapshot(opts ...sql.OrderTermOption) OrderOption {
 // ByUserEmailSnapshot orders the results by the user_email_snapshot field.
 func ByUserEmailSnapshot(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUserEmailSnapshot, opts...).ToFunc()
+}
+
+// ByMemberID orders the results by the member_id field.
+func ByMemberID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMemberID, opts...).ToFunc()
 }
 
 // ByStatus orders the results by the status field.

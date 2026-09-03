@@ -124,6 +124,13 @@ func (s *Server) registerRoutes() {
 		accountGroup.PUT("/users/me/balance-alert", handlers.User.UpdateBalanceAlert)
 		accountGroup.GET("/users/me/balance-history", handlers.User.GetMyBalanceHistory)
 
+		// 团队成员（企业子账号）：主账号侧增删改、分配额度、重置本期
+		accountGroup.GET("/members", handlers.Member.ListMembers)
+		accountGroup.POST("/members", handlers.Member.CreateMember)
+		accountGroup.PUT("/members/:id", handlers.Member.UpdateMember)
+		accountGroup.DELETE("/members/:id", handlers.Member.DeleteMember)
+		accountGroup.POST("/members/:id/reset-period", handlers.Member.ResetMemberPeriod)
+
 		// API Key 管理
 		accountGroup.GET("/api-keys", handlers.APIKey.ListKeys)
 		accountGroup.POST("/api-keys", handlers.APIKey.CreateKey)

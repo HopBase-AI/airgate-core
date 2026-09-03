@@ -12,12 +12,18 @@ export interface KeyGroupOption {
   suffix?: ReactNode;
 }
 
+export interface KeyMemberOption {
+  value: string;
+  label: string;
+}
+
 export function EditKeyModal({
   open,
   isEdit,
   form,
   setForm,
   groupOptions,
+  memberOptions = [],
   onClose,
   onSubmit,
   loading,
@@ -27,6 +33,8 @@ export function EditKeyModal({
   form: KeyForm;
   setForm: (form: KeyForm) => void;
   groupOptions: KeyGroupOption[];
+  /** 团队成员选项；为空时不渲染归属成员字段（普通用户看不到这一层） */
+  memberOptions?: KeyMemberOption[];
   onClose: () => void;
   onSubmit: () => void;
   loading: boolean;
@@ -132,6 +140,31 @@ export function EditKeyModal({
           <p className="-mt-2 truncate text-xs leading-5 text-text-tertiary" title={selectedGroup.description}>
             {selectedGroup.description}
           </p>
+        ) : null}
+        {memberOptions.length > 0 ? (
+          <Select
+            fullWidth
+            selectedKey={form.member_id || ''}
+            onSelectionChange={(key) => setForm({ ...form, member_id: key == null || key === '' ? '' : String(key) })}
+          >
+            <Label>{t('user_keys.member_label')}</Label>
+            <Select.Trigger>
+              <Select.Value>
+                {memberOptions.find((option) => option.value === form.member_id)?.label ?? t('user_keys.member_none')}
+              </Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover className="w-[var(--trigger-width)]">
+              <ListBox items={[{ id: '', label: t('user_keys.member_none') }, ...memberOptions.map((option) => ({ id: option.value, label: option.label }))]}>
+                {(item) => (
+                  <ListBox.Item id={item.id} textValue={item.label}>
+                    {item.label}
+                  </ListBox.Item>
+                )}
+              </ListBox>
+            </Select.Popover>
+            <Description>{t('user_keys.member_hint')}</Description>
+          </Select>
         ) : null}
         <HeroTextField fullWidth>
           <Label>{t('user_keys.quota_label')}</Label>

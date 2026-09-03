@@ -19,13 +19,15 @@ import {
   clearTokenIfSessionCurrent,
   getSessionIdentity,
   isSessionIdentityCurrent,
+  setSessionAPIKey,
   setToken,
   type SessionIdentity,
 } from '../shared/api/client';
+import type { UserResp } from '../shared/types';
 import { consumeAuthReturnTo } from '../shared/authReturnTo';
 import { SiteBrand } from '../shared/components/SiteBrand';
 import { markNewRegistration } from '../shared/onboarding/storage';
-import { Mail, Lock, User, ArrowRight, Sun, Moon, ShieldCheck, Layers, Gauge, BarChart3, BadgeCheck } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, Sun, Moon, ShieldCheck, Layers, Gauge, BarChart3, BadgeCheck, KeyRound } from 'lucide-react';
 
 /* ==================== 第三方登录 ==================== */
 
@@ -227,7 +229,7 @@ function OAuthButtons({
   );
 }
 
-type TabKey = 'login' | 'register';
+type TabKey = 'login' | 'register' | 'apikey';
 type AuthenticationAttempt = {
   controller: AbortController;
   identity: SessionIdentity;
@@ -421,6 +423,88 @@ function LoginForm({
         onAgreementMissing={() => setError(t('auth.agreement_required'))}
         onAuthenticationStart={cancelActiveAuthenticationAttempt}
       />
+    </Form>
+  );
+}
+
+/* ==================== 密钥登录表单 ==================== */
+
+// 团队成员 / 分销下游客户拿主账号发的 sk- 密钥登录：受限会话，只能看该密钥
+// （成员则是本人名下全部密钥）的用量、剩余额度与可用模型价格。
+function APIKeyLoginForm({
+  startAuthenticationAttempt,
+  cancelAuthenticationAttempt,
+}: AuthenticationFormProps) {
+  const navigate = useNavigate();
+  const { login } = useAuth();
+  const { t } = useTranslation();
+
+  const [apiKey, setApiKey] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const authenticationAttemptRef = useAuthenticationAttemptOwner(cancelAuthenticationAttempt);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const key = apiKey.trim();
+    if (!key) return;
+    setLoading(true);
+    setError('');
+    const attempt = startAuthenticationAttempt();
+    authenticationAttemptRef.current = attempt;
+
+    try {
+      const resp = await authApi.loginByAPIKey({ key }, attempt.controller.signal);
+      if (attempt.controller.signal.aborted || !isSessionIdentityCurrent(attempt.identity)) return;
+      // 原文密钥只在本次会话的 sessionStorage 暂存，供「导入 CCS」等客户端配置使用
+      setSessionAPIKey(key);
+      login(resp.token, resp.user as unknown as UserResp);
+      navigate({ to: '/usage' });
+    } catch (err) {
+      if (attempt.controller.signal.aborted || !isSessionIdentityCurrent(attempt.identity)) return;
+      if (err instanceof ApiError) {
+        setError(localizeServerMessage(t, err.message));
+      } else {
+        setError(t('auth.apikey_login_failed'));
+      }
+    } finally {
+      if (!attempt.controller.signal.aborted && isSessionIdentityCurrent(attempt.identity)) {
+        setLoading(false);
+      }
+    }
+  };
+
+  return (
+    <Form onSubmit={handleSubmit} className="space-y-4">
+      <HeroTextField fullWidth isRequired>
+        <Label>{t('auth.apikey_login_label')}</Label>
+        <div className="relative">
+          <KeyRound className="pointer-events-none absolute left-3 top-1/2 z-10 w-4 h-4 -translate-y-1/2 text-text-tertiary" />
+          <Input
+            className="pl-9 font-mono"
+            name="api_key"
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={t('auth.apikey_login_placeholder')}
+            autoComplete="off"
+            autoFocus
+            required
+          />
+        </div>
+      </HeroTextField>
+      <p className="text-xs leading-relaxed text-text-tertiary">{t('auth.apikey_login_hint')}</p>
+      {error && (
+        <Alert status="danger">
+          <Alert.Content>
+            <Alert.Description>{error}</Alert.Description>
+          </Alert.Content>
+        </Alert>
+      )}
+      <Button type="submit" isDisabled={loading || !apiKey.trim()} className="w-full h-11" variant="primary" aria-busy={loading}>
+        <ArrowRight className="w-4 h-4" />
+        {t('auth.apikey_login_button')}
+      </Button>
     </Form>
   );
 }
@@ -1020,6 +1104,7 @@ export default function LoginPage() {
               {site.registration_enabled ? (
                 <Tabs.Tab id="register">{t('common.register')}</Tabs.Tab>
               ) : null}
+              <Tabs.Tab id="apikey">{t('auth.apikey_login_tab')}</Tabs.Tab>
             </Tabs.List>
           </Tabs>
 
@@ -1044,7 +1129,12 @@ export default function LoginPage() {
               </Alert>
             )}
 
-            {activeTab === 'register' && site.registration_enabled ? (
+            {activeTab === 'apikey' ? (
+              <APIKeyLoginForm
+                startAuthenticationAttempt={startFormAuthenticationAttempt}
+                cancelAuthenticationAttempt={cancelAuthenticationAttempt}
+              />
+            ) : activeTab === 'register' && site.registration_enabled ? (
               <RegisterForm
                 startAuthenticationAttempt={startFormAuthenticationAttempt}
                 cancelAuthenticationAttempt={cancelAuthenticationAttempt}

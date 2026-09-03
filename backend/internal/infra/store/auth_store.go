@@ -8,9 +8,11 @@ import (
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	entapikey "github.com/DouDOU-start/airgate-core/ent/apikey"
+	entmember "github.com/DouDOU-start/airgate-core/ent/member"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
 	entuseridentity "github.com/DouDOU-start/airgate-core/ent/useridentity"
 	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
+	"github.com/DouDOU-start/airgate-core/internal/pkg/period"
 )
 
 // AuthStore 使用 Ent 实现认证仓储。
@@ -118,6 +120,7 @@ func (s *AuthStore) ValidateAPIKeyForLogin(ctx context.Context, key string) (app
 			entapikey.StatusEQ(entapikey.StatusActive),
 		).
 		WithUser().
+		WithMember().
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -128,6 +131,9 @@ func (s *AuthStore) ValidateAPIKeyForLogin(ctx context.Context, key string) (app
 
 	if ak.ExpiresAt != nil && ak.ExpiresAt.Before(time.Now()) {
 		return appauth.APIKeyLoginInfo{}, appauth.ErrAPIKeyExpired
+	}
+	if m := ak.Edges.Member; m != nil && m.Status != entmember.StatusActive {
+		return appauth.APIKeyLoginInfo{}, appauth.ErrMemberDisabled
 	}
 
 	u, err := ak.Edges.UserOrErr()
@@ -147,6 +153,7 @@ func (s *AuthStore) GetAPIKeyBrief(ctx context.Context, keyID int) (appauth.APIK
 	ak, err := s.db.APIKey.Query().
 		Where(entapikey.IDEQ(keyID)).
 		WithGroup().
+		WithMember().
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -165,7 +172,28 @@ func (s *AuthStore) GetAPIKeyBrief(ctx context.Context, keyID int) (appauth.APIK
 		brief.GroupRate = g.RateMultiplier
 		brief.Platform = g.Platform
 	}
+	if m := ak.Edges.Member; m != nil {
+		used, end := memberPeriodView(m, time.Now())
+		brief.Member = appauth.MemberBrief{ID: m.ID, Name: m.Name, QuotaUSD: m.QuotaUsd, UsedQuota: used, PeriodEnd: end}
+	}
 	return brief, nil
+}
+
+// memberPeriodView 成员的本期已用与本期终点（monthly 跨期后按 0 起算），与鉴权闸门口径一致。
+func memberPeriodView(m *ent.Member, now time.Time) (used float64, periodEnd *time.Time) {
+	base := m.PeriodUsedBase
+	if m.QuotaPeriod == entmember.QuotaPeriodMonthly {
+		_, end, rolled := period.Window(m.PeriodAnchor, m.PeriodStart, now)
+		if rolled {
+			base = m.UsedQuota
+		}
+		periodEnd = &end
+	}
+	used = m.UsedQuota - base
+	if used < 0 {
+		used = 0
+	}
+	return used, periodEnd
 }
 
 // FindUserByIdentity 按第三方身份查用户；未绑定返回 ErrUserNotFound。

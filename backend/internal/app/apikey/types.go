@@ -17,6 +17,8 @@ type Key struct {
 	PlainKey        string
 	UserID          int
 	GroupID         *int
+	MemberID        *int   // 所属团队成员；nil 表示不属于任何成员
+	MemberName      string // 成员名（仅 fetch 时填充，供列表展示）
 	IPWhitelist     []string
 	IPBlacklist     []string
 	QuotaUSD        float64
@@ -38,6 +40,7 @@ type ListFilter struct {
 	PageSize    int
 	Keyword     string
 	SearchScope string
+	MemberID    *int // 只看某个团队成员名下的 key
 }
 
 // ListResult API Key 列表结果。
@@ -52,6 +55,7 @@ type ListResult struct {
 type CreateInput struct {
 	Name           string
 	GroupID        int64
+	MemberID       *int64 // 归属团队成员；nil / 0 表示不归属
 	IPWhitelist    []string
 	IPBlacklist    []string
 	QuotaUSD       float64
@@ -64,6 +68,7 @@ type CreateInput struct {
 type UpdateInput struct {
 	Name           *string
 	GroupID        *int64
+	MemberID       *int64 // nil 不改动；指向 0 表示解除成员归属
 	IPWhitelist    []string
 	HasIPWhitelist bool
 	IPBlacklist    []string
@@ -89,6 +94,8 @@ type Mutation struct {
 	KeyEncrypted   *string
 	UserID         *int
 	GroupID        *int
+	MemberID       *int // 配合 HasMemberID：nil 表示清除归属
+	HasMemberID    bool
 	IPWhitelist    []string
 	HasIPWhitelist bool
 	IPBlacklist    []string
@@ -109,6 +116,8 @@ type Repository interface {
 	// todayStart 必须由调用方按用户时区计算好。
 	KeyUsage(ctx context.Context, keyIDs []int, todayStart time.Time) (map[int]float64, map[int]float64, error)
 	GetGroupAccess(context.Context, int, int) (GroupAccess, error)
+	// MemberOwnedBy 团队成员是否存在且归属该用户。
+	MemberOwnedBy(ctx context.Context, userID, memberID int) (bool, error)
 	Create(context.Context, Mutation) (Key, error)
 	UpdateOwned(context.Context, int, int, Mutation) (Key, error)
 	UpdateAdmin(context.Context, int, Mutation) (Key, error)

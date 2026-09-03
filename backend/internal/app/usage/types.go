@@ -23,6 +23,7 @@ type ListFilter struct {
 	PageSize  int
 	UserID    *int64
 	APIKeyID  *int64
+	MemberID  *int64 // 按团队成员筛选（usage_logs.member_id 快照列）
 	AccountID *int64
 	GroupID   *int64
 	Platform  string
@@ -43,6 +44,7 @@ type ListFilter struct {
 type StatsFilter struct {
 	UserID      *int64
 	APIKeyID    *int64
+	MemberID    *int64 // 按团队成员筛选
 	Platform    string
 	Model       string
 	StartDate   string
@@ -69,6 +71,8 @@ type LogRecord struct {
 	APIKeyName            string
 	APIKeyHint            string
 	APIKeyDeleted         bool
+	MemberID              int64  // 团队成员快照；0 表示无归属
+	MemberName            string // 成员名（成员已删除时为空）
 	AccountID             int64
 	AccountName           string
 	AccountEmail          string

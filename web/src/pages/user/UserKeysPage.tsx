@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apikeysApi } from '../../shared/api/apikeys';
+import { membersApi } from '../../shared/api/members';
 import { usePagination } from '../../shared/hooks/usePagination';
 import { groupsApi } from '../../shared/api/groups';
 import { modelsApi } from '../../shared/api/models';
@@ -41,6 +43,8 @@ import {
   MoreHorizontal,
   RefreshCw,
   Rocket,
+  UsersRound,
+  X,
 } from 'lucide-react';
 import type { APIKeyResp, CreateAPIKeyReq, UpdateAPIKeyReq, UserGroupResp } from '../../shared/types';
 import { EditKeyModal } from './userkeys/EditKeyModal';
@@ -59,6 +63,11 @@ export default function UserKeysPage() {
   const copy = useClipboard();
   const queryClient = useQueryClient();
 
+  const navigate = useNavigate();
+  // 团队成员页「管理密钥」经 ?member_id= 跳入：只列该成员的密钥，新建时默认归属该成员
+  const search: { member_id?: number | string } = useSearch({ strict: false });
+  const memberFilter = search.member_id != null && Number(search.member_id) > 0 ? Number(search.member_id) : undefined;
+
   const { page, setPage, pageSize, setPageSize } = usePagination(DEFAULT_PAGE_SIZE, 'user.keys');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingKey, setEditingKey] = useState<APIKeyResp | null>(null);
@@ -76,10 +85,21 @@ export default function UserKeysPage() {
 
   // 密钥列表
   const { data, isLoading, refetch } = useQuery({
-    queryKey: queryKeys.userKeys(page, pageSize),
-    queryFn: () => apikeysApi.list({ page, page_size: pageSize }),
+    queryKey: queryKeys.userKeys(page, pageSize, memberFilter ?? 0),
+    queryFn: () => apikeysApi.list({ page, page_size: pageSize, ...(memberFilter ? { member_id: memberFilter } : {}) }),
     placeholderData: keepPreviousData,
   });
+
+  // 团队成员（归属选择 / 名字展示）；没有成员的普通用户拿到空列表，相关 UI 不渲染
+  const { data: membersData } = useQuery({
+    queryKey: queryKeys.membersForKeys(),
+    queryFn: () => membersApi.list(FETCH_ALL_PARAMS),
+    staleTime: 60_000,
+  });
+  const memberList = useMemo(() => membersData?.list ?? [], [membersData?.list]);
+  const memberOptions = useMemo(() => memberList.map((member) => ({ value: String(member.id), label: member.name })), [memberList]);
+  const memberNameOf = (id: number | null | undefined) => (id ? memberList.find((member) => member.id === id)?.name : undefined);
+  const filteredMemberName = memberFilter ? memberNameOf(memberFilter) ?? `#${memberFilter}` : '';
 
   // 分组列表（用于选择）
   const { data: groupsData, isLoading: groupsLoading } = useQuery({
@@ -172,7 +192,7 @@ export default function UserKeysPage() {
       return;
     }
     setEditingKey(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm, member_id: memberFilter ? String(memberFilter) : '' });
     setModalOpen(true);
   }
 
@@ -185,6 +205,7 @@ export default function UserKeysPage() {
       sell_rate: key.sell_rate ? String(key.sell_rate) : '',
       max_concurrency: key.max_concurrency ? String(key.max_concurrency) : '',
       expires_at: key.expires_at ? key.expires_at.slice(0, 10) : '',
+      member_id: key.member_id ? String(key.member_id) : '',
     });
     setModalOpen(true);
   }
@@ -218,6 +239,8 @@ export default function UserKeysPage() {
         // 空字符串显式改为 0 = 关闭并发限制；后端看到 0 会清除旧值
         max_concurrency: form.max_concurrency ? Number(form.max_concurrency) : 0,
         expires_at: expiresAt,
+        // 0 = 解除成员归属；只有主账号有成员时表单才会出现这一项
+        ...(memberOptions.length > 0 ? { member_id: form.member_id ? Number(form.member_id) : 0 } : {}),
       };
       updateMutation.mutate({ id: editingKey.id, data: payload });
     } else {
@@ -228,6 +251,7 @@ export default function UserKeysPage() {
         sell_rate: form.sell_rate ? Number(form.sell_rate) : undefined,
         max_concurrency: form.max_concurrency ? Number(form.max_concurrency) : undefined,
         expires_at: expiresAt,
+        member_id: form.member_id ? Number(form.member_id) : undefined,
       };
       createMutation.mutate(payload);
     }
@@ -370,6 +394,20 @@ export default function UserKeysPage() {
 
   return (
     <div className="p-6">
+      {memberFilter ? (
+        <Alert className="mb-5" status="accent">
+          <Alert.Indicator>
+            <UsersRound className="h-4 w-4" />
+          </Alert.Indicator>
+          <Alert.Content>
+            <Alert.Description>{t('user_keys.member_filter_active', { name: filteredMemberName })}</Alert.Description>
+          </Alert.Content>
+          <Button size="sm" variant="ghost" onPress={() => navigate({ to: '/keys' })}>
+            <X className="h-3.5 w-3.5" />
+            {t('user_keys.clear_filter')}
+          </Button>
+        </Alert>
+      ) : null}
       <div className="flex justify-end mb-5">
         <div className="flex items-center gap-2 ml-auto">
           <Button
@@ -463,7 +501,15 @@ export default function UserKeysPage() {
               return (
                 <CommonTable.Row id={String(row.id)} key={row.id}>
                   <CommonTable.Cell>
-                    <span className="font-medium text-text">{row.name}</span>
+                    <div className="min-w-0">
+                      <span className="font-medium text-text">{row.name}</span>
+                      {row.member_id ? (
+                        <div className="mt-0.5 flex items-center gap-1 text-xs text-text-tertiary" title={row.member_name || memberNameOf(row.member_id)}>
+                          <UsersRound className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{row.member_name || memberNameOf(row.member_id) || t('team.member_deleted')}</span>
+                        </div>
+                      ) : null}
+                    </div>
                   </CommonTable.Cell>
                   <CommonTable.Cell>
                     <button
@@ -698,6 +744,7 @@ export default function UserKeysPage() {
         form={form}
         setForm={setForm}
         groupOptions={groupOptions}
+        memberOptions={memberOptions}
         onClose={closeModal}
         onSubmit={handleSubmit}
         loading={saving}

@@ -278,6 +278,14 @@ type apiKeyStubRepository struct {
 	updateAdmin func(context.Context, int, Mutation) (Key, error)
 	deleteOwned func(context.Context, int, int) error
 	findOwned   func(context.Context, int, int) (Key, error)
+	memberOwned func(context.Context, int, int) (bool, error)
+}
+
+func (s apiKeyStubRepository) MemberOwnedBy(ctx context.Context, userID, memberID int) (bool, error) {
+	if s.memberOwned == nil {
+		return false, nil
+	}
+	return s.memberOwned(ctx, userID, memberID)
 }
 
 func (s apiKeyStubRepository) ListByUser(ctx context.Context, userID int, filter ListFilter) ([]Key, int64, error) {

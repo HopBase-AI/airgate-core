@@ -18,6 +18,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
 	"github.com/DouDOU-start/airgate-core/ent/blogpost"
 	"github.com/DouDOU-start/airgate-core/ent/group"
+	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/plugin"
 	"github.com/DouDOU-start/airgate-core/ent/pluginsource"
 	"github.com/DouDOU-start/airgate-core/ent/proxy"
@@ -94,6 +95,7 @@ func checkColumn(table, column string) error {
 			balancelog.Table:         balancelog.ValidColumn,
 			blogpost.Table:           blogpost.ValidColumn,
 			group.Table:              group.ValidColumn,
+			member.Table:             member.ValidColumn,
 			plugin.Table:             plugin.ValidColumn,
 			pluginsource.Table:       pluginsource.ValidColumn,
 			proxy.Table:              proxy.ValidColumn,

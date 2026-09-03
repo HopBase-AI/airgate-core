@@ -826,6 +826,27 @@ func (ulu *UsageLogUpdate) SetNillableUserEmailSnapshot(s *string) *UsageLogUpda
 	return ulu
 }
 
+// SetMemberID sets the "member_id" field.
+func (ulu *UsageLogUpdate) SetMemberID(i int) *UsageLogUpdate {
+	ulu.mutation.ResetMemberID()
+	ulu.mutation.SetMemberID(i)
+	return ulu
+}
+
+// SetNillableMemberID sets the "member_id" field if the given value is not nil.
+func (ulu *UsageLogUpdate) SetNillableMemberID(i *int) *UsageLogUpdate {
+	if i != nil {
+		ulu.SetMemberID(*i)
+	}
+	return ulu
+}
+
+// AddMemberID adds i to the "member_id" field.
+func (ulu *UsageLogUpdate) AddMemberID(i int) *UsageLogUpdate {
+	ulu.mutation.AddMemberID(i)
+	return ulu
+}
+
 // SetStatus sets the "status" field.
 func (ulu *UsageLogUpdate) SetStatus(s string) *UsageLogUpdate {
 	ulu.mutation.SetStatus(s)
@@ -1284,6 +1305,12 @@ func (ulu *UsageLogUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := ulu.mutation.UserEmailSnapshot(); ok {
 		_spec.SetField(usagelog.FieldUserEmailSnapshot, field.TypeString, value)
+	}
+	if value, ok := ulu.mutation.MemberID(); ok {
+		_spec.SetField(usagelog.FieldMemberID, field.TypeInt, value)
+	}
+	if value, ok := ulu.mutation.AddedMemberID(); ok {
+		_spec.AddField(usagelog.FieldMemberID, field.TypeInt, value)
 	}
 	if value, ok := ulu.mutation.Status(); ok {
 		_spec.SetField(usagelog.FieldStatus, field.TypeString, value)
@@ -2229,6 +2256,27 @@ func (uluo *UsageLogUpdateOne) SetNillableUserEmailSnapshot(s *string) *UsageLog
 	return uluo
 }
 
+// SetMemberID sets the "member_id" field.
+func (uluo *UsageLogUpdateOne) SetMemberID(i int) *UsageLogUpdateOne {
+	uluo.mutation.ResetMemberID()
+	uluo.mutation.SetMemberID(i)
+	return uluo
+}
+
+// SetNillableMemberID sets the "member_id" field if the given value is not nil.
+func (uluo *UsageLogUpdateOne) SetNillableMemberID(i *int) *UsageLogUpdateOne {
+	if i != nil {
+		uluo.SetMemberID(*i)
+	}
+	return uluo
+}
+
+// AddMemberID adds i to the "member_id" field.
+func (uluo *UsageLogUpdateOne) AddMemberID(i int) *UsageLogUpdateOne {
+	uluo.mutation.AddMemberID(i)
+	return uluo
+}
+
 // SetStatus sets the "status" field.
 func (uluo *UsageLogUpdateOne) SetStatus(s string) *UsageLogUpdateOne {
 	uluo.mutation.SetStatus(s)
@@ -2717,6 +2765,12 @@ func (uluo *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, er
 	}
 	if value, ok := uluo.mutation.UserEmailSnapshot(); ok {
 		_spec.SetField(usagelog.FieldUserEmailSnapshot, field.TypeString, value)
+	}
+	if value, ok := uluo.mutation.MemberID(); ok {
+		_spec.SetField(usagelog.FieldMemberID, field.TypeInt, value)
+	}
+	if value, ok := uluo.mutation.AddedMemberID(); ok {
+		_spec.AddField(usagelog.FieldMemberID, field.TypeInt, value)
 	}
 	if value, ok := uluo.mutation.Status(); ok {
 		_spec.SetField(usagelog.FieldStatus, field.TypeString, value)

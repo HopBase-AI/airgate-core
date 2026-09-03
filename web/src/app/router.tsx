@@ -21,6 +21,7 @@ import {
   ADMIN_IDLE_PRELOADS,
   DashboardPage,
   InvitePage,
+  TeamPage,
   DocsPage,
   LegalTermsPage,
   GroupsPage,
@@ -344,6 +345,7 @@ const accountPageBeforeLoad = () => {
 const profileRoute = createRoute({ getParentRoute: () => authLayout, path: '/profile', beforeLoad: accountPageBeforeLoad, component: renderPage(ProfilePage) });
 const inviteRoute = createRoute({ getParentRoute: () => authLayout, path: '/invite', beforeLoad: accountPageBeforeLoad, component: renderPage(InvitePage) });
 const userKeysRoute = createRoute({ getParentRoute: () => authLayout, path: '/keys', beforeLoad: accountPageBeforeLoad, component: renderPage(UserKeysPage) });
+const teamRoute = createRoute({ getParentRoute: () => authLayout, path: '/team', beforeLoad: accountPageBeforeLoad, component: renderPage(TeamPage) });
 const userUsageRoute = createRoute({ getParentRoute: () => authLayout, path: '/usage', component: renderPage(UserUsagePage) });
 const modelPlazaRoute = createRoute({ getParentRoute: () => authLayout, path: '/models', component: renderPage(ModelPlazaPage) });
 
@@ -449,6 +451,7 @@ const routeTree = rootRoute.addChildren([
     profileRoute,
     inviteRoute,
     userKeysRoute,
+    teamRoute,
     userUsageRoute,
     modelPlazaRoute,
     pluginRoute,
