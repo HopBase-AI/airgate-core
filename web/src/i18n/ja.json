@@ -1023,6 +1023,7 @@
     "profit": "利益",
     "image_size": "画像サイズ",
     "endpoint": "エンドポイント",
+    "export_csv": "CSV エクスポート",
     "trace_id": "トレース ID",
     "request_id": "記録リクエスト ID",
     "group_id": "グループ ID",

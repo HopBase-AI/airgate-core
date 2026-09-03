@@ -1023,6 +1023,7 @@
     "profit": "利潤",
     "image_size": "圖片尺寸",
     "endpoint": "端點",
+    "export_csv": "匯出 CSV",
     "trace_id": "鏈路 ID",
     "request_id": "記錄請求 ID",
     "group_id": "分組 ID",

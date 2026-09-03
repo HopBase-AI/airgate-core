@@ -216,7 +216,7 @@ export default function TeamPage() {
           <CommonTable.Column id="name">{t('team.name')}</CommonTable.Column>
           <CommonTable.Column id="status">{t('common.status')}</CommonTable.Column>
           <CommonTable.Column id="quota" style={{ width: '18rem' }}>{t('team.quota_label')}</CommonTable.Column>
-          <CommonTable.Column id="usage" style={{ width: '11rem' }}>{t('api_keys.usage')}</CommonTable.Column>
+          <CommonTable.Column id="usage" style={{ width: '11.5rem' }}>{t('api_keys.usage')}</CommonTable.Column>
           <CommonTable.Column id="keys" style={{ width: '9rem' }}>{t('team.keys')}</CommonTable.Column>
           <CommonTable.Column id="actions" style={{ width: 132 }}>{t('common.actions')}</CommonTable.Column>
         </CommonTable.Header>
@@ -283,6 +283,9 @@ export default function TeamPage() {
                       items={[
                         { amount: row.today_cost, color: 'default', label: t('team.usage_today'), mutedWhenZero: true },
                         { amount: row.thirty_day_cost, color: 'default', label: t('team.usage_30d'), mutedWhenZero: true },
+                        // 累计取 used_quota_actual：主账号为该成员实际付出的金额，与今日/30 天同基准；
+                        // 上面额度列的「本期已用」是账面口径(受 sell_rate 影响)，两者刻意不混。
+                        { amount: row.used_quota_actual, color: 'default', label: t('team.cumulative'), mutedWhenZero: true },
                       ]}
                     />
                   </CommonTable.Cell>

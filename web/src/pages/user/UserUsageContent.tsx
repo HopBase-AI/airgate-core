@@ -11,7 +11,7 @@ import { usePagination } from '../../shared/hooks/usePagination';
 import { usePlatforms } from '../../shared/hooks/usePlatforms';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { useToast } from '../../shared/ui';
-import { Activity, Hash, Coins, Clock, Gauge, Percent, TriangleAlert, Upload, UsersRound } from 'lucide-react';
+import { Activity, Hash, Coins, Clock, Download, Gauge, Percent, TriangleAlert, Upload, UsersRound } from 'lucide-react';
 import type { UsageQuery } from '../../shared/types';
 import { useUsageColumns, fmtNum, type UsageColumnConfig, type UsageRow } from '../../shared/columns/usageColumns';
 import { getSessionAPIKey } from '../../shared/api/client';
@@ -223,6 +223,7 @@ function APIKeyInfoBar() {
 
 export default function UserUsageContent() {
   const { t } = useTranslation();
+  const { toast } = useToast();
   const { user } = useAuth();
   const customerScope = !!user?.api_key_id;
   const { page, setPage, pageSize, setPageSize } = usePagination(20, 'user.usage');
@@ -311,6 +312,41 @@ export default function UserUsageContent() {
 
   const isRefreshing = isUsageFetching || isStatsFetching;
   const isUsageTableRefreshing = isUsageFetching;
+
+  // 导出当前筛选范围的明细。后端要 RFC3339 的 start_time：
+  // 日期筛选给的是本地时间字符串（"2026-09-01" 或 "2026-09-01T14:30:05"），
+  // 纯日期按本地零点/当日 23:59:59 补齐再转 UTC；没选时间范围就默认最近 30 天。
+  const [exporting, setExporting] = useState(false);
+  const toRFC3339 = (raw: string | undefined, endOfDay: boolean): string | undefined => {
+    if (!raw) return undefined;
+    const normalized = raw.includes('T') ? raw : `${raw}T${endOfDay ? '23:59:59' : '00:00:00'}`;
+    const parsed = new Date(normalized);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+  };
+  const handleExport = useCallback(async () => {
+    setExporting(true);
+    try {
+      const startTime = toRFC3339(filters.start_date, false)
+        ?? new Date(Date.now() - 30 * 86400_000).toISOString();
+      const { blob, filename } = await usageApi.exportCsv({
+        start_time: startTime,
+        end_time: toRFC3339(filters.end_date, true),
+        member_id: filters.member_id,
+        api_key_id: filters.api_key_id,
+        tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+      const href = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = href;
+      anchor.download = filename;
+      anchor.click();
+      URL.revokeObjectURL(href);
+    } catch (error) {
+      toast('error', error instanceof Error ? error.message : t('common.error'));
+    } finally {
+      setExporting(false);
+    }
+  }, [filters.api_key_id, filters.end_date, filters.member_id, filters.start_date, t, toast]);
 
   const handleManualRefresh = useCallback(() => {
     void refetchUsage({ cancelRefetch: false });
@@ -568,6 +604,15 @@ export default function UserUsageContent() {
             onModelChange={handleModelChange}
           />
         </div>
+        <Button
+          isDisabled={exporting}
+          size="md"
+          variant="ghost"
+          onPress={() => { void handleExport(); }}
+        >
+          <Download className="h-4 w-4" />
+          {t('usage.export_csv')}
+        </Button>
         <AutoRefreshControl
           value={autoRefresh}
           options={USER_AUTO_REFRESH_OPTIONS}

@@ -12,6 +12,7 @@ import (
 
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	"github.com/DouDOU-start/airgate-core/internal/pkg/timezone"
+	"github.com/DouDOU-start/airgate-core/internal/server/dto"
 	"github.com/DouDOU-start/airgate-core/internal/server/response"
 )
 
@@ -62,8 +63,17 @@ func (h *UsageHandler) UserUsageExport(c *gin.Context) {
 	tz := c.Query("tz")
 	loc := timezone.Resolve(tz)
 
-	// API Key 登录场景沿用列表接口的收敛规则：只能导出该 Key（或所属成员）自己的记录。
-	apiKeyFilter, memberFilter, scoped := sessionUsageScope(c, nil, nil)
+	// 导出跟随页面上的筛选：企业主筛了某个成员再导出，就该只拿那个成员的明细
+	// （典型场景是给成员出月度账单），而不是把整个账号的记录全导出去。
+	var filters dto.UsageExportFilterQuery
+	if err := c.ShouldBindQuery(&filters); err != nil {
+		response.BindError(c, err)
+		return
+	}
+
+	// API Key 登录场景沿用列表接口的收敛规则：只能导出该 Key（或所属成员）自己的记录，
+	// 请求里带的筛选一概忽略。
+	apiKeyFilter, memberFilter, scoped := sessionUsageScope(c, filters.APIKeyID, filters.MemberID)
 
 	rows, truncated, err := h.collectExportRows(c, exportCollectParams{
 		userID:       int64(userID),
