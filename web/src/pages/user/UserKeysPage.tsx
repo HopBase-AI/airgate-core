@@ -10,7 +10,7 @@ import { modelsApi } from '../../shared/api/models';
 import { settingsApi } from '../../shared/api/settings';
 import { parseQuoteFx } from '../../shared/quoteMath';
 import { useToast } from '../../shared/ui';
-import { Alert, AlertDialog, Button, Dropdown, EmptyState, Modal, Spinner, useOverlayState } from '@heroui/react';
+import { AlertDialog, Alert, Button, Dropdown, EmptyState, Input, ListBox, Modal, Select, Spinner, TextField as HeroTextField, useOverlayState } from '@heroui/react';
 import { DialogTriggerShim } from '../../shared/components/DialogTriggerShim';
 import {
   StatusChip,
@@ -26,6 +26,7 @@ import { MetricChips } from '../../shared/components/MetricChips';
 import { GROUP_CHIP_STYLE } from '../../shared/components/groupChipStyle';
 import { localizedGroupText } from '../../shared/groupText';
 import { useClipboard } from '../../shared/hooks/useClipboard';
+import { useDebouncedValue } from '../../shared/hooks/useDebouncedValue';
 import { useCopyFeedback } from '../../shared/hooks/useCopyFeedback';
 import {
   AlertTriangle,
@@ -44,6 +45,7 @@ import {
   RefreshCw,
   Rocket,
   UsersRound,
+  Search,
   X,
 } from 'lucide-react';
 import type { APIKeyResp, CreateAPIKeyReq, UpdateAPIKeyReq, UserGroupResp } from '../../shared/types';
@@ -55,6 +57,9 @@ import { OneClickModal, useOneClickModal } from './userkeys/OneClickModal';
 import { type KeyForm, emptyForm } from './userkeys/types';
 import { GroupQuoteSuffix } from './userkeys/GroupQuoteSuffix';
 
+// 「未归属成员」筛选哨兵：与真实成员 ID 区分开，语义同账号页的 UNGROUPED_GROUP_FILTER。
+const UNASSIGNED_MEMBER_FILTER = '__unassigned__';
+
 export default function UserKeysPage() {
   const { t, i18n } = useTranslation();
   // 当前界面语言：分组名多语言覆盖按此精确匹配(en / zh-HK / ja),miss 回退基准文案
@@ -64,11 +69,42 @@ export default function UserKeysPage() {
   const queryClient = useQueryClient();
 
   const navigate = useNavigate();
-  // 团队成员页「管理密钥」经 ?member_id= 跳入：只列该成员的密钥，新建时默认归属该成员
+  // 团队成员页「管理密钥」经 ?member_id= 跳入，只是把成员筛选预置好；筛选栏常驻，随时可改。
   const search: { member_id?: number | string } = useSearch({ strict: false });
-  const memberFilter = search.member_id != null && Number(search.member_id) > 0 ? Number(search.member_id) : undefined;
+  const searchMemberID = search.member_id;
 
   const { page, setPage, pageSize, setPageSize } = usePagination(DEFAULT_PAGE_SIZE, 'user.keys');
+  const [keyword, setKeyword] = useState('');
+  const debouncedKeyword = useDebouncedValue(keyword.trim(), 250);
+  const [groupFilter, setGroupFilter] = useState('');
+  const [memberFilterValue, setMemberFilterValue] = useState(
+    () => (searchMemberID != null && Number(searchMemberID) > 0 ? String(searchMemberID) : ''),
+  );
+  const [statusFilter, setStatusFilter] = useState('');
+
+  // 同路由下 URL 变化不会重挂组件（已在本页时从团队页再点一次「管理密钥」），
+  // 惰性初始化只跑一次，须显式跟随 URL 同步，否则筛选会停在上一个成员。
+  // 用「渲染期修正状态」而非 useEffect：少一次带旧筛选的渲染，也不触发级联渲染。
+  const [lastSearchMemberID, setLastSearchMemberID] = useState(searchMemberID);
+  if (searchMemberID !== lastSearchMemberID) {
+    setLastSearchMemberID(searchMemberID);
+    setMemberFilterValue(searchMemberID != null && Number(searchMemberID) > 0 ? String(searchMemberID) : '');
+    setPage(1);
+  }
+
+  const memberFilter = memberFilterValue && memberFilterValue !== UNASSIGNED_MEMBER_FILTER
+    ? Number(memberFilterValue)
+    : undefined;
+  const hasActiveFilters = !!(keyword || groupFilter || memberFilterValue || statusFilter);
+  // 清除筛选同时把 URL 上的 ?member_id= 一并去掉，否则同步 effect 会把成员筛选装回来。
+  const clearFilters = () => {
+    setKeyword('');
+    setGroupFilter('');
+    setMemberFilterValue('');
+    setStatusFilter('');
+    setPage(1);
+    if (searchMemberID != null) navigate({ to: '/keys' });
+  };
   const [modalOpen, setModalOpen] = useState(false);
   const [editingKey, setEditingKey] = useState<APIKeyResp | null>(null);
   const [form, setForm] = useState<KeyForm>(emptyForm);
@@ -85,8 +121,16 @@ export default function UserKeysPage() {
 
   // 密钥列表
   const { data, isLoading, refetch } = useQuery({
-    queryKey: queryKeys.userKeys(page, pageSize, memberFilter ?? 0),
-    queryFn: () => apikeysApi.list({ page, page_size: pageSize, ...(memberFilter ? { member_id: memberFilter } : {}) }),
+    queryKey: queryKeys.userKeys(page, pageSize, debouncedKeyword, groupFilter, memberFilterValue, statusFilter),
+    queryFn: () => apikeysApi.list({
+      page,
+      page_size: pageSize,
+      keyword: debouncedKeyword || undefined,
+      group_id: groupFilter ? Number(groupFilter) : undefined,
+      member_id: memberFilter,
+      member_unassigned: memberFilterValue === UNASSIGNED_MEMBER_FILTER ? true : undefined,
+      status: (statusFilter || undefined) as 'active' | 'disabled' | 'expired' | undefined,
+    }),
     placeholderData: keepPreviousData,
   });
 
@@ -99,7 +143,19 @@ export default function UserKeysPage() {
   const memberList = useMemo(() => membersData?.list ?? [], [membersData?.list]);
   const memberOptions = useMemo(() => memberList.map((member) => ({ value: String(member.id), label: member.name })), [memberList]);
   const memberNameOf = (id: number | null | undefined) => (id ? memberList.find((member) => member.id === id)?.name : undefined);
-  const filteredMemberName = memberFilter ? memberNameOf(memberFilter) ?? `#${memberFilter}` : '';
+  const hasMembers = memberList.length > 0;
+  // 成员筛选项：全部 / 各成员 / 未归属
+  const memberFilterOptions = useMemo(() => ([
+    { id: '', label: t('common.all') },
+    ...memberList.map((member) => ({ id: String(member.id), label: member.name })),
+    { id: UNASSIGNED_MEMBER_FILTER, label: t('team.no_member') },
+  ]), [memberList, t]);
+  const statusFilterOptions = useMemo(() => ([
+    { id: '', label: t('common.all') },
+    { id: 'active', label: t('status.active') },
+    { id: 'disabled', label: t('status.disabled') },
+    { id: 'expired', label: t('status.expired') },
+  ]), [t]);
 
   // 分组列表（用于选择）
   const { data: groupsData, isLoading: groupsLoading } = useQuery({
@@ -262,6 +318,11 @@ export default function UserKeysPage() {
   const groupMap = useMemo(() => new Map<number, UserGroupResp>(groupList.map((g) => [g.id, g])), [groupList]);
 
   const hasAvailableGroups = groupList.length > 0;
+  // 分组筛选项取「我可用的分组」——与新建密钥同源；已下架分组上的存量密钥仍会出现在不筛选的列表里。
+  const groupFilterOptions = useMemo(() => ([
+    { id: '', label: t('common.all') },
+    ...groupList.map((g) => ({ id: String(g.id), label: localizedGroupText(g.name, g.name_i18n, uiLang) })),
+  ]), [groupList, t, uiLang]);
 
   // 报价客户模式：只展示报价单换算出的价格，不渲染任何牌价对比/折扣锚点。
   const quoteMode = myPricing?.pricing_mode === 'quote';
@@ -394,22 +455,112 @@ export default function UserKeysPage() {
 
   return (
     <div className="p-6">
-      {memberFilter ? (
-        <Alert className="mb-5" status="accent">
-          <Alert.Indicator>
-            <UsersRound className="h-4 w-4" />
-          </Alert.Indicator>
-          <Alert.Content>
-            <Alert.Description>{t('user_keys.member_filter_active', { name: filteredMemberName })}</Alert.Description>
-          </Alert.Content>
-          <Button size="sm" variant="ghost" onPress={() => navigate({ to: '/keys' })}>
-            <X className="h-3.5 w-3.5" />
-            {t('user_keys.clear_filter')}
-          </Button>
-        </Alert>
-      ) : null}
-      <div className="flex justify-end mb-5">
-        <div className="flex items-center gap-2 ml-auto">
+      <div className="mb-5 flex min-h-12 flex-col gap-3 xl:flex-row xl:items-start">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-h-12 flex-col flex-wrap items-stretch gap-3 sm:flex-row sm:items-center">
+            <div className="w-full sm:w-52">
+              <HeroTextField fullWidth aria-label={t('user_keys.search_placeholder')}>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
+                  <Input
+                    className="pl-9"
+                    value={keyword}
+                    onChange={(e) => { setKeyword(e.target.value); setPage(1); }}
+                    placeholder={t('user_keys.search_placeholder')}
+                  />
+                </div>
+              </HeroTextField>
+            </div>
+            <div className="w-full sm:w-44">
+              <Select
+                aria-label={t('user_keys.group')}
+                fullWidth
+                selectedKey={groupFilter}
+                onSelectionChange={(key) => { setGroupFilter(key == null ? '' : String(key)); setPage(1); }}
+              >
+                <Select.Trigger>
+                  <Select.Value>
+                    {groupFilter
+                      ? groupFilterOptions.find((item) => item.id === groupFilter)?.label ?? groupFilter
+                      : <span className="text-text-tertiary">{t('user_keys.group')}</span>}
+                  </Select.Value>
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover className="w-[var(--trigger-width)]">
+                  <ListBox items={groupFilterOptions}>
+                    {(item) => (
+                      <ListBox.Item id={item.id} textValue={item.label}>
+                        <span className="block truncate">{item.label}</span>
+                      </ListBox.Item>
+                    )}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+            </div>
+            {hasMembers ? (
+              <div className="w-full sm:w-44">
+                <Select
+                  aria-label={t('team.filter_member')}
+                  fullWidth
+                  selectedKey={memberFilterValue}
+                  onSelectionChange={(key) => { setMemberFilterValue(key == null ? '' : String(key)); setPage(1); }}
+                >
+                    <Select.Trigger>
+                    <Select.Value>
+                      {memberFilterValue
+                        ? memberFilterOptions.find((item) => item.id === memberFilterValue)?.label ?? memberFilterValue
+                        : <span className="text-text-tertiary">{t('team.filter_member')}</span>}
+                    </Select.Value>
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover className="w-[var(--trigger-width)]">
+                    <ListBox items={memberFilterOptions}>
+                      {(item) => (
+                        <ListBox.Item id={item.id} textValue={item.label}>
+                          <span className="block truncate">{item.label}</span>
+                        </ListBox.Item>
+                      )}
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+              </div>
+            ) : null}
+            <div className="w-full sm:w-36">
+              <Select
+                aria-label={t('common.status')}
+                fullWidth
+                selectedKey={statusFilter}
+                onSelectionChange={(key) => { setStatusFilter(key == null ? '' : String(key)); setPage(1); }}
+              >
+                <Select.Trigger>
+                  <Select.Value>
+                    {statusFilter
+                      ? statusFilterOptions.find((item) => item.id === statusFilter)?.label ?? statusFilter
+                      : <span className="text-text-tertiary">{t('common.status')}</span>}
+                  </Select.Value>
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover className="w-[var(--trigger-width)]">
+                  <ListBox items={statusFilterOptions}>
+                    {(item) => (
+                      <ListBox.Item id={item.id} textValue={item.label}>
+                        {item.label}
+                      </ListBox.Item>
+                    )}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+            </div>
+            {hasActiveFilters ? (
+              <Button size="sm" variant="ghost" onPress={clearFilters}>
+                <X className="h-3.5 w-3.5" />
+                {t('user_keys.clear_filter')}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2 xl:ml-auto">
           <Button
             isIconOnly
             aria-label={t('common.refresh', 'Refresh')}

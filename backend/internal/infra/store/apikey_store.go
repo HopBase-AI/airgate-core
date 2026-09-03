@@ -33,10 +33,7 @@ func (s *APIKeyStore) ListByUser(ctx context.Context, userID int, filter appapik
 		WithUser().
 		WithGroup().
 		WithMember()
-	if filter.MemberID != nil {
-		query = query.Where(entapikey.HasMemberWith(entmember.IDEQ(*filter.MemberID)))
-	}
-
+	query = applyAPIKeyFilters(query, filter)
 	query = applyAPIKeyKeyword(query, filter.Keyword, filter.SearchScope)
 
 	total, err := query.Count(ctx)
@@ -62,7 +59,8 @@ func (s *APIKeyStore) ListByUser(ctx context.Context, userID int, filter appapik
 
 // ListAdmin 查询全局 API Key 列表。
 func (s *APIKeyStore) ListAdmin(ctx context.Context, filter appapikey.ListFilter) ([]appapikey.Key, int64, error) {
-	query := applyAPIKeyKeyword(s.db.APIKey.Query().WithUser().WithGroup().WithMember(), filter.Keyword, filter.SearchScope)
+	query := applyAPIKeyFilters(s.db.APIKey.Query().WithUser().WithGroup().WithMember(), filter)
+	query = applyAPIKeyKeyword(query, filter.Keyword, filter.SearchScope)
 
 	total, err := query.Count(ctx)
 	if err != nil {
@@ -83,6 +81,37 @@ func (s *APIKeyStore) ListAdmin(ctx context.Context, filter appapikey.ListFilter
 		result = append(result, mapAPIKey(item))
 	}
 	return result, int64(total), nil
+}
+
+// applyAPIKeyFilters 应用成员/分组/状态筛选。
+//
+// 状态口径与控制台表格一致——过期优先于启用/停用展示，因此 active/disabled 都要排除
+// 已过期的 key，expired 则不看 status（停用且过期的 key 在表格里同样显示为「已过期」）。
+func applyAPIKeyFilters(query *ent.APIKeyQuery, filter appapikey.ListFilter) *ent.APIKeyQuery {
+	switch {
+	case filter.MemberID != nil:
+		query = query.Where(entapikey.HasMemberWith(entmember.IDEQ(*filter.MemberID)))
+	case filter.MemberUnassigned:
+		query = query.Where(entapikey.Not(entapikey.HasMember()))
+	}
+	if filter.GroupID != nil {
+		query = query.Where(entapikey.HasGroupWith(entgroup.IDEQ(*filter.GroupID)))
+	}
+
+	now := time.Now()
+	notExpired := entapikey.Or(
+		entapikey.ExpiresAtIsNil(),
+		entapikey.ExpiresAtGT(now),
+	)
+	switch filter.Status {
+	case appapikey.StatusFilterActive:
+		query = query.Where(entapikey.StatusEQ(entapikey.StatusActive), notExpired)
+	case appapikey.StatusFilterDisabled:
+		query = query.Where(entapikey.StatusEQ(entapikey.StatusDisabled), notExpired)
+	case appapikey.StatusFilterExpired:
+		query = query.Where(entapikey.ExpiresAtNotNil(), entapikey.ExpiresAtLTE(now))
+	}
+	return query
 }
 
 func applyAPIKeyKeyword(query *ent.APIKeyQuery, keyword string, searchScope string) *ent.APIKeyQuery {

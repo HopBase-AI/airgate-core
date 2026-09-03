@@ -1548,6 +1548,7 @@
     "create": "キーを作成",
     "edit": "キーを編集",
     "name_placeholder": "例：本番環境キー",
+    "search_placeholder": "名前またはキー先頭で検索…",
     "group": "グループ",
     "select_group": "グループを選択してください",
     "no_groups_available": "利用可能なグループがありません。管理者にグループの割り当てを依頼してからキーを作成してください。",
@@ -1628,7 +1629,6 @@
     "member_label": "所属メンバー",
     "member_none": "割り当てなし",
     "member_hint": "割り当てるとメンバー予算の制約を受け、使用量はメンバーに計上されます",
-    "member_filter_active": "メンバー「{{name}}」のキーのみ表示",
     "clear_filter": "フィルターを解除"
   },
   "team": {

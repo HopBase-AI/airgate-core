@@ -1548,6 +1548,7 @@
     "create": "Crear clave",
     "edit": "Editar clave",
     "name_placeholder": "p. ej. Clave de producción",
+    "search_placeholder": "Buscar por nombre o prefijo…",
     "group": "Grupo",
     "select_group": "Seleccionar grupo",
     "no_groups_available": "Aún no hay grupos disponibles. Contacte a un administrador para asignar un grupo antes de crear una clave.",
@@ -1628,7 +1629,6 @@
     "member_label": "Miembro del equipo",
     "member_none": "Sin asignar",
     "member_hint": "Las claves asignadas quedan sujetas al presupuesto del miembro y su consumo se le atribuye",
-    "member_filter_active": "Mostrando solo las claves del miembro \"{{name}}\"",
     "clear_filter": "Quitar filtro"
   },
   "team": {

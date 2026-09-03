@@ -7,6 +7,13 @@ type APIKeyRequestOptions = {
 
 type APIKeyListParams = PageReq & {
   search_scope?: 'api_key';
+  /** 只看某个团队成员名下的 key */
+  member_id?: number;
+  /** 只看未归属团队成员的 key（与 member_id 互斥） */
+  member_unassigned?: boolean;
+  group_id?: number;
+  /** 展示态口径：过期优先于启用/停用 */
+  status?: 'active' | 'disabled' | 'expired';
 };
 
 export const apikeysApi = {

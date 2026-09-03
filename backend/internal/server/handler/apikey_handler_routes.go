@@ -22,17 +22,7 @@ func (h *APIKeyHandler) ListKeys(c *gin.Context) {
 		return
 	}
 
-	filter := appapikey.ListFilter{
-		Page:        query.Page,
-		PageSize:    query.PageSize,
-		Keyword:     query.Keyword,
-		SearchScope: query.SearchScope,
-	}
-	if query.MemberID != nil && *query.MemberID > 0 {
-		memberID := int(*query.MemberID)
-		filter.MemberID = &memberID
-	}
-	result, err := h.service.ListByUser(c.Request.Context(), userID, filter, c.Query("tz"))
+	result, err := h.service.ListByUser(c.Request.Context(), userID, apiKeyListFilterFrom(query), c.Query("tz"))
 	if err != nil {
 		httpCode, message := h.handleError("查询密钥列表失败", "查询失败", err)
 		response.Error(c, httpCode, httpCode, message)
@@ -54,12 +44,7 @@ func (h *APIKeyHandler) AdminListKeys(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.ListAdmin(c.Request.Context(), appapikey.ListFilter{
-		Page:        query.Page,
-		PageSize:    query.PageSize,
-		Keyword:     query.Keyword,
-		SearchScope: query.SearchScope,
-	})
+	result, err := h.service.ListAdmin(c.Request.Context(), apiKeyListFilterFrom(query))
 	if err != nil {
 		httpCode, message := h.handleError("管理员查询密钥列表失败", "查询失败", err)
 		response.Error(c, httpCode, httpCode, message)
@@ -71,6 +56,27 @@ func (h *APIKeyHandler) AdminListKeys(c *gin.Context) {
 		list = append(list, toAPIKeyResp(item))
 	}
 	response.Success(c, response.PagedData(list, result.Total, result.Page, result.PageSize))
+}
+
+// apiKeyListFilterFrom 把列表查询参数转成领域筛选。
+func apiKeyListFilterFrom(query dto.APIKeyListQuery) appapikey.ListFilter {
+	filter := appapikey.ListFilter{
+		Page:             query.Page,
+		PageSize:         query.PageSize,
+		Keyword:          query.Keyword,
+		SearchScope:      query.SearchScope,
+		MemberUnassigned: query.MemberUnassigned,
+		Status:           query.Status,
+	}
+	if query.MemberID != nil && *query.MemberID > 0 {
+		memberID := int(*query.MemberID)
+		filter.MemberID = &memberID
+	}
+	if query.GroupID != nil && *query.GroupID > 0 {
+		groupID := int(*query.GroupID)
+		filter.GroupID = &groupID
+	}
+	return filter
 }
 
 // CreateKey 创建 API 密钥。

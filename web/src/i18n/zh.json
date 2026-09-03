@@ -1548,6 +1548,7 @@
     "create": "创建密钥",
     "edit": "编辑密钥",
     "name_placeholder": "例如：生产环境密钥",
+    "search_placeholder": "搜索名称或密钥前缀…",
     "group": "分组",
     "select_group": "请选择分组",
     "no_groups_available": "当前没有可用分组，请联系管理员分配分组后再创建密钥。",
@@ -1628,7 +1629,6 @@
     "member_label": "归属成员",
     "member_none": "不归属成员",
     "member_hint": "归属后受成员额度约束，用量计入该成员",
-    "member_filter_active": "仅显示成员「{{name}}」的密钥",
     "clear_filter": "清除筛选"
   },
   "team": {
