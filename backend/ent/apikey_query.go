@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/group"
+	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
@@ -27,6 +28,7 @@ type APIKeyQuery struct {
 	predicates    []predicate.APIKey
 	withUser      *UserQuery
 	withGroup     *GroupQuery
+	withMember    *MemberQuery
 	withUsageLogs *UsageLogQuery
 	withFKs       bool
 	// intermediate query (i.e. traversal path).
@@ -102,6 +104,28 @@ func (akq *APIKeyQuery) QueryGroup() *GroupQuery {
 			sqlgraph.From(apikey.Table, apikey.FieldID, selector),
 			sqlgraph.To(group.Table, group.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, apikey.GroupTable, apikey.GroupColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(akq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryMember chains the current query on the "member" edge.
+func (akq *APIKeyQuery) QueryMember() *MemberQuery {
+	query := (&MemberClient{config: akq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := akq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := akq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(apikey.Table, apikey.FieldID, selector),
+			sqlgraph.To(member.Table, member.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, apikey.MemberTable, apikey.MemberColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(akq.driver.Dialect(), step)
 		return fromU, nil
@@ -325,6 +349,7 @@ func (akq *APIKeyQuery) Clone() *APIKeyQuery {
 		predicates:    append([]predicate.APIKey{}, akq.predicates...),
 		withUser:      akq.withUser.Clone(),
 		withGroup:     akq.withGroup.Clone(),
+		withMember:    akq.withMember.Clone(),
 		withUsageLogs: akq.withUsageLogs.Clone(),
 		// clone intermediate query.
 		sql:  akq.sql.Clone(),
@@ -351,6 +376,17 @@ func (akq *APIKeyQuery) WithGroup(opts ...func(*GroupQuery)) *APIKeyQuery {
 		opt(query)
 	}
 	akq.withGroup = query
+	return akq
+}
+
+// WithMember tells the query-builder to eager-load the nodes that are connected to
+// the "member" edge. The optional arguments are used to configure the query builder of the edge.
+func (akq *APIKeyQuery) WithMember(opts ...func(*MemberQuery)) *APIKeyQuery {
+	query := (&MemberClient{config: akq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	akq.withMember = query
 	return akq
 }
 
@@ -444,13 +480,14 @@ func (akq *APIKeyQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*APIK
 		nodes       = []*APIKey{}
 		withFKs     = akq.withFKs
 		_spec       = akq.querySpec()
-		loadedTypes = [3]bool{
+		loadedTypes = [4]bool{
 			akq.withUser != nil,
 			akq.withGroup != nil,
+			akq.withMember != nil,
 			akq.withUsageLogs != nil,
 		}
 	)
-	if akq.withUser != nil || akq.withGroup != nil {
+	if akq.withUser != nil || akq.withGroup != nil || akq.withMember != nil {
 		withFKs = true
 	}
 	if withFKs {
@@ -483,6 +520,12 @@ func (akq *APIKeyQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*APIK
 	if query := akq.withGroup; query != nil {
 		if err := akq.loadGroup(ctx, query, nodes, nil,
 			func(n *APIKey, e *Group) { n.Edges.Group = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := akq.withMember; query != nil {
+		if err := akq.loadMember(ctx, query, nodes, nil,
+			func(n *APIKey, e *Member) { n.Edges.Member = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -553,6 +596,38 @@ func (akq *APIKeyQuery) loadGroup(ctx context.Context, query *GroupQuery, nodes 
 		nodes, ok := nodeids[n.ID]
 		if !ok {
 			return fmt.Errorf(`unexpected foreign-key "group_api_keys" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
+func (akq *APIKeyQuery) loadMember(ctx context.Context, query *MemberQuery, nodes []*APIKey, init func(*APIKey), assign func(*APIKey, *Member)) error {
+	ids := make([]int, 0, len(nodes))
+	nodeids := make(map[int][]*APIKey)
+	for i := range nodes {
+		if nodes[i].member_api_keys == nil {
+			continue
+		}
+		fk := *nodes[i].member_api_keys
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(member.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "member_api_keys" returned %v`, n.ID)
 		}
 		for i := range nodes {
 			assign(nodes[i], n)

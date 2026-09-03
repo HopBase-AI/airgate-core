@@ -9,6 +9,8 @@ var (
 	ErrGroupNotFound = errors.New("分组不存在")
 	// ErrGroupForbidden 用户无权使用分组。
 	ErrGroupForbidden = errors.New("无权使用该分组")
+	// ErrMemberNotFound 团队成员不存在或不属于当前用户。
+	ErrMemberNotFound = errors.New("团队成员不存在")
 	// ErrInvalidExpiresAt 过期时间格式错误。
 	ErrInvalidExpiresAt = errors.New("过期时间格式错误")
 	// ErrLegacyKeyNotReveal 旧密钥无法查看原文。

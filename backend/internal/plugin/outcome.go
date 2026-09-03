@@ -364,6 +364,7 @@ func (f *Forwarder) recordUsageWithFailureOverride(c *gin.Context, state *forwar
 		UserID:                       state.keyInfo.UserID,
 		UserEmail:                    state.keyInfo.UserEmail,
 		APIKeyID:                     state.keyInfo.KeyID,
+		MemberID:                     state.keyInfo.MemberID,
 		AccountID:                    state.account.ID,
 		GroupID:                      state.keyInfo.GroupID,
 		Platform:                     state.plugin.Platform,

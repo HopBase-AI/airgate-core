@@ -24,7 +24,8 @@ func (h *APIKeyHandler) handleError(logMessage, publicMessage string, err error)
 	switch {
 	case errors.Is(err, appapikey.ErrKeyNotFound):
 		return 404, err.Error()
-	case errors.Is(err, appapikey.ErrGroupNotFound):
+	case errors.Is(err, appapikey.ErrGroupNotFound),
+		errors.Is(err, appapikey.ErrMemberNotFound):
 		return 404, err.Error()
 	case errors.Is(err, appapikey.ErrGroupForbidden):
 		return 403, err.Error()

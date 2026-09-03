@@ -87,6 +87,13 @@ func (h *AuthHandler) LoginByAPIKey(c *gin.Context) {
 			result.Rate,
 			result.ExpiresAt,
 			result.Platform,
+			sessionMemberBrief{
+				ID:        result.Member.ID,
+				Name:      result.Member.Name,
+				QuotaUSD:  result.Member.QuotaUSD,
+				UsedQuota: result.Member.UsedQuota,
+				PeriodEnd: result.Member.PeriodEnd,
+			},
 		),
 		APIKeyID:   int64(result.APIKeyID),
 		APIKeyName: result.APIKeyName,

@@ -108,6 +108,16 @@ func (s *Service) CreateOwned(ctx context.Context, userID int, input CreateInput
 		return Key{}, err
 	}
 
+	memberID, hasMember, err := s.resolveMember(ctx, userID, input.MemberID)
+	if err != nil {
+		logger.Warn("api_key_create_rejected",
+			sdk.LogFieldUserID, userID,
+			sdk.LogFieldReason, "member_access",
+			sdk.LogFieldError, err,
+		)
+		return Key{}, err
+	}
+
 	rawKey, keyHash, err := auth.GenerateAPIKey()
 	if err != nil {
 		logger.Error("api_key_create_failed",
@@ -146,6 +156,8 @@ func (s *Service) CreateOwned(ctx context.Context, userID int, input CreateInput
 		KeyEncrypted:   &encrypted,
 		UserID:         &userID,
 		GroupID:        &groupID,
+		MemberID:       memberID,
+		HasMemberID:    hasMember,
 		IPWhitelist:    cloneStringSlice(input.IPWhitelist),
 		HasIPWhitelist: input.IPWhitelist != nil,
 		IPBlacklist:    cloneStringSlice(input.IPBlacklist),
@@ -315,7 +327,36 @@ func (s *Service) buildMutation(ctx context.Context, userID int, input UpdateInp
 		}
 		mutation.GroupID = &groupID
 	}
+	// 成员归属只在用户自己的路径上可改（enforceGroupAccess=true 即 owned 路径）；
+	// 管理员路径不接成员改动，避免把 key 挂到别的用户的成员名下。
+	if input.MemberID != nil && enforceGroupAccess {
+		memberID, hasMember, err := s.resolveMember(ctx, userID, input.MemberID)
+		if err != nil {
+			return Mutation{}, err
+		}
+		mutation.MemberID = memberID
+		mutation.HasMemberID = hasMember
+	}
 	return mutation, nil
+}
+
+// resolveMember 把入参成员 ID 解析成持久化写入：nil 不动；0 清除归属；>0 校验归属后写入。
+func (s *Service) resolveMember(ctx context.Context, userID int, raw *int64) (memberID *int, hasMember bool, err error) {
+	if raw == nil {
+		return nil, false, nil
+	}
+	if *raw <= 0 {
+		return nil, true, nil
+	}
+	id := int(*raw)
+	owned, err := s.repo.MemberOwnedBy(ctx, userID, id)
+	if err != nil {
+		return nil, false, err
+	}
+	if !owned {
+		return nil, false, ErrMemberNotFound
+	}
+	return &id, true, nil
 }
 
 func (s *Service) ensureUserCanUseGroup(ctx context.Context, userID, groupID int) error {

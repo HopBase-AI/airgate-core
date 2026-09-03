@@ -46,6 +46,17 @@ type LoginByAPIKeyResult struct {
 	Rate      float64
 	ExpiresAt *time.Time
 	Platform  string
+	// 团队成员维度（key 归属成员时才有）
+	Member MemberBrief
+}
+
+// MemberBrief API Key 所属团队成员的会话投影：只给成员看自己的额度，不带主账号任何信息。
+type MemberBrief struct {
+	ID        int
+	Name      string
+	QuotaUSD  float64    // 0 表示不限
+	UsedQuota float64    // 本期已用
+	PeriodEnd *time.Time // monthly 时本期结束；none 为 nil
 }
 
 // RegisterInput 注册输入。
@@ -106,6 +117,7 @@ type APIKeyBrief struct {
 	SellRate  float64
 	GroupRate float64
 	Platform  string
+	Member    MemberBrief
 }
 
 // CreateUserInput 创建用户输入。

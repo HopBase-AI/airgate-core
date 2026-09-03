@@ -22,12 +22,17 @@ func (h *APIKeyHandler) ListKeys(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.ListByUser(c.Request.Context(), userID, appapikey.ListFilter{
+	filter := appapikey.ListFilter{
 		Page:        query.Page,
 		PageSize:    query.PageSize,
 		Keyword:     query.Keyword,
 		SearchScope: query.SearchScope,
-	}, c.Query("tz"))
+	}
+	if query.MemberID != nil && *query.MemberID > 0 {
+		memberID := int(*query.MemberID)
+		filter.MemberID = &memberID
+	}
+	result, err := h.service.ListByUser(c.Request.Context(), userID, filter, c.Query("tz"))
 	if err != nil {
 		httpCode, message := h.handleError("查询密钥列表失败", "查询失败", err)
 		response.Error(c, httpCode, httpCode, message)
@@ -85,6 +90,7 @@ func (h *APIKeyHandler) CreateKey(c *gin.Context) {
 	item, err := h.service.CreateOwned(c.Request.Context(), userID, appapikey.CreateInput{
 		Name:           req.Name,
 		GroupID:        req.GroupID,
+		MemberID:       req.MemberID,
 		IPWhitelist:    req.IPWhitelist,
 		IPBlacklist:    req.IPBlacklist,
 		QuotaUSD:       req.QuotaUSD,
@@ -124,6 +130,7 @@ func (h *APIKeyHandler) UpdateKey(c *gin.Context) {
 	item, err := h.service.UpdateOwned(c.Request.Context(), userID, id, appapikey.UpdateInput{
 		Name:           req.Name,
 		GroupID:        req.GroupID,
+		MemberID:       req.MemberID,
 		IPWhitelist:    req.IPWhitelist,
 		HasIPWhitelist: req.IPWhitelist != nil,
 		IPBlacklist:    req.IPBlacklist,

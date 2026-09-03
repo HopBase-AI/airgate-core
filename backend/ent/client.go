@@ -21,6 +21,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
 	"github.com/DouDOU-start/airgate-core/ent/blogpost"
 	"github.com/DouDOU-start/airgate-core/ent/group"
+	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/plugin"
 	"github.com/DouDOU-start/airgate-core/ent/pluginsource"
 	"github.com/DouDOU-start/airgate-core/ent/proxy"
@@ -50,6 +51,8 @@ type Client struct {
 	BlogPost *BlogPostClient
 	// Group is the client for interacting with the Group builders.
 	Group *GroupClient
+	// Member is the client for interacting with the Member builders.
+	Member *MemberClient
 	// Plugin is the client for interacting with the Plugin builders.
 	Plugin *PluginClient
 	// PluginSource is the client for interacting with the PluginSource builders.
@@ -87,6 +90,7 @@ func (c *Client) init() {
 	c.BalanceLog = NewBalanceLogClient(c.config)
 	c.BlogPost = NewBlogPostClient(c.config)
 	c.Group = NewGroupClient(c.config)
+	c.Member = NewMemberClient(c.config)
 	c.Plugin = NewPluginClient(c.config)
 	c.PluginSource = NewPluginSourceClient(c.config)
 	c.Proxy = NewProxyClient(c.config)
@@ -195,6 +199,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		BalanceLog:         NewBalanceLogClient(cfg),
 		BlogPost:           NewBlogPostClient(cfg),
 		Group:              NewGroupClient(cfg),
+		Member:             NewMemberClient(cfg),
 		Plugin:             NewPluginClient(cfg),
 		PluginSource:       NewPluginSourceClient(cfg),
 		Proxy:              NewProxyClient(cfg),
@@ -230,6 +235,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		BalanceLog:         NewBalanceLogClient(cfg),
 		BlogPost:           NewBlogPostClient(cfg),
 		Group:              NewGroupClient(cfg),
+		Member:             NewMemberClient(cfg),
 		Plugin:             NewPluginClient(cfg),
 		PluginSource:       NewPluginSourceClient(cfg),
 		Proxy:              NewProxyClient(cfg),
@@ -270,8 +276,8 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.APIKey, c.Account, c.AccountEvent, c.BalanceLog, c.BlogPost, c.Group,
-		c.Plugin, c.PluginSource, c.Proxy, c.ReferralCommission, c.Setting, c.Task,
-		c.UsageLog, c.User, c.UserIdentity, c.UserSubscription,
+		c.Member, c.Plugin, c.PluginSource, c.Proxy, c.ReferralCommission, c.Setting,
+		c.Task, c.UsageLog, c.User, c.UserIdentity, c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -282,8 +288,8 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.APIKey, c.Account, c.AccountEvent, c.BalanceLog, c.BlogPost, c.Group,
-		c.Plugin, c.PluginSource, c.Proxy, c.ReferralCommission, c.Setting, c.Task,
-		c.UsageLog, c.User, c.UserIdentity, c.UserSubscription,
+		c.Member, c.Plugin, c.PluginSource, c.Proxy, c.ReferralCommission, c.Setting,
+		c.Task, c.UsageLog, c.User, c.UserIdentity, c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -304,6 +310,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.BlogPost.mutate(ctx, m)
 	case *GroupMutation:
 		return c.Group.mutate(ctx, m)
+	case *MemberMutation:
+		return c.Member.mutate(ctx, m)
 	case *PluginMutation:
 		return c.Plugin.mutate(ctx, m)
 	case *PluginSourceMutation:
@@ -462,6 +470,22 @@ func (c *APIKeyClient) QueryGroup(ak *APIKey) *GroupQuery {
 			sqlgraph.From(apikey.Table, apikey.FieldID, id),
 			sqlgraph.To(group.Table, group.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, apikey.GroupTable, apikey.GroupColumn),
+		)
+		fromV = sqlgraph.Neighbors(ak.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryMember queries the member edge of a APIKey.
+func (c *APIKeyClient) QueryMember(ak *APIKey) *MemberQuery {
+	query := (&MemberClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := ak.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(apikey.Table, apikey.FieldID, id),
+			sqlgraph.To(member.Table, member.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, apikey.MemberTable, apikey.MemberColumn),
 		)
 		fromV = sqlgraph.Neighbors(ak.driver.Dialect(), step)
 		return fromV, nil
@@ -1348,6 +1372,171 @@ func (c *GroupClient) mutate(ctx context.Context, m *GroupMutation) (Value, erro
 		return (&GroupDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Group mutation op: %q", m.Op())
+	}
+}
+
+// MemberClient is a client for the Member schema.
+type MemberClient struct {
+	config
+}
+
+// NewMemberClient returns a client for the Member from the given config.
+func NewMemberClient(c config) *MemberClient {
+	return &MemberClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `member.Hooks(f(g(h())))`.
+func (c *MemberClient) Use(hooks ...Hook) {
+	c.hooks.Member = append(c.hooks.Member, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `member.Intercept(f(g(h())))`.
+func (c *MemberClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Member = append(c.inters.Member, interceptors...)
+}
+
+// Create returns a builder for creating a Member entity.
+func (c *MemberClient) Create() *MemberCreate {
+	mutation := newMemberMutation(c.config, OpCreate)
+	return &MemberCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Member entities.
+func (c *MemberClient) CreateBulk(builders ...*MemberCreate) *MemberCreateBulk {
+	return &MemberCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *MemberClient) MapCreateBulk(slice any, setFunc func(*MemberCreate, int)) *MemberCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &MemberCreateBulk{err: fmt.Errorf("calling to MemberClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*MemberCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &MemberCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Member.
+func (c *MemberClient) Update() *MemberUpdate {
+	mutation := newMemberMutation(c.config, OpUpdate)
+	return &MemberUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *MemberClient) UpdateOne(m *Member) *MemberUpdateOne {
+	mutation := newMemberMutation(c.config, OpUpdateOne, withMember(m))
+	return &MemberUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *MemberClient) UpdateOneID(id int) *MemberUpdateOne {
+	mutation := newMemberMutation(c.config, OpUpdateOne, withMemberID(id))
+	return &MemberUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Member.
+func (c *MemberClient) Delete() *MemberDelete {
+	mutation := newMemberMutation(c.config, OpDelete)
+	return &MemberDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *MemberClient) DeleteOne(m *Member) *MemberDeleteOne {
+	return c.DeleteOneID(m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *MemberClient) DeleteOneID(id int) *MemberDeleteOne {
+	builder := c.Delete().Where(member.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &MemberDeleteOne{builder}
+}
+
+// Query returns a query builder for Member.
+func (c *MemberClient) Query() *MemberQuery {
+	return &MemberQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeMember},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Member entity by its id.
+func (c *MemberClient) Get(ctx context.Context, id int) (*Member, error) {
+	return c.Query().Where(member.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *MemberClient) GetX(ctx context.Context, id int) *Member {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryOwner queries the owner edge of a Member.
+func (c *MemberClient) QueryOwner(m *Member) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(member.Table, member.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, member.OwnerTable, member.OwnerColumn),
+		)
+		fromV = sqlgraph.Neighbors(m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryAPIKeys queries the api_keys edge of a Member.
+func (c *MemberClient) QueryAPIKeys(m *Member) *APIKeyQuery {
+	query := (&APIKeyClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(member.Table, member.FieldID, id),
+			sqlgraph.To(apikey.Table, apikey.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, member.APIKeysTable, member.APIKeysColumn),
+		)
+		fromV = sqlgraph.Neighbors(m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *MemberClient) Hooks() []Hook {
+	return c.hooks.Member
+}
+
+// Interceptors returns the client interceptors.
+func (c *MemberClient) Interceptors() []Interceptor {
+	return c.inters.Member
+}
+
+func (c *MemberClient) mutate(ctx context.Context, m *MemberMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&MemberCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&MemberUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&MemberUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&MemberDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Member mutation op: %q", m.Op())
 	}
 }
 
@@ -2486,6 +2675,22 @@ func (c *UserClient) QueryAPIKeys(u *User) *APIKeyQuery {
 	return query
 }
 
+// QueryMembers queries the members edge of a User.
+func (c *UserClient) QueryMembers(u *User) *MemberQuery {
+	query := (&MemberClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := u.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(member.Table, member.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.MembersTable, user.MembersColumn),
+		)
+		fromV = sqlgraph.Neighbors(u.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QuerySubscriptions queries the subscriptions edge of a User.
 func (c *UserClient) QuerySubscriptions(u *User) *UserSubscriptionQuery {
 	query := (&UserSubscriptionClient{config: c.config}).Query()
@@ -2908,12 +3113,12 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		APIKey, Account, AccountEvent, BalanceLog, BlogPost, Group, Plugin,
+		APIKey, Account, AccountEvent, BalanceLog, BlogPost, Group, Member, Plugin,
 		PluginSource, Proxy, ReferralCommission, Setting, Task, UsageLog, User,
 		UserIdentity, UserSubscription []ent.Hook
 	}
 	inters struct {
-		APIKey, Account, AccountEvent, BalanceLog, BlogPost, Group, Plugin,
+		APIKey, Account, AccountEvent, BalanceLog, BlogPost, Group, Member, Plugin,
 		PluginSource, Proxy, ReferralCommission, Setting, Task, UsageLog, User,
 		UserIdentity, UserSubscription []ent.Interceptor
 	}

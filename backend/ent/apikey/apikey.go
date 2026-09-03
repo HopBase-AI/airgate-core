@@ -49,6 +49,8 @@ const (
 	EdgeUser = "user"
 	// EdgeGroup holds the string denoting the group edge name in mutations.
 	EdgeGroup = "group"
+	// EdgeMember holds the string denoting the member edge name in mutations.
+	EdgeMember = "member"
 	// EdgeUsageLogs holds the string denoting the usage_logs edge name in mutations.
 	EdgeUsageLogs = "usage_logs"
 	// Table holds the table name of the apikey in the database.
@@ -67,6 +69,13 @@ const (
 	GroupInverseTable = "groups"
 	// GroupColumn is the table column denoting the group relation/edge.
 	GroupColumn = "group_api_keys"
+	// MemberTable is the table that holds the member relation/edge.
+	MemberTable = "api_keys"
+	// MemberInverseTable is the table name for the Member entity.
+	// It exists in this package in order to avoid circular dependency with the "member" package.
+	MemberInverseTable = "members"
+	// MemberColumn is the table column denoting the member relation/edge.
+	MemberColumn = "member_api_keys"
 	// UsageLogsTable is the table that holds the usage_logs relation/edge.
 	UsageLogsTable = "usage_logs"
 	// UsageLogsInverseTable is the table name for the UsageLog entity.
@@ -100,6 +109,7 @@ var Columns = []string{
 // table and are not defined as standalone fields in the schema.
 var ForeignKeys = []string{
 	"group_api_keys",
+	"member_api_keys",
 	"user_api_keys",
 }
 
@@ -260,6 +270,13 @@ func ByGroupField(field string, opts ...sql.OrderTermOption) OrderOption {
 	}
 }
 
+// ByMemberField orders the results by member field.
+func ByMemberField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newMemberStep(), sql.OrderByField(field, opts...))
+	}
+}
+
 // ByUsageLogsCount orders the results by usage_logs count.
 func ByUsageLogsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -285,6 +302,13 @@ func newGroupStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(GroupInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, GroupTable, GroupColumn),
+	)
+}
+func newMemberStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(MemberInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, MemberTable, MemberColumn),
 	)
 }
 func newUsageLogsStep() *sqlgraph.Step {

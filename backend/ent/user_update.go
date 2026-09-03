@@ -14,6 +14,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
 	"github.com/DouDOU-start/airgate-core/ent/group"
+	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
@@ -377,6 +378,21 @@ func (uu *UserUpdate) AddAPIKeys(a ...*APIKey) *UserUpdate {
 	return uu.AddAPIKeyIDs(ids...)
 }
 
+// AddMemberIDs adds the "members" edge to the Member entity by IDs.
+func (uu *UserUpdate) AddMemberIDs(ids ...int) *UserUpdate {
+	uu.mutation.AddMemberIDs(ids...)
+	return uu
+}
+
+// AddMembers adds the "members" edges to the Member entity.
+func (uu *UserUpdate) AddMembers(m ...*Member) *UserUpdate {
+	ids := make([]int, len(m))
+	for i := range m {
+		ids[i] = m[i].ID
+	}
+	return uu.AddMemberIDs(ids...)
+}
+
 // AddSubscriptionIDs adds the "subscriptions" edge to the UserSubscription entity by IDs.
 func (uu *UserUpdate) AddSubscriptionIDs(ids ...int) *UserUpdate {
 	uu.mutation.AddSubscriptionIDs(ids...)
@@ -476,6 +492,27 @@ func (uu *UserUpdate) RemoveAPIKeys(a ...*APIKey) *UserUpdate {
 		ids[i] = a[i].ID
 	}
 	return uu.RemoveAPIKeyIDs(ids...)
+}
+
+// ClearMembers clears all "members" edges to the Member entity.
+func (uu *UserUpdate) ClearMembers() *UserUpdate {
+	uu.mutation.ClearMembers()
+	return uu
+}
+
+// RemoveMemberIDs removes the "members" edge to Member entities by IDs.
+func (uu *UserUpdate) RemoveMemberIDs(ids ...int) *UserUpdate {
+	uu.mutation.RemoveMemberIDs(ids...)
+	return uu
+}
+
+// RemoveMembers removes "members" edges to Member entities.
+func (uu *UserUpdate) RemoveMembers(m ...*Member) *UserUpdate {
+	ids := make([]int, len(m))
+	for i := range m {
+		ids[i] = m[i].ID
+	}
+	return uu.RemoveMemberIDs(ids...)
 }
 
 // ClearSubscriptions clears all "subscriptions" edges to the UserSubscription entity.
@@ -822,6 +859,51 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if uu.mutation.MembersCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MembersTable,
+			Columns: []string{user.MembersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.RemovedMembersIDs(); len(nodes) > 0 && !uu.mutation.MembersCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MembersTable,
+			Columns: []string{user.MembersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.MembersIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MembersTable,
+			Columns: []string{user.MembersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -1417,6 +1499,21 @@ func (uuo *UserUpdateOne) AddAPIKeys(a ...*APIKey) *UserUpdateOne {
 	return uuo.AddAPIKeyIDs(ids...)
 }
 
+// AddMemberIDs adds the "members" edge to the Member entity by IDs.
+func (uuo *UserUpdateOne) AddMemberIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.AddMemberIDs(ids...)
+	return uuo
+}
+
+// AddMembers adds the "members" edges to the Member entity.
+func (uuo *UserUpdateOne) AddMembers(m ...*Member) *UserUpdateOne {
+	ids := make([]int, len(m))
+	for i := range m {
+		ids[i] = m[i].ID
+	}
+	return uuo.AddMemberIDs(ids...)
+}
+
 // AddSubscriptionIDs adds the "subscriptions" edge to the UserSubscription entity by IDs.
 func (uuo *UserUpdateOne) AddSubscriptionIDs(ids ...int) *UserUpdateOne {
 	uuo.mutation.AddSubscriptionIDs(ids...)
@@ -1516,6 +1613,27 @@ func (uuo *UserUpdateOne) RemoveAPIKeys(a ...*APIKey) *UserUpdateOne {
 		ids[i] = a[i].ID
 	}
 	return uuo.RemoveAPIKeyIDs(ids...)
+}
+
+// ClearMembers clears all "members" edges to the Member entity.
+func (uuo *UserUpdateOne) ClearMembers() *UserUpdateOne {
+	uuo.mutation.ClearMembers()
+	return uuo
+}
+
+// RemoveMemberIDs removes the "members" edge to Member entities by IDs.
+func (uuo *UserUpdateOne) RemoveMemberIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.RemoveMemberIDs(ids...)
+	return uuo
+}
+
+// RemoveMembers removes "members" edges to Member entities.
+func (uuo *UserUpdateOne) RemoveMembers(m ...*Member) *UserUpdateOne {
+	ids := make([]int, len(m))
+	for i := range m {
+		ids[i] = m[i].ID
+	}
+	return uuo.RemoveMemberIDs(ids...)
 }
 
 // ClearSubscriptions clears all "subscriptions" edges to the UserSubscription entity.
@@ -1892,6 +2010,51 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if uuo.mutation.MembersCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MembersTable,
+			Columns: []string{user.MembersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.RemovedMembersIDs(); len(nodes) > 0 && !uuo.mutation.MembersCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MembersTable,
+			Columns: []string{user.MembersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.MembersIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MembersTable,
+			Columns: []string{user.MembersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

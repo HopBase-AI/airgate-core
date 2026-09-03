@@ -83,6 +83,7 @@ func (f *Forwarder) recordFailureUsage(c *gin.Context, state *forwardState, fail
 		UserID:    state.keyInfo.UserID,
 		UserEmail: state.keyInfo.UserEmail,
 		APIKeyID:  state.keyInfo.KeyID,
+		MemberID:  state.keyInfo.MemberID,
 		GroupID:   state.keyInfo.GroupID,
 		Platform:  failureRecordPlatform(state),
 		Model:     failureRecordModel(state),

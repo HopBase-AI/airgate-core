@@ -22,6 +22,7 @@ import (
 	appgenerationtask "github.com/DouDOU-start/airgate-core/internal/app/generationtask"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 	appmcp "github.com/DouDOU-start/airgate-core/internal/app/mcp"
+	appmember "github.com/DouDOU-start/airgate-core/internal/app/member"
 	appmodelpricing "github.com/DouDOU-start/airgate-core/internal/app/modelpricing"
 	apponeclick "github.com/DouDOU-start/airgate-core/internal/app/oneclick"
 	appopenclaw "github.com/DouDOU-start/airgate-core/internal/app/openclaw"
@@ -62,6 +63,7 @@ type HTTPHandlers struct {
 	Account        *handler.AccountHandler
 	Group          *handler.GroupHandler
 	APIKey         *handler.APIKeyHandler
+	Member         *handler.MemberHandler
 	Subscription   *handler.SubscriptionHandler
 	Usage          *handler.UsageHandler
 	Proxy          *handler.ProxyHandler
@@ -92,6 +94,8 @@ type HTTPHandlers struct {
 func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 	apiKeyStore := store.NewAPIKeyStore(dep.DB)
 	apiKeyService := appapikey.NewService(apiKeyStore, dep.Config.APIKeySecret())
+	memberStore := store.NewMemberStore(dep.DB)
+	memberService := appmember.NewService(memberStore)
 	authStore := store.NewAuthStore(dep.DB)
 	auth.SetAPIKeyCacheRedis(dep.Redis)
 	authService := appauth.NewService(authStore, dep.JWTMgr)
@@ -170,6 +174,7 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 		Group:          handler.NewGroupHandler(groupService),
 		Pricing:        handler.NewPricingHandler(groupService, userService, accountService),
 		APIKey:         handler.NewAPIKeyHandler(apiKeyService),
+		Member:         handler.NewMemberHandler(memberService),
 		Subscription:   handler.NewSubscriptionHandler(subscriptionService),
 		Usage:          handler.NewUsageHandler(usageService),
 		Proxy:          handler.NewProxyHandler(proxyService),

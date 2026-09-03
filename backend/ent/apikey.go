@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/group"
+	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 )
 
@@ -52,10 +53,11 @@ type APIKey struct {
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the APIKeyQuery when eager-loading is set.
-	Edges          APIKeyEdges `json:"edges"`
-	group_api_keys *int
-	user_api_keys  *int
-	selectValues   sql.SelectValues
+	Edges           APIKeyEdges `json:"edges"`
+	group_api_keys  *int
+	member_api_keys *int
+	user_api_keys   *int
+	selectValues    sql.SelectValues
 }
 
 // APIKeyEdges holds the relations/edges for other nodes in the graph.
@@ -64,11 +66,13 @@ type APIKeyEdges struct {
 	User *User `json:"user,omitempty"`
 	// Group holds the value of the group edge.
 	Group *Group `json:"group,omitempty"`
+	// Member holds the value of the member edge.
+	Member *Member `json:"member,omitempty"`
 	// UsageLogs holds the value of the usage_logs edge.
 	UsageLogs []*UsageLog `json:"usage_logs,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [4]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -93,10 +97,21 @@ func (e APIKeyEdges) GroupOrErr() (*Group, error) {
 	return nil, &NotLoadedError{edge: "group"}
 }
 
+// MemberOrErr returns the Member value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e APIKeyEdges) MemberOrErr() (*Member, error) {
+	if e.Member != nil {
+		return e.Member, nil
+	} else if e.loadedTypes[2] {
+		return nil, &NotFoundError{label: member.Label}
+	}
+	return nil, &NotLoadedError{edge: "member"}
+}
+
 // UsageLogsOrErr returns the UsageLogs value or an error if the edge
 // was not loaded in eager-loading.
 func (e APIKeyEdges) UsageLogsOrErr() ([]*UsageLog, error) {
-	if e.loadedTypes[2] {
+	if e.loadedTypes[3] {
 		return e.UsageLogs, nil
 	}
 	return nil, &NotLoadedError{edge: "usage_logs"}
@@ -119,7 +134,9 @@ func (*APIKey) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullTime)
 		case apikey.ForeignKeys[0]: // group_api_keys
 			values[i] = new(sql.NullInt64)
-		case apikey.ForeignKeys[1]: // user_api_keys
+		case apikey.ForeignKeys[1]: // member_api_keys
+			values[i] = new(sql.NullInt64)
+		case apikey.ForeignKeys[2]: // user_api_keys
 			values[i] = new(sql.NullInt64)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -246,6 +263,13 @@ func (ak *APIKey) assignValues(columns []string, values []any) error {
 			}
 		case apikey.ForeignKeys[1]:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for edge-field member_api_keys", value)
+			} else if value.Valid {
+				ak.member_api_keys = new(int)
+				*ak.member_api_keys = int(value.Int64)
+			}
+		case apikey.ForeignKeys[2]:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for edge-field user_api_keys", value)
 			} else if value.Valid {
 				ak.user_api_keys = new(int)
@@ -272,6 +296,11 @@ func (ak *APIKey) QueryUser() *UserQuery {
 // QueryGroup queries the "group" edge of the APIKey entity.
 func (ak *APIKey) QueryGroup() *GroupQuery {
 	return NewAPIKeyClient(ak.config).QueryGroup(ak)
+}
+
+// QueryMember queries the "member" edge of the APIKey entity.
+func (ak *APIKey) QueryMember() *MemberQuery {
+	return NewAPIKeyClient(ak.config).QueryMember(ak)
 }
 
 // QueryUsageLogs queries the "usage_logs" edge of the APIKey entity.

@@ -24,6 +24,9 @@ type BlogPost func(*sql.Selector)
 // Group is the predicate function for group builders.
 type Group func(*sql.Selector)
 
+// Member is the predicate function for member builders.
+type Member func(*sql.Selector)
+
 // Plugin is the predicate function for plugin builders.
 type Plugin func(*sql.Selector)
 

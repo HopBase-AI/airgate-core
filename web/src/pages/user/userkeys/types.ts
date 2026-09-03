@@ -7,6 +7,8 @@ export interface KeyForm {
   /** API Key 级并发上限。空字符串或 "0" 表示不限制 */
   max_concurrency: string;
   expires_at: string;
+  /** 归属团队成员 ID；空字符串表示不归属 */
+  member_id: string;
 }
 
 export const emptyForm: KeyForm = {
@@ -16,4 +18,5 @@ export const emptyForm: KeyForm = {
   sell_rate: '',
   max_concurrency: '',
   expires_at: '',
+  member_id: '',
 };

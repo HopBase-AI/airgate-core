@@ -15,7 +15,9 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/DouDOU-start/airgate-core/ent"
+	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/enttest"
+	entmember "github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 )
 
@@ -62,18 +64,65 @@ func TestCCCompatUserBalanceUsesSmallerQuotaOrUserBalance(t *testing.T) {
 		requireFloat(t, quota["used"], 3)
 	})
 
-	t.Run("user balance caps quota remaining", func(t *testing.T) {
+	// 主账号余额低于 key 剩余时不再取 min：取 min 会把 reseller / 企业主账号的余额原样
+	// 露给下游 key 持有者。展示口径只认持有者自己的额度，主账号余额耗尽由转发 402 兜底。
+	t.Run("owner balance never leaks below key remaining", func(t *testing.T) {
 		key := createCCCompatTestKey(t, ctx, db, 2, 10, 3)
 		resp := requestCCCompatBalance(t, db, key)
 		requireStatus(t, resp, http.StatusOK)
 
 		body := decodeCCCompatBody(t, resp)
-		requireFloat(t, body["balance"], 2)
-		requireFloat(t, body["remaining"], 2)
+		requireFloat(t, body["balance"], 7)
+		requireFloat(t, body["remaining"], 7)
 
 		quota := body["quota"].(map[string]any)
-		requireFloat(t, quota["remaining"], 2)
+		requireFloat(t, quota["remaining"], 7)
 		requireFloat(t, quota["api_key_remaining"], 7)
+	})
+}
+
+func TestCCCompatUserBalanceHonorsMemberQuota(t *testing.T) {
+	db := openCCCompatTestDB(t)
+	ctx := context.Background()
+
+	attachMember := func(t *testing.T, rawKey string, mutate func(*ent.MemberCreate)) {
+		t.Helper()
+		ak, err := db.APIKey.Query().Where(apikey.KeyHash(auth.HashAPIKey(rawKey))).WithUser().Only(ctx)
+		if err != nil {
+			t.Fatalf("load key: %v", err)
+		}
+		mc := db.Member.Create().SetName("成员").SetOwner(ak.Edges.User)
+		mutate(mc)
+		member, err := mc.Save(ctx)
+		if err != nil {
+			t.Fatalf("create member: %v", err)
+		}
+		if err := db.APIKey.UpdateOneID(ak.ID).SetMember(member).Exec(ctx); err != nil {
+			t.Fatalf("attach member: %v", err)
+		}
+	}
+
+	t.Run("member remaining caps key remaining", func(t *testing.T) {
+		key := createCCCompatTestKey(t, ctx, db, 100, 10, 3)                                     // key 剩 7
+		attachMember(t, key, func(mc *ent.MemberCreate) { mc.SetQuotaUsd(20).SetUsedQuota(16) }) // 成员剩 4
+		resp := requestCCCompatBalance(t, db, key)
+		requireStatus(t, resp, http.StatusOK)
+		body := decodeCCCompatBody(t, resp)
+		requireFloat(t, body["balance"], 4)
+		requireFloat(t, body["remaining"], 4)
+		quota := body["quota"].(map[string]any)
+		requireFloat(t, quota["api_key_remaining"], 7)
+	})
+
+	t.Run("disabled member is inactive", func(t *testing.T) {
+		key := createCCCompatTestKey(t, ctx, db, 100, 0, 0)
+		attachMember(t, key, func(mc *ent.MemberCreate) { mc.SetStatus(entmember.StatusDisabled) })
+		resp := requestCCCompatBalance(t, db, key)
+		requireStatus(t, resp, http.StatusOK)
+		body := decodeCCCompatBody(t, resp)
+		if body["is_active"] != false {
+			t.Fatalf("is_active = %v, want false for disabled member", body["is_active"])
+		}
 	})
 }
 

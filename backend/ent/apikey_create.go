@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/group"
+	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 )
@@ -229,6 +230,25 @@ func (akc *APIKeyCreate) SetNillableGroupID(id *int) *APIKeyCreate {
 // SetGroup sets the "group" edge to the Group entity.
 func (akc *APIKeyCreate) SetGroup(g *Group) *APIKeyCreate {
 	return akc.SetGroupID(g.ID)
+}
+
+// SetMemberID sets the "member" edge to the Member entity by ID.
+func (akc *APIKeyCreate) SetMemberID(id int) *APIKeyCreate {
+	akc.mutation.SetMemberID(id)
+	return akc
+}
+
+// SetNillableMemberID sets the "member" edge to the Member entity by ID if the given value is not nil.
+func (akc *APIKeyCreate) SetNillableMemberID(id *int) *APIKeyCreate {
+	if id != nil {
+		akc = akc.SetMemberID(*id)
+	}
+	return akc
+}
+
+// SetMember sets the "member" edge to the Member entity.
+func (akc *APIKeyCreate) SetMember(m *Member) *APIKeyCreate {
+	return akc.SetMemberID(m.ID)
 }
 
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
@@ -500,6 +520,23 @@ func (akc *APIKeyCreate) createSpec() (*APIKey, *sqlgraph.CreateSpec) {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.group_api_keys = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := akc.mutation.MemberIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.MemberTable,
+			Columns: []string{apikey.MemberColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.member_api_keys = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	if nodes := akc.mutation.UsageLogsIDs(); len(nodes) > 0 {

@@ -127,6 +127,12 @@ type APIKeyBrief struct {
 	GroupRate float64
 	// Platform 所属分组的平台标识（如 anthropic / openai），未绑定分组时为空
 	Platform string
+	// 团队成员维度（key 归属成员时才有）：只给成员看自己的额度
+	MemberID        int
+	MemberName      string
+	MemberQuotaUSD  float64
+	MemberUsedQuota float64
+	MemberPeriodEnd *time.Time
 }
 
 type APIKey struct {

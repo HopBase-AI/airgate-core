@@ -7,6 +7,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent"
 	entapikey "github.com/DouDOU-start/airgate-core/ent/apikey"
 	entbalancelog "github.com/DouDOU-start/airgate-core/ent/balancelog"
+	entmember "github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
 	entusagelog "github.com/DouDOU-start/airgate-core/ent/usagelog"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
@@ -357,6 +358,7 @@ func (s *UserStore) GetAPIKeyInfo(ctx context.Context, userID, keyID int) (appus
 			),
 		).
 		WithGroup().
+		WithMember().
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -377,6 +379,18 @@ func (s *UserStore) GetAPIKeyInfo(ctx context.Context, userID, keyID int) (appus
 	if g, _ := ak.Edges.GroupOrErr(); g != nil {
 		brief.GroupRate = g.RateMultiplier
 		brief.Platform = g.Platform
+	}
+	if m := ak.Edges.Member; m != nil {
+		// 成员被停用即视为会话失效，与中间件 resolveAPIKeySessionOwner 口径一致
+		if m.Status != entmember.StatusActive {
+			return appuser.APIKeyBrief{}, appuser.ErrInvalidAPIKeySession
+		}
+		used, end := memberPeriodView(m, time.Now())
+		brief.MemberID = m.ID
+		brief.MemberName = m.Name
+		brief.MemberQuotaUSD = m.QuotaUsd
+		brief.MemberUsedQuota = used
+		brief.MemberPeriodEnd = end
 	}
 	return brief, nil
 }

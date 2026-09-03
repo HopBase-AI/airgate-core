@@ -52,6 +52,7 @@ import {
   Bell,
   Tags,
   Link2,
+  UsersRound,
 } from 'lucide-react';
 
 interface AppShellProps {
@@ -92,6 +93,7 @@ const userMenuItems: MenuItem[] = [
   { path: '/models', labelKey: 'nav.model_plaza', icon: <Boxes className="h-5 w-5" /> },
   { path: '/profile', labelKey: 'nav.profile', icon: <UserRoundCog className="h-5 w-5" /> },
   { path: '/keys', labelKey: 'nav.my_keys', icon: <KeyRound className="h-5 w-5" /> },
+  { path: '/team', labelKey: 'nav.my_team', icon: <UsersRound className="h-5 w-5" /> },
   { path: '/usage', labelKey: 'nav.my_usage', icon: <ReceiptText className="h-5 w-5" /> },
 ];
 
@@ -250,7 +252,8 @@ export function AppShell({ children }: AppShellProps) {
     return nextSections;
   }, [isAPIKeySession, isAdmin, user?.can_author_blog, pluginAdminItems, pluginUserItems, site.referral_enabled]);
 
-  const displayName = user?.api_key_name || user?.username || user?.email?.split('@')[0] || site.site_name || 'HopBase';
+  // 团队成员的密钥会话优先显示成员名，其次才是密钥名
+  const displayName = user?.member_name || user?.api_key_name || user?.username || user?.email?.split('@')[0] || site.site_name || 'HopBase';
   const notificationIdentity = isAPIKeySession
     ? `api-key:${user?.api_key_id ?? 'session'}`
     : `user:${user?.id ?? 'session'}`;
@@ -498,13 +501,14 @@ export function AppShell({ children }: AppShellProps) {
             <div className="mx-1.5 hidden h-6 w-px bg-border sm:block" />
 
             <div className="hidden items-center gap-2.5 pl-1 sm:flex">
-              {!isAPIKeySession && (
+              {/* 普通会话显示用户名+邮箱；团队成员的密钥会话显示成员名+「团队成员」，非成员的密钥会话仍不露任何身份 */}
+              {(!isAPIKeySession || user?.member_name) && (
                 <div className="hidden text-right md:block">
                   <p className="text-sm font-medium leading-tight text-text">
                     {displayName}
                   </p>
                   <p className="text-xs leading-tight text-text-tertiary">
-                    {user?.email}
+                    {isAPIKeySession ? t('auth.apikey_member_badge') : user?.email}
                   </p>
                 </div>
               )}

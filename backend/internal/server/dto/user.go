@@ -42,6 +42,12 @@ type APIKeySessionUserResp struct {
 	APIKeyExpiresAt string  `json:"api_key_expires_at,omitempty"`
 	APIKeyRate      float64 `json:"api_key_rate,omitempty"`
 	APIKeyPlatform  string  `json:"api_key_platform,omitempty"`
+	// 团队成员会话：key 归属成员时返回，额度为成员本期口径（与单把 key 的额度并列展示）。
+	MemberID        int64   `json:"member_id,omitempty"`
+	MemberName      string  `json:"member_name,omitempty"`
+	MemberQuotaUSD  float64 `json:"member_quota_usd,omitempty"`
+	MemberUsedQuota float64 `json:"member_used_quota,omitempty"`
+	MemberPeriodEnd string  `json:"member_period_end,omitempty"` // RFC3339；none 周期无
 }
 
 // UpdateProfileReq 用户更新资料请求

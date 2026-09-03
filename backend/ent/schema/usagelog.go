@@ -90,6 +90,10 @@ func (UsageLog) Fields() []ent.Field {
 			Comment("用户 ID 快照。用户硬删除后保留历史使用记录与计费归属。"),
 		field.String("user_email_snapshot").Default("").
 			Comment("用户邮箱快照。用户硬删除后后台使用记录仍能展示历史归属。"),
+		// 团队成员归属。刻意不做外键：成员删除后历史用量仍按成员可查，
+		// 与 user_id_snapshot 同思路；0 表示请求不属于任何成员。
+		field.Int("member_id").Default(0).
+			Comment("发起请求的 API Key 当时所属的团队成员 ID 快照；0 表示无成员归属。"),
 		// 请求结果。失败请求也落一条记录（token/费用全 0），供用户自查与排障。
 		// 历史行经自动迁移取默认值 success，既有统计口径不受影响。
 		field.String("status").Default("success").
@@ -134,6 +138,10 @@ func (UsageLog) Indexes() []ent.Index {
 		index.Fields("created_at").
 			StorageKey("usage_log_error_created_at").
 			Annotations(entsql.IndexWhere("error_code <> ''")),
+		// 按成员查用量。绝大多数记录 member_id=0，partial index 只收成员请求。
+		index.Fields("member_id", "created_at").
+			StorageKey("usage_log_member_created_at").
+			Annotations(entsql.IndexWhere("member_id > 0")),
 		index.Edges("user").
 			StorageKey("usage_log_user"),
 		index.Edges("api_key").

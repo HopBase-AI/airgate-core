@@ -18,8 +18,10 @@ import (
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
+	entmember "github.com/DouDOU-start/airgate-core/ent/member"
 	entsetting "github.com/DouDOU-start/airgate-core/ent/setting"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
+	"github.com/DouDOU-start/airgate-core/internal/pkg/period"
 )
 
 // API Key 缓存。
@@ -53,6 +55,9 @@ var (
 	ErrAPIKeyQuota        = errors.New("API Key 配额已用尽")
 	ErrAPIKeyGroupUnbound = errors.New("API Key 未绑定分组，请联系管理员重新绑定")
 	ErrUserDisabled       = errors.New("账户已被禁用")
+	// 团队成员准入：key 归属的成员被主账号停用 / 成员本期额度用尽。
+	ErrMemberDisabled = errors.New("所属团队成员已被停用")
+	ErrMemberQuota    = errors.New("团队成员额度已用尽")
 )
 
 const apiKeyPrefix = "sk-"
@@ -84,6 +89,15 @@ type APIKeyInfo struct {
 
 	// SellRate Reseller 设置的销售倍率（>0 时启用 markup，独立于平台计费）
 	SellRate float64
+
+	// 团队成员归属（api_keys.member 边）。MemberID 为 0 表示 key 不属于任何成员。
+	// 额度字段是成员「本期」口径：MemberQuotaUSD 为 0 表示不限，
+	// MemberUsedQuota = used_quota − period_used_base（monthly 成员跨期后归零）。
+	// 扣费仍落主账号 UserBalance；成员只是额度闸门与用量归属。
+	MemberID        int
+	MemberName      string
+	MemberQuotaUSD  float64
+	MemberUsedQuota float64
 
 	// KeyMaxConcurrency API Key 级并发上限，0 表示不限制。
 	// 在 forwarder 路径里会用 Redis 原子 SET 按 key_id 维度争抢槽位。
@@ -236,6 +250,7 @@ func ValidateAPIKey(ctx context.Context, db *ent.Client, key string) (*APIKeyInf
 		).
 		WithUser().
 		WithGroup().
+		WithMember().
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -272,6 +287,17 @@ func ValidateAPIKey(ctx context.Context, db *ent.Client, key string) (*APIKeyInf
 		cacheAPIKeyResult(hash, nil, ErrUserDisabled)
 		return nil, ErrUserDisabled
 	}
+	// 团队成员闸门：成员停用即拒；monthly 成员跨期在此惰性换期；本期额度用尽拒。
+	// 与 key 额度一样缓存负结果，主账号改额度/启用后最多 apiKeyCacheTTL 生效。
+	mv, err := evaluateMember(ctx, db, ak.Edges.Member, time.Now(), true)
+	if err != nil {
+		cacheAPIKeyResult(hash, nil, err)
+		return nil, err
+	}
+	if mv.exhausted() {
+		cacheAPIKeyResult(hash, nil, ErrMemberQuota)
+		return nil, ErrMemberQuota
+	}
 	g := ak.Edges.Group
 	if g == nil {
 		cacheAPIKeyResult(hash, nil, ErrAPIKeyGroupUnbound)
@@ -290,6 +316,10 @@ func ValidateAPIKey(ctx context.Context, db *ent.Client, key string) (*APIKeyInf
 		SellRate:           ak.SellRate,
 		KeyMaxConcurrency:  ak.MaxConcurrency,
 		UserMaxConcurrency: u.MaxConcurrency,
+		MemberID:           mv.ID,
+		MemberName:         mv.Name,
+		MemberQuotaUSD:     mv.QuotaUSD,
+		MemberUsedQuota:    mv.UsedQuota,
 
 		UserBalance:             u.Balance,
 		UserGroupRates:          u.GroupRates,
@@ -382,6 +412,10 @@ func apiKeyCacheErrorCode(err error) string {
 		return "group_unbound"
 	case ErrUserDisabled:
 		return "user_disabled"
+	case ErrMemberDisabled:
+		return "member_disabled"
+	case ErrMemberQuota:
+		return "member_quota"
 	default:
 		return ""
 	}
@@ -399,6 +433,10 @@ func apiKeyCacheErrorFromCode(code string) error {
 		return ErrAPIKeyGroupUnbound
 	case "user_disabled":
 		return ErrUserDisabled
+	case "member_disabled":
+		return ErrMemberDisabled
+	case "member_quota":
+		return ErrMemberQuota
 	default:
 		return nil
 	}
@@ -506,6 +544,7 @@ func ValidateAPIKeyForManagement(ctx context.Context, db *ent.Client, key string
 		).
 		WithUser().
 		WithGroup().
+		WithMember().
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -528,6 +567,13 @@ func ValidateAPIKeyForManagement(ctx context.Context, db *ent.Client, key string
 		storeAPIKeyLocalCache(cacheKey, nil, ErrUserDisabled)
 		return nil, ErrUserDisabled
 	}
+	// 管理面同样拒绝停用成员，但不拒额度用尽（余额/额度状态正是要查的内容）；
+	// 只读路径不做换期写入，本期已用按当前时刻推算。
+	mv, err := evaluateMember(ctx, db, ak.Edges.Member, time.Now(), false)
+	if err != nil {
+		storeAPIKeyLocalCache(cacheKey, nil, err)
+		return nil, err
+	}
 
 	info := &APIKeyInfo{
 		KeyID:             ak.ID,
@@ -543,6 +589,10 @@ func ValidateAPIKeyForManagement(ctx context.Context, db *ent.Client, key string
 		UsedQuota:         ak.UsedQuota,
 		SellRate:          ak.SellRate,
 		UserBalance:       u.Balance,
+		MemberID:          mv.ID,
+		MemberName:        mv.Name,
+		MemberQuotaUSD:    mv.QuotaUSD,
+		MemberUsedQuota:   mv.UsedQuota,
 	}
 	if g := ak.Edges.Group; g != nil {
 		info.GroupID = g.ID
@@ -551,4 +601,55 @@ func ValidateAPIKeyForManagement(ctx context.Context, db *ent.Client, key string
 	}
 	storeAPIKeyLocalCache(cacheKey, info, nil)
 	return info, nil
+}
+
+// memberView 团队成员的本期口径投影：鉴权预载与管理面共用。
+type memberView struct {
+	ID        int
+	Name      string
+	QuotaUSD  float64 // 0 表示不限
+	UsedQuota float64 // 本期已用 = used_quota − period_used_base
+}
+
+// exhausted 成员设了额度且本期已用达到额度。
+func (v memberView) exhausted() bool {
+	return v.ID > 0 && v.QuotaUSD > 0 && v.UsedQuota >= v.QuotaUSD
+}
+
+// evaluateMember 团队成员准入判定与本期口径推算。
+//
+//   - m 为 nil（key 不属于成员）返回零值；
+//   - 成员停用返回 ErrMemberDisabled；
+//   - monthly 成员读到跨期时惰性换期：把当前 used_quota 快照进 period_used_base 作为
+//     新期起点并推进 period_start。写入以旧 period_start 做 CAS，并发鉴权只有一方推进
+//     成功，另一方本次仍按同一快照推算，下次读库即一致。rollover=false（只读管理面）
+//     不落库，仅按当前时刻推算本期已用；
+//   - 换期写入失败不阻断请求：本次判额度用的快照口径已经正确，只记日志等下次再推。
+func evaluateMember(ctx context.Context, db *ent.Client, m *ent.Member, now time.Time, rollover bool) (memberView, error) {
+	if m == nil {
+		return memberView{}, nil
+	}
+	if m.Status != entmember.StatusActive {
+		return memberView{}, ErrMemberDisabled
+	}
+	base := m.PeriodUsedBase
+	if m.QuotaPeriod == entmember.QuotaPeriodMonthly {
+		if start, _ := period.Containing(m.PeriodAnchor, now); start.After(m.PeriodStart) {
+			base = m.UsedQuota
+			if rollover {
+				if err := db.Member.Update().
+					Where(entmember.IDEQ(m.ID), entmember.PeriodStartEQ(m.PeriodStart)).
+					SetPeriodStart(start).
+					SetPeriodUsedBase(m.UsedQuota).
+					Exec(ctx); err != nil {
+					slog.Warn("member_period_rollover_failed", "member_id", m.ID, sdk.LogFieldError, err)
+				}
+			}
+		}
+	}
+	used := m.UsedQuota - base
+	if used < 0 {
+		used = 0
+	}
+	return memberView{ID: m.ID, Name: m.Name, QuotaUSD: m.QuotaUsd, UsedQuota: used}, nil
 }

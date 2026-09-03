@@ -11,6 +11,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
 	"github.com/DouDOU-start/airgate-core/ent/blogpost"
 	"github.com/DouDOU-start/airgate-core/ent/group"
+	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/plugin"
 	"github.com/DouDOU-start/airgate-core/ent/pluginsource"
 	"github.com/DouDOU-start/airgate-core/ent/proxy"
@@ -342,6 +343,74 @@ func init() {
 	group.DefaultUpdatedAt = groupDescUpdatedAt.Default.(func() time.Time)
 	// group.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	group.UpdateDefaultUpdatedAt = groupDescUpdatedAt.UpdateDefault.(func() time.Time)
+	memberFields := schema.Member{}.Fields()
+	_ = memberFields
+	// memberDescName is the schema descriptor for name field.
+	memberDescName := memberFields[0].Descriptor()
+	// member.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	member.NameValidator = func() func(string) error {
+		validators := memberDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// memberDescEmail is the schema descriptor for email field.
+	memberDescEmail := memberFields[1].Descriptor()
+	// member.DefaultEmail holds the default value on creation for the email field.
+	member.DefaultEmail = memberDescEmail.Default.(string)
+	// member.EmailValidator is a validator for the "email" field. It is called by the builders before save.
+	member.EmailValidator = memberDescEmail.Validators[0].(func(string) error)
+	// memberDescNote is the schema descriptor for note field.
+	memberDescNote := memberFields[2].Descriptor()
+	// member.DefaultNote holds the default value on creation for the note field.
+	member.DefaultNote = memberDescNote.Default.(string)
+	// member.NoteValidator is a validator for the "note" field. It is called by the builders before save.
+	member.NoteValidator = memberDescNote.Validators[0].(func(string) error)
+	// memberDescQuotaUsd is the schema descriptor for quota_usd field.
+	memberDescQuotaUsd := memberFields[3].Descriptor()
+	// member.DefaultQuotaUsd holds the default value on creation for the quota_usd field.
+	member.DefaultQuotaUsd = memberDescQuotaUsd.Default.(float64)
+	// member.QuotaUsdValidator is a validator for the "quota_usd" field. It is called by the builders before save.
+	member.QuotaUsdValidator = memberDescQuotaUsd.Validators[0].(func(float64) error)
+	// memberDescPeriodAnchor is the schema descriptor for period_anchor field.
+	memberDescPeriodAnchor := memberFields[5].Descriptor()
+	// member.DefaultPeriodAnchor holds the default value on creation for the period_anchor field.
+	member.DefaultPeriodAnchor = memberDescPeriodAnchor.Default.(func() time.Time)
+	// memberDescPeriodStart is the schema descriptor for period_start field.
+	memberDescPeriodStart := memberFields[6].Descriptor()
+	// member.DefaultPeriodStart holds the default value on creation for the period_start field.
+	member.DefaultPeriodStart = memberDescPeriodStart.Default.(func() time.Time)
+	// memberDescPeriodUsedBase is the schema descriptor for period_used_base field.
+	memberDescPeriodUsedBase := memberFields[7].Descriptor()
+	// member.DefaultPeriodUsedBase holds the default value on creation for the period_used_base field.
+	member.DefaultPeriodUsedBase = memberDescPeriodUsedBase.Default.(float64)
+	// memberDescUsedQuota is the schema descriptor for used_quota field.
+	memberDescUsedQuota := memberFields[8].Descriptor()
+	// member.DefaultUsedQuota holds the default value on creation for the used_quota field.
+	member.DefaultUsedQuota = memberDescUsedQuota.Default.(float64)
+	// memberDescUsedQuotaActual is the schema descriptor for used_quota_actual field.
+	memberDescUsedQuotaActual := memberFields[9].Descriptor()
+	// member.DefaultUsedQuotaActual holds the default value on creation for the used_quota_actual field.
+	member.DefaultUsedQuotaActual = memberDescUsedQuotaActual.Default.(float64)
+	// memberDescCreatedAt is the schema descriptor for created_at field.
+	memberDescCreatedAt := memberFields[11].Descriptor()
+	// member.DefaultCreatedAt holds the default value on creation for the created_at field.
+	member.DefaultCreatedAt = memberDescCreatedAt.Default.(func() time.Time)
+	// memberDescUpdatedAt is the schema descriptor for updated_at field.
+	memberDescUpdatedAt := memberFields[12].Descriptor()
+	// member.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	member.DefaultUpdatedAt = memberDescUpdatedAt.Default.(func() time.Time)
+	// member.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	member.UpdateDefaultUpdatedAt = memberDescUpdatedAt.UpdateDefault.(func() time.Time)
 	pluginFields := schema.Plugin{}.Fields()
 	_ = pluginFields
 	// pluginDescName is the schema descriptor for name field.
@@ -702,24 +771,28 @@ func init() {
 	usagelogDescUserEmailSnapshot := usagelogFields[41].Descriptor()
 	// usagelog.DefaultUserEmailSnapshot holds the default value on creation for the user_email_snapshot field.
 	usagelog.DefaultUserEmailSnapshot = usagelogDescUserEmailSnapshot.Default.(string)
+	// usagelogDescMemberID is the schema descriptor for member_id field.
+	usagelogDescMemberID := usagelogFields[42].Descriptor()
+	// usagelog.DefaultMemberID holds the default value on creation for the member_id field.
+	usagelog.DefaultMemberID = usagelogDescMemberID.Default.(int)
 	// usagelogDescStatus is the schema descriptor for status field.
-	usagelogDescStatus := usagelogFields[42].Descriptor()
+	usagelogDescStatus := usagelogFields[43].Descriptor()
 	// usagelog.DefaultStatus holds the default value on creation for the status field.
 	usagelog.DefaultStatus = usagelogDescStatus.Default.(string)
 	// usagelogDescErrorCode is the schema descriptor for error_code field.
-	usagelogDescErrorCode := usagelogFields[43].Descriptor()
+	usagelogDescErrorCode := usagelogFields[44].Descriptor()
 	// usagelog.DefaultErrorCode holds the default value on creation for the error_code field.
 	usagelog.DefaultErrorCode = usagelogDescErrorCode.Default.(string)
 	// usagelogDescErrorStatus is the schema descriptor for error_status field.
-	usagelogDescErrorStatus := usagelogFields[44].Descriptor()
+	usagelogDescErrorStatus := usagelogFields[45].Descriptor()
 	// usagelog.DefaultErrorStatus holds the default value on creation for the error_status field.
 	usagelog.DefaultErrorStatus = usagelogDescErrorStatus.Default.(int)
 	// usagelogDescErrorMessage is the schema descriptor for error_message field.
-	usagelogDescErrorMessage := usagelogFields[45].Descriptor()
+	usagelogDescErrorMessage := usagelogFields[46].Descriptor()
 	// usagelog.DefaultErrorMessage holds the default value on creation for the error_message field.
 	usagelog.DefaultErrorMessage = usagelogDescErrorMessage.Default.(string)
 	// usagelogDescCreatedAt is the schema descriptor for created_at field.
-	usagelogDescCreatedAt := usagelogFields[46].Descriptor()
+	usagelogDescCreatedAt := usagelogFields[47].Descriptor()
 	// usagelog.DefaultCreatedAt holds the default value on creation for the created_at field.
 	usagelog.DefaultCreatedAt = usagelogDescCreatedAt.Default.(func() time.Time)
 	userFields := schema.User{}.Fields()

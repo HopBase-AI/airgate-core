@@ -63,6 +63,8 @@ func (User) Indexes() []ent.Index {
 func (User) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.To("api_keys", APIKey.Type),
+		// 团队成员（企业子账号）
+		edge.To("members", Member.Type),
 		edge.To("subscriptions", UserSubscription.Type),
 		edge.To("usage_logs", UsageLog.Type),
 		// 用户可访问的专属分组（多对多）

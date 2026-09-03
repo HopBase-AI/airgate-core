@@ -14,6 +14,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/group"
+	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
@@ -305,6 +306,25 @@ func (aku *APIKeyUpdate) SetGroup(g *Group) *APIKeyUpdate {
 	return aku.SetGroupID(g.ID)
 }
 
+// SetMemberID sets the "member" edge to the Member entity by ID.
+func (aku *APIKeyUpdate) SetMemberID(id int) *APIKeyUpdate {
+	aku.mutation.SetMemberID(id)
+	return aku
+}
+
+// SetNillableMemberID sets the "member" edge to the Member entity by ID if the given value is not nil.
+func (aku *APIKeyUpdate) SetNillableMemberID(id *int) *APIKeyUpdate {
+	if id != nil {
+		aku = aku.SetMemberID(*id)
+	}
+	return aku
+}
+
+// SetMember sets the "member" edge to the Member entity.
+func (aku *APIKeyUpdate) SetMember(m *Member) *APIKeyUpdate {
+	return aku.SetMemberID(m.ID)
+}
+
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
 func (aku *APIKeyUpdate) AddUsageLogIDs(ids ...int) *APIKeyUpdate {
 	aku.mutation.AddUsageLogIDs(ids...)
@@ -334,6 +354,12 @@ func (aku *APIKeyUpdate) ClearUser() *APIKeyUpdate {
 // ClearGroup clears the "group" edge to the Group entity.
 func (aku *APIKeyUpdate) ClearGroup() *APIKeyUpdate {
 	aku.mutation.ClearGroup()
+	return aku
+}
+
+// ClearMember clears the "member" edge to the Member entity.
+func (aku *APIKeyUpdate) ClearMember() *APIKeyUpdate {
+	aku.mutation.ClearMember()
 	return aku
 }
 
@@ -569,6 +595,35 @@ func (aku *APIKeyUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if aku.mutation.MemberCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.MemberTable,
+			Columns: []string{apikey.MemberColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := aku.mutation.MemberIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.MemberTable,
+			Columns: []string{apikey.MemberColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -914,6 +969,25 @@ func (akuo *APIKeyUpdateOne) SetGroup(g *Group) *APIKeyUpdateOne {
 	return akuo.SetGroupID(g.ID)
 }
 
+// SetMemberID sets the "member" edge to the Member entity by ID.
+func (akuo *APIKeyUpdateOne) SetMemberID(id int) *APIKeyUpdateOne {
+	akuo.mutation.SetMemberID(id)
+	return akuo
+}
+
+// SetNillableMemberID sets the "member" edge to the Member entity by ID if the given value is not nil.
+func (akuo *APIKeyUpdateOne) SetNillableMemberID(id *int) *APIKeyUpdateOne {
+	if id != nil {
+		akuo = akuo.SetMemberID(*id)
+	}
+	return akuo
+}
+
+// SetMember sets the "member" edge to the Member entity.
+func (akuo *APIKeyUpdateOne) SetMember(m *Member) *APIKeyUpdateOne {
+	return akuo.SetMemberID(m.ID)
+}
+
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
 func (akuo *APIKeyUpdateOne) AddUsageLogIDs(ids ...int) *APIKeyUpdateOne {
 	akuo.mutation.AddUsageLogIDs(ids...)
@@ -943,6 +1017,12 @@ func (akuo *APIKeyUpdateOne) ClearUser() *APIKeyUpdateOne {
 // ClearGroup clears the "group" edge to the Group entity.
 func (akuo *APIKeyUpdateOne) ClearGroup() *APIKeyUpdateOne {
 	akuo.mutation.ClearGroup()
+	return akuo
+}
+
+// ClearMember clears the "member" edge to the Member entity.
+func (akuo *APIKeyUpdateOne) ClearMember() *APIKeyUpdateOne {
+	akuo.mutation.ClearMember()
 	return akuo
 }
 
@@ -1208,6 +1288,35 @@ func (akuo *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err er
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if akuo.mutation.MemberCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.MemberTable,
+			Columns: []string{apikey.MemberColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := akuo.mutation.MemberIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.MemberTable,
+			Columns: []string{apikey.MemberColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

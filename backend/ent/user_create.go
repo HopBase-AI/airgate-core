@@ -13,6 +13,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
 	"github.com/DouDOU-start/airgate-core/ent/group"
+	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 	"github.com/DouDOU-start/airgate-core/ent/useridentity"
@@ -329,6 +330,21 @@ func (uc *UserCreate) AddAPIKeys(a ...*APIKey) *UserCreate {
 		ids[i] = a[i].ID
 	}
 	return uc.AddAPIKeyIDs(ids...)
+}
+
+// AddMemberIDs adds the "members" edge to the Member entity by IDs.
+func (uc *UserCreate) AddMemberIDs(ids ...int) *UserCreate {
+	uc.mutation.AddMemberIDs(ids...)
+	return uc
+}
+
+// AddMembers adds the "members" edges to the Member entity.
+func (uc *UserCreate) AddMembers(m ...*Member) *UserCreate {
+	ids := make([]int, len(m))
+	for i := range m {
+		ids[i] = m[i].ID
+	}
+	return uc.AddMemberIDs(ids...)
 }
 
 // AddSubscriptionIDs adds the "subscriptions" edge to the UserSubscription entity by IDs.
@@ -738,6 +754,22 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := uc.mutation.MembersIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MembersTable,
+			Columns: []string{user.MembersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

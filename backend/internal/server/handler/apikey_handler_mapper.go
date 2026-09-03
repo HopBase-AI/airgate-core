@@ -31,6 +31,11 @@ func toAPIKeyResp(item appapikey.Key) dto.APIKeyResp {
 		groupID := int64(*item.GroupID)
 		resp.GroupID = &groupID
 	}
+	if item.MemberID != nil {
+		memberID := int64(*item.MemberID)
+		resp.MemberID = &memberID
+		resp.MemberName = item.MemberName
+	}
 	if item.ExpiresAt != nil {
 		expiresAt := item.ExpiresAt.Format("2006-01-02T15:04:05Z07:00")
 		resp.ExpiresAt = &expiresAt

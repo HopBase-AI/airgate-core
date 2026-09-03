@@ -52,6 +52,13 @@ export interface APIKeySessionUserResp {
   api_key_expires_at?: string;
   api_key_rate?: number;
   api_key_platform?: string;
+  /** 团队成员会话：key 归属成员时返回；额度为成员本期口径 */
+  member_id?: number;
+  member_name?: string;
+  member_quota_usd?: number;
+  member_used_quota?: number;
+  /** RFC3339；按月周期才有 */
+  member_period_end?: string;
 }
 
 export interface APIKeyLoginResp {
@@ -104,6 +111,12 @@ export interface UserResp {
   api_key_expires_at?: string;
   api_key_rate?: number;
   api_key_platform?: string;
+  /** 团队成员会话（API Key 登录且 key 归属成员时返回） */
+  member_id?: number;
+  member_name?: string;
+  member_quota_usd?: number;
+  member_used_quota?: number;
+  member_period_end?: string;
   created_at: string;
   updated_at: string;
 }
@@ -522,6 +535,9 @@ export interface APIKeyResp {
   key_prefix: string;
   user_id: number;
   group_id: number | null;
+  /** 所属团队成员；null 表示不归属 */
+  member_id: number | null;
+  member_name?: string;
   ip_whitelist?: string[];
   ip_blacklist?: string[];
   quota_usd: number;
@@ -544,6 +560,8 @@ export interface APIKeyResp {
 export interface CreateAPIKeyReq {
   name: string;
   group_id: number;
+  /** 归属团队成员；不传 / 0 表示不归属 */
+  member_id?: number;
   ip_whitelist?: string[];
   ip_blacklist?: string[];
   quota_usd?: number;
@@ -557,6 +575,8 @@ export interface CreateAPIKeyReq {
 export interface UpdateAPIKeyReq {
   name?: string;
   group_id?: number;
+  /** 不传不改动；传 0 解除成员归属 */
+  member_id?: number;
   ip_whitelist?: string[];
   ip_blacklist?: string[];
   quota_usd?: number;
@@ -565,6 +585,50 @@ export interface UpdateAPIKeyReq {
   /** API Key 并发上限，0 表示关闭限制；不传则不改动 */
   max_concurrency?: number;
   expires_at?: string;
+  status?: 'active' | 'disabled';
+}
+
+// ==================== Team member ====================
+
+export interface MemberResp {
+  id: number;
+  name: string;
+  email: string;
+  note: string;
+  /** 0 表示不限 */
+  quota_usd: number;
+  quota_period: 'none' | 'monthly';
+  /** 本期已用（账面口径） */
+  period_used: number;
+  period_start: string;
+  /** RFC3339；按月周期才有 */
+  period_end?: string;
+  /** 累计账面已用 */
+  used_quota: number;
+  /** 累计真实成本（主账号实付） */
+  used_quota_actual: number;
+  key_count: number;
+  today_cost: number;
+  thirty_day_cost: number;
+  status: 'active' | 'disabled';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateMemberReq {
+  name: string;
+  email?: string;
+  note?: string;
+  quota_usd?: number;
+  quota_period?: 'none' | 'monthly';
+}
+
+export interface UpdateMemberReq {
+  name?: string;
+  email?: string;
+  note?: string;
+  quota_usd?: number;
+  quota_period?: 'none' | 'monthly';
   status?: 'active' | 'disabled';
 }
 
@@ -642,6 +706,10 @@ export interface UsageLogResp {
   api_key_name?: string;
   api_key_hint?: string;
   api_key_deleted: boolean;
+  /** 团队成员归属；0/缺省表示无成员 */
+  member_id?: number;
+  /** 成员名；成员已删除时为空 */
+  member_name?: string;
   account_id: number;
   account_name?: string;
   account_email?: string;
@@ -720,6 +788,10 @@ export interface UserUsageLogResp {
   api_key_name?: string;
   api_key_hint?: string;
   api_key_deleted: boolean;
+  /** 团队成员归属；0/缺省表示无成员 */
+  member_id?: number;
+  /** 成员名；成员已删除时为空 */
+  member_name?: string;
   group_id: number;
   platform: string;
   model: string;
@@ -819,6 +891,8 @@ export interface CustomerUsageLogResp {
 export interface UsageQuery extends PageReq {
   user_id?: number;
   api_key_id?: number;
+  /** 按团队成员筛选（主账号视角） */
+  member_id?: number;
   account_id?: number;
   group_id?: number;
   platform?: string;
