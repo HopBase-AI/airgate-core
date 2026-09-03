@@ -7,6 +7,14 @@ import (
 
 const SearchScopeAPIKey = "api_key"
 
+// 列表状态筛选取值。expired 不是 api_keys.status 的枚举值，而是「已过期」这一
+// 展示态：控制台表格里过期优先于启用/停用显示，筛选口径必须与之一致。
+const (
+	StatusFilterActive   = "active"
+	StatusFilterDisabled = "disabled"
+	StatusFilterExpired  = "expired"
+)
+
 // Key API Key 领域对象。
 type Key struct {
 	ID              int
@@ -41,6 +49,11 @@ type ListFilter struct {
 	Keyword     string
 	SearchScope string
 	MemberID    *int // 只看某个团队成员名下的 key
+	// MemberUnassigned 只看未归属任何团队成员的 key。与 MemberID 互斥，
+	// 同时给出时以 MemberID 为准（不可能既属于某成员又未归属）。
+	MemberUnassigned bool
+	GroupID          *int   // 只看绑定到某分组的 key
+	Status           string // 空 = 全部；active / disabled / expired（见 StatusFilter*）
 }
 
 // ListResult API Key 列表结果。

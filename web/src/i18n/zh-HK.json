@@ -1548,6 +1548,7 @@
     "create": "建立金鑰",
     "edit": "編輯金鑰",
     "name_placeholder": "例如：生產環境金鑰",
+    "search_placeholder": "搜尋名稱或密鑰前綴…",
     "group": "分組",
     "select_group": "請選擇分組",
     "no_groups_available": "目前沒有可用分組，請聯絡管理員分配分組後再建立金鑰。",
@@ -1628,7 +1629,6 @@
     "member_label": "歸屬成員",
     "member_none": "不歸屬成員",
     "member_hint": "歸屬後受成員額度約束，用量計入該成員",
-    "member_filter_active": "僅顯示成員「{{name}}」的密鑰",
     "clear_filter": "清除篩選"
   },
   "team": {

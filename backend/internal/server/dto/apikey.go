@@ -29,6 +29,10 @@ type APIKeyListQuery struct {
 	PageReq
 	SearchScope string `form:"search_scope"`
 	MemberID    *int64 `form:"member_id"` // 只看某个团队成员名下的 key
+	// MemberUnassigned 只看未归属团队成员的 key（与 member_id 互斥）
+	MemberUnassigned bool   `form:"member_unassigned"`
+	GroupID          *int64 `form:"group_id"`
+	Status           string `form:"status" binding:"omitempty,oneof=active disabled expired"`
 }
 
 // CreateAPIKeyReq 创建 API 密钥请求

@@ -1548,6 +1548,7 @@
     "create": "Create Key",
     "edit": "Edit Key",
     "name_placeholder": "e.g. Production Key",
+    "search_placeholder": "Search name or key prefix…",
     "group": "Group",
     "select_group": "Select group",
     "no_groups_available": "No available groups yet. Please contact an administrator to assign a group before creating a key.",
@@ -1628,7 +1629,6 @@
     "member_label": "Team member",
     "member_none": "Not assigned",
     "member_hint": "Assigned keys are bound by the member budget and counted toward the member",
-    "member_filter_active": "Showing keys of member \"{{name}}\" only",
     "clear_filter": "Clear filter"
   },
   "team": {
