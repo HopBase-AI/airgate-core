@@ -330,7 +330,18 @@ func sessionUsageScope(c *gin.Context, requestedKey, requestedMember *int64) (ap
 	if sk := scopedAPIKeyID(c); sk > 0 {
 		return &sk, nil, true
 	}
-	return requestedKey, requestedMember, false
+	// 归一化非正值:gin 对「键存在但值为空」(?member_id=)会绑成指向 0 的非空指针,
+	// 而 member_id=0 在库里是「无成员归属」,会精确筛出全部非成员记录 —— 空参数
+	// 不该变成一个生效的筛选。同理 api_key_id。
+	return positiveOrNil(requestedKey), positiveOrNil(requestedMember), false
+}
+
+// positiveOrNil 把 <=0 的筛选值视作「未筛选」。
+func positiveOrNil(v *int64) *int64 {
+	if v == nil || *v <= 0 {
+		return nil
+	}
+	return v
 }
 
 // scopedAPIKeyID 返回 JWT 中携带的 API Key ID（API Key 登录场景），0 表示普通登录。

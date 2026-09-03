@@ -342,7 +342,19 @@ func RequireEnterpriseOwner(db *ent.Client) gin.HandlerFunc {
 			return
 		}
 		u, err := db.User.Get(c.Request.Context(), userID)
-		if err != nil || !u.IsEnterpriseOwner {
+		if err != nil {
+			// DB 抖动不能误判成「无权」——那会让真企业主的团队列表直接消失且无法重试。
+			if ent.IsNotFound(err) {
+				slog.Warn("enterprise_owner_access_denied", sdk.LogFieldUserID, userID, sdk.LogFieldReason, "user_missing", sdk.LogFieldRequestID, RequestIDFromGinContext(c))
+				response.Forbidden(c, "无权管理团队成员")
+			} else {
+				slog.Error("enterprise_owner_lookup_failed", sdk.LogFieldUserID, userID, sdk.LogFieldError, err, sdk.LogFieldRequestID, RequestIDFromGinContext(c))
+				response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "服务暂不可用，请稍后重试")
+			}
+			c.Abort()
+			return
+		}
+		if !u.IsEnterpriseOwner {
 			slog.Warn("enterprise_owner_access_denied", sdk.LogFieldUserID, userID, sdk.LogFieldRequestID, RequestIDFromGinContext(c))
 			response.Forbidden(c, "无权管理团队成员")
 			c.Abort()

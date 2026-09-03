@@ -1,4 +1,4 @@
-import { get, getToken } from './client';
+import { API_BASE_URL, clearTokenIfSessionCurrent, get, getSessionIdentity, getToken } from './client';
 import type { UsageLogResp, UserUsageLogResp, CustomerUsageLogResp, UsageQuery, UsageStatsResp, UsageTrendBucket, PagedData } from '../types';
 
 type UsageRequestOptions = {
@@ -23,6 +23,9 @@ export const usageApi = {
     end_time?: string;
     api_key_id?: number;
     member_id?: number;
+    platform?: string;
+    model?: string;
+    result?: 'success' | 'error';
     tz?: string;
   }): Promise<{ blob: Blob; filename: string }> => {
     const query = new URLSearchParams();
@@ -30,7 +33,7 @@ export const usageApi = {
       if (value !== undefined && value !== null && value !== '') query.set(key, String(value));
     });
     const token = getToken();
-    const resp = await fetch(`/api/v1/usage/export?${query.toString()}`, {
+    const resp = await fetch(`${API_BASE_URL}/api/v1/usage/export?${query.toString()}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!resp.ok) {
@@ -44,6 +47,9 @@ export const usageApi = {
       } catch {
         // 非 JSON 响应体，保留状态码文案
       }
+      // 这条裸 fetch 不走 request() 的临期刷新与 401 重试，会话真过期时只提示一次
+      // 无从恢复；与 request() 的 401 处置对齐——清掉失效会话，让用户重新登录。
+      if (resp.status === 401) clearTokenIfSessionCurrent(getSessionIdentity());
       throw new Error(message);
     }
     const disposition = resp.headers.get('Content-Disposition') ?? '';

@@ -21,6 +21,7 @@ func RunStartupTasks(db *ent.Client, drv *entsql.Driver, apiKeySecret string) {
 	slog.Info("bootstrap_startup_tasks_start")
 	backfillKeyHints(db, apiKeySecret)
 	backfillResellerMarkupColumns(drv)
+	backfillEnterpriseOwnerOnce(drv)
 	migrateAccountState(drv)
 	backfillEmptyModelRouting(db)
 	migrateUserHistoryRefs(drv)
@@ -273,6 +274,55 @@ func accountColumnExists(ctx context.Context, drv *entsql.Driver, column string)
 	return exists.Next(), true
 }
 
+// enterpriseOwnerBackfillKey 标记「企业主门禁的存量回填已执行过」。
+const enterpriseOwnerBackfillKey = "backfill_enterprise_owner_done"
+
+// backfillEnterpriseOwnerOnce 给「上线前已自助建过成员」的用户补上 is_enterprise_owner，
+// 否则加门禁这次发版会把功能从他们手里收走。
+//
+// ⚠️ 这条**必须只跑一次**，不能像 backfillResellerMarkupColumns 那样每次启动都执行：
+// 它的触发条件（名下有成员）与被写的列（is_enterprise_owner）互相独立，不自限。
+// 管理员事后关掉某人的开关时成员行仍在，若每次启动都跑，下一次发版就把授权复活，
+// 等于「撤销永远撤不掉」。所以用 settings 里的一次性标记来守。
+func backfillEnterpriseOwnerOnce(drv *entsql.Driver) {
+	if drv == nil {
+		return
+	}
+	ctx := context.Background()
+
+	var done entsql.Result
+	rows, err := drv.QueryContext(ctx, "SELECT 1 FROM settings WHERE key = $1", enterpriseOwnerBackfillKey)
+	if err != nil {
+		// settings 表都读不到就别猜，跳过；下次启动再试。
+		slog.Warn("bootstrap_enterprise_owner_backfill_skipped", "stage", "probe", sdk.LogFieldError, err)
+		return
+	}
+	already := rows.Next()
+	_ = rows.Close()
+	if already {
+		return
+	}
+
+	if err := drv.Exec(ctx,
+		"UPDATE users SET is_enterprise_owner = true WHERE is_enterprise_owner = false AND id IN (SELECT user_members FROM members)",
+		[]any{}, &done); err != nil {
+		slog.Warn("bootstrap_enterprise_owner_backfill_failed", sdk.LogFieldError, err)
+		return
+	}
+	affected, _ := done.RowsAffected()
+
+	// 标记落库失败时不吞：下次启动会重跑回填（幂等条件仍在，最坏是再授一次已授的人），
+	// 但绝不能因为标记写失败就当成功。
+	var mark entsql.Result
+	if err := drv.Exec(ctx,
+		`INSERT INTO settings (key, value, "group", created_at, updated_at) VALUES ($1, 'true', 'system', now(), now()) ON CONFLICT (key) DO NOTHING`,
+		[]any{enterpriseOwnerBackfillKey}, &mark); err != nil {
+		slog.Error("bootstrap_enterprise_owner_backfill_mark_failed", "rows", affected, sdk.LogFieldError, err)
+		return
+	}
+	slog.Info("bootstrap_enterprise_owner_backfill_done", "rows", affected)
+}
+
 // backfillResellerMarkupColumns 一次性回填 reseller markup 改造引入的两个新列：
 //   - usage_logs.billed_cost：历史行未启用 markup，账面 = 真实成本
 //   - api_keys.used_quota_actual：历史 key 未启用 markup，actual 累加值 = used_quota
@@ -293,9 +343,6 @@ func backfillResellerMarkupColumns(drv *entsql.Driver) {
 		// 历史 account_rate 全是 1.0，account_cost 等价 total_cost
 		{"usage_logs.account_cost", "UPDATE usage_logs SET account_cost = total_cost WHERE account_cost = 0 AND total_cost > 0"},
 		{"api_keys.used_quota_actual", "UPDATE api_keys SET used_quota_actual = used_quota WHERE used_quota_actual = 0 AND used_quota > 0"},
-		// 团队成员上线时不设门槛，任何用户都能建成员；补上 is_enterprise_owner 门禁后，
-		// 已经建过成员的用户必须继续可用，否则功能会被这次发版从他们手里收走。
-		{"users.is_enterprise_owner", "UPDATE users SET is_enterprise_owner = true WHERE is_enterprise_owner = false AND id IN (SELECT user_members FROM members WHERE user_members IS NOT NULL)"},
 	}
 
 	for _, stmt := range statements {

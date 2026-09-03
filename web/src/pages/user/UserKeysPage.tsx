@@ -10,6 +10,7 @@ import { modelsApi } from '../../shared/api/models';
 import { settingsApi } from '../../shared/api/settings';
 import { parseQuoteFx } from '../../shared/quoteMath';
 import { useToast } from '../../shared/ui';
+import { useAuth } from '../../app/providers/AuthProvider';
 import { AlertDialog, Alert, Button, Dropdown, EmptyState, Input, ListBox, Modal, Select, Spinner, TextField as HeroTextField, useOverlayState } from '@heroui/react';
 import { DialogTriggerShim } from '../../shared/components/DialogTriggerShim';
 import {
@@ -65,6 +66,7 @@ export default function UserKeysPage() {
   // 当前界面语言：分组名多语言覆盖按此精确匹配(en / zh-HK / ja),miss 回退基准文案
   const uiLang = i18n.language;
   const { toast } = useToast();
+  const { user } = useAuth();
   const copy = useClipboard();
   const queryClient = useQueryClient();
 
@@ -134,10 +136,13 @@ export default function UserKeysPage() {
     placeholderData: keepPreviousData,
   });
 
-  // 团队成员（归属选择 / 名字展示）；没有成员的普通用户拿到空列表，相关 UI 不渲染
+  // 团队成员（归属选择 / 名字展示）。/members 有企业主门禁，非企业主调必 403，
+  // 所以这里按身份 enabled——否则每个普通用户每次进这页都会在服务端留下 403 + WARN。
+  const isEnterpriseOwner = user?.role === 'admin' || !!user?.is_enterprise_owner;
   const { data: membersData } = useQuery({
     queryKey: queryKeys.membersForKeys(),
     queryFn: () => membersApi.list(FETCH_ALL_PARAMS),
+    enabled: isEnterpriseOwner,
     staleTime: 60_000,
   });
   const memberList = useMemo(() => membersData?.list ?? [], [membersData?.list]);
