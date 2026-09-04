@@ -579,8 +579,12 @@ func init() {
 	taskDescErrorMessage := taskFields[11].Descriptor()
 	// task.DefaultErrorMessage holds the default value on creation for the error_message field.
 	task.DefaultErrorMessage = taskDescErrorMessage.Default.(string)
+	// taskDescEstimatedCost is the schema descriptor for estimated_cost field.
+	taskDescEstimatedCost := taskFields[13].Descriptor()
+	// task.DefaultEstimatedCost holds the default value on creation for the estimated_cost field.
+	task.DefaultEstimatedCost = taskDescEstimatedCost.Default.(float64)
 	// taskDescProgress is the schema descriptor for progress field.
-	taskDescProgress := taskFields[13].Descriptor()
+	taskDescProgress := taskFields[14].Descriptor()
 	// task.DefaultProgress holds the default value on creation for the progress field.
 	task.DefaultProgress = taskDescProgress.Default.(int)
 	// task.ProgressValidator is a validator for the "progress" field. It is called by the builders before save.
@@ -600,23 +604,23 @@ func init() {
 		}
 	}()
 	// taskDescPriority is the schema descriptor for priority field.
-	taskDescPriority := taskFields[14].Descriptor()
+	taskDescPriority := taskFields[15].Descriptor()
 	// task.DefaultPriority holds the default value on creation for the priority field.
 	task.DefaultPriority = taskDescPriority.Default.(int)
 	// taskDescAttempts is the schema descriptor for attempts field.
-	taskDescAttempts := taskFields[15].Descriptor()
+	taskDescAttempts := taskFields[16].Descriptor()
 	// task.DefaultAttempts holds the default value on creation for the attempts field.
 	task.DefaultAttempts = taskDescAttempts.Default.(int)
 	// taskDescMaxAttempts is the schema descriptor for max_attempts field.
-	taskDescMaxAttempts := taskFields[16].Descriptor()
+	taskDescMaxAttempts := taskFields[17].Descriptor()
 	// task.DefaultMaxAttempts holds the default value on creation for the max_attempts field.
 	task.DefaultMaxAttempts = taskDescMaxAttempts.Default.(int)
 	// taskDescCreatedAt is the schema descriptor for created_at field.
-	taskDescCreatedAt := taskFields[19].Descriptor()
+	taskDescCreatedAt := taskFields[20].Descriptor()
 	// task.DefaultCreatedAt holds the default value on creation for the created_at field.
 	task.DefaultCreatedAt = taskDescCreatedAt.Default.(func() time.Time)
 	// taskDescUpdatedAt is the schema descriptor for updated_at field.
-	taskDescUpdatedAt := taskFields[20].Descriptor()
+	taskDescUpdatedAt := taskFields[21].Descriptor()
 	// task.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	task.DefaultUpdatedAt = taskDescUpdatedAt.Default.(func() time.Time)
 	// task.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

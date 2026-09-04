@@ -44,6 +44,8 @@ type Task struct {
 	ErrorMessage string `json:"error_message,omitempty"`
 	// 关联 usage_log.id，完成后的模型、计量和费用事实以 usage 为准
 	UsageID *int `json:"usage_id,omitempty"`
+	// 预估用户价 USD，提交前由 core 按路由倍率换算并写入；非终态任务的这个值就是「在途预留」
+	EstimatedCost float64 `json:"estimated_cost,omitempty"`
 	// Progress holds the value of the "progress" field.
 	Progress int `json:"progress,omitempty"`
 	// 越高越优先处理
@@ -78,6 +80,8 @@ func (*Task) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case task.FieldInput, task.FieldOutput, task.FieldAttributes, task.FieldExecution:
 			values[i] = new([]byte)
+		case task.FieldEstimatedCost:
+			values[i] = new(sql.NullFloat64)
 		case task.FieldID, task.FieldUserID, task.FieldUsageID, task.FieldProgress, task.FieldPriority, task.FieldAttempts, task.FieldMaxAttempts:
 			values[i] = new(sql.NullInt64)
 		case task.FieldPluginID, task.FieldTaskType, task.FieldStatus, task.FieldStage, task.FieldErrorType, task.FieldErrorCode, task.FieldErrorMessage, task.FieldPublicTaskID, task.FieldIdempotencyKey:
@@ -191,6 +195,12 @@ func (t *Task) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				t.UsageID = new(int)
 				*t.UsageID = int(value.Int64)
+			}
+		case task.FieldEstimatedCost:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field estimated_cost", values[i])
+			} else if value.Valid {
+				t.EstimatedCost = value.Float64
 			}
 		case task.FieldProgress:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -346,6 +356,9 @@ func (t *Task) String() string {
 		builder.WriteString("usage_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
+	builder.WriteString(", ")
+	builder.WriteString("estimated_cost=")
+	builder.WriteString(fmt.Sprintf("%v", t.EstimatedCost))
 	builder.WriteString(", ")
 	builder.WriteString("progress=")
 	builder.WriteString(fmt.Sprintf("%v", t.Progress))

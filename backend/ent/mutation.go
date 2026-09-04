@@ -13999,6 +13999,8 @@ type TaskMutation struct {
 	error_message       *string
 	usage_id            *int
 	addusage_id         *int
+	estimated_cost      *float64
+	addestimated_cost   *float64
 	progress            *int
 	addprogress         *int
 	priority            *int
@@ -14680,6 +14682,62 @@ func (m *TaskMutation) ResetUsageID() {
 	delete(m.clearedFields, task.FieldUsageID)
 }
 
+// SetEstimatedCost sets the "estimated_cost" field.
+func (m *TaskMutation) SetEstimatedCost(f float64) {
+	m.estimated_cost = &f
+	m.addestimated_cost = nil
+}
+
+// EstimatedCost returns the value of the "estimated_cost" field in the mutation.
+func (m *TaskMutation) EstimatedCost() (r float64, exists bool) {
+	v := m.estimated_cost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEstimatedCost returns the old "estimated_cost" field's value of the Task entity.
+// If the Task object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TaskMutation) OldEstimatedCost(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEstimatedCost is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEstimatedCost requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEstimatedCost: %w", err)
+	}
+	return oldValue.EstimatedCost, nil
+}
+
+// AddEstimatedCost adds f to the "estimated_cost" field.
+func (m *TaskMutation) AddEstimatedCost(f float64) {
+	if m.addestimated_cost != nil {
+		*m.addestimated_cost += f
+	} else {
+		m.addestimated_cost = &f
+	}
+}
+
+// AddedEstimatedCost returns the value that was added to the "estimated_cost" field in this mutation.
+func (m *TaskMutation) AddedEstimatedCost() (r float64, exists bool) {
+	v := m.addestimated_cost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetEstimatedCost resets all changes to the "estimated_cost" field.
+func (m *TaskMutation) ResetEstimatedCost() {
+	m.estimated_cost = nil
+	m.addestimated_cost = nil
+}
+
 // SetProgress sets the "progress" field.
 func (m *TaskMutation) SetProgress(i int) {
 	m.progress = &i
@@ -15304,7 +15362,7 @@ func (m *TaskMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TaskMutation) Fields() []string {
-	fields := make([]string, 0, 25)
+	fields := make([]string, 0, 26)
 	if m.plugin_id != nil {
 		fields = append(fields, task.FieldPluginID)
 	}
@@ -15343,6 +15401,9 @@ func (m *TaskMutation) Fields() []string {
 	}
 	if m.usage_id != nil {
 		fields = append(fields, task.FieldUsageID)
+	}
+	if m.estimated_cost != nil {
+		fields = append(fields, task.FieldEstimatedCost)
 	}
 	if m.progress != nil {
 		fields = append(fields, task.FieldProgress)
@@ -15414,6 +15475,8 @@ func (m *TaskMutation) Field(name string) (ent.Value, bool) {
 		return m.ErrorMessage()
 	case task.FieldUsageID:
 		return m.UsageID()
+	case task.FieldEstimatedCost:
+		return m.EstimatedCost()
 	case task.FieldProgress:
 		return m.Progress()
 	case task.FieldPriority:
@@ -15473,6 +15536,8 @@ func (m *TaskMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldErrorMessage(ctx)
 	case task.FieldUsageID:
 		return m.OldUsageID(ctx)
+	case task.FieldEstimatedCost:
+		return m.OldEstimatedCost(ctx)
 	case task.FieldProgress:
 		return m.OldProgress(ctx)
 	case task.FieldPriority:
@@ -15597,6 +15662,13 @@ func (m *TaskMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetUsageID(v)
 		return nil
+	case task.FieldEstimatedCost:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEstimatedCost(v)
+		return nil
 	case task.FieldProgress:
 		v, ok := value.(int)
 		if !ok {
@@ -15695,6 +15767,9 @@ func (m *TaskMutation) AddedFields() []string {
 	if m.addusage_id != nil {
 		fields = append(fields, task.FieldUsageID)
 	}
+	if m.addestimated_cost != nil {
+		fields = append(fields, task.FieldEstimatedCost)
+	}
 	if m.addprogress != nil {
 		fields = append(fields, task.FieldProgress)
 	}
@@ -15719,6 +15794,8 @@ func (m *TaskMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedUserID()
 	case task.FieldUsageID:
 		return m.AddedUsageID()
+	case task.FieldEstimatedCost:
+		return m.AddedEstimatedCost()
 	case task.FieldProgress:
 		return m.AddedProgress()
 	case task.FieldPriority:
@@ -15749,6 +15826,13 @@ func (m *TaskMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddUsageID(v)
+		return nil
+	case task.FieldEstimatedCost:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddEstimatedCost(v)
 		return nil
 	case task.FieldProgress:
 		v, ok := value.(int)
@@ -15906,6 +15990,9 @@ func (m *TaskMutation) ResetField(name string) error {
 		return nil
 	case task.FieldUsageID:
 		m.ResetUsageID()
+		return nil
+	case task.FieldEstimatedCost:
+		m.ResetEstimatedCost()
 		return nil
 	case task.FieldProgress:
 		m.ResetProgress()

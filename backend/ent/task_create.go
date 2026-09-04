@@ -146,6 +146,20 @@ func (tc *TaskCreate) SetNillableUsageID(i *int) *TaskCreate {
 	return tc
 }
 
+// SetEstimatedCost sets the "estimated_cost" field.
+func (tc *TaskCreate) SetEstimatedCost(f float64) *TaskCreate {
+	tc.mutation.SetEstimatedCost(f)
+	return tc
+}
+
+// SetNillableEstimatedCost sets the "estimated_cost" field if the given value is not nil.
+func (tc *TaskCreate) SetNillableEstimatedCost(f *float64) *TaskCreate {
+	if f != nil {
+		tc.SetEstimatedCost(*f)
+	}
+	return tc
+}
+
 // SetProgress sets the "progress" field.
 func (tc *TaskCreate) SetProgress(i int) *TaskCreate {
 	tc.mutation.SetProgress(i)
@@ -385,6 +399,10 @@ func (tc *TaskCreate) defaults() {
 		v := task.DefaultErrorMessage
 		tc.mutation.SetErrorMessage(v)
 	}
+	if _, ok := tc.mutation.EstimatedCost(); !ok {
+		v := task.DefaultEstimatedCost
+		tc.mutation.SetEstimatedCost(v)
+	}
 	if _, ok := tc.mutation.Progress(); !ok {
 		v := task.DefaultProgress
 		tc.mutation.SetProgress(v)
@@ -459,6 +477,9 @@ func (tc *TaskCreate) check() error {
 	}
 	if _, ok := tc.mutation.ErrorMessage(); !ok {
 		return &ValidationError{Name: "error_message", err: errors.New(`ent: missing required field "Task.error_message"`)}
+	}
+	if _, ok := tc.mutation.EstimatedCost(); !ok {
+		return &ValidationError{Name: "estimated_cost", err: errors.New(`ent: missing required field "Task.estimated_cost"`)}
 	}
 	if _, ok := tc.mutation.Progress(); !ok {
 		return &ValidationError{Name: "progress", err: errors.New(`ent: missing required field "Task.progress"`)}
@@ -560,6 +581,10 @@ func (tc *TaskCreate) createSpec() (*Task, *sqlgraph.CreateSpec) {
 	if value, ok := tc.mutation.UsageID(); ok {
 		_spec.SetField(task.FieldUsageID, field.TypeInt, value)
 		_node.UsageID = &value
+	}
+	if value, ok := tc.mutation.EstimatedCost(); ok {
+		_spec.SetField(task.FieldEstimatedCost, field.TypeFloat64, value)
+		_node.EstimatedCost = value
 	}
 	if value, ok := tc.mutation.Progress(); ok {
 		_spec.SetField(task.FieldProgress, field.TypeInt, value)

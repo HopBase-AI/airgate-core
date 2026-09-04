@@ -216,6 +216,27 @@ func (tu *TaskUpdate) ClearUsageID() *TaskUpdate {
 	return tu
 }
 
+// SetEstimatedCost sets the "estimated_cost" field.
+func (tu *TaskUpdate) SetEstimatedCost(f float64) *TaskUpdate {
+	tu.mutation.ResetEstimatedCost()
+	tu.mutation.SetEstimatedCost(f)
+	return tu
+}
+
+// SetNillableEstimatedCost sets the "estimated_cost" field if the given value is not nil.
+func (tu *TaskUpdate) SetNillableEstimatedCost(f *float64) *TaskUpdate {
+	if f != nil {
+		tu.SetEstimatedCost(*f)
+	}
+	return tu
+}
+
+// AddEstimatedCost adds f to the "estimated_cost" field.
+func (tu *TaskUpdate) AddEstimatedCost(f float64) *TaskUpdate {
+	tu.mutation.AddEstimatedCost(f)
+	return tu
+}
+
 // SetProgress sets the "progress" field.
 func (tu *TaskUpdate) SetProgress(i int) *TaskUpdate {
 	tu.mutation.ResetProgress()
@@ -566,6 +587,12 @@ func (tu *TaskUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if tu.mutation.UsageIDCleared() {
 		_spec.ClearField(task.FieldUsageID, field.TypeInt)
 	}
+	if value, ok := tu.mutation.EstimatedCost(); ok {
+		_spec.SetField(task.FieldEstimatedCost, field.TypeFloat64, value)
+	}
+	if value, ok := tu.mutation.AddedEstimatedCost(); ok {
+		_spec.AddField(task.FieldEstimatedCost, field.TypeFloat64, value)
+	}
 	if value, ok := tu.mutation.Progress(); ok {
 		_spec.SetField(task.FieldProgress, field.TypeInt, value)
 	}
@@ -834,6 +861,27 @@ func (tuo *TaskUpdateOne) AddUsageID(i int) *TaskUpdateOne {
 // ClearUsageID clears the value of the "usage_id" field.
 func (tuo *TaskUpdateOne) ClearUsageID() *TaskUpdateOne {
 	tuo.mutation.ClearUsageID()
+	return tuo
+}
+
+// SetEstimatedCost sets the "estimated_cost" field.
+func (tuo *TaskUpdateOne) SetEstimatedCost(f float64) *TaskUpdateOne {
+	tuo.mutation.ResetEstimatedCost()
+	tuo.mutation.SetEstimatedCost(f)
+	return tuo
+}
+
+// SetNillableEstimatedCost sets the "estimated_cost" field if the given value is not nil.
+func (tuo *TaskUpdateOne) SetNillableEstimatedCost(f *float64) *TaskUpdateOne {
+	if f != nil {
+		tuo.SetEstimatedCost(*f)
+	}
+	return tuo
+}
+
+// AddEstimatedCost adds f to the "estimated_cost" field.
+func (tuo *TaskUpdateOne) AddEstimatedCost(f float64) *TaskUpdateOne {
+	tuo.mutation.AddEstimatedCost(f)
 	return tuo
 }
 
@@ -1216,6 +1264,12 @@ func (tuo *TaskUpdateOne) sqlSave(ctx context.Context) (_node *Task, err error) 
 	}
 	if tuo.mutation.UsageIDCleared() {
 		_spec.ClearField(task.FieldUsageID, field.TypeInt)
+	}
+	if value, ok := tuo.mutation.EstimatedCost(); ok {
+		_spec.SetField(task.FieldEstimatedCost, field.TypeFloat64, value)
+	}
+	if value, ok := tuo.mutation.AddedEstimatedCost(); ok {
+		_spec.AddField(task.FieldEstimatedCost, field.TypeFloat64, value)
 	}
 	if value, ok := tuo.mutation.Progress(); ok {
 		_spec.SetField(task.FieldProgress, field.TypeInt, value)
