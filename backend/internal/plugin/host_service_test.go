@@ -592,6 +592,14 @@ func TestCheckHostForwardBalance(t *testing.T) {
 	if err := host.checkHostForwardBalance(ctx, int64(positiveBalanceUser.ID)); err != nil {
 		t.Fatalf("expected positive balance user to pass, got %v", err)
 	}
+
+	// 新提交(非钉选)照旧拦;钉选账号的后续轮询/结算是已提交任务的延续,余额转负也放行
+	if err := host.checkHostForwardBalanceOrReplay(ctx, hostForwardRequest{UserID: int64(zeroBalanceUser.ID)}); status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("fresh submit with zero balance should be rejected, got %v", err)
+	}
+	if err := host.checkHostForwardBalanceOrReplay(ctx, hostForwardRequest{UserID: int64(zeroBalanceUser.ID), AccountID: 9, GroupID: 1, Model: "seedance", RequestID: "task-1"}); err != nil {
+		t.Fatalf("pinned follow-up must settle even with exhausted balance, got %v", err)
+	}
 }
 
 func TestListGroupsEligibleOnly(t *testing.T) {
