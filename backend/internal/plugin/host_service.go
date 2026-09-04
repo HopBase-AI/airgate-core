@@ -3088,19 +3088,29 @@ func (h *HostService) checkHostForwardBalance(ctx context.Context, userID int64)
 	return nil
 }
 
-// checkHostForwardBalanceOrReplay lets an already-recorded non-stream request
-// finish its recovery path even if the original charge exhausted the balance.
-// The full context check prevents a reused request ID from bypassing quota.
+// checkHostForwardBalanceOrReplay 余额前置门禁只拦"新提交"。
+//
+// 钉选账号的转发（AccountID>0）是异步任务提交后的后续动作——查询进度 / 取产物 / 结算——
+// 上游成本在提交那一刻已经发生,钱的决定已经做过;这里再按余额拦,只会把已生成的产物
+// 卡在门外:2026-09-04 用户 6978 充 $50 连出三条 Seedance 视频后余额转负,第二条视频
+// 的结算轮询被本门禁拒了一小时(ResourceExhausted 刷屏),任务最终超时失败——用户没拿到
+// 视频、上游成本白付、账也没记。故钉选后续一律放行,结算像 API 转发一样允许扣成负数;
+// 余额是否够用由提交时(非钉选路径)的检查负责。
+// 已记账的请求重放同样放行(幂等 usage 命中),整段上下文校验防止复用 request_id 绕过配额。
 func (h *HostService) checkHostForwardBalanceOrReplay(ctx context.Context, req hostForwardRequest) error {
 	requestID := strings.TrimSpace(req.RequestID)
 	platform := h.hostForwardRequestPlatform(req)
 	if requestID != "" && req.AccountID > 0 && platform != "" && strings.TrimSpace(req.Model) != "" {
+		// 幂等/冲突校验照旧：同一 request_id 换了计费上下文必须拒绝,已记账则直接放行。
 		req.RequestID = requestID
 		if _, found, err := h.existingHostForwardUsageID(ctx, req, platform, req.Model); err != nil {
 			return err
 		} else if found {
 			return nil
 		}
+	}
+	if req.AccountID > 0 {
+		return nil
 	}
 	return h.checkHostForwardBalance(ctx, req.UserID)
 }
