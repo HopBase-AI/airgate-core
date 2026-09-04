@@ -516,10 +516,15 @@ type hostUpdateTaskRequest struct {
 }
 
 type hostGetTaskRequest struct {
-	PluginID     string `json:"plugin_id"`
-	TaskID       int64  `json:"task_id"`
-	PublicTaskID string `json:"public_task_id"`
-	UserID       int64  `json:"user_id"`
+	PluginID string `json:"plugin_id"`
+	// PluginIDs 非空时按 IN 过滤（与 PluginID 二选一，PluginIDs 优先），形状与
+	// hostListTasksRequest 一致。供聚合型插件（studio 同时消费六个执行插件的任务）
+	// 一次命中，而不是逐插件试探——试探的每一次未命中都会在 core 与 SDK 两侧
+	// 落 ERROR 日志（2026-09-04 生产实测单日 1.7 万条），淹没真实错误。
+	PluginIDs    []string `json:"plugin_ids"`
+	TaskID       int64    `json:"task_id"`
+	PublicTaskID string   `json:"public_task_id"`
+	UserID       int64    `json:"user_id"`
 }
 
 type hostListTasksRequest struct {
