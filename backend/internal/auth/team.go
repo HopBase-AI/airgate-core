@@ -9,6 +9,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent"
 	entmember "github.com/DouDOU-start/airgate-core/ent/member"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
+	"github.com/DouDOU-start/airgate-core/internal/pkg/period"
 )
 
 // ErrMemberGroupForbidden 成员被企业主限定了可用分组，而请求的分组不在其中。
@@ -119,4 +120,37 @@ func EvaluateMemberGate(ctx context.Context, db *ent.Client, m *ent.Member, now 
 		return MemberGate{}, err
 	}
 	return MemberGate(mv), nil
+}
+
+// MemberRemainingQuota 成员本期剩余额度（纯计算，不推进换期、不落库）：
+// 有额度（quota_usd > 0）返回 limited=true 与剩余（下限 0）；0=不限返回 limited=false。
+//
+// 成员账号登录后看到的"余额"按这里的口径：有额度的成员看自己的剩余额度，而不是企业主余额
+// ——企业主余额对成员既无意义也不该暴露；只有不限额的老模型成员才回落到企业主余额。
+// 本期已用与 evaluateMember / store.memberPeriodView 同口径（monthly 跨期后从 0 起算）。
+func MemberRemainingQuota(m *ent.Member, now time.Time) (remaining float64, limited bool) {
+	if m == nil || m.QuotaUsd <= 0 {
+		return 0, false
+	}
+	remaining = m.QuotaUsd - memberPeriodUsed(m, now)
+	if remaining < 0 {
+		remaining = 0
+	}
+	return remaining, true
+}
+
+// memberPeriodUsed 成员本期已用：monthly 已跨期但鉴权尚未推进 period_start 时，
+// 视作新期从 0 起算（与转发闸门一致）；none 为累计 − 手动重置快照。
+func memberPeriodUsed(m *ent.Member, now time.Time) float64 {
+	base := m.PeriodUsedBase
+	if m.QuotaPeriod == entmember.QuotaPeriodMonthly {
+		if _, _, rolled := period.Window(m.PeriodAnchor, m.PeriodStart, now); rolled {
+			base = m.UsedQuota
+		}
+	}
+	used := m.UsedQuota - base
+	if used < 0 {
+		used = 0
+	}
+	return used
 }

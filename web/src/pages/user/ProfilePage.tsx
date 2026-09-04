@@ -118,7 +118,10 @@ export default function ProfilePage() {
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2 w-28 shrink-0">
                     <Wallet className="w-4 h-4 text-text-tertiary" />
-                    <span className="text-xs font-medium text-text-secondary">{t('profile.team_balance')}</span>
+                    {/* 有额度的成员 balance = 本期剩余额度(后端换算)；无额度成员才是团队余额 */}
+                    <span className="text-xs font-medium text-text-secondary">
+                      {(user.member_quota_usd ?? 0) > 0 ? t('profile.member_quota_remaining') : t('profile.team_balance')}
+                    </span>
                   </div>
                   <span className="text-sm text-text font-mono">${formatBalance(user.balance)}</span>
                 </div>

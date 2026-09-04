@@ -28,6 +28,7 @@ func (h *MemberHandler) handleError(logMessage, publicMessage string, err error)
 		return 409, err.Error()
 	case errors.Is(err, appmember.ErrNameRequired),
 		errors.Is(err, appmember.ErrInvalidQuota),
+		errors.Is(err, appmember.ErrQuotaRequired),
 		errors.Is(err, appmember.ErrInvalidQuotaPeriod),
 		errors.Is(err, appmember.ErrInvalidStatus),
 		errors.Is(err, appmember.ErrEmailRequired),

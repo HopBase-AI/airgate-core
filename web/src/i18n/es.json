@@ -490,7 +490,8 @@
     "today": "Hoy",
     "cumulative": "Acumulado",
     "team_balance": "Saldo del equipo",
-    "member_quota": "Mi cuota"
+    "member_quota": "Mi cuota",
+    "member_quota_remaining": "Mi cuota (restante)"
   },
   "users": {
     "title": "Usuarios",
@@ -1546,6 +1547,7 @@
     "balance_alert_saved": "Configuración de alerta de saldo guardada",
     "balance_history": "Historial de saldo",
     "team_balance": "Saldo del equipo",
+    "member_quota_remaining": "Mi cuota (restante)",
     "team_owner": "Equipo"
   },
   "user_keys": {
@@ -1649,7 +1651,8 @@
     "note": "Nota",
     "note_placeholder": "Opcional",
     "quota_label": "Presupuesto (USD)",
-    "quota_hint": "Vacío o 0 = sin límite; todas las claves del miembro comparten este presupuesto",
+    "quota_hint": "Obligatorio. Máximo que el miembro puede consumir en el periodo actual (USD); compartido por todas sus claves y el uso de Studio",
+    "quota_required": "El presupuesto del miembro es obligatorio; introduzca un importe mayor que 0",
     "quota_period": "Periodo del presupuesto",
     "period_monthly": "Se reinicia cada mes",
     "period_none": "Total único",

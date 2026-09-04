@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/ent/enttest"
 	entmember "github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
@@ -75,5 +76,42 @@ func TestResolveHostForwardIdentity(t *testing.T) {
 	billingID, allowed, err := host.resolveHostBillingUser(ctx, account.ID)
 	if err != nil || billingID != owner.ID || len(allowed) != 1 {
 		t.Fatalf("resolveHostBillingUser = %d %v err=%v", billingID, allowed, err)
+	}
+}
+
+// users.get 的余额口径：有额度的成员账号看本期剩余额度（10 − 2 = 8），不限额的老模型成员
+// 看企业主余额；非成员看自己的余额。
+func TestGetUserInfoMemberBalance(t *testing.T) {
+	ctx := context.Background()
+	db := enttest.Open(t, "sqlite3", "file:host_user_info_team?mode=memory&cache=shared&_fk=1", enttest.WithMigrateOptions(schema.WithGlobalUniqueID(false)))
+	t.Cleanup(func() { _ = db.Close() })
+	owner := db.User.Create().SetEmail("owner2@example.com").SetPasswordHash("h").SetBalance(50).SaveX(ctx)
+	quotaAccount := db.User.Create().SetEmail("quota@example.com").SetPasswordHash("h").SetBalance(0).SaveX(ctx)
+	legacyAccount := db.User.Create().SetEmail("legacy@example.com").SetPasswordHash("h").SetBalance(0).SaveX(ctx)
+	plain := db.User.Create().SetEmail("plain2@example.com").SetPasswordHash("h").SetBalance(3).SaveX(ctx)
+	db.Member.Create().SetName("有额度").SetOwner(owner).SetAccount(quotaAccount).SetQuotaUsd(10).SetUsedQuota(2).SaveX(ctx)
+	db.Member.Create().SetName("不限额").SetOwner(owner).SetAccount(legacyAccount).SaveX(ctx)
+	host := &HostService{db: db}
+
+	// 归属缓存按 userID 键控且跨测试库共享，先失效再断言，避免拿到别的内存库里的同 ID 用户。
+	for _, u := range []*ent.User{quotaAccount, legacyAccount, plain} {
+		auth.InvalidateTeamIdentity(u.ID)
+	}
+	get := func(id int) float64 {
+		t.Helper()
+		out, err := host.getUserInfo(ctx, hostGetUserInfoRequest{UserID: int64(id)})
+		if err != nil {
+			t.Fatalf("getUserInfo(%d): %v", id, err)
+		}
+		return out["balance"].(float64)
+	}
+	if got := get(quotaAccount.ID); got != 8 {
+		t.Fatalf("有额度成员 balance = %v, want 8（本期剩余额度）", got)
+	}
+	if got := get(legacyAccount.ID); got != 50 {
+		t.Fatalf("不限额成员 balance = %v, want 50（企业主余额）", got)
+	}
+	if got := get(plain.ID); got != 3 {
+		t.Fatalf("非成员 balance = %v, want 3", got)
 	}
 }

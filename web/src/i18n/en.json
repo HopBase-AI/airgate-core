@@ -490,7 +490,8 @@
     "today": "Today",
     "cumulative": "Cumulative",
     "team_balance": "Team balance",
-    "member_quota": "My quota"
+    "member_quota": "My quota",
+    "member_quota_remaining": "My quota (remaining)"
   },
   "users": {
     "title": "Users",
@@ -1546,6 +1547,7 @@
     "balance_alert_saved": "Balance alert settings saved",
     "balance_history": "Balance History",
     "team_balance": "Team balance",
+    "member_quota_remaining": "My quota (remaining)",
     "team_owner": "Team"
   },
   "user_keys": {
@@ -1649,7 +1651,8 @@
     "note": "Note",
     "note_placeholder": "Optional",
     "quota_label": "Budget (USD)",
-    "quota_hint": "Leave blank or 0 for unlimited; all keys under this member share the budget",
+    "quota_hint": "Required. The most this member can spend in the current period (USD); shared by all keys and Studio usage under this member",
+    "quota_required": "A member budget is required; enter an amount greater than 0",
     "quota_period": "Budget period",
     "period_monthly": "Resets monthly",
     "period_none": "One-time total",

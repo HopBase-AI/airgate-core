@@ -43,11 +43,12 @@ func TestCreateWithPasswordValidation(t *testing.T) {
 		taken bool
 		want  error
 	}{
-		{"缺邮箱", CreateInput{Name: "a", Password: "secret6"}, false, ErrEmailRequired},
-		{"邮箱格式", CreateInput{Name: "a", Email: "not-an-email", Password: "secret6"}, false, ErrInvalidEmail},
-		{"密码太短", CreateInput{Name: "a", Email: "a@b.co", Password: "12345"}, false, ErrPasswordTooShort},
-		{"邮箱被占", CreateInput{Name: "a", Email: "a@b.co", Password: "secret6"}, true, ErrEmailAlreadyExists},
-		{"分组越界", CreateInput{Name: "a", Email: "a@b.co", Password: "secret6", AllowedGroupIDs: []int64{9}}, false, ErrGroupNotAllowed},
+		{"缺邮箱", CreateInput{Name: "a", Password: "secret6", QuotaUSD: 10}, false, ErrEmailRequired},
+		{"邮箱格式", CreateInput{Name: "a", Email: "not-an-email", Password: "secret6", QuotaUSD: 10}, false, ErrInvalidEmail},
+		{"密码太短", CreateInput{Name: "a", Email: "a@b.co", Password: "12345", QuotaUSD: 10}, false, ErrPasswordTooShort},
+		{"邮箱被占", CreateInput{Name: "a", Email: "a@b.co", Password: "secret6", QuotaUSD: 10}, true, ErrEmailAlreadyExists},
+		{"分组越界", CreateInput{Name: "a", Email: "a@b.co", Password: "secret6", AllowedGroupIDs: []int64{9}, QuotaUSD: 10}, false, ErrGroupNotAllowed},
+		{"额度为 0", CreateInput{Name: "a", Email: "a@b.co", Password: "secret6"}, false, ErrQuotaRequired},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -122,5 +123,36 @@ func TestUpdateAccountFieldsAndGroups(t *testing.T) {
 	}
 	if !repo4.updated.HasAllowedGroupIDs || len(repo4.updated.AllowedGroupIDs) != 0 {
 		t.Fatalf("清空白名单应写空集: %+v", repo4.updated)
+	}
+}
+
+// 额度必填只约束有登录账号的成员：建账号成员额度须 >0；老模型（无账号）成员仍可 0=不限；
+// 编辑时有账号的成员不能把额度改回 0，老成员不受限。
+func TestQuotaRequiredOnlyForAccountMembers(t *testing.T) {
+	ctx := context.Background()
+	if _, err := NewService(&stubRepo{}).Create(ctx, 7, CreateInput{Name: "a", Email: "a@b.co", Password: "secret6"}); !errors.Is(err, ErrQuotaRequired) {
+		t.Fatalf("带密码额度 0 err = %v, want ErrQuotaRequired", err)
+	}
+	if _, err := NewService(&stubRepo{}).Create(ctx, 7, CreateInput{Name: "a", Email: "a@b.co", Password: "secret6", QuotaUSD: 10}); err != nil {
+		t.Fatalf("带密码额度 10 应成功: %v", err)
+	}
+	if _, err := NewService(&stubRepo{}).Create(ctx, 7, CreateInput{Name: "老成员"}); err != nil {
+		t.Fatalf("老模型额度 0 应成功: %v", err)
+	}
+
+	zero := 0.0
+	repo := &stubRepo{find: Member{ID: 3, OwnerID: 7, AccountUserID: 42, AccountEmail: "old@example.com", QuotaUSD: 10}}
+	if _, err := NewService(repo).Update(ctx, 7, 3, UpdateInput{QuotaUSD: &zero}); !errors.Is(err, ErrQuotaRequired) {
+		t.Fatalf("有账号成员改额度 0 err = %v, want ErrQuotaRequired", err)
+	}
+	if repo.updated.QuotaUSD != nil {
+		t.Fatalf("校验失败不应落库: %+v", repo.updated)
+	}
+	legacy := &stubRepo{find: Member{ID: 4, OwnerID: 7, QuotaUSD: 10}}
+	if _, err := NewService(legacy).Update(ctx, 7, 4, UpdateInput{QuotaUSD: &zero}); err != nil {
+		t.Fatalf("老模型成员改额度 0 应成功: %v", err)
+	}
+	if legacy.updated.QuotaUSD == nil || *legacy.updated.QuotaUSD != 0 {
+		t.Fatalf("老模型成员额度 0 应落库: %+v", legacy.updated)
 	}
 }

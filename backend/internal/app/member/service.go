@@ -83,7 +83,7 @@ func (s *Service) Get(ctx context.Context, ownerID, id int) (Member, error) {
 
 // Create 创建成员。额度周期默认 monthly，锚点取创建时刻。
 //
-// 传了密码即同时创建成员的登录账号（邮箱必填且全站唯一）：成员用邮箱+密码正常登录，
+// 传了密码即同时创建成员的登录账号（邮箱必填且全站唯一，额度必填）：成员用邮箱+密码正常登录，
 // 与普通用户唯一的差别是消耗与归属落在企业主名下。
 func (s *Service) Create(ctx context.Context, ownerID int, input CreateInput) (Member, error) {
 	logger := sdk.LoggerFromContext(ctx)
@@ -93,6 +93,11 @@ func (s *Service) Create(ctx context.Context, ownerID int, input CreateInput) (M
 	}
 	if input.QuotaUSD < 0 {
 		return Member{}, ErrInvalidQuota
+	}
+	// 有登录账号的成员额度必填：成员登录后看到的"余额"就是本期剩余额度，0=不限会让他
+	// 直接看到企业主余额；老模型（无账号）成员沿用 0=不限。
+	if input.Password != "" && input.QuotaUSD <= 0 {
+		return Member{}, ErrQuotaRequired
 	}
 	quotaPeriod := input.QuotaPeriod
 	if quotaPeriod == "" {
@@ -250,6 +255,10 @@ func (s *Service) Update(ctx context.Context, ownerID, id int, input UpdateInput
 	current, err := s.repo.FindOwned(ctx, ownerID, id)
 	if err != nil {
 		return Member{}, err
+	}
+	// 有账号的成员不允许把额度改回 0（不限），口径同 Create；老模型成员不受限。
+	if current.AccountUserID > 0 && input.QuotaUSD != nil && *input.QuotaUSD <= 0 {
+		return Member{}, ErrQuotaRequired
 	}
 	if current.AccountUserID > 0 {
 		patch := AccountPatch{}

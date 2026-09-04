@@ -49,6 +49,7 @@ export function EditMemberModal({
   const periodItems = [monthlyItem, noneItem];
   const selectedPeriod = form.quota_period === 'none' ? noneItem : monthlyItem;
   const showPassword = !isEdit || hasAccount;
+  const quotaRequired = !isEdit || hasAccount;
 
   const toggleGroup = (groupId: number, selected: boolean) => {
     const next = selected
@@ -110,14 +111,16 @@ export function EditMemberModal({
             />
           </HeroTextField>
         ) : null}
-        <HeroTextField fullWidth>
+        {/* 有登录账号的成员额度必填(成员余额 = 本期剩余额度);仅老模型无账号成员保留 0 = 不限 */}
+        <HeroTextField fullWidth isRequired={quotaRequired}>
           <Label>{t('team.quota_label')}</Label>
           <Input
             type="number"
             min={0}
             value={form.quota_usd}
             onChange={(e) => setForm({ ...form, quota_usd: e.target.value })}
-            placeholder={t('team.unlimited')}
+            placeholder={quotaRequired ? undefined : t('team.unlimited')}
+            required={quotaRequired}
           />
           <Description>{t('team.quota_hint')}</Description>
         </HeroTextField>

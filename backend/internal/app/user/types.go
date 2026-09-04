@@ -230,8 +230,8 @@ type Repository interface {
 	MembershipBrief(ctx context.Context, userID int) (MembershipBrief, bool, error)
 }
 
-// MembershipBrief 成员账号在 /users/me 里的团队投影：成员额度口径 + 企业主身份（成员消耗从 owner 扣，
-// 余额展示口径即 owner 余额）。
+// MembershipBrief 成员账号在 /users/me 里的团队投影：成员额度口径 + 企业主身份（成员消耗从 owner 扣；
+// 余额展示口径：有额度看本期剩余额度，不限额才看 owner 余额）。
 type MembershipBrief struct {
 	MemberID        int
 	MemberName      string
