@@ -28,6 +28,15 @@ type UserResp struct {
 	APIKeyRate float64 `json:"api_key_rate,omitempty"`
 	// APIKeyPlatform 当前 Key 所属分组平台（如 anthropic / openai），用于前端 CCS 导入识别客户端类型。
 	APIKeyPlatform string `json:"api_key_platform,omitempty"`
+	// 团队成员账号（members.account 本人登录）：以下字段非空。Balance 此时是企业主余额
+	// （成员消耗从那里扣），MemberQuota* 为成员本期额度口径，TeamOwnerEmail 供前端标注归属。
+	MemberID              int64   `json:"member_id,omitempty"`
+	MemberName            string  `json:"member_name,omitempty"`
+	MemberQuotaUSD        float64 `json:"member_quota_usd,omitempty"`
+	MemberUsedQuota       float64 `json:"member_used_quota,omitempty"`
+	MemberPeriodEnd       string  `json:"member_period_end,omitempty"` // RFC3339；none 周期无
+	MemberAllowedGroupIDs []int64 `json:"member_allowed_group_ids,omitempty"`
+	TeamOwnerEmail        string  `json:"team_owner_email,omitempty"`
 	TimeMixin
 }
 

@@ -304,3 +304,19 @@ func cloneAuthGroupRates(input map[int64]float64) map[int64]float64 {
 }
 
 var _ appauth.Repository = (*AuthStore)(nil)
+
+// MemberAccountState 成员账号状态：members.account 指向该用户时为成员；成员或企业主任一停用即 active=false。
+func (s *AuthStore) MemberAccountState(ctx context.Context, userID int) (bool, bool, error) {
+	m, err := s.db.Member.Query().
+		Where(entmember.HasAccountWith(entuser.IDEQ(userID))).
+		WithOwner().
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return false, false, nil
+		}
+		return false, false, err
+	}
+	active := m.Status == entmember.StatusActive && m.Edges.Owner != nil && m.Edges.Owner.Status == entuser.StatusActive
+	return true, active, nil
+}

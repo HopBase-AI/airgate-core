@@ -40,14 +40,22 @@ func NewService(catalog CatalogReader, groups GroupReader, users UserReader, api
 // 每个模型取"能路由到它的可用分组"中实付倍率最低者（计费同口径：
 // user.group_rates 覆盖 > group.rate_multiplier > 1.0）。
 func (s *Service) UserPricing(ctx context.Context, userID int) (Result, error) {
+	return s.UserPricingScoped(ctx, userID, nil)
+}
+
+// UserPricingScoped 团队成员视角：userID 传企业主（付费身份，报价按其 group_rates /
+// pricing_mode），allowedGroupIDs 非空时只在成员被授予的分组里选价——与转发时的
+// 自动选组范围一致，避免广场展示了成员根本用不到的分组价。
+func (s *Service) UserPricingScoped(ctx context.Context, userID int, allowedGroupIDs []int64) (Result, error) {
 	u, err := s.users.Get(ctx, userID)
 	if err != nil {
 		return Result{}, err
 	}
 	groups, _, err := s.groups.ListAvailable(ctx, appgroup.AvailableFilter{
-		UserID:   userID,
-		Page:     1,
-		PageSize: maxGroupsPageSize,
+		UserID:          userID,
+		Page:            1,
+		PageSize:        maxGroupsPageSize,
+		AllowedGroupIDs: allowedGroupIDs,
 	})
 	if err != nil {
 		return Result{}, err

@@ -26,6 +26,7 @@ type MemberQuery struct {
 	predicates  []predicate.Member
 	withOwner   *UserQuery
 	withAPIKeys *APIKeyQuery
+	withAccount *UserQuery
 	withFKs     bool
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -100,6 +101,28 @@ func (mq *MemberQuery) QueryAPIKeys() *APIKeyQuery {
 			sqlgraph.From(member.Table, member.FieldID, selector),
 			sqlgraph.To(apikey.Table, apikey.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, member.APIKeysTable, member.APIKeysColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(mq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryAccount chains the current query on the "account" edge.
+func (mq *MemberQuery) QueryAccount() *UserQuery {
+	query := (&UserClient{config: mq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := mq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := mq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(member.Table, member.FieldID, selector),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, member.AccountTable, member.AccountColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(mq.driver.Dialect(), step)
 		return fromU, nil
@@ -301,6 +324,7 @@ func (mq *MemberQuery) Clone() *MemberQuery {
 		predicates:  append([]predicate.Member{}, mq.predicates...),
 		withOwner:   mq.withOwner.Clone(),
 		withAPIKeys: mq.withAPIKeys.Clone(),
+		withAccount: mq.withAccount.Clone(),
 		// clone intermediate query.
 		sql:  mq.sql.Clone(),
 		path: mq.path,
@@ -326,6 +350,17 @@ func (mq *MemberQuery) WithAPIKeys(opts ...func(*APIKeyQuery)) *MemberQuery {
 		opt(query)
 	}
 	mq.withAPIKeys = query
+	return mq
+}
+
+// WithAccount tells the query-builder to eager-load the nodes that are connected to
+// the "account" edge. The optional arguments are used to configure the query builder of the edge.
+func (mq *MemberQuery) WithAccount(opts ...func(*UserQuery)) *MemberQuery {
+	query := (&UserClient{config: mq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	mq.withAccount = query
 	return mq
 }
 
@@ -408,9 +443,10 @@ func (mq *MemberQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Membe
 		nodes       = []*Member{}
 		withFKs     = mq.withFKs
 		_spec       = mq.querySpec()
-		loadedTypes = [2]bool{
+		loadedTypes = [3]bool{
 			mq.withOwner != nil,
 			mq.withAPIKeys != nil,
+			mq.withAccount != nil,
 		}
 	)
 	if mq.withOwner != nil {
@@ -447,6 +483,12 @@ func (mq *MemberQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Membe
 		if err := mq.loadAPIKeys(ctx, query, nodes,
 			func(n *Member) { n.Edges.APIKeys = []*APIKey{} },
 			func(n *Member, e *APIKey) { n.Edges.APIKeys = append(n.Edges.APIKeys, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := mq.withAccount; query != nil {
+		if err := mq.loadAccount(ctx, query, nodes, nil,
+			func(n *Member, e *User) { n.Edges.Account = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -511,6 +553,34 @@ func (mq *MemberQuery) loadAPIKeys(ctx context.Context, query *APIKeyQuery, node
 		node, ok := nodeids[*fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "member_api_keys" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (mq *MemberQuery) loadAccount(ctx context.Context, query *UserQuery, nodes []*Member, init func(*Member), assign func(*Member, *User)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*Member)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+	}
+	query.withFKs = true
+	query.Where(predicate.User(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(member.AccountColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.member_account
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "member_account" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "member_account" returned %v for node %v`, *fk, n.ID)
 		}
 		assign(node, n)
 	}

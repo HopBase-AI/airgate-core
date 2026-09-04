@@ -390,6 +390,9 @@ func (s *Service) OAuthLogin(ctx context.Context, provider, code, state string) 
 		return LoginResult{}, ErrUserDisabled
 	}
 
+	if err := s.rejectDisabledMember(ctx, user.ID); err != nil {
+		return LoginResult{}, err
+	}
 	token, err := s.jwtMgr.GenerateToken(user.ID, user.Role, user.Email)
 	if err != nil {
 		logger.Error("jwt_issue_failed", sdk.LogFieldUserID, user.ID, sdk.LogFieldError, err)

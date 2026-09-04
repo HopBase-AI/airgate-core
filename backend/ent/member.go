@@ -3,6 +3,7 @@
 package ent
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -40,6 +41,8 @@ type Member struct {
 	UsedQuotaActual float64 `json:"used_quota_actual,omitempty"`
 	// Status holds the value of the "status" field.
 	Status member.Status `json:"status,omitempty"`
+	// 企业主授予成员可用的分组 ID 白名单；空/NULL 表示继承 owner 全部可见分组。建 key、工作台选组、转发鉴权三处同口径校验。
+	AllowedGroupIds []int64 `json:"allowed_group_ids,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -57,9 +60,11 @@ type MemberEdges struct {
 	Owner *User `json:"owner,omitempty"`
 	// APIKeys holds the value of the api_keys edge.
 	APIKeys []*APIKey `json:"api_keys,omitempty"`
+	// Account holds the value of the account edge.
+	Account *User `json:"account,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [3]bool
 }
 
 // OwnerOrErr returns the Owner value or an error if the edge
@@ -82,11 +87,24 @@ func (e MemberEdges) APIKeysOrErr() ([]*APIKey, error) {
 	return nil, &NotLoadedError{edge: "api_keys"}
 }
 
+// AccountOrErr returns the Account value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e MemberEdges) AccountOrErr() (*User, error) {
+	if e.Account != nil {
+		return e.Account, nil
+	} else if e.loadedTypes[2] {
+		return nil, &NotFoundError{label: user.Label}
+	}
+	return nil, &NotLoadedError{edge: "account"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*Member) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case member.FieldAllowedGroupIds:
+			values[i] = new([]byte)
 		case member.FieldQuotaUsd, member.FieldPeriodUsedBase, member.FieldUsedQuota, member.FieldUsedQuotaActual:
 			values[i] = new(sql.NullFloat64)
 		case member.FieldID:
@@ -184,6 +202,14 @@ func (m *Member) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				m.Status = member.Status(value.String)
 			}
+		case member.FieldAllowedGroupIds:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field allowed_group_ids", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &m.AllowedGroupIds); err != nil {
+					return fmt.Errorf("unmarshal field allowed_group_ids: %w", err)
+				}
+			}
 		case member.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field created_at", values[i])
@@ -224,6 +250,11 @@ func (m *Member) QueryOwner() *UserQuery {
 // QueryAPIKeys queries the "api_keys" edge of the Member entity.
 func (m *Member) QueryAPIKeys() *APIKeyQuery {
 	return NewMemberClient(m.config).QueryAPIKeys(m)
+}
+
+// QueryAccount queries the "account" edge of the Member entity.
+func (m *Member) QueryAccount() *UserQuery {
+	return NewMemberClient(m.config).QueryAccount(m)
 }
 
 // Update returns a builder for updating this Member.
@@ -281,6 +312,9 @@ func (m *Member) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(fmt.Sprintf("%v", m.Status))
+	builder.WriteString(", ")
+	builder.WriteString("allowed_group_ids=")
+	builder.WriteString(fmt.Sprintf("%v", m.AllowedGroupIds))
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(m.CreatedAt.Format(time.ANSIC))

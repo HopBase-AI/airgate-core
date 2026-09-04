@@ -488,7 +488,9 @@
     "max_concurrency": "Concurrencia máxima",
     "recent_usage": "Consumo reciente",
     "today": "Hoy",
-    "cumulative": "Acumulado"
+    "cumulative": "Acumulado",
+    "team_balance": "Saldo del equipo",
+    "member_quota": "Mi cuota"
   },
   "users": {
     "title": "Usuarios",
@@ -1542,7 +1544,9 @@
     "balance_alert_threshold": "Umbral de alerta (USD)",
     "balance_alert_hint": "Saldo actual: ${{balance}}",
     "balance_alert_saved": "Configuración de alerta de saldo guardada",
-    "balance_history": "Historial de saldo"
+    "balance_history": "Historial de saldo",
+    "team_balance": "Saldo del equipo",
+    "team_owner": "Equipo"
   },
   "user_keys": {
     "title": "Claves API",
@@ -1635,13 +1639,13 @@
   },
   "team": {
     "title": "Miembros del equipo",
-    "description": "Asigna presupuestos a los miembros; todo el consumo se descuenta del saldo de la cuenta principal",
+    "description": "Crea cuentas de acceso para los miembros del equipo, asigna cuotas y grupos permitidos. Los miembros inician sesión con su propia cuenta y tienen las mismas funciones que un usuario normal; el consumo se cobra a tu saldo y el uso se atribuye al miembro.",
     "create": "Añadir miembro",
     "edit": "Editar miembro",
     "name": "Nombre del miembro",
     "name_placeholder": "p. ej. Ana / Equipo de I+D",
-    "email": "Correo de contacto",
-    "email_placeholder": "Opcional, solo para identificación",
+    "email": "Correo de acceso",
+    "email_placeholder": "Se usa para iniciar sesión, p. ej. alice@empresa.com",
     "note": "Nota",
     "note_placeholder": "Opcional",
     "quota_label": "Presupuesto (USD)",
@@ -1661,14 +1665,14 @@
     "reset_confirm": "¿Poner a cero el consumo del periodo actual de \"{{name}}\"? El consumo acumulado no cambia.",
     "reset_success": "Consumo del periodo reiniciado",
     "delete_member": "Eliminar miembro",
-    "delete_confirm": "¿Eliminar al miembro \"{{name}}\"? Se eliminarán todas sus claves; el historial de consumo se conserva.",
+    "delete_confirm": "¿Eliminar al miembro \"{{name}}\"? Se borrarán su cuenta de acceso y todas sus claves; el historial de uso se conserva.",
     "create_success": "Miembro añadido",
     "update_success": "Miembro actualizado",
     "delete_success": "Miembro eliminado",
     "enable_success": "Miembro habilitado",
     "disable_success": "Miembro deshabilitado",
-    "empty_hint": "Aún no hay miembros. Añade uno, crea sus claves y asígnale un presupuesto.",
-    "login_hint": "Los miembros inician sesión con su propia clave desde \"Clave API\" en la página de acceso para ver su consumo y presupuesto restante.",
+    "empty_hint": "Aún no hay miembros. Una vez añadido, el miembro podrá iniciar sesión con correo y contraseña, crear claves y usar Studio y AI Chat.",
+    "login_hint": "Los miembros simplemente inician sesión en la página de acceso con su correo y contraseña.",
     "usage_today": "Hoy",
     "usage_30d": "30 días",
     "cumulative": "Total",
@@ -1676,7 +1680,20 @@
     "member_deleted": "Miembro eliminado",
     "no_member": "Sin asignar",
     "unlimited": "Sin límite",
-    "disabled_note": "Al deshabilitarlo, todas las claves del miembro dejan de funcionar de inmediato"
+    "disabled_note": "Al deshabilitarlo, todas las claves del miembro dejan de funcionar de inmediato",
+    "email_hint": "Es la cuenta de acceso del miembro; debe ser único",
+    "email_required": "Introduce el correo de acceso del miembro",
+    "password": "Contraseña inicial",
+    "password_placeholder": "Mínimo 6 caracteres; el miembro podrá cambiarla",
+    "password_hint": "La contraseña debe tener al menos 6 caracteres",
+    "password_reset": "Restablecer contraseña",
+    "password_reset_placeholder": "Déjalo en blanco para no cambiarla",
+    "groups": "Grupos permitidos",
+    "groups_hint": "Marca los grupos que puede usar este miembro; si no marcas ninguno, hereda todos tus grupos",
+    "groups_all": "Todos los grupos",
+    "groups_count": "{{count}} grupos",
+    "no_account": "Sin cuenta de acceso",
+    "no_account_hint": "Miembro antiguo sin cuenta de acceso; solo funcionan las claves que creaste para él. Elimínalo y vuelve a añadirlo para habilitar el acceso."
   },
   "setup": {
     "title": "Configuración del sistema",

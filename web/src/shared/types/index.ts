@@ -112,12 +112,17 @@ export interface UserResp {
   api_key_expires_at?: string;
   api_key_rate?: number;
   api_key_platform?: string;
-  /** 团队成员会话（API Key 登录且 key 归属成员时返回） */
+  /**
+   * 团队成员：API Key 登录且 key 归属成员时返回；或成员账号本人登录（此时无 api_key_id，
+   * balance 为企业主余额，team_owner_email 非空）。
+   */
   member_id?: number;
   member_name?: string;
   member_quota_usd?: number;
   member_used_quota?: number;
   member_period_end?: string;
+  member_allowed_group_ids?: number[];
+  team_owner_email?: string;
   created_at: string;
   updated_at: string;
 }
@@ -613,6 +618,11 @@ export interface MemberResp {
   today_cost: number;
   thirty_day_cost: number;
   status: 'active' | 'disabled';
+  /** 分组白名单；空 = 继承企业主全部可见分组 */
+  allowed_group_ids: number[];
+  /** 是否有自己的登录账号（2026-09-04 起新建成员都有；老成员可能没有） */
+  has_account: boolean;
+  account_user_id?: number;
   created_at: string;
   updated_at: string;
 }
@@ -620,18 +630,25 @@ export interface MemberResp {
 export interface CreateMemberReq {
   name: string;
   email?: string;
+  /** 传了即创建成员登录账号（邮箱必填） */
+  password?: string;
   note?: string;
   quota_usd?: number;
   quota_period?: 'none' | 'monthly';
+  allowed_group_ids?: number[];
 }
 
 export interface UpdateMemberReq {
   name?: string;
   email?: string;
+  /** 重置成员账号密码 */
+  password?: string;
   note?: string;
   quota_usd?: number;
   quota_period?: 'none' | 'monthly';
   status?: 'active' | 'disabled';
+  /** 传了即整体替换；空数组 = 清空白名单 */
+  allowed_group_ids?: number[];
 }
 
 // ==================== Subscription ====================

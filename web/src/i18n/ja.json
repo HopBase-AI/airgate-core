@@ -488,7 +488,9 @@
     "max_concurrency": "最大同時実行数",
     "recent_usage": "最近の使用履歴",
     "today": "本日の統計",
-    "cumulative": "累計統計"
+    "cumulative": "累計統計",
+    "team_balance": "チーム残高",
+    "member_quota": "自分のクォータ"
   },
   "users": {
     "title": "ユーザー管理",
@@ -1542,7 +1544,9 @@
     "balance_alert_threshold": "アラートしきい値（米ドル）",
     "balance_alert_hint": "現在の残高：${{balance}}",
     "balance_alert_saved": "残高アラート設定を保存しました",
-    "balance_history": "残高履歴"
+    "balance_history": "残高履歴",
+    "team_balance": "チーム残高",
+    "team_owner": "所属チーム"
   },
   "user_keys": {
     "title": "APIキー",
@@ -1635,13 +1639,13 @@
   },
   "team": {
     "title": "チームメンバー",
-    "description": "メンバーごとに予算を割り当て、消費はすべてメインアカウントの残高から差し引かれます",
+    "description": "チームメンバーのログインアカウントを作成し、クォータと利用可能なグループを割り当てます。メンバーは自分のアカウントで通常どおりログインし、一般ユーザーと同じ機能を利用できます。消費はあなたの残高から引き落とされ、利用量はメンバーに帰属します。",
     "create": "メンバーを追加",
     "edit": "メンバーを編集",
     "name": "メンバー名",
     "name_placeholder": "例：田中 / 開発チーム",
-    "email": "連絡先メール",
-    "email_placeholder": "任意、識別用のみ",
+    "email": "ログインメール",
+    "email_placeholder": "ログインに使用、例: alice@company.com",
     "note": "メモ",
     "note_placeholder": "任意",
     "quota_label": "予算 (USD)",
@@ -1661,14 +1665,14 @@
     "reset_confirm": "「{{name}}」の今期使用量をゼロに戻しますか？累計使用量は変わりません。",
     "reset_success": "今期の使用量をリセットしました",
     "delete_member": "メンバーを削除",
-    "delete_confirm": "メンバー「{{name}}」を削除しますか？配下の全キーも削除されます。使用履歴は保持されます。",
+    "delete_confirm": "メンバー「{{name}}」を削除しますか？ログインアカウントと配下のすべてのキーが削除されます（利用履歴は保持）。",
     "create_success": "メンバーを追加しました",
     "update_success": "メンバーを更新しました",
     "delete_success": "メンバーを削除しました",
     "enable_success": "メンバーを有効にしました",
     "disable_success": "メンバーを無効にしました",
-    "empty_hint": "まだメンバーがいません。メンバーを追加してキーを作成し、予算を割り当ててください。",
-    "login_hint": "メンバーはログイン画面の「APIキーでログイン」から自分のキーでログインし、使用量と残り予算を確認できます。",
+    "empty_hint": "チームメンバーはまだいません。追加すると、メンバーはメールとパスワードでログインし、キーの作成や Studio・AI Chat の利用ができます。",
+    "login_hint": "メンバーはログインページでメールとパスワードを使って通常どおりログインできます。",
     "usage_today": "本日",
     "usage_30d": "30日間",
     "cumulative": "累計",
@@ -1676,7 +1680,20 @@
     "member_deleted": "削除済みメンバー",
     "no_member": "未割当",
     "unlimited": "無制限",
-    "disabled_note": "無効化するとこのメンバーの全キーが即座に使えなくなります"
+    "disabled_note": "無効化するとこのメンバーの全キーが即座に使えなくなります",
+    "email_hint": "メンバーのログインアカウントとして使用、サイト全体で一意",
+    "email_required": "メンバーのログインメールを入力してください",
+    "password": "初期パスワード",
+    "password_placeholder": "6 文字以上。メンバーはログイン後に変更できます",
+    "password_hint": "パスワードは 6 文字以上",
+    "password_reset": "パスワードをリセット",
+    "password_reset_placeholder": "空欄の場合は変更しません",
+    "groups": "利用可能なグループ",
+    "groups_hint": "メンバーが利用できるグループにチェック。何もチェックしない場合はあなたの全グループを継承",
+    "groups_all": "すべてのグループ",
+    "groups_count": "{{count}} グループ",
+    "no_account": "ログインアカウント未開設",
+    "no_account_hint": "旧仕様のメンバーにはログインアカウントがなく、あなたが代理作成したキーのみ使えます。ログインが必要なら削除して再追加してください"
   },
   "setup": {
     "title": "システムインストールウィザード",

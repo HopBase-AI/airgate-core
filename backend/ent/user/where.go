@@ -1161,6 +1161,29 @@ func HasMembersWith(preds ...predicate.Member) predicate.User {
 	})
 }
 
+// HasMembership applies the HasEdge predicate on the "membership" edge.
+func HasMembership() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, true, MembershipTable, MembershipColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasMembershipWith applies the HasEdge predicate on the "membership" edge with a given conditions (other predicates).
+func HasMembershipWith(preds ...predicate.Member) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newMembershipStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasSubscriptions applies the HasEdge predicate on the "subscriptions" edge.
 func HasSubscriptions() predicate.User {
 	return predicate.User(func(s *sql.Selector) {

@@ -14,6 +14,10 @@ type stubRepo struct {
 	find        Member
 	deleted     int
 	resetCalled bool
+	// 成员账号相关记录
+	accountCreated *AccountInput
+	accountPatch   *AccountPatch
+	emailTaken     bool
 }
 
 func (s *stubRepo) ListByOwner(_ context.Context, _ int, _ ListFilter) ([]Member, int64, error) {
@@ -127,4 +131,29 @@ func TestListDecoratesDerivedFields(t *testing.T) {
 	if got[0].KeyCount != 2 || got[0].TodayCost != 0.5 || got[0].ThirtyDayCost != 7 {
 		t.Fatalf("aggregates not attached: %+v", got[0])
 	}
+}
+
+func (s *stubRepo) CreateWithAccount(ctx context.Context, mutation Mutation, account AccountInput) (Member, error) {
+	item, err := s.Create(ctx, mutation)
+	if err != nil {
+		return Member{}, err
+	}
+	s.accountCreated = &account
+	item.AccountUserID = 900000 + item.ID
+	item.AccountEmail = account.Email
+	item.AllowedGroupIDs = mutation.AllowedGroupIDs
+	return item, nil
+}
+
+func (s *stubRepo) AccountEmailExists(context.Context, string) (bool, error) {
+	return s.emailTaken, nil
+}
+
+func (s *stubRepo) UpdateAccountOwned(_ context.Context, _ int, _ int, patch AccountPatch) error {
+	s.accountPatch = &patch
+	return nil
+}
+
+func (s *stubRepo) OwnerVisibleGroupIDs(context.Context, int) ([]int64, error) {
+	return []int64{1, 2, 3}, nil
 }

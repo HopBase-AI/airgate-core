@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	appmodelpricing "github.com/DouDOU-start/airgate-core/internal/app/modelpricing"
+	"github.com/DouDOU-start/airgate-core/internal/server/middleware"
 	"github.com/DouDOU-start/airgate-core/internal/server/response"
 )
 
@@ -23,6 +24,9 @@ func (h *ModelPricingHandler) MyModelPricing(c *gin.Context) {
 	)
 	if apiKeyID := scopedAPIKeyID(c); apiKeyID > 0 {
 		result, err = h.service.APIKeyPricing(c.Request.Context(), userID, int(apiKeyID))
+	} else if ownerID := middleware.TeamOwnerID(c); ownerID > 0 {
+		// 成员账号：报价按企业主的口径，且只看被授予的分组
+		result, err = h.service.UserPricingScoped(c.Request.Context(), ownerID, middleware.MemberAllowedGroupIDs(c))
 	} else {
 		result, err = h.service.UserPricing(c.Request.Context(), userID)
 	}

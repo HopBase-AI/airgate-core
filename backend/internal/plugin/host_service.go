@@ -27,6 +27,7 @@ import (
 	appreferral "github.com/DouDOU-start/airgate-core/internal/app/referral"
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
+	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
 	"github.com/DouDOU-start/airgate-core/internal/routing"
 	"github.com/DouDOU-start/airgate-core/internal/scheduler"
@@ -441,6 +442,59 @@ type hostForwardRequest struct {
 	// 要求同时显式传 group_id（计费倍率归属必须确定），且账号须属于该分组。
 	// 仅非流式 forward 支持；判决/计费/账号状态机管线与普通转发一致。
 	AccountID int64 `json:"account_id,omitempty"`
+
+	// 以下由 core 在入口解析（resolveHostForwardIdentity），不接受插件传入：
+	// 调用方 user_id 若是团队成员账号，UserID 已被改写为企业主（付费身份），
+	// memberID 记成员归属，memberAllowedGroups 为成员分组白名单（空=不限）。
+	memberID            int
+	memberAllowedGroups []int64
+}
+
+// resolveHostForwardIdentity 把成员账号发起的 Host 转发映射到付费身份：
+// 余额 / 分组资格 / 计价 / usage_logs.user 全部按企业主，member_id 记该成员；
+// 成员停用拒绝，成员本期额度用尽按余额不足处理。非成员账号原样返回。
+func (h *HostService) resolveHostForwardIdentity(ctx context.Context, req *hostForwardRequest) error {
+	identity, err := auth.ResolveTeamIdentity(ctx, h.db, int(req.UserID))
+	if err != nil {
+		if cerr := hostContextError(err); cerr != nil {
+			return cerr
+		}
+		slog.Error("host_forward_team_identity_failed", sdk.LogFieldUserID, req.UserID, sdk.LogFieldError, err)
+		return hostForwardGenericError()
+	}
+	if !identity.IsMember() {
+		return nil
+	}
+	gate, err := auth.EvaluateMemberGate(ctx, h.db, identity.Member, time.Now())
+	if err != nil {
+		return status.Error(codes.PermissionDenied, err.Error())
+	}
+	if gate.Exhausted() {
+		return hostForwardInsufficientQuotaError()
+	}
+	if req.GroupID > 0 && !identity.AllowsGroup(int(req.GroupID)) {
+		slog.Warn("host_forward_member_group_forbidden",
+			sdk.LogFieldUserID, req.UserID, "member_id", identity.Member.ID, sdk.LogFieldGroupID, req.GroupID)
+		return status.Error(codes.PermissionDenied, auth.ErrMemberGroupForbidden.Error())
+	}
+	req.memberID = identity.Member.ID
+	req.memberAllowedGroups = identity.Member.AllowedGroupIds
+	req.UserID = int64(identity.Owner.ID)
+	return nil
+}
+
+// filterCandidatesByMemberGroups 成员分组白名单非空时只保留其中的候选分组。
+func filterCandidatesByMemberGroups(candidates []routing.Candidate, allowed []int64) []routing.Candidate {
+	if len(allowed) == 0 {
+		return candidates
+	}
+	out := make([]routing.Candidate, 0, len(candidates))
+	for _, c := range candidates {
+		if auth.MemberAllowsGroup(allowed, c.GroupID) {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // hostRelaySignURLRequest relay.sign_url 的入参。
@@ -819,6 +873,16 @@ func (h *HostService) listGroups(ctx context.Context, req hostListGroupsRequest)
 		return h.listEligibleGroups(ctx, req)
 	}
 	q := h.db.Group.Query()
+	// 成员账号：可见性/授权/报价口径都按企业主；白名单非空时只露出其中的分组。
+	var memberAllowed []int64
+	if req.UserID > 0 {
+		billingUserID, allowed, err := h.resolveHostBillingUser(ctx, int(req.UserID))
+		if err != nil {
+			return nil, err
+		}
+		req.UserID = int64(billingUserID)
+		memberAllowed = allowed
+	}
 	if req.PublicOnly {
 		// Public group discovery must follow the same lifecycle rule as the
 		// user-facing /groups endpoint: delisted groups remain visible to
@@ -832,6 +896,13 @@ func (h *HostService) listGroups(ctx context.Context, req hostListGroupsRequest)
 		} else {
 			q = q.Where(group.StatusVisible(true))
 		}
+	}
+	if len(memberAllowed) > 0 {
+		ids := make([]int, 0, len(memberAllowed))
+		for _, id := range memberAllowed {
+			ids = append(ids, int(id))
+		}
+		q = q.Where(group.IDIn(ids...))
 	}
 	groups, err := q.All(ctx)
 	if err != nil {
@@ -897,7 +968,12 @@ func (h *HostService) listEligibleGroups(ctx context.Context, req hostListGroups
 	if platform == "" {
 		return nil, status.Error(codes.InvalidArgument, "eligible_only 需要 platform")
 	}
-	u, err := h.db.User.Query().Where(user.IDEQ(int(req.UserID))).Only(ctx)
+	// 成员账号：资格与倍率按企业主判定，再按成员分组白名单收敛——与 gateway.forward 一致。
+	billingUserID, memberAllowed, err := h.resolveHostBillingUser(ctx, int(req.UserID))
+	if err != nil {
+		return nil, err
+	}
+	u, err := h.db.User.Query().Where(user.IDEQ(billingUserID)).Only(ctx)
 	if err != nil {
 		if cerr := hostContextError(err); cerr != nil {
 			return nil, cerr
@@ -907,7 +983,7 @@ func (h *HostService) listEligibleGroups(ctx context.Context, req hostListGroups
 		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	candidates, err := routing.ListEligibleGroups(ctx, h.db, int(req.UserID), platform,
+	candidates, err := routing.ListEligibleGroups(ctx, h.db, billingUserID, platform,
 		u.GroupRates, u.GroupPluginSettings, routing.Requirements{NeedsImage: req.NeedsImage})
 	if err != nil {
 		if cerr := hostContextError(err); cerr != nil {
@@ -915,6 +991,7 @@ func (h *HostService) listEligibleGroups(ctx context.Context, req hostListGroups
 		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	candidates = filterCandidatesByMemberGroups(candidates, memberAllowed)
 	ids := make([]int, 0, len(candidates))
 	for _, c := range candidates {
 		ids = append(ids, c.GroupID)
@@ -1029,6 +1106,9 @@ func (h *HostService) reportAccountResult(ctx context.Context, req hostReportAcc
 func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[string]interface{}, error) {
 	if req.UserID <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "user_id 必须 > 0")
+	}
+	if err := h.resolveHostForwardIdentity(ctx, &req); err != nil {
+		return nil, err
 	}
 	if err := h.checkHostForwardBalanceOrReplay(ctx, req); err != nil {
 		return nil, err
@@ -1415,6 +1495,9 @@ func (h *HostService) signRelayURL(pluginID string, req hostRelaySignURLRequest)
 func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest, stream pb.CoreInvokeService_InvokeStreamServer) error {
 	if req.UserID <= 0 {
 		return status.Error(codes.InvalidArgument, "user_id 必须 > 0")
+	}
+	if err := h.resolveHostForwardIdentity(ctx, &req); err != nil {
+		return err
 	}
 	if err := h.checkHostForwardBalance(ctx, req.UserID); err != nil {
 		return err
@@ -2047,6 +2130,7 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 	record := billing.UsageRecord{
 		UserID:                       int(req.UserID),
 		UserEmail:                    userEmail,
+		MemberID:                     req.memberID,
 		APIKeyID:                     int(req.APIKeyID),
 		AccountID:                    accountID,
 		GroupID:                      route.GroupID,
@@ -2301,14 +2385,35 @@ func (h *HostService) getUserInfo(ctx context.Context, req hostGetUserInfoReques
 		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	// 成员账号的余额展示口径 = 企业主余额（消耗从那里扣）；身份字段仍是成员本人。
+	balance := u.Balance
+	if identity, err := auth.ResolveTeamIdentity(ctx, h.db, u.ID); err == nil && identity.IsMember() {
+		balance = identity.Owner.Balance
+	}
 	return map[string]interface{}{
 		"user_id":  int64(u.ID),
 		"username": u.Username,
 		"email":    u.Email,
 		"role":     string(u.Role),
-		"balance":  u.Balance,
+		"balance":  balance,
 		"status":   string(u.Status),
 	}, nil
+}
+
+// resolveHostBillingUser 返回"按谁付钱"的用户 id 与成员分组白名单：成员账号取企业主，
+// 否则取本人（白名单为空）。
+func (h *HostService) resolveHostBillingUser(ctx context.Context, userID int) (int, []int64, error) {
+	identity, err := auth.ResolveTeamIdentity(ctx, h.db, userID)
+	if err != nil {
+		if cerr := hostContextError(err); cerr != nil {
+			return 0, nil, cerr
+		}
+		return 0, nil, status.Error(codes.Internal, err.Error())
+	}
+	if !identity.IsMember() {
+		return userID, nil, nil
+	}
+	return identity.Owner.ID, identity.Member.AllowedGroupIds, nil
 }
 
 // hostUpdateBalanceRequest users.update_balance 请求体。
@@ -2759,6 +2864,10 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 		return nil, "", hostForwardGenericError()
 	}
 	routes, err := routing.ListEligibleGroups(ctx, h.db, int(req.UserID), platform, u.GroupRates, u.GroupPluginSettings, hostForwardRequirements(h.manager, req))
+	if err == nil {
+		// 成员分组白名单：自动选组只在企业主授予的分组里挑
+		routes = filterCandidatesByMemberGroups(routes, req.memberAllowedGroups)
+	}
 	if err != nil {
 		if cerr := hostContextError(err); cerr != nil {
 			return nil, "", cerr

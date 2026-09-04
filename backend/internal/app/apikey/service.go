@@ -97,8 +97,15 @@ func (s *Service) ListAdmin(ctx context.Context, filter ListFilter) (ListResult,
 func (s *Service) CreateOwned(ctx context.Context, userID int, input CreateInput) (Key, error) {
 	logger := sdk.LoggerFromContext(ctx)
 
+	// 团队成员账号建 key：分组资格按企业主判定（专属分组授权在 owner 身上）并过成员
+	// 白名单；key 自动挂到本人成员名下，付费与归属由此落到 owner。成员不能把 key
+	// 挂给别的成员（忽略入参 member_id）。
+	identity, err := s.repo.TeamIdentity(ctx, userID)
+	if err != nil {
+		return Key{}, err
+	}
 	groupID := int(input.GroupID)
-	if err := s.ensureUserCanUseGroup(ctx, userID, groupID); err != nil {
+	if err := s.ensureIdentityCanUseGroup(ctx, identity, groupID); err != nil {
 		logger.Warn("api_key_create_rejected",
 			sdk.LogFieldUserID, userID,
 			sdk.LogFieldGroupID, groupID,
@@ -108,14 +115,23 @@ func (s *Service) CreateOwned(ctx context.Context, userID int, input CreateInput
 		return Key{}, err
 	}
 
-	memberID, hasMember, err := s.resolveMember(ctx, userID, input.MemberID)
-	if err != nil {
-		logger.Warn("api_key_create_rejected",
-			sdk.LogFieldUserID, userID,
-			sdk.LogFieldReason, "member_access",
-			sdk.LogFieldError, err,
-		)
-		return Key{}, err
+	var (
+		memberID  *int
+		hasMember bool
+	)
+	if identity.IsMember() {
+		mid := identity.MemberID
+		memberID, hasMember = &mid, true
+	} else {
+		memberID, hasMember, err = s.resolveMember(ctx, userID, input.MemberID)
+		if err != nil {
+			logger.Warn("api_key_create_rejected",
+				sdk.LogFieldUserID, userID,
+				sdk.LogFieldReason, "member_access",
+				sdk.LogFieldError, err,
+			)
+			return Key{}, err
+		}
 	}
 
 	rawKey, keyHash, err := auth.GenerateAPIKey()
@@ -318,10 +334,18 @@ func (s *Service) buildMutation(ctx context.Context, userID int, input UpdateInp
 		HasExpiresAt:   hasExpiresAt,
 		Status:         input.Status,
 	}
+	var identity TeamIdentity
+	if enforceGroupAccess {
+		var err error
+		identity, err = s.repo.TeamIdentity(ctx, userID)
+		if err != nil {
+			return Mutation{}, err
+		}
+	}
 	if input.GroupID != nil {
 		groupID := int(*input.GroupID)
 		if enforceGroupAccess {
-			if err := s.ensureUserCanUseGroup(ctx, userID, groupID); err != nil {
+			if err := s.ensureIdentityCanUseGroup(ctx, identity, groupID); err != nil {
 				return Mutation{}, err
 			}
 		}
@@ -329,7 +353,8 @@ func (s *Service) buildMutation(ctx context.Context, userID int, input UpdateInp
 	}
 	// 成员归属只在用户自己的路径上可改（enforceGroupAccess=true 即 owned 路径）；
 	// 管理员路径不接成员改动，避免把 key 挂到别的用户的成员名下。
-	if input.MemberID != nil && enforceGroupAccess {
+	// 成员账号自己的 key 永远挂在本人名下，不接受改归属。
+	if input.MemberID != nil && enforceGroupAccess && !identity.IsMember() {
 		memberID, hasMember, err := s.resolveMember(ctx, userID, input.MemberID)
 		if err != nil {
 			return Mutation{}, err
@@ -338,6 +363,28 @@ func (s *Service) buildMutation(ctx context.Context, userID int, input UpdateInp
 		mutation.HasMemberID = hasMember
 	}
 	return mutation, nil
+}
+
+// ensureIdentityCanUseGroup 按付费身份校验分组：成员账号先过白名单，再以企业主身份过
+// 专属分组授权；普通账号即本人。
+func (s *Service) ensureIdentityCanUseGroup(ctx context.Context, identity TeamIdentity, groupID int) error {
+	if identity.IsMember() && !memberAllowsGroup(identity.AllowedGroupIDs, groupID) {
+		return ErrMemberGroupForbidden
+	}
+	ownerID := identity.OwnerID
+	return s.ensureUserCanUseGroup(ctx, ownerID, groupID)
+}
+
+func memberAllowsGroup(allowed []int64, groupID int) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	for _, id := range allowed {
+		if int(id) == groupID {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveMember 把入参成员 ID 解析成持久化写入：nil 不动；0 清除归属；>0 校验归属后写入。

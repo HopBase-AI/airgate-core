@@ -2,12 +2,14 @@ package handler
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
 	"github.com/DouDOU-start/airgate-core/internal/server/dto"
+	"github.com/DouDOU-start/airgate-core/internal/server/middleware"
 	"github.com/DouDOU-start/airgate-core/internal/server/response"
 )
 
@@ -49,7 +51,17 @@ func (h *UserHandler) GetMe(c *gin.Context) {
 		response.Error(c, httpCode, httpCode, message)
 		return
 	}
-	response.Success(c, toUserRespFromDomain(item))
+	resp := toUserRespFromDomain(item)
+	// 团队成员账号：叠加团队投影——余额/并发按企业主（消耗从那里扣），额度按成员本期口径。
+	// 成员不做分销/报价客户判定（pricing_mode 沿用 owner 的口径由 /models/pricing/me 处理）。
+	if middleware.TeamOwnerID(c) > 0 {
+		if brief, ok, err := h.service.Membership(c.Request.Context(), userID); err == nil && ok {
+			applyMembershipToUserResp(&resp, brief)
+		} else if err != nil {
+			slog.Warn("membership_lookup_failed", "user_id", userID, "error", err)
+		}
+	}
+	response.Success(c, resp)
 }
 
 // UpdateProfile 更新当前用户资料。

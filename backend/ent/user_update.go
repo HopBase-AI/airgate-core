@@ -407,6 +407,25 @@ func (uu *UserUpdate) AddMembers(m ...*Member) *UserUpdate {
 	return uu.AddMemberIDs(ids...)
 }
 
+// SetMembershipID sets the "membership" edge to the Member entity by ID.
+func (uu *UserUpdate) SetMembershipID(id int) *UserUpdate {
+	uu.mutation.SetMembershipID(id)
+	return uu
+}
+
+// SetNillableMembershipID sets the "membership" edge to the Member entity by ID if the given value is not nil.
+func (uu *UserUpdate) SetNillableMembershipID(id *int) *UserUpdate {
+	if id != nil {
+		uu = uu.SetMembershipID(*id)
+	}
+	return uu
+}
+
+// SetMembership sets the "membership" edge to the Member entity.
+func (uu *UserUpdate) SetMembership(m *Member) *UserUpdate {
+	return uu.SetMembershipID(m.ID)
+}
+
 // AddSubscriptionIDs adds the "subscriptions" edge to the UserSubscription entity by IDs.
 func (uu *UserUpdate) AddSubscriptionIDs(ids ...int) *UserUpdate {
 	uu.mutation.AddSubscriptionIDs(ids...)
@@ -527,6 +546,12 @@ func (uu *UserUpdate) RemoveMembers(m ...*Member) *UserUpdate {
 		ids[i] = m[i].ID
 	}
 	return uu.RemoveMemberIDs(ids...)
+}
+
+// ClearMembership clears the "membership" edge to the Member entity.
+func (uu *UserUpdate) ClearMembership() *UserUpdate {
+	uu.mutation.ClearMembership()
+	return uu
 }
 
 // ClearSubscriptions clears all "subscriptions" edges to the UserSubscription entity.
@@ -918,6 +943,35 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Inverse: false,
 			Table:   user.MembersTable,
 			Columns: []string{user.MembersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if uu.mutation.MembershipCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: true,
+			Table:   user.MembershipTable,
+			Columns: []string{user.MembershipColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.MembershipIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: true,
+			Table:   user.MembershipTable,
+			Columns: []string{user.MembershipColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
@@ -1545,6 +1599,25 @@ func (uuo *UserUpdateOne) AddMembers(m ...*Member) *UserUpdateOne {
 	return uuo.AddMemberIDs(ids...)
 }
 
+// SetMembershipID sets the "membership" edge to the Member entity by ID.
+func (uuo *UserUpdateOne) SetMembershipID(id int) *UserUpdateOne {
+	uuo.mutation.SetMembershipID(id)
+	return uuo
+}
+
+// SetNillableMembershipID sets the "membership" edge to the Member entity by ID if the given value is not nil.
+func (uuo *UserUpdateOne) SetNillableMembershipID(id *int) *UserUpdateOne {
+	if id != nil {
+		uuo = uuo.SetMembershipID(*id)
+	}
+	return uuo
+}
+
+// SetMembership sets the "membership" edge to the Member entity.
+func (uuo *UserUpdateOne) SetMembership(m *Member) *UserUpdateOne {
+	return uuo.SetMembershipID(m.ID)
+}
+
 // AddSubscriptionIDs adds the "subscriptions" edge to the UserSubscription entity by IDs.
 func (uuo *UserUpdateOne) AddSubscriptionIDs(ids ...int) *UserUpdateOne {
 	uuo.mutation.AddSubscriptionIDs(ids...)
@@ -1665,6 +1738,12 @@ func (uuo *UserUpdateOne) RemoveMembers(m ...*Member) *UserUpdateOne {
 		ids[i] = m[i].ID
 	}
 	return uuo.RemoveMemberIDs(ids...)
+}
+
+// ClearMembership clears the "membership" edge to the Member entity.
+func (uuo *UserUpdateOne) ClearMembership() *UserUpdateOne {
+	uuo.mutation.ClearMembership()
+	return uuo
 }
 
 // ClearSubscriptions clears all "subscriptions" edges to the UserSubscription entity.
@@ -2086,6 +2165,35 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 			Inverse: false,
 			Table:   user.MembersTable,
 			Columns: []string{user.MembersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if uuo.mutation.MembershipCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: true,
+			Table:   user.MembershipTable,
+			Columns: []string{user.MembershipColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.MembershipIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: true,
+			Table:   user.MembershipTable,
+			Columns: []string{user.MembershipColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),

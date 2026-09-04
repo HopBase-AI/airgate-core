@@ -18,3 +18,6 @@ var (
 	// ErrKeyDecryptFailed 密钥解密失败。
 	ErrKeyDecryptFailed = errors.New("该密钥无法解密，可能创建于不同加密密钥下，无法查看原文")
 )
+
+// ErrMemberGroupForbidden 团队成员被企业主限定了可用分组，所选分组不在其中。
+var ErrMemberGroupForbidden = errors.New("企业管理员未授予该分组的使用权限")

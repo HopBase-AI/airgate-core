@@ -250,7 +250,7 @@ func ValidateAPIKey(ctx context.Context, db *ent.Client, key string) (*APIKeyInf
 		).
 		WithUser().
 		WithGroup().
-		WithMember().
+		WithMember(func(q *ent.MemberQuery) { q.WithOwner() }).
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -287,6 +287,13 @@ func ValidateAPIKey(ctx context.Context, db *ent.Client, key string) (*APIKeyInf
 		cacheAPIKeyResult(hash, nil, ErrUserDisabled)
 		return nil, ErrUserDisabled
 	}
+	// 付费身份：key 归属团队成员时一律解析到企业主（owner）——成员账号自己建的 key
+	// 与 owner 代建后挂到成员名下的 key 同口径。owner 被禁用则成员的 key 一并失效。
+	payer, err := billingOwner(u, ak.Edges.Member)
+	if err != nil {
+		cacheAPIKeyResult(hash, nil, err)
+		return nil, err
+	}
 	// 团队成员闸门：成员停用即拒；monthly 成员跨期在此惰性换期；本期额度用尽拒。
 	// 与 key 额度一样缓存负结果，主账号改额度/启用后最多 apiKeyCacheTTL 生效。
 	mv, err := evaluateMember(ctx, db, ak.Edges.Member, time.Now(), true)
@@ -303,6 +310,12 @@ func ValidateAPIKey(ctx context.Context, db *ent.Client, key string) (*APIKeyInf
 		cacheAPIKeyResult(hash, nil, ErrAPIKeyGroupUnbound)
 		return nil, ErrAPIKeyGroupUnbound
 	}
+	// 成员分组白名单：企业主收回某分组后，成员已绑定该分组的 key 立即失效。
+	if m := ak.Edges.Member; m != nil && !MemberAllowsGroup(m.AllowedGroupIds, g.ID) {
+		cacheAPIKeyResult(hash, nil, ErrMemberGroupForbidden)
+		return nil, ErrMemberGroupForbidden
+	}
+	u = payer
 
 	info := &APIKeyInfo{
 		KeyID:              ak.ID,
@@ -416,6 +429,8 @@ func apiKeyCacheErrorCode(err error) string {
 		return "member_disabled"
 	case ErrMemberQuota:
 		return "member_quota"
+	case ErrMemberGroupForbidden:
+		return "member_group_forbidden"
 	default:
 		return ""
 	}
@@ -437,6 +452,8 @@ func apiKeyCacheErrorFromCode(code string) error {
 		return ErrMemberDisabled
 	case "member_quota":
 		return ErrMemberQuota
+	case "member_group_forbidden":
+		return ErrMemberGroupForbidden
 	default:
 		return nil
 	}
@@ -544,7 +561,7 @@ func ValidateAPIKeyForManagement(ctx context.Context, db *ent.Client, key string
 		).
 		WithUser().
 		WithGroup().
-		WithMember().
+		WithMember(func(q *ent.MemberQuery) { q.WithOwner() }).
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -567,6 +584,13 @@ func ValidateAPIKeyForManagement(ctx context.Context, db *ent.Client, key string
 		storeAPIKeyLocalCache(cacheKey, nil, ErrUserDisabled)
 		return nil, ErrUserDisabled
 	}
+	// 管理面（/v1/usage、MCP 余额等）同样按付费身份取余额：成员的 key 查到的是 owner 余额口径。
+	payer, err := billingOwner(u, ak.Edges.Member)
+	if err != nil {
+		storeAPIKeyLocalCache(cacheKey, nil, err)
+		return nil, err
+	}
+	u = payer
 	// 管理面同样拒绝停用成员，但不拒额度用尽（余额/额度状态正是要查的内容）；
 	// 只读路径不做换期写入，本期已用按当前时刻推算。
 	mv, err := evaluateMember(ctx, db, ak.Edges.Member, time.Now(), false)
@@ -601,6 +625,22 @@ func ValidateAPIKeyForManagement(ctx context.Context, db *ent.Client, key string
 	}
 	storeAPIKeyLocalCache(cacheKey, info, nil)
 	return info, nil
+}
+
+// billingOwner 返回 key 的付费身份：key 挂在团队成员名下时取成员的企业主（owner），
+// 否则就是 key 自己的用户。owner 未预载或被禁用视为凭证不可用。
+func billingOwner(keyUser *ent.User, m *ent.Member) (*ent.User, error) {
+	if m == nil {
+		return keyUser, nil
+	}
+	owner, err := m.Edges.OwnerOrErr()
+	if err != nil {
+		return nil, ErrInvalidAPIKey
+	}
+	if owner.Status != entuser.StatusActive {
+		return nil, ErrUserDisabled
+	}
+	return owner, nil
 }
 
 // memberView 团队成员的本期口径投影：鉴权预载与管理面共用。

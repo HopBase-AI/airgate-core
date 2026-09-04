@@ -23,6 +23,9 @@ func toMemberResp(item appmember.Member) dto.MemberResp {
 		TodayCost:       item.TodayCost,
 		ThirtyDayCost:   item.ThirtyDayCost,
 		Status:          item.Status,
+		AllowedGroupIDs: append([]int64{}, item.AllowedGroupIDs...),
+		HasAccount:      item.AccountUserID > 0,
+		AccountUserID:   int64(item.AccountUserID),
 		TimeMixin: dto.TimeMixin{
 			CreatedAt: item.CreatedAt,
 			UpdatedAt: item.UpdatedAt,

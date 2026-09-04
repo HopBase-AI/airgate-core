@@ -32,8 +32,9 @@ import type { CreateMemberReq, MemberResp, UpdateMemberReq } from '../../shared/
 import { EditMemberModal } from './team/EditMemberModal';
 import { type MemberForm, emptyMemberForm } from './team/types';
 
-// 团队成员（企业子账号）：主账号侧的花名册——分配额度、看本期用量、管理密钥、停用/删除。
-// 成员没有余额，所有消耗都从主账号扣；这里只呈现"额度闸门"与"用量归属"。
+// 团队成员（企业子账号）：企业主侧的花名册——给成员开登录账号（邮箱+密码）、分配额度与
+// 可用分组、看本期用量、管理密钥、停用/删除。成员用自己的账号正常登录、功能与普通用户一致，
+// 只是消耗从企业主余额扣、用量归属到成员。
 export default function TeamPage() {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
@@ -113,9 +114,11 @@ export default function TeamPage() {
     setForm({
       name: member.name,
       email: member.email,
+      password: '',
       note: member.note,
       quota_usd: member.quota_usd > 0 ? String(member.quota_usd) : '',
       quota_period: member.quota_period,
+      allowed_group_ids: member.allowed_group_ids ?? [],
     });
     setModalOpen(true);
   }
@@ -132,9 +135,26 @@ export default function TeamPage() {
       toast('error', t('team.name_placeholder'));
       return;
     }
+    const email = form.email.trim();
+    const password = form.password;
     const quota = form.quota_usd.trim() ? Number(form.quota_usd) : 0;
     if (!Number.isFinite(quota) || quota < 0) {
       toast('error', t('team.quota_hint'));
+      return;
+    }
+    // 新建成员 = 开登录账号：邮箱与密码必填；编辑时密码留空表示不改
+    if (!editing || editing.has_account) {
+      if (!email) {
+        toast('error', t('team.email_required'));
+        return;
+      }
+    }
+    if (!editing && password.length < 6) {
+      toast('error', t('team.password_hint'));
+      return;
+    }
+    if (editing && password && password.length < 6) {
+      toast('error', t('team.password_hint'));
       return;
     }
     if (editing) {
@@ -142,19 +162,23 @@ export default function TeamPage() {
         id: editing.id,
         data: {
           name,
-          email: form.email.trim(),
+          email,
+          ...(password ? { password } : {}),
           note: form.note.trim(),
           quota_usd: quota,
           quota_period: form.quota_period,
+          allowed_group_ids: form.allowed_group_ids,
         },
       });
     } else {
       createMutation.mutate({
         name,
-        email: form.email.trim(),
+        email,
+        password,
         note: form.note.trim(),
         quota_usd: quota,
         quota_period: form.quota_period,
+        allowed_group_ids: form.allowed_group_ids,
       });
     }
   }
@@ -216,16 +240,17 @@ export default function TeamPage() {
           <CommonTable.Column id="name">{t('team.name')}</CommonTable.Column>
           <CommonTable.Column id="status">{t('common.status')}</CommonTable.Column>
           <CommonTable.Column id="quota" style={{ width: '18rem' }}>{t('team.quota_label')}</CommonTable.Column>
+          <CommonTable.Column id="groups" style={{ width: '8rem' }}>{t('team.groups')}</CommonTable.Column>
           <CommonTable.Column id="usage" style={{ width: '11.5rem' }}>{t('api_keys.usage')}</CommonTable.Column>
           <CommonTable.Column id="keys" style={{ width: '9rem' }}>{t('team.keys')}</CommonTable.Column>
           <CommonTable.Column id="actions" style={{ width: 132 }}>{t('common.actions')}</CommonTable.Column>
         </CommonTable.Header>
         <CommonTable.Body>
           {isLoading ? (
-            <TableLoadingRow colSpan={6} />
+            <TableLoadingRow colSpan={7} />
           ) : rows.length === 0 ? (
             <CommonTable.Row id="empty">
-              <CommonTable.Cell colSpan={6}>
+              <CommonTable.Cell colSpan={7}>
                 <EmptyState>
                   <div className="text-sm text-default-500">{t('team.empty_hint')}</div>
                 </EmptyState>
@@ -242,6 +267,9 @@ export default function TeamPage() {
                       <div className="truncate font-medium text-text">{row.name}</div>
                       {row.email ? (
                         <div className="truncate text-xs text-text-tertiary" title={row.email}>{row.email}</div>
+                      ) : null}
+                      {!row.has_account ? (
+                        <div className="text-xs text-warning" title={t('team.no_account_hint')}>{t('team.no_account')}</div>
                       ) : null}
                       {row.note ? (
                         <div className="truncate text-xs text-text-tertiary" title={row.note}>{row.note}</div>
@@ -276,6 +304,13 @@ export default function TeamPage() {
                           : t('team.period_none')}
                       </div>
                     </div>
+                  </CommonTable.Cell>
+                  <CommonTable.Cell>
+                    <span className="text-sm text-text-secondary">
+                      {row.allowed_group_ids.length > 0
+                        ? t('team.groups_count', { count: row.allowed_group_ids.length })
+                        : t('team.groups_all')}
+                    </span>
                   </CommonTable.Cell>
                   <CommonTable.Cell>
                     <MetricChips
@@ -359,6 +394,7 @@ export default function TeamPage() {
       <EditMemberModal
         open={modalOpen}
         isEdit={!!editing}
+        hasAccount={!!editing?.has_account}
         form={form}
         setForm={setForm}
         onClose={closeModal}

@@ -51,11 +51,13 @@ func (h *MemberHandler) CreateMember(c *gin.Context) {
 		return
 	}
 	item, err := h.service.Create(c.Request.Context(), userID, appmember.CreateInput{
-		Name:        req.Name,
-		Email:       req.Email,
-		Note:        req.Note,
-		QuotaUSD:    req.QuotaUSD,
-		QuotaPeriod: req.QuotaPeriod,
+		Name:            req.Name,
+		Email:           req.Email,
+		Password:        req.Password,
+		Note:            req.Note,
+		QuotaUSD:        req.QuotaUSD,
+		QuotaPeriod:     req.QuotaPeriod,
+		AllowedGroupIDs: req.AllowedGroupIDs,
 	})
 	if err != nil {
 		httpCode, message := h.handleError("创建团队成员失败", "创建失败", err)
@@ -83,12 +85,14 @@ func (h *MemberHandler) UpdateMember(c *gin.Context) {
 		return
 	}
 	item, err := h.service.Update(c.Request.Context(), userID, id, appmember.UpdateInput{
-		Name:        req.Name,
-		Email:       req.Email,
-		Note:        req.Note,
-		QuotaUSD:    req.QuotaUSD,
-		QuotaPeriod: req.QuotaPeriod,
-		Status:      req.Status,
+		Name:            req.Name,
+		Email:           req.Email,
+		Password:        req.Password,
+		Note:            req.Note,
+		QuotaUSD:        req.QuotaUSD,
+		QuotaPeriod:     req.QuotaPeriod,
+		Status:          req.Status,
+		AllowedGroupIDs: req.AllowedGroupIDs,
 	})
 	if err != nil {
 		httpCode, message := h.handleError("更新团队成员失败", "更新失败", err)

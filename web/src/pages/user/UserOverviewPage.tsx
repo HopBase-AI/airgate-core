@@ -181,6 +181,8 @@ function TokenTrendTooltip({
 export default function UserOverviewPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  // 团队成员账号：余额展示为企业主余额（消耗从那里扣），并发上限对成员无意义，改展示成员额度
+  const isTeamMember = !user?.api_key_id && (user?.member_id ?? 0) > 0;
   const [range, setRange] = useState<RangePreset>('today');
 
   const dateRange = useMemo(() => rangeToDate(range), [range]);
@@ -220,17 +222,30 @@ export default function UserOverviewPage() {
       {/* 账户信息 */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:gap-4">
         <StatCard
-          title={t('user_overview.balance')}
+          title={isTeamMember ? t('user_overview.team_balance') : t('user_overview.balance')}
           value={`$${formatBalance(user?.balance)}`}
           icon={<Wallet className="w-5 h-5" />}
           tone="blue"
         />
-        <StatCard
-          title={t('user_overview.max_concurrency')}
-          value={String(user?.max_concurrency ?? 0)}
-          icon={<Zap className="w-5 h-5" />}
-          tone="indigo"
-        />
+        {isTeamMember ? (
+          <StatCard
+            title={t('user_overview.member_quota')}
+            value={
+              (user?.member_quota_usd ?? 0) > 0
+                ? `$${(user?.member_used_quota ?? 0).toFixed(2)} / $${(user?.member_quota_usd ?? 0).toFixed(2)}`
+                : t('team.unlimited')
+            }
+            icon={<Zap className="w-5 h-5" />}
+            tone="indigo"
+          />
+        ) : (
+          <StatCard
+            title={t('user_overview.max_concurrency')}
+            value={String(user?.max_concurrency ?? 0)}
+            icon={<Zap className="w-5 h-5" />}
+            tone="indigo"
+          />
+        )}
         <StatCard
           title={t('usage.total_requests')}
           value={(stats?.total_requests ?? 0).toLocaleString()}

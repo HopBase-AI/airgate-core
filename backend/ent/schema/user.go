@@ -66,8 +66,10 @@ func (User) Indexes() []ent.Index {
 func (User) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.To("api_keys", APIKey.Type),
-		// 团队成员（企业子账号）
+		// 团队成员（企业子账号）：本账号作为企业主名下的成员花名册
 		edge.To("members", Member.Type),
+		// 本账号自己是哪个团队的成员账号（members.account 反向边）；nil 表示不是成员账号。
+		edge.From("membership", Member.Type).Ref("account").Unique(),
 		edge.To("subscriptions", UserSubscription.Type),
 		edge.To("usage_logs", UsageLog.Type),
 		// 用户可访问的专属分组（多对多）

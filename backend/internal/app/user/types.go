@@ -226,4 +226,21 @@ type Repository interface {
 	GetAPIKeyInfo(ctx context.Context, userID, keyID int) (APIKeyBrief, error)
 	UpdateBalanceAlert(ctx context.Context, userID int, threshold float64) error
 	SetBalanceAlertNotified(ctx context.Context, userID int, notified bool) error
+	// MembershipBrief 该用户作为团队成员账号的归属投影；不是成员返回 ok=false。
+	MembershipBrief(ctx context.Context, userID int) (MembershipBrief, bool, error)
+}
+
+// MembershipBrief 成员账号在 /users/me 里的团队投影：成员额度口径 + 企业主身份（成员消耗从 owner 扣，
+// 余额展示口径即 owner 余额）。
+type MembershipBrief struct {
+	MemberID        int
+	MemberName      string
+	QuotaUSD        float64    // 0 表示不限
+	UsedQuota       float64    // 本期已用
+	PeriodEnd       *time.Time // monthly 时本期结束
+	AllowedGroupIDs []int64
+	OwnerID         int
+	OwnerEmail      string
+	OwnerBalance    float64
+	OwnerMaxConc    int
 }

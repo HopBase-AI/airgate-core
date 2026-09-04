@@ -131,9 +131,22 @@ type Repository interface {
 	GetGroupAccess(context.Context, int, int) (GroupAccess, error)
 	// MemberOwnedBy 团队成员是否存在且归属该用户。
 	MemberOwnedBy(ctx context.Context, userID, memberID int) (bool, error)
+	// TeamIdentity 该用户是否团队成员账号：是则返回企业主 id、成员 id 与分组白名单（空=不限）；
+	// 不是则 memberID=0、ownerID=userID。
+	TeamIdentity(ctx context.Context, userID int) (TeamIdentity, error)
 	Create(context.Context, Mutation) (Key, error)
 	UpdateOwned(context.Context, int, int, Mutation) (Key, error)
 	UpdateAdmin(context.Context, int, Mutation) (Key, error)
 	DeleteOwned(context.Context, int, int) error
 	FindOwned(context.Context, int, int) (Key, error)
 }
+
+// TeamIdentity 用户的团队归属（成员账号视角）。
+type TeamIdentity struct {
+	OwnerID         int     // 付费身份：成员账号取企业主，否则本人
+	MemberID        int     // 0 表示不是成员账号
+	AllowedGroupIDs []int64 // 成员分组白名单；空=继承企业主全部可见分组
+}
+
+// IsMember 是否成员账号。
+func (t TeamIdentity) IsMember() bool { return t.MemberID > 0 }

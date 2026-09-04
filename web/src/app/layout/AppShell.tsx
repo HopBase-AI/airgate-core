@@ -218,12 +218,14 @@ export function AppShell({ children }: AppShellProps) {
   const isAdmin = !isAPIKeySession && (getTokenRole() === 'admin' || user?.role === 'admin');
 
   const { adminItems: pluginAdminItems, userItems: pluginUserItems } = usePluginMenuItems(isAdmin, isAPIKeySession);
+  // 团队成员账号：正常用户菜单，但不挂「团队成员」（不是企业主）与「我的邀请」（消耗记在企业主名下，不做分销主体）
+  const isTeamMember = !isAPIKeySession && (user?.member_id ?? 0) > 0;
   const sections = useMemo(() => {
-    const isEnterpriseOwner = !isAPIKeySession && (isAdmin || !!user?.is_enterprise_owner);
+    const isEnterpriseOwner = !isAPIKeySession && !isTeamMember && (isAdmin || !!user?.is_enterprise_owner);
     const userItemsWithTeam = isEnterpriseOwner
       ? [...userMenuItems.slice(0, -1), teamMenuItem, ...userMenuItems.slice(-1)]
       : userMenuItems;
-    const userItemsWithInvite = site.referral_enabled ? [...userItemsWithTeam, inviteMenuItem] : userItemsWithTeam;
+    const userItemsWithInvite = site.referral_enabled && !isTeamMember ? [...userItemsWithTeam, inviteMenuItem] : userItemsWithTeam;
     const adminUserItems = userItemsWithInvite
       .filter((item) => item.path !== '/')
       .map((item, i) => (i === 0 ? { ...item, sectionKey: 'nav.personal' } : item));
@@ -257,7 +259,7 @@ export function AppShell({ children }: AppShellProps) {
     });
 
     return nextSections;
-  }, [isAPIKeySession, isAdmin, user?.can_author_blog, user?.is_enterprise_owner, pluginAdminItems, pluginUserItems, site.referral_enabled]);
+  }, [isAPIKeySession, isTeamMember, isAdmin, user?.can_author_blog, user?.is_enterprise_owner, pluginAdminItems, pluginUserItems, site.referral_enabled]);
 
   // 团队成员的密钥会话优先显示成员名，其次才是密钥名
   const displayName = user?.member_name || user?.api_key_name || user?.username || user?.email?.split('@')[0] || site.site_name || 'HopBase';

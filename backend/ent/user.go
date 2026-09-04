@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 )
 
@@ -68,8 +69,9 @@ type User struct {
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the UserQuery when eager-loading is set.
-	Edges        UserEdges `json:"edges"`
-	selectValues sql.SelectValues
+	Edges          UserEdges `json:"edges"`
+	member_account *int
+	selectValues   sql.SelectValues
 }
 
 // UserEdges holds the relations/edges for other nodes in the graph.
@@ -78,6 +80,8 @@ type UserEdges struct {
 	APIKeys []*APIKey `json:"api_keys,omitempty"`
 	// Members holds the value of the members edge.
 	Members []*Member `json:"members,omitempty"`
+	// Membership holds the value of the membership edge.
+	Membership *Member `json:"membership,omitempty"`
 	// Subscriptions holds the value of the subscriptions edge.
 	Subscriptions []*UserSubscription `json:"subscriptions,omitempty"`
 	// UsageLogs holds the value of the usage_logs edge.
@@ -90,7 +94,7 @@ type UserEdges struct {
 	Identities []*UserIdentity `json:"identities,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [7]bool
+	loadedTypes [8]bool
 }
 
 // APIKeysOrErr returns the APIKeys value or an error if the edge
@@ -111,10 +115,21 @@ func (e UserEdges) MembersOrErr() ([]*Member, error) {
 	return nil, &NotLoadedError{edge: "members"}
 }
 
+// MembershipOrErr returns the Membership value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e UserEdges) MembershipOrErr() (*Member, error) {
+	if e.Membership != nil {
+		return e.Membership, nil
+	} else if e.loadedTypes[2] {
+		return nil, &NotFoundError{label: member.Label}
+	}
+	return nil, &NotLoadedError{edge: "membership"}
+}
+
 // SubscriptionsOrErr returns the Subscriptions value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) SubscriptionsOrErr() ([]*UserSubscription, error) {
-	if e.loadedTypes[2] {
+	if e.loadedTypes[3] {
 		return e.Subscriptions, nil
 	}
 	return nil, &NotLoadedError{edge: "subscriptions"}
@@ -123,7 +138,7 @@ func (e UserEdges) SubscriptionsOrErr() ([]*UserSubscription, error) {
 // UsageLogsOrErr returns the UsageLogs value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) UsageLogsOrErr() ([]*UsageLog, error) {
-	if e.loadedTypes[3] {
+	if e.loadedTypes[4] {
 		return e.UsageLogs, nil
 	}
 	return nil, &NotLoadedError{edge: "usage_logs"}
@@ -132,7 +147,7 @@ func (e UserEdges) UsageLogsOrErr() ([]*UsageLog, error) {
 // AllowedGroupsOrErr returns the AllowedGroups value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) AllowedGroupsOrErr() ([]*Group, error) {
-	if e.loadedTypes[4] {
+	if e.loadedTypes[5] {
 		return e.AllowedGroups, nil
 	}
 	return nil, &NotLoadedError{edge: "allowed_groups"}
@@ -141,7 +156,7 @@ func (e UserEdges) AllowedGroupsOrErr() ([]*Group, error) {
 // BalanceLogsOrErr returns the BalanceLogs value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) BalanceLogsOrErr() ([]*BalanceLog, error) {
-	if e.loadedTypes[5] {
+	if e.loadedTypes[6] {
 		return e.BalanceLogs, nil
 	}
 	return nil, &NotLoadedError{edge: "balance_logs"}
@@ -150,7 +165,7 @@ func (e UserEdges) BalanceLogsOrErr() ([]*BalanceLog, error) {
 // IdentitiesOrErr returns the Identities value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) IdentitiesOrErr() ([]*UserIdentity, error) {
-	if e.loadedTypes[6] {
+	if e.loadedTypes[7] {
 		return e.Identities, nil
 	}
 	return nil, &NotLoadedError{edge: "identities"}
@@ -173,6 +188,8 @@ func (*User) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullString)
 		case user.FieldCreatedAt, user.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
+		case user.ForeignKeys[0]: // member_account
+			values[i] = new(sql.NullInt64)
 		default:
 			values[i] = new(sql.UnknownType)
 		}
@@ -346,6 +363,13 @@ func (u *User) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				u.UpdatedAt = value.Time
 			}
+		case user.ForeignKeys[0]:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for edge-field member_account", value)
+			} else if value.Valid {
+				u.member_account = new(int)
+				*u.member_account = int(value.Int64)
+			}
 		default:
 			u.selectValues.Set(columns[i], values[i])
 		}
@@ -367,6 +391,11 @@ func (u *User) QueryAPIKeys() *APIKeyQuery {
 // QueryMembers queries the "members" edge of the User entity.
 func (u *User) QueryMembers() *MemberQuery {
 	return NewUserClient(u.config).QueryMembers(u)
+}
+
+// QueryMembership queries the "membership" edge of the User entity.
+func (u *User) QueryMembership() *MemberQuery {
+	return NewUserClient(u.config).QueryMembership(u)
 }
 
 // QuerySubscriptions queries the "subscriptions" edge of the User entity.

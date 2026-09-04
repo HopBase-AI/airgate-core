@@ -93,6 +93,9 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (LoginResult, err
 		logger.Warn("user_login_rejected", sdk.LogFieldReason, "password_mismatch", sdk.LogFieldUserID, user.ID)
 		return LoginResult{}, ErrInvalidCredentials
 	}
+	if err := s.rejectDisabledMember(ctx, user.ID); err != nil {
+		return LoginResult{}, err
+	}
 
 	token, err := s.jwtMgr.GenerateToken(user.ID, user.Role, user.Email)
 	if err != nil {
@@ -504,4 +507,19 @@ func (s *Service) RefreshToken(ctx context.Context, identity AuthIdentity) (stri
 // IsUserMissing 判断错误是否为用户不存在。
 func IsUserMissing(err error) bool {
 	return errors.Is(err, ErrUserNotFound)
+}
+
+// rejectDisabledMember 团队成员账号被企业主停用（或企业主本身被禁用）时拒绝登录，
+// 与中间件对已登录会话的处理一致；非成员账号直接放行。
+func (s *Service) rejectDisabledMember(ctx context.Context, userID int) error {
+	isMember, active, err := s.repo.MemberAccountState(ctx, userID)
+	if err != nil {
+		sdk.LoggerFromContext(ctx).Error("member_account_state_failed", sdk.LogFieldUserID, userID, sdk.LogFieldError, err)
+		return err
+	}
+	if isMember && !active {
+		sdk.LoggerFromContext(ctx).Warn("user_login_rejected", sdk.LogFieldReason, "member_disabled", sdk.LogFieldUserID, userID)
+		return ErrMemberDisabled
+	}
+	return nil
 }

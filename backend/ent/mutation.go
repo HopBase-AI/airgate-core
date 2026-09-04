@@ -8631,35 +8631,39 @@ func (m *GroupMutation) ResetEdge(name string) error {
 // MemberMutation represents an operation that mutates the Member nodes in the graph.
 type MemberMutation struct {
 	config
-	op                   Op
-	typ                  string
-	id                   *int
-	name                 *string
-	email                *string
-	note                 *string
-	quota_usd            *float64
-	addquota_usd         *float64
-	quota_period         *member.QuotaPeriod
-	period_anchor        *time.Time
-	period_start         *time.Time
-	period_used_base     *float64
-	addperiod_used_base  *float64
-	used_quota           *float64
-	addused_quota        *float64
-	used_quota_actual    *float64
-	addused_quota_actual *float64
-	status               *member.Status
-	created_at           *time.Time
-	updated_at           *time.Time
-	clearedFields        map[string]struct{}
-	owner                *int
-	clearedowner         bool
-	api_keys             map[int]struct{}
-	removedapi_keys      map[int]struct{}
-	clearedapi_keys      bool
-	done                 bool
-	oldValue             func(context.Context) (*Member, error)
-	predicates           []predicate.Member
+	op                      Op
+	typ                     string
+	id                      *int
+	name                    *string
+	email                   *string
+	note                    *string
+	quota_usd               *float64
+	addquota_usd            *float64
+	quota_period            *member.QuotaPeriod
+	period_anchor           *time.Time
+	period_start            *time.Time
+	period_used_base        *float64
+	addperiod_used_base     *float64
+	used_quota              *float64
+	addused_quota           *float64
+	used_quota_actual       *float64
+	addused_quota_actual    *float64
+	status                  *member.Status
+	allowed_group_ids       *[]int64
+	appendallowed_group_ids []int64
+	created_at              *time.Time
+	updated_at              *time.Time
+	clearedFields           map[string]struct{}
+	owner                   *int
+	clearedowner            bool
+	api_keys                map[int]struct{}
+	removedapi_keys         map[int]struct{}
+	clearedapi_keys         bool
+	account                 *int
+	clearedaccount          bool
+	done                    bool
+	oldValue                func(context.Context) (*Member, error)
+	predicates              []predicate.Member
 }
 
 var _ ent.Mutation = (*MemberMutation)(nil)
@@ -9236,6 +9240,71 @@ func (m *MemberMutation) ResetStatus() {
 	m.status = nil
 }
 
+// SetAllowedGroupIds sets the "allowed_group_ids" field.
+func (m *MemberMutation) SetAllowedGroupIds(i []int64) {
+	m.allowed_group_ids = &i
+	m.appendallowed_group_ids = nil
+}
+
+// AllowedGroupIds returns the value of the "allowed_group_ids" field in the mutation.
+func (m *MemberMutation) AllowedGroupIds() (r []int64, exists bool) {
+	v := m.allowed_group_ids
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAllowedGroupIds returns the old "allowed_group_ids" field's value of the Member entity.
+// If the Member object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MemberMutation) OldAllowedGroupIds(ctx context.Context) (v []int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAllowedGroupIds is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAllowedGroupIds requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAllowedGroupIds: %w", err)
+	}
+	return oldValue.AllowedGroupIds, nil
+}
+
+// AppendAllowedGroupIds adds i to the "allowed_group_ids" field.
+func (m *MemberMutation) AppendAllowedGroupIds(i []int64) {
+	m.appendallowed_group_ids = append(m.appendallowed_group_ids, i...)
+}
+
+// AppendedAllowedGroupIds returns the list of values that were appended to the "allowed_group_ids" field in this mutation.
+func (m *MemberMutation) AppendedAllowedGroupIds() ([]int64, bool) {
+	if len(m.appendallowed_group_ids) == 0 {
+		return nil, false
+	}
+	return m.appendallowed_group_ids, true
+}
+
+// ClearAllowedGroupIds clears the value of the "allowed_group_ids" field.
+func (m *MemberMutation) ClearAllowedGroupIds() {
+	m.allowed_group_ids = nil
+	m.appendallowed_group_ids = nil
+	m.clearedFields[member.FieldAllowedGroupIds] = struct{}{}
+}
+
+// AllowedGroupIdsCleared returns if the "allowed_group_ids" field was cleared in this mutation.
+func (m *MemberMutation) AllowedGroupIdsCleared() bool {
+	_, ok := m.clearedFields[member.FieldAllowedGroupIds]
+	return ok
+}
+
+// ResetAllowedGroupIds resets all changes to the "allowed_group_ids" field.
+func (m *MemberMutation) ResetAllowedGroupIds() {
+	m.allowed_group_ids = nil
+	m.appendallowed_group_ids = nil
+	delete(m.clearedFields, member.FieldAllowedGroupIds)
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (m *MemberMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -9401,6 +9470,45 @@ func (m *MemberMutation) ResetAPIKeys() {
 	m.removedapi_keys = nil
 }
 
+// SetAccountID sets the "account" edge to the User entity by id.
+func (m *MemberMutation) SetAccountID(id int) {
+	m.account = &id
+}
+
+// ClearAccount clears the "account" edge to the User entity.
+func (m *MemberMutation) ClearAccount() {
+	m.clearedaccount = true
+}
+
+// AccountCleared reports if the "account" edge to the User entity was cleared.
+func (m *MemberMutation) AccountCleared() bool {
+	return m.clearedaccount
+}
+
+// AccountID returns the "account" edge ID in the mutation.
+func (m *MemberMutation) AccountID() (id int, exists bool) {
+	if m.account != nil {
+		return *m.account, true
+	}
+	return
+}
+
+// AccountIDs returns the "account" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// AccountID instead. It exists only for internal usage by the builders.
+func (m *MemberMutation) AccountIDs() (ids []int) {
+	if id := m.account; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetAccount resets all changes to the "account" edge.
+func (m *MemberMutation) ResetAccount() {
+	m.account = nil
+	m.clearedaccount = false
+}
+
 // Where appends a list predicates to the MemberMutation builder.
 func (m *MemberMutation) Where(ps ...predicate.Member) {
 	m.predicates = append(m.predicates, ps...)
@@ -9435,7 +9543,7 @@ func (m *MemberMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *MemberMutation) Fields() []string {
-	fields := make([]string, 0, 13)
+	fields := make([]string, 0, 14)
 	if m.name != nil {
 		fields = append(fields, member.FieldName)
 	}
@@ -9468,6 +9576,9 @@ func (m *MemberMutation) Fields() []string {
 	}
 	if m.status != nil {
 		fields = append(fields, member.FieldStatus)
+	}
+	if m.allowed_group_ids != nil {
+		fields = append(fields, member.FieldAllowedGroupIds)
 	}
 	if m.created_at != nil {
 		fields = append(fields, member.FieldCreatedAt)
@@ -9505,6 +9616,8 @@ func (m *MemberMutation) Field(name string) (ent.Value, bool) {
 		return m.UsedQuotaActual()
 	case member.FieldStatus:
 		return m.Status()
+	case member.FieldAllowedGroupIds:
+		return m.AllowedGroupIds()
 	case member.FieldCreatedAt:
 		return m.CreatedAt()
 	case member.FieldUpdatedAt:
@@ -9540,6 +9653,8 @@ func (m *MemberMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldUsedQuotaActual(ctx)
 	case member.FieldStatus:
 		return m.OldStatus(ctx)
+	case member.FieldAllowedGroupIds:
+		return m.OldAllowedGroupIds(ctx)
 	case member.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	case member.FieldUpdatedAt:
@@ -9629,6 +9744,13 @@ func (m *MemberMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetStatus(v)
+		return nil
+	case member.FieldAllowedGroupIds:
+		v, ok := value.([]int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAllowedGroupIds(v)
 		return nil
 	case member.FieldCreatedAt:
 		v, ok := value.(time.Time)
@@ -9724,7 +9846,11 @@ func (m *MemberMutation) AddField(name string, value ent.Value) error {
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
 func (m *MemberMutation) ClearedFields() []string {
-	return nil
+	var fields []string
+	if m.FieldCleared(member.FieldAllowedGroupIds) {
+		fields = append(fields, member.FieldAllowedGroupIds)
+	}
+	return fields
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
@@ -9737,6 +9863,11 @@ func (m *MemberMutation) FieldCleared(name string) bool {
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
 func (m *MemberMutation) ClearField(name string) error {
+	switch name {
+	case member.FieldAllowedGroupIds:
+		m.ClearAllowedGroupIds()
+		return nil
+	}
 	return fmt.Errorf("unknown Member nullable field %s", name)
 }
 
@@ -9777,6 +9908,9 @@ func (m *MemberMutation) ResetField(name string) error {
 	case member.FieldStatus:
 		m.ResetStatus()
 		return nil
+	case member.FieldAllowedGroupIds:
+		m.ResetAllowedGroupIds()
+		return nil
 	case member.FieldCreatedAt:
 		m.ResetCreatedAt()
 		return nil
@@ -9789,12 +9923,15 @@ func (m *MemberMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *MemberMutation) AddedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.owner != nil {
 		edges = append(edges, member.EdgeOwner)
 	}
 	if m.api_keys != nil {
 		edges = append(edges, member.EdgeAPIKeys)
+	}
+	if m.account != nil {
+		edges = append(edges, member.EdgeAccount)
 	}
 	return edges
 }
@@ -9813,13 +9950,17 @@ func (m *MemberMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case member.EdgeAccount:
+		if id := m.account; id != nil {
+			return []ent.Value{*id}
+		}
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *MemberMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.removedapi_keys != nil {
 		edges = append(edges, member.EdgeAPIKeys)
 	}
@@ -9842,12 +9983,15 @@ func (m *MemberMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *MemberMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.clearedowner {
 		edges = append(edges, member.EdgeOwner)
 	}
 	if m.clearedapi_keys {
 		edges = append(edges, member.EdgeAPIKeys)
+	}
+	if m.clearedaccount {
+		edges = append(edges, member.EdgeAccount)
 	}
 	return edges
 }
@@ -9860,6 +10004,8 @@ func (m *MemberMutation) EdgeCleared(name string) bool {
 		return m.clearedowner
 	case member.EdgeAPIKeys:
 		return m.clearedapi_keys
+	case member.EdgeAccount:
+		return m.clearedaccount
 	}
 	return false
 }
@@ -9870,6 +10016,9 @@ func (m *MemberMutation) ClearEdge(name string) error {
 	switch name {
 	case member.EdgeOwner:
 		m.ClearOwner()
+		return nil
+	case member.EdgeAccount:
+		m.ClearAccount()
 		return nil
 	}
 	return fmt.Errorf("unknown Member unique edge %s", name)
@@ -9884,6 +10033,9 @@ func (m *MemberMutation) ResetEdge(name string) error {
 		return nil
 	case member.EdgeAPIKeys:
 		m.ResetAPIKeys()
+		return nil
+	case member.EdgeAccount:
+		m.ResetAccount()
 		return nil
 	}
 	return fmt.Errorf("unknown Member edge %s", name)
@@ -20102,6 +20254,8 @@ type UserMutation struct {
 	members                    map[int]struct{}
 	removedmembers             map[int]struct{}
 	clearedmembers             bool
+	membership                 *int
+	clearedmembership          bool
 	subscriptions              map[int]struct{}
 	removedsubscriptions       map[int]struct{}
 	clearedsubscriptions       bool
@@ -21372,6 +21526,45 @@ func (m *UserMutation) ResetMembers() {
 	m.removedmembers = nil
 }
 
+// SetMembershipID sets the "membership" edge to the Member entity by id.
+func (m *UserMutation) SetMembershipID(id int) {
+	m.membership = &id
+}
+
+// ClearMembership clears the "membership" edge to the Member entity.
+func (m *UserMutation) ClearMembership() {
+	m.clearedmembership = true
+}
+
+// MembershipCleared reports if the "membership" edge to the Member entity was cleared.
+func (m *UserMutation) MembershipCleared() bool {
+	return m.clearedmembership
+}
+
+// MembershipID returns the "membership" edge ID in the mutation.
+func (m *UserMutation) MembershipID() (id int, exists bool) {
+	if m.membership != nil {
+		return *m.membership, true
+	}
+	return
+}
+
+// MembershipIDs returns the "membership" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// MembershipID instead. It exists only for internal usage by the builders.
+func (m *UserMutation) MembershipIDs() (ids []int) {
+	if id := m.membership; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetMembership resets all changes to the "membership" edge.
+func (m *UserMutation) ResetMembership() {
+	m.membership = nil
+	m.clearedmembership = false
+}
+
 // AddSubscriptionIDs adds the "subscriptions" edge to the UserSubscription entity by ids.
 func (m *UserMutation) AddSubscriptionIDs(ids ...int) {
 	if m.subscriptions == nil {
@@ -22268,12 +22461,15 @@ func (m *UserMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *UserMutation) AddedEdges() []string {
-	edges := make([]string, 0, 7)
+	edges := make([]string, 0, 8)
 	if m.api_keys != nil {
 		edges = append(edges, user.EdgeAPIKeys)
 	}
 	if m.members != nil {
 		edges = append(edges, user.EdgeMembers)
+	}
+	if m.membership != nil {
+		edges = append(edges, user.EdgeMembership)
 	}
 	if m.subscriptions != nil {
 		edges = append(edges, user.EdgeSubscriptions)
@@ -22309,6 +22505,10 @@ func (m *UserMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case user.EdgeMembership:
+		if id := m.membership; id != nil {
+			return []ent.Value{*id}
+		}
 	case user.EdgeSubscriptions:
 		ids := make([]ent.Value, 0, len(m.subscriptions))
 		for id := range m.subscriptions {
@@ -22345,7 +22545,7 @@ func (m *UserMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *UserMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 7)
+	edges := make([]string, 0, 8)
 	if m.removedapi_keys != nil {
 		edges = append(edges, user.EdgeAPIKeys)
 	}
@@ -22422,12 +22622,15 @@ func (m *UserMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *UserMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 7)
+	edges := make([]string, 0, 8)
 	if m.clearedapi_keys {
 		edges = append(edges, user.EdgeAPIKeys)
 	}
 	if m.clearedmembers {
 		edges = append(edges, user.EdgeMembers)
+	}
+	if m.clearedmembership {
+		edges = append(edges, user.EdgeMembership)
 	}
 	if m.clearedsubscriptions {
 		edges = append(edges, user.EdgeSubscriptions)
@@ -22455,6 +22658,8 @@ func (m *UserMutation) EdgeCleared(name string) bool {
 		return m.clearedapi_keys
 	case user.EdgeMembers:
 		return m.clearedmembers
+	case user.EdgeMembership:
+		return m.clearedmembership
 	case user.EdgeSubscriptions:
 		return m.clearedsubscriptions
 	case user.EdgeUsageLogs:
@@ -22473,6 +22678,9 @@ func (m *UserMutation) EdgeCleared(name string) bool {
 // if that edge is not defined in the schema.
 func (m *UserMutation) ClearEdge(name string) error {
 	switch name {
+	case user.EdgeMembership:
+		m.ClearMembership()
+		return nil
 	}
 	return fmt.Errorf("unknown User unique edge %s", name)
 }
@@ -22486,6 +22694,9 @@ func (m *UserMutation) ResetEdge(name string) error {
 		return nil
 	case user.EdgeMembers:
 		m.ResetMembers()
+		return nil
+	case user.EdgeMembership:
+		m.ResetMembership()
 		return nil
 	case user.EdgeSubscriptions:
 		m.ResetSubscriptions()

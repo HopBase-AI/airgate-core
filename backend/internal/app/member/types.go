@@ -32,8 +32,13 @@ type Member struct {
 	UsedQuota       float64 // 累计账面已用（billed_cost）
 	UsedQuotaActual float64 // 累计真实成本（actual_cost，即主账号为其付出的余额）
 	Status          string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// AllowedGroupIDs 企业主授予的分组白名单；空表示继承企业主全部可见分组。
+	AllowedGroupIDs []int64
+	// AccountUserID 成员自己的登录账号（users.id）；0 表示 2026-09-03 老模型成员（无账号，只作 owner 密钥归属）。
+	AccountUserID int
+	AccountEmail  string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 
 	// 派生字段
 	PeriodUsed    float64    // 本期已用；monthly 跨期后按 0 起算
@@ -60,36 +65,59 @@ type ListResult struct {
 }
 
 // CreateInput 创建成员输入。
+//
+// Password 非空即为成员创建登录账号（邮箱必填且全站唯一）：成员用邮箱+密码正常登录，
+// 消耗与归属落企业主。Password 为空沿用老模型（无账号，仅作 owner 密钥的归属单元）。
 type CreateInput struct {
-	Name        string
-	Email       string
-	Note        string
-	QuotaUSD    float64
-	QuotaPeriod string // 空 = monthly
+	Name            string
+	Email           string
+	Password        string
+	Note            string
+	QuotaUSD        float64
+	QuotaPeriod     string // 空 = monthly
+	AllowedGroupIDs []int64
 }
 
 // UpdateInput 更新成员输入；nil 表示不改动。
 type UpdateInput struct {
 	Name        *string
 	Email       *string
+	Password    *string // 重置成员账号密码（仅有账号的成员）
 	Note        *string
 	QuotaUSD    *float64
 	QuotaPeriod *string
 	Status      *string
+	// AllowedGroupIDs 非 nil 即整体替换白名单；传空切片 = 清空（继承企业主全部可见分组）。
+	AllowedGroupIDs *[]int64
 }
 
 // Mutation 持久化写入；nil 表示不改动。
 type Mutation struct {
-	OwnerID        *int
-	Name           *string
-	Email          *string
-	Note           *string
-	QuotaUSD       *float64
-	QuotaPeriod    *string
-	Status         *string
-	PeriodAnchor   *time.Time
-	PeriodStart    *time.Time
-	PeriodUsedBase *float64
+	OwnerID            *int
+	Name               *string
+	Email              *string
+	Note               *string
+	QuotaUSD           *float64
+	QuotaPeriod        *string
+	Status             *string
+	AllowedGroupIDs    []int64
+	HasAllowedGroupIDs bool
+	PeriodAnchor       *time.Time
+	PeriodStart        *time.Time
+	PeriodUsedBase     *float64
+}
+
+// AccountInput 随成员一起创建的登录账号。
+type AccountInput struct {
+	Email        string
+	PasswordHash string
+	Username     string
+}
+
+// AccountPatch 成员账号资料改动；nil 表示不改动。
+type AccountPatch struct {
+	Email        *string
+	PasswordHash *string
 }
 
 // Repository 成员持久化接口。所有 *Owned 方法都以 ownerID 限定归属，越权按不存在处理。
@@ -110,4 +138,13 @@ type Repository interface {
 	MemberUsage(ctx context.Context, memberIDs []int, todayStart time.Time) (map[int]float64, map[int]float64, error)
 	// KeyHashesByMember 成员名下全部 key 的 key_hash，供改额度/停用/删除后立即失效鉴权缓存。
 	KeyHashesByMember(ctx context.Context, memberID int) ([]string, error)
+	// CreateWithAccount 同一事务内创建成员登录账号（users 行）并把成员挂上去。
+	CreateWithAccount(ctx context.Context, mutation Mutation, account AccountInput) (Member, error)
+	// AccountEmailExists 邮箱是否已被任何用户占用（成员账号与普通用户共用 users 表）。
+	AccountEmailExists(ctx context.Context, email string) (bool, error)
+	// UpdateAccountOwned 改成员账号的邮箱/密码；成员无账号时按不存在处理。
+	UpdateAccountOwned(ctx context.Context, ownerID, id int, patch AccountPatch) error
+	// OwnerVisibleGroupIDs 企业主当前可见的分组 ID 集合（未下架且（非专属或已授权）），
+	// 用于校验分组白名单只能在其中选。
+	OwnerVisibleGroupIDs(ctx context.Context, ownerID int) ([]int64, error)
 }

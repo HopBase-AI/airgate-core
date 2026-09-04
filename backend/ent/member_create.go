@@ -168,6 +168,12 @@ func (mc *MemberCreate) SetNillableStatus(m *member.Status) *MemberCreate {
 	return mc
 }
 
+// SetAllowedGroupIds sets the "allowed_group_ids" field.
+func (mc *MemberCreate) SetAllowedGroupIds(i []int64) *MemberCreate {
+	mc.mutation.SetAllowedGroupIds(i)
+	return mc
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (mc *MemberCreate) SetCreatedAt(t time.Time) *MemberCreate {
 	mc.mutation.SetCreatedAt(t)
@@ -220,6 +226,25 @@ func (mc *MemberCreate) AddAPIKeys(a ...*APIKey) *MemberCreate {
 		ids[i] = a[i].ID
 	}
 	return mc.AddAPIKeyIDs(ids...)
+}
+
+// SetAccountID sets the "account" edge to the User entity by ID.
+func (mc *MemberCreate) SetAccountID(id int) *MemberCreate {
+	mc.mutation.SetAccountID(id)
+	return mc
+}
+
+// SetNillableAccountID sets the "account" edge to the User entity by ID if the given value is not nil.
+func (mc *MemberCreate) SetNillableAccountID(id *int) *MemberCreate {
+	if id != nil {
+		mc = mc.SetAccountID(*id)
+	}
+	return mc
+}
+
+// SetAccount sets the "account" edge to the User entity.
+func (mc *MemberCreate) SetAccount(u *User) *MemberCreate {
+	return mc.SetAccountID(u.ID)
 }
 
 // Mutation returns the MemberMutation object of the builder.
@@ -451,6 +476,10 @@ func (mc *MemberCreate) createSpec() (*Member, *sqlgraph.CreateSpec) {
 		_spec.SetField(member.FieldStatus, field.TypeEnum, value)
 		_node.Status = value
 	}
+	if value, ok := mc.mutation.AllowedGroupIds(); ok {
+		_spec.SetField(member.FieldAllowedGroupIds, field.TypeJSON, value)
+		_node.AllowedGroupIds = value
+	}
 	if value, ok := mc.mutation.CreatedAt(); ok {
 		_spec.SetField(member.FieldCreatedAt, field.TypeTime, value)
 		_node.CreatedAt = value
@@ -485,6 +514,22 @@ func (mc *MemberCreate) createSpec() (*Member, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := mc.mutation.AccountIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   member.AccountTable,
+			Columns: []string{member.AccountColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
