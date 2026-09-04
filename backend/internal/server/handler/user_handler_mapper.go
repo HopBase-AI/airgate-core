@@ -94,7 +94,13 @@ func applyMembershipToUserResp(resp *dto.UserResp, brief appuser.MembershipBrief
 	}
 	resp.MemberAllowedGroupIDs = brief.AllowedGroupIDs
 	resp.TeamOwnerEmail = brief.OwnerEmail
-	resp.Balance = brief.OwnerBalance
+	// 余额展示口径：有额度的成员看本期剩余额度（企业主余额对他无意义也不该暴露）；
+	// 不限额的老模型成员消耗直接落企业主，才看企业主余额。
+	if brief.QuotaUSD > 0 {
+		resp.Balance = max(0, brief.QuotaUSD-brief.UsedQuota)
+	} else {
+		resp.Balance = brief.OwnerBalance
+	}
 	resp.MaxConcurrency = brief.OwnerMaxConc
 	// 成员不是分销/企业主主体：这些能力位随成员账号本身（默认关）即可，不继承 owner。
 }

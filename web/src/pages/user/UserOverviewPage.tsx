@@ -179,10 +179,12 @@ function TokenTrendTooltip({
 }
 
 export default function UserOverviewPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
-  // 团队成员账号：余额展示为企业主余额（消耗从那里扣），并发上限对成员无意义，改展示成员额度
+  // 团队成员账号：并发上限对成员无意义，改展示成员额度。有额度的成员 /users/me 的 balance
+  // 是本期剩余额度(后端已换算),标题按「我的额度（剩余）」；无额度成员 balance 才是企业主余额。
   const isTeamMember = !user?.api_key_id && (user?.member_id ?? 0) > 0;
+  const memberHasQuota = isTeamMember && (user?.member_quota_usd ?? 0) > 0;
   const [range, setRange] = useState<RangePreset>('today');
 
   const dateRange = useMemo(() => rangeToDate(range), [range]);
@@ -222,16 +224,26 @@ export default function UserOverviewPage() {
       {/* 账户信息 */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:gap-4">
         <StatCard
-          title={isTeamMember ? t('user_overview.team_balance') : t('user_overview.balance')}
+          title={
+            memberHasQuota
+              ? t('user_overview.member_quota_remaining')
+              : isTeamMember
+                ? t('user_overview.team_balance')
+                : t('user_overview.balance')
+          }
           value={`$${formatBalance(user?.balance)}`}
           icon={<Wallet className="w-5 h-5" />}
           tone="blue"
         />
         {isTeamMember ? (
           <StatCard
-            title={t('user_overview.member_quota')}
+            title={
+              memberHasQuota && user?.member_period_end
+                ? `${t('user_overview.member_quota')} · ${t('team.period_ends', { date: new Date(user.member_period_end).toLocaleDateString(i18n.language) })}`
+                : t('user_overview.member_quota')
+            }
             value={
-              (user?.member_quota_usd ?? 0) > 0
+              memberHasQuota
                 ? `$${(user?.member_used_quota ?? 0).toFixed(2)} / $${(user?.member_quota_usd ?? 0).toFixed(2)}`
                 : t('team.unlimited')
             }

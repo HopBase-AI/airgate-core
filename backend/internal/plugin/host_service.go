@@ -2385,10 +2385,15 @@ func (h *HostService) getUserInfo(ctx context.Context, req hostGetUserInfoReques
 		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	// 成员账号的余额展示口径 = 企业主余额（消耗从那里扣）；身份字段仍是成员本人。
+	// 成员账号的余额展示口径：有额度的成员看本期剩余额度（企业主余额对他无意义也不该暴露）；
+	// 不限额的老模型成员消耗直接落企业主，才看企业主余额。身份字段仍是成员本人。
 	balance := u.Balance
 	if identity, err := auth.ResolveTeamIdentity(ctx, h.db, u.ID); err == nil && identity.IsMember() {
-		balance = identity.Owner.Balance
+		if remaining, limited := auth.MemberRemainingQuota(identity.Member, time.Now()); limited {
+			balance = remaining
+		} else {
+			balance = identity.Owner.Balance
+		}
 	}
 	return map[string]interface{}{
 		"user_id":  int64(u.ID),

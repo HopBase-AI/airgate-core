@@ -142,10 +142,16 @@ export default function TeamPage() {
       toast('error', t('team.quota_hint'));
       return;
     }
-    // 新建成员 = 开登录账号：邮箱与密码必填；编辑时密码留空表示不改
+    // 新建成员 = 开登录账号：邮箱与密码必填；编辑时密码留空表示不改。
+    // 有登录账号的成员额度必填(成员控制台的"余额"就是本期剩余额度,0 = 不限没有意义);
+    // 老模型无账号成员(has_account === false)沿用 0 = 不限。
     if (!editing || editing.has_account) {
       if (!email) {
         toast('error', t('team.email_required'));
+        return;
+      }
+      if (quota <= 0) {
+        toast('error', t('team.quota_required'));
         return;
       }
     }

@@ -490,7 +490,8 @@
     "today": "本日の統計",
     "cumulative": "累計統計",
     "team_balance": "チーム残高",
-    "member_quota": "自分のクォータ"
+    "member_quota": "自分のクォータ",
+    "member_quota_remaining": "自分のクォータ（残り）"
   },
   "users": {
     "title": "ユーザー管理",
@@ -1546,6 +1547,7 @@
     "balance_alert_saved": "残高アラート設定を保存しました",
     "balance_history": "残高履歴",
     "team_balance": "チーム残高",
+    "member_quota_remaining": "自分のクォータ（残り）",
     "team_owner": "所属チーム"
   },
   "user_keys": {
@@ -1649,7 +1651,8 @@
     "note": "メモ",
     "note_placeholder": "任意",
     "quota_label": "予算 (USD)",
-    "quota_hint": "空欄または 0 で無制限。メンバー配下の全キーで共有",
+    "quota_hint": "必須。メンバーが今期に消費できる上限（USD）。メンバー配下の全キーと Studio の消費で共有",
+    "quota_required": "メンバーの予算は必須です。0 より大きい金額を入力してください",
     "quota_period": "予算サイクル",
     "period_monthly": "毎月リセット",
     "period_none": "一回限りの総額",
