@@ -58,6 +58,9 @@ func TestGetTaskPluginIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getTask(PluginIDs 与 PluginID 同给): %v", err)
 	}
+	if task, _ = resp["task"].(map[string]interface{}); task["plugin_id"] != "gateway-seedance" {
+		t.Fatalf("plugin_id = %v, want PluginIDs 优先于 PluginID 命中 gateway-seedance", task["plugin_id"])
+	}
 
 	// 兼容:不带 plugin_ids 时行为不变——默认限定调用方自身插件,故 studio 直查会 NotFound
 	_, err = host.getTask(ctx, "airgate-studio", hostGetTaskRequest{TaskID: int64(seedance.ID)})
