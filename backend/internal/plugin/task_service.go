@@ -313,9 +313,6 @@ func (h *HostService) updateTask(ctx context.Context, pluginID string, req hostU
 }
 
 func (h *HostService) getTask(ctx context.Context, pluginID string, req hostGetTaskRequest) (map[string]interface{}, error) {
-	if req.PluginID != "" {
-		pluginID = req.PluginID
-	}
 	query := h.db.Task.Query()
 	if req.PublicTaskID != "" {
 		query.Where(enttask.PublicTaskIDEQ(req.PublicTaskID))
@@ -325,8 +322,15 @@ func (h *HostService) getTask(ctx context.Context, pluginID string, req hostGetT
 		}
 		query.Where(enttask.IDEQ(int(req.TaskID)))
 	}
-	if pluginID != "" {
-		query.Where(enttask.PluginIDEQ(pluginID))
+	if len(req.PluginIDs) > 0 {
+		query.Where(enttask.PluginIDIn(req.PluginIDs...))
+	} else {
+		if req.PluginID != "" {
+			pluginID = req.PluginID
+		}
+		if pluginID != "" {
+			query.Where(enttask.PluginIDEQ(pluginID))
+		}
 	}
 	if req.UserID > 0 {
 		query.Where(enttask.UserIDEQ(int(req.UserID)))
