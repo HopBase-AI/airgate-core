@@ -197,6 +197,7 @@ const (
 	hostMethodModelsCatalog          = "models.catalog"
 	hostMethodModelsRefresh          = "models.refresh"
 	hostMethodUsersGet               = "users.get"
+	hostMethodBillingBudget          = "billing.budget"
 	hostMethodUsersUpdateBalance     = "users.update_balance"
 	hostMethodUsageRecord            = "usage.record"
 	hostMethodUsersNotifyTopup       = "users.notify_topup"
@@ -278,6 +279,12 @@ func (h *HostService) invoke(
 			return nil, err
 		}
 		return h.getUserInfo(ctx, req)
+	case hostMethodBillingBudget:
+		var req hostBillingBudgetRequest
+		if err := decodeHostPayload(payload, &req); err != nil {
+			return nil, err
+		}
+		return h.billingBudget(ctx, req)
 	case hostMethodUsersUpdateBalance:
 		var req hostUpdateBalanceRequest
 		if err := decodeHostPayload(payload, &req); err != nil {
@@ -443,11 +450,25 @@ type hostForwardRequest struct {
 	// 仅非流式 forward 支持；判决/计费/账号状态机管线与普通转发一致。
 	AccountID int64 `json:"account_id,omitempty"`
 
+	// TaskID >0 时把本次提交与一行 tasks 关联：过闸后 core 把换算好的用户价写进
+	// tasks.estimated_cost——那一行就是「在途预留」，下一次提交据此累加。
+	TaskID int64 `json:"task_id,omitempty"`
+
+	// EstimatedOfficialCost 是插件按自身价目表算出的**官方基准价 USD（倍率前）**。
+	// >0 且为新提交（AccountID==0）时触发预算门禁：倍率换算与判定都在 core 做，
+	// 插件不掌握用户的分组倍率，算不出用户价。
+	EstimatedOfficialCost float64 `json:"estimated_official_cost,omitempty"`
+
 	// 以下由 core 在入口解析（resolveHostForwardIdentity），不接受插件传入：
 	// 调用方 user_id 若是团队成员账号，UserID 已被改写为企业主（付费身份），
-	// memberID 记成员归属，memberAllowedGroups 为成员分组白名单（空=不限）。
+	// memberID 记成员归属，memberAllowedGroups 为成员分组白名单（空=不限），
+	// member 留着算本期剩余额度。
+	// submitterID 是**改写前**的原始调用账号：任务行的 user_id 记的是提交人本人，
+	// 在途预留必须按它统计，按企业主查一条都查不到。
 	memberID            int
 	memberAllowedGroups []int64
+	member              *ent.Member
+	submitterID         int
 }
 
 // resolveHostForwardIdentity 把成员账号发起的 Host 转发映射到付费身份：
@@ -479,6 +500,7 @@ func (h *HostService) resolveHostForwardIdentity(ctx context.Context, req *hostF
 	}
 	req.memberID = identity.Member.ID
 	req.memberAllowedGroups = identity.Member.AllowedGroupIds
+	req.member = identity.Member
 	req.UserID = int64(identity.Owner.ID)
 	return nil
 }
@@ -567,6 +589,9 @@ type hostUpdateTaskRequest struct {
 	ErrorCode    string                 `json:"error_code"`
 	ErrorMessage string                 `json:"error_message"`
 	UsageID      *int                   `json:"usage_id"`
+	// EstimatedCost 允许插件在拿到更准的信息后（如上游回了实际时长/分辨率）改写预估。
+	// 非终态任务的这个值就是在途预留，改小 = 释放，改大 = 多占。
+	EstimatedCost *float64 `json:"estimated_cost"`
 }
 
 type hostGetTaskRequest struct {
@@ -1107,11 +1132,20 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 	if req.UserID <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "user_id 必须 > 0")
 	}
+	// 身份解析会把成员账号的 UserID 改写成企业主，原始提交账号先留一份：
+	// 在途预留按任务行的 user_id（= 提交人本人）统计。
+	req.submitterID = int(req.UserID)
 	if err := h.resolveHostForwardIdentity(ctx, &req); err != nil {
 		return nil, err
 	}
-	if err := h.checkHostForwardBalanceOrReplay(ctx, req); err != nil {
-		return nil, err
+	// 只读元信息路径（如视频价格预估 /v1/video/estimate）不打上游、不计费、不占预留，
+	// 对余额与预算门禁一律放行——与转发管线 Forwarder.checkBalance 的口径一致。
+	// 否则余额已经见底的用户连"这条要花多少钱"都问不出来，恰恰是最需要提示的人拿不到提示。
+	metadataOnly := h.isHostMetadataOnlyPath(req.Path)
+	if !metadataOnly {
+		if err := h.checkHostForwardBalanceOrReplay(ctx, req); err != nil {
+			return nil, err
+		}
 	}
 
 	if req.AccountID > 0 {
@@ -1120,6 +1154,13 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 
 	routes, userEmail, err := h.hostForwardRoutes(ctx, req)
 	if err != nil {
+		return nil, err
+	}
+	// 预算预留门禁：只拦带预估的提交（是否带预估由插件决定，钉选路径同样会过一遍
+	// 同一个门禁，见 forwardPinned）。元信息路径不带预估，天然 no-op。倍率取首候选
+	// ——真正落账的多半就是它，failover 到后面的分组只会更贵/更便宜一档，不值得为了
+	// 精确到分而把选号提前到这里。
+	if err := h.checkSubmissionBudget(ctx, &req, routes[0].EffectiveRate); err != nil {
 		return nil, err
 	}
 	fwdCtx, cancel := context.WithTimeout(ctx, hostForwardTimeout(h.manager, req))
@@ -1347,6 +1388,13 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 		return nil, err
 	}
 	route := routes[0]
+	// 钉选路径同样要过预算门禁：视频插件的**首次提交本身就是钉选转发**
+	// （参考图素材绑在选中账号上，必须钉住），只有它带 estimated_official_cost；
+	// 后续的进度轮询/结算不带，checkSubmissionBudget 会直接 no-op 放行——
+	// 这正是 2026-09-04「已提交任务被余额门禁卡死」那条教训要保住的边界。
+	if err := h.checkSubmissionBudget(ctx, &req, route.EffectiveRate); err != nil {
+		return nil, err
+	}
 	inst := h.manager.GetPluginByPlatform(route.Platform)
 	if inst == nil || inst.Gateway == nil {
 		slog.Warn("host_forward_pinned_no_plugin",
@@ -3067,6 +3115,15 @@ func (h *HostService) resolveModelFamily(platform, model string) string {
 		}
 	}
 	return scheduler.ModelFamily(platform, model)
+}
+
+// isHostMetadataOnlyPath 复用 Manager 的 metadata_only 路径索引（插件在 RouteDefinition.Metadata
+// 里声明），让 Host 转发与 Forwarder 对"只读元信息"的判断保持同一口径。
+func (h *HostService) isHostMetadataOnlyPath(path string) bool {
+	if h.manager == nil || strings.TrimSpace(path) == "" {
+		return false
+	}
+	return h.manager.IsMetadataOnlyRoute(path)
 }
 
 func (h *HostService) checkHostForwardBalance(ctx context.Context, userID int64) error {

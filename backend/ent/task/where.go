@@ -94,6 +94,11 @@ func UsageID(v int) predicate.Task {
 	return predicate.Task(sql.FieldEQ(FieldUsageID, v))
 }
 
+// EstimatedCost applies equality check predicate on the "estimated_cost" field. It's identical to EstimatedCostEQ.
+func EstimatedCost(v float64) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldEstimatedCost, v))
+}
+
 // Progress applies equality check predicate on the "progress" field. It's identical to ProgressEQ.
 func Progress(v int) predicate.Task {
 	return predicate.Task(sql.FieldEQ(FieldProgress, v))
@@ -682,6 +687,46 @@ func UsageIDIsNil() predicate.Task {
 // UsageIDNotNil applies the NotNil predicate on the "usage_id" field.
 func UsageIDNotNil() predicate.Task {
 	return predicate.Task(sql.FieldNotNull(FieldUsageID))
+}
+
+// EstimatedCostEQ applies the EQ predicate on the "estimated_cost" field.
+func EstimatedCostEQ(v float64) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldEstimatedCost, v))
+}
+
+// EstimatedCostNEQ applies the NEQ predicate on the "estimated_cost" field.
+func EstimatedCostNEQ(v float64) predicate.Task {
+	return predicate.Task(sql.FieldNEQ(FieldEstimatedCost, v))
+}
+
+// EstimatedCostIn applies the In predicate on the "estimated_cost" field.
+func EstimatedCostIn(vs ...float64) predicate.Task {
+	return predicate.Task(sql.FieldIn(FieldEstimatedCost, vs...))
+}
+
+// EstimatedCostNotIn applies the NotIn predicate on the "estimated_cost" field.
+func EstimatedCostNotIn(vs ...float64) predicate.Task {
+	return predicate.Task(sql.FieldNotIn(FieldEstimatedCost, vs...))
+}
+
+// EstimatedCostGT applies the GT predicate on the "estimated_cost" field.
+func EstimatedCostGT(v float64) predicate.Task {
+	return predicate.Task(sql.FieldGT(FieldEstimatedCost, v))
+}
+
+// EstimatedCostGTE applies the GTE predicate on the "estimated_cost" field.
+func EstimatedCostGTE(v float64) predicate.Task {
+	return predicate.Task(sql.FieldGTE(FieldEstimatedCost, v))
+}
+
+// EstimatedCostLT applies the LT predicate on the "estimated_cost" field.
+func EstimatedCostLT(v float64) predicate.Task {
+	return predicate.Task(sql.FieldLT(FieldEstimatedCost, v))
+}
+
+// EstimatedCostLTE applies the LTE predicate on the "estimated_cost" field.
+func EstimatedCostLTE(v float64) predicate.Task {
+	return predicate.Task(sql.FieldLTE(FieldEstimatedCost, v))
 }
 
 // ProgressEQ applies the EQ predicate on the "progress" field.

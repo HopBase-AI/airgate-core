@@ -429,6 +429,7 @@ var (
 		{Name: "error_code", Type: field.TypeString, Default: ""},
 		{Name: "error_message", Type: field.TypeString, Default: ""},
 		{Name: "usage_id", Type: field.TypeInt, Nullable: true},
+		{Name: "estimated_cost", Type: field.TypeFloat64, Default: 0},
 		{Name: "progress", Type: field.TypeInt, Default: 0},
 		{Name: "priority", Type: field.TypeInt, Default: 0},
 		{Name: "attempts", Type: field.TypeInt, Default: 0},
@@ -451,27 +452,32 @@ var (
 			{
 				Name:    "task_plugin_id_status_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{TasksColumns[1], TasksColumns[3], TasksColumns[20]},
+				Columns: []*schema.Column{TasksColumns[1], TasksColumns[3], TasksColumns[21]},
 			},
 			{
 				Name:    "task_user_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{TasksColumns[5], TasksColumns[20]},
+				Columns: []*schema.Column{TasksColumns[5], TasksColumns[21]},
+			},
+			{
+				Name:    "task_user_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{TasksColumns[5], TasksColumns[3]},
 			},
 			{
 				Name:    "task_status_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{TasksColumns[3], TasksColumns[20]},
+				Columns: []*schema.Column{TasksColumns[3], TasksColumns[21]},
 			},
 			{
 				Name:    "task_public_task_id",
 				Unique:  true,
-				Columns: []*schema.Column{TasksColumns[18]},
+				Columns: []*schema.Column{TasksColumns[19]},
 			},
 			{
 				Name:    "task_plugin_id_user_id_task_type_idempotency_key",
 				Unique:  true,
-				Columns: []*schema.Column{TasksColumns[1], TasksColumns[5], TasksColumns[2], TasksColumns[19]},
+				Columns: []*schema.Column{TasksColumns[1], TasksColumns[5], TasksColumns[2], TasksColumns[20]},
 			},
 		},
 	}

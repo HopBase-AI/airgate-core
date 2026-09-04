@@ -238,6 +238,8 @@ func (s *Server) StartPlugins(ctx context.Context) {
 
 	go plugin.StartAssetMigrationLoop(pluginCtx, s.db, s.leader.IsLeader)
 	go plugin.StartAssetCleanupLoop(pluginCtx, s.db, s.leader.IsLeader)
+	// 卡死任务兜底：非终态任务行就是预算预留，不扫掉会把用户的额度一直占着。
+	go plugin.StartStaleTaskSweepLoop(pluginCtx, s.db, s.leader.IsLeader)
 	go scheduler.StartAccountEventCleanupLoop(pluginCtx, s.db, s.leader.IsLeader)
 
 	go func() {

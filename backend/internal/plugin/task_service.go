@@ -92,6 +92,7 @@ func taskToPayload(t *ent.Task) map[string]interface{} {
 		"error_type":     t.ErrorType,
 		"error_code":     t.ErrorCode,
 		"error_message":  t.ErrorMessage,
+		"estimated_cost": t.EstimatedCost,
 		"progress":       t.Progress,
 		"attempts":       t.Attempts,
 		"max_attempts":   t.MaxAttempts,
@@ -295,6 +296,9 @@ func (h *HostService) updateTask(ctx context.Context, pluginID string, req hostU
 	}
 	if req.UsageID != nil {
 		update.SetUsageID(*req.UsageID)
+	}
+	if req.EstimatedCost != nil {
+		update.SetEstimatedCost(*req.EstimatedCost)
 	}
 	if req.Status == enttask.StatusCompleted.String() || req.Status == enttask.StatusFailed.String() {
 		now := time.Now()

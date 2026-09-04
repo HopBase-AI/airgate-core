@@ -46,6 +46,8 @@ func (Task) Fields() []ent.Field {
 		field.String("error_message").Default(""),
 		field.Int("usage_id").Optional().Nillable().
 			Comment("关联 usage_log.id，完成后的模型、计量和费用事实以 usage 为准"),
+		field.Float("estimated_cost").Default(0).
+			Comment("预估用户价 USD，提交前由 core 按路由倍率换算并写入；非终态任务的这个值就是「在途预留」"),
 		field.Int("progress").Default(0).Min(0).Max(100),
 		field.Int("priority").Default(0).
 			Comment("越高越优先处理"),
@@ -68,6 +70,8 @@ func (Task) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("plugin_id", "status", "created_at"),
 		index.Fields("user_id", "created_at"),
+		// 提交前算「在途预留」要按 user + 非终态状态求和，没有这条索引会全表扫 tasks。
+		index.Fields("user_id", "status"),
 		index.Fields("status", "created_at"),
 		index.Fields("public_task_id").Unique(),
 		index.Fields("plugin_id", "user_id", "task_type", "idempotency_key").Unique(),

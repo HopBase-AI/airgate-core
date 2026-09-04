@@ -40,6 +40,8 @@ const (
 	FieldErrorMessage = "error_message"
 	// FieldUsageID holds the string denoting the usage_id field in the database.
 	FieldUsageID = "usage_id"
+	// FieldEstimatedCost holds the string denoting the estimated_cost field in the database.
+	FieldEstimatedCost = "estimated_cost"
 	// FieldProgress holds the string denoting the progress field in the database.
 	FieldProgress = "progress"
 	// FieldPriority holds the string denoting the priority field in the database.
@@ -84,6 +86,7 @@ var Columns = []string{
 	FieldErrorCode,
 	FieldErrorMessage,
 	FieldUsageID,
+	FieldEstimatedCost,
 	FieldProgress,
 	FieldPriority,
 	FieldAttempts,
@@ -131,6 +134,8 @@ var (
 	DefaultErrorCode string
 	// DefaultErrorMessage holds the default value on creation for the "error_message" field.
 	DefaultErrorMessage string
+	// DefaultEstimatedCost holds the default value on creation for the "estimated_cost" field.
+	DefaultEstimatedCost float64
 	// DefaultProgress holds the default value on creation for the "progress" field.
 	DefaultProgress int
 	// ProgressValidator is a validator for the "progress" field. It is called by the builders before save.
@@ -231,6 +236,11 @@ func ByErrorMessage(opts ...sql.OrderTermOption) OrderOption {
 // ByUsageID orders the results by the usage_id field.
 func ByUsageID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUsageID, opts...).ToFunc()
+}
+
+// ByEstimatedCost orders the results by the estimated_cost field.
+func ByEstimatedCost(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEstimatedCost, opts...).ToFunc()
 }
 
 // ByProgress orders the results by the progress field.
