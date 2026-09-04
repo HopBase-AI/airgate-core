@@ -118,5 +118,5 @@ func EvaluateMemberGate(ctx context.Context, db *ent.Client, m *ent.Member, now 
 	if err != nil {
 		return MemberGate{}, err
 	}
-	return MemberGate{ID: mv.ID, Name: mv.Name, QuotaUSD: mv.QuotaUSD, UsedQuota: mv.UsedQuota}, nil
+	return MemberGate(mv), nil
 }
