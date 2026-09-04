@@ -585,6 +585,16 @@ func StatusNotIn(vs ...Status) predicate.Member {
 	return predicate.Member(sql.FieldNotIn(FieldStatus, vs...))
 }
 
+// AllowedGroupIdsIsNil applies the IsNil predicate on the "allowed_group_ids" field.
+func AllowedGroupIdsIsNil() predicate.Member {
+	return predicate.Member(sql.FieldIsNull(FieldAllowedGroupIds))
+}
+
+// AllowedGroupIdsNotNil applies the NotNil predicate on the "allowed_group_ids" field.
+func AllowedGroupIdsNotNil() predicate.Member {
+	return predicate.Member(sql.FieldNotNull(FieldAllowedGroupIds))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.Member {
 	return predicate.Member(sql.FieldEQ(FieldCreatedAt, v))
@@ -703,6 +713,29 @@ func HasAPIKeys() predicate.Member {
 func HasAPIKeysWith(preds ...predicate.APIKey) predicate.Member {
 	return predicate.Member(func(s *sql.Selector) {
 		step := newAPIKeysStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasAccount applies the HasEdge predicate on the "account" edge.
+func HasAccount() predicate.Member {
+	return predicate.Member(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, AccountTable, AccountColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasAccountWith applies the HasEdge predicate on the "account" edge with a given conditions (other predicates).
+func HasAccountWith(preds ...predicate.User) predicate.Member {
+	return predicate.Member(func(s *sql.Selector) {
+		step := newAccountStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

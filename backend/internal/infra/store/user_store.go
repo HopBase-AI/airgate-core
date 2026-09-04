@@ -631,3 +631,33 @@ func mapUserAPIKey(item *ent.APIKey, userID int, todayCost, thirtyDayCost float6
 }
 
 var _ appuser.Repository = (*UserStore)(nil)
+
+// MembershipBrief 成员账号的团队投影（members.account 指向该用户）。
+func (s *UserStore) MembershipBrief(ctx context.Context, userID int) (appuser.MembershipBrief, bool, error) {
+	m, err := s.db.Member.Query().
+		Where(entmember.HasAccountWith(entuser.IDEQ(userID))).
+		WithOwner().
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return appuser.MembershipBrief{}, false, nil
+		}
+		return appuser.MembershipBrief{}, false, err
+	}
+	used, end := memberPeriodView(m, time.Now())
+	brief := appuser.MembershipBrief{
+		MemberID:        m.ID,
+		MemberName:      m.Name,
+		QuotaUSD:        m.QuotaUsd,
+		UsedQuota:       used,
+		PeriodEnd:       end,
+		AllowedGroupIDs: append([]int64(nil), m.AllowedGroupIds...),
+	}
+	if o := m.Edges.Owner; o != nil {
+		brief.OwnerID = o.ID
+		brief.OwnerEmail = o.Email
+		brief.OwnerBalance = o.Balance
+		brief.OwnerMaxConc = o.MaxConcurrency
+	}
+	return brief, true, nil
+}

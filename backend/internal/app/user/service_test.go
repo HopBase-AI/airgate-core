@@ -98,3 +98,7 @@ func (s stubRepository) GetAPIKeyName(_ context.Context, _ int) (string, error) 
 func (s stubRepository) GetAPIKeyInfo(_ context.Context, _, _ int) (APIKeyBrief, error) {
 	return APIKeyBrief{}, nil
 }
+
+func (s stubRepository) MembershipBrief(context.Context, int) (MembershipBrief, bool, error) {
+	return MembershipBrief{}, false, nil
+}

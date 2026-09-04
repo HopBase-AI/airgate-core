@@ -279,6 +279,7 @@ var (
 		{Name: "used_quota", Type: field.TypeFloat64, Default: 0},
 		{Name: "used_quota_actual", Type: field.TypeFloat64, Default: 0},
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "disabled"}, Default: "active"},
+		{Name: "allowed_group_ids", Type: field.TypeJSON, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "user_members", Type: field.TypeInt},
@@ -291,7 +292,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "members_users_members",
-				Columns:    []*schema.Column{MembersColumns[14]},
+				Columns:    []*schema.Column{MembersColumns[15]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -300,7 +301,7 @@ var (
 			{
 				Name:    "member_user_members",
 				Unique:  false,
-				Columns: []*schema.Column{MembersColumns[14]},
+				Columns: []*schema.Column{MembersColumns[15]},
 			},
 		},
 	}
@@ -652,12 +653,21 @@ var (
 		{Name: "referral_display_name", Type: field.TypeString, Size: 64, Default: ""},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "member_account", Type: field.TypeInt, Unique: true, Nullable: true},
 	}
 	// UsersTable holds the schema information for the "users" table.
 	UsersTable = &schema.Table{
 		Name:       "users",
 		Columns:    UsersColumns,
 		PrimaryKey: []*schema.Column{UsersColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "users_members_account",
+				Columns:    []*schema.Column{UsersColumns[25]},
+				RefColumns: []*schema.Column{MembersColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
 		Indexes: []*schema.Index{
 			{
 				Name:    "user_inviter_id",
@@ -821,6 +831,7 @@ func init() {
 	UsageLogsTable.ForeignKeys[1].RefTable = AccountsTable
 	UsageLogsTable.ForeignKeys[2].RefTable = GroupsTable
 	UsageLogsTable.ForeignKeys[3].RefTable = UsersTable
+	UsersTable.ForeignKeys[0].RefTable = MembersTable
 	UserIdentitiesTable.ForeignKeys[0].RefTable = UsersTable
 	UserSubscriptionsTable.ForeignKeys[0].RefTable = GroupsTable
 	UserSubscriptionsTable.ForeignKeys[1].RefTable = UsersTable

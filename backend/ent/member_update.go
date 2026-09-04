@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/member"
@@ -212,6 +213,24 @@ func (mu *MemberUpdate) SetNillableStatus(m *member.Status) *MemberUpdate {
 	return mu
 }
 
+// SetAllowedGroupIds sets the "allowed_group_ids" field.
+func (mu *MemberUpdate) SetAllowedGroupIds(i []int64) *MemberUpdate {
+	mu.mutation.SetAllowedGroupIds(i)
+	return mu
+}
+
+// AppendAllowedGroupIds appends i to the "allowed_group_ids" field.
+func (mu *MemberUpdate) AppendAllowedGroupIds(i []int64) *MemberUpdate {
+	mu.mutation.AppendAllowedGroupIds(i)
+	return mu
+}
+
+// ClearAllowedGroupIds clears the value of the "allowed_group_ids" field.
+func (mu *MemberUpdate) ClearAllowedGroupIds() *MemberUpdate {
+	mu.mutation.ClearAllowedGroupIds()
+	return mu
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (mu *MemberUpdate) SetUpdatedAt(t time.Time) *MemberUpdate {
 	mu.mutation.SetUpdatedAt(t)
@@ -244,6 +263,25 @@ func (mu *MemberUpdate) AddAPIKeys(a ...*APIKey) *MemberUpdate {
 	return mu.AddAPIKeyIDs(ids...)
 }
 
+// SetAccountID sets the "account" edge to the User entity by ID.
+func (mu *MemberUpdate) SetAccountID(id int) *MemberUpdate {
+	mu.mutation.SetAccountID(id)
+	return mu
+}
+
+// SetNillableAccountID sets the "account" edge to the User entity by ID if the given value is not nil.
+func (mu *MemberUpdate) SetNillableAccountID(id *int) *MemberUpdate {
+	if id != nil {
+		mu = mu.SetAccountID(*id)
+	}
+	return mu
+}
+
+// SetAccount sets the "account" edge to the User entity.
+func (mu *MemberUpdate) SetAccount(u *User) *MemberUpdate {
+	return mu.SetAccountID(u.ID)
+}
+
 // Mutation returns the MemberMutation object of the builder.
 func (mu *MemberUpdate) Mutation() *MemberMutation {
 	return mu.mutation
@@ -274,6 +312,12 @@ func (mu *MemberUpdate) RemoveAPIKeys(a ...*APIKey) *MemberUpdate {
 		ids[i] = a[i].ID
 	}
 	return mu.RemoveAPIKeyIDs(ids...)
+}
+
+// ClearAccount clears the "account" edge to the User entity.
+func (mu *MemberUpdate) ClearAccount() *MemberUpdate {
+	mu.mutation.ClearAccount()
+	return mu
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -407,6 +451,17 @@ func (mu *MemberUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := mu.mutation.Status(); ok {
 		_spec.SetField(member.FieldStatus, field.TypeEnum, value)
 	}
+	if value, ok := mu.mutation.AllowedGroupIds(); ok {
+		_spec.SetField(member.FieldAllowedGroupIds, field.TypeJSON, value)
+	}
+	if value, ok := mu.mutation.AppendedAllowedGroupIds(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, member.FieldAllowedGroupIds, value)
+		})
+	}
+	if mu.mutation.AllowedGroupIdsCleared() {
+		_spec.ClearField(member.FieldAllowedGroupIds, field.TypeJSON)
+	}
 	if value, ok := mu.mutation.UpdatedAt(); ok {
 		_spec.SetField(member.FieldUpdatedAt, field.TypeTime, value)
 	}
@@ -477,6 +532,35 @@ func (mu *MemberUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if mu.mutation.AccountCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   member.AccountTable,
+			Columns: []string{member.AccountColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := mu.mutation.AccountIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   member.AccountTable,
+			Columns: []string{member.AccountColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -686,6 +770,24 @@ func (muo *MemberUpdateOne) SetNillableStatus(m *member.Status) *MemberUpdateOne
 	return muo
 }
 
+// SetAllowedGroupIds sets the "allowed_group_ids" field.
+func (muo *MemberUpdateOne) SetAllowedGroupIds(i []int64) *MemberUpdateOne {
+	muo.mutation.SetAllowedGroupIds(i)
+	return muo
+}
+
+// AppendAllowedGroupIds appends i to the "allowed_group_ids" field.
+func (muo *MemberUpdateOne) AppendAllowedGroupIds(i []int64) *MemberUpdateOne {
+	muo.mutation.AppendAllowedGroupIds(i)
+	return muo
+}
+
+// ClearAllowedGroupIds clears the value of the "allowed_group_ids" field.
+func (muo *MemberUpdateOne) ClearAllowedGroupIds() *MemberUpdateOne {
+	muo.mutation.ClearAllowedGroupIds()
+	return muo
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (muo *MemberUpdateOne) SetUpdatedAt(t time.Time) *MemberUpdateOne {
 	muo.mutation.SetUpdatedAt(t)
@@ -718,6 +820,25 @@ func (muo *MemberUpdateOne) AddAPIKeys(a ...*APIKey) *MemberUpdateOne {
 	return muo.AddAPIKeyIDs(ids...)
 }
 
+// SetAccountID sets the "account" edge to the User entity by ID.
+func (muo *MemberUpdateOne) SetAccountID(id int) *MemberUpdateOne {
+	muo.mutation.SetAccountID(id)
+	return muo
+}
+
+// SetNillableAccountID sets the "account" edge to the User entity by ID if the given value is not nil.
+func (muo *MemberUpdateOne) SetNillableAccountID(id *int) *MemberUpdateOne {
+	if id != nil {
+		muo = muo.SetAccountID(*id)
+	}
+	return muo
+}
+
+// SetAccount sets the "account" edge to the User entity.
+func (muo *MemberUpdateOne) SetAccount(u *User) *MemberUpdateOne {
+	return muo.SetAccountID(u.ID)
+}
+
 // Mutation returns the MemberMutation object of the builder.
 func (muo *MemberUpdateOne) Mutation() *MemberMutation {
 	return muo.mutation
@@ -748,6 +869,12 @@ func (muo *MemberUpdateOne) RemoveAPIKeys(a ...*APIKey) *MemberUpdateOne {
 		ids[i] = a[i].ID
 	}
 	return muo.RemoveAPIKeyIDs(ids...)
+}
+
+// ClearAccount clears the "account" edge to the User entity.
+func (muo *MemberUpdateOne) ClearAccount() *MemberUpdateOne {
+	muo.mutation.ClearAccount()
+	return muo
 }
 
 // Where appends a list predicates to the MemberUpdate builder.
@@ -911,6 +1038,17 @@ func (muo *MemberUpdateOne) sqlSave(ctx context.Context) (_node *Member, err err
 	if value, ok := muo.mutation.Status(); ok {
 		_spec.SetField(member.FieldStatus, field.TypeEnum, value)
 	}
+	if value, ok := muo.mutation.AllowedGroupIds(); ok {
+		_spec.SetField(member.FieldAllowedGroupIds, field.TypeJSON, value)
+	}
+	if value, ok := muo.mutation.AppendedAllowedGroupIds(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, member.FieldAllowedGroupIds, value)
+		})
+	}
+	if muo.mutation.AllowedGroupIdsCleared() {
+		_spec.ClearField(member.FieldAllowedGroupIds, field.TypeJSON)
+	}
 	if value, ok := muo.mutation.UpdatedAt(); ok {
 		_spec.SetField(member.FieldUpdatedAt, field.TypeTime, value)
 	}
@@ -981,6 +1119,35 @@ func (muo *MemberUpdateOne) sqlSave(ctx context.Context) (_node *Member, err err
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if muo.mutation.AccountCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   member.AccountTable,
+			Columns: []string{member.AccountColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := muo.mutation.AccountIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   member.AccountTable,
+			Columns: []string{member.AccountColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

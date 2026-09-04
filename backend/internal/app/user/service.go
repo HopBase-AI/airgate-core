@@ -37,6 +37,11 @@ func (s *Service) Get(ctx context.Context, id int) (User, error) {
 	return s.repo.FindByID(ctx, id, true)
 }
 
+// Membership 该用户作为团队成员账号的归属投影；不是成员返回 ok=false。
+func (s *Service) Membership(ctx context.Context, id int) (MembershipBrief, bool, error) {
+	return s.repo.MembershipBrief(ctx, id)
+}
+
 // UpdateProfile 更新当前用户资料。
 func (s *Service) UpdateProfile(ctx context.Context, id int, username string) (User, error) {
 	logger := sdk.LoggerFromContext(ctx)

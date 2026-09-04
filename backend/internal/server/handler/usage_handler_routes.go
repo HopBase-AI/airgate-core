@@ -11,7 +11,7 @@ import (
 
 // UserUsage 用户查看自己的使用记录。
 func (h *UsageHandler) UserUsage(c *gin.Context) {
-	userID, ok := currentUserID(c)
+	userID, ok := usageUserID(c)
 	if !ok {
 		response.Unauthorized(c, "用户未认证")
 		return
@@ -69,7 +69,7 @@ func (h *UsageHandler) UserUsage(c *gin.Context) {
 
 // UserUsageStats 用户聚合统计。
 func (h *UsageHandler) UserUsageStats(c *gin.Context) {
-	userID, ok := currentUserID(c)
+	userID, ok := usageUserID(c)
 	if !ok {
 		response.Unauthorized(c, "用户未认证")
 		return
@@ -146,7 +146,7 @@ func (h *UsageHandler) UserUsageStats(c *gin.Context) {
 
 // UserUsageTrend 用户 Token 使用趋势。
 func (h *UsageHandler) UserUsageTrend(c *gin.Context) {
-	userID, ok := currentUserID(c)
+	userID, ok := usageUserID(c)
 	if !ok {
 		response.Unauthorized(c, "用户未认证")
 		return
@@ -319,18 +319,29 @@ func scopedMemberID(c *gin.Context) int64 {
 
 // sessionUsageScope 把请求方的筛选与会话范围合并：
 //   - 普通登录：原样使用请求里的 api_key_id / member_id；
+//   - 成员账号登录（members.account 本人）：收敛到该成员（成员名下全部 key），
+//     但仍是完整的用户视角（不剥费用拆分）——成员是正常账号，只是归属不同；
 //   - 成员的 key 登录：收敛到该成员名下全部 key（忽略请求里的 key 筛选）；
 //   - 非成员的 key 登录：收敛到该把 key。
 //
-// 后两种都打开 scoped（客户视角，剥离平台成本字段）。
+// 后两种（key 登录）打开 scoped（客户视角，剥离平台成本字段）。
 func sessionUsageScope(c *gin.Context, requestedKey, requestedMember *int64) (apiKeyFilter, memberFilter *int64, scoped bool) {
 	if mid := scopedMemberID(c); mid > 0 {
+		if middleware.TeamOwnerID(c) > 0 && scopedAPIKeyID(c) == 0 {
+			return nil, &mid, false
+		}
 		return nil, &mid, true
 	}
 	if sk := scopedAPIKeyID(c); sk > 0 {
 		return &sk, nil, true
 	}
 	return requestedKey, requestedMember, false
+}
+
+// usageUserID 用量查询的主体用户：成员账号的用量记在企业主名下（usage_logs.user=owner、
+// member_id=成员），所以按 owner 查再叠加 member_id 收敛；其余账号就是本人。
+func usageUserID(c *gin.Context) (int, bool) {
+	return middleware.BillingUserID(c)
 }
 
 // scopedAPIKeyID 返回 JWT 中携带的 API Key ID（API Key 登录场景），0 表示普通登录。

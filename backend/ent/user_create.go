@@ -361,6 +361,25 @@ func (uc *UserCreate) AddMembers(m ...*Member) *UserCreate {
 	return uc.AddMemberIDs(ids...)
 }
 
+// SetMembershipID sets the "membership" edge to the Member entity by ID.
+func (uc *UserCreate) SetMembershipID(id int) *UserCreate {
+	uc.mutation.SetMembershipID(id)
+	return uc
+}
+
+// SetNillableMembershipID sets the "membership" edge to the Member entity by ID if the given value is not nil.
+func (uc *UserCreate) SetNillableMembershipID(id *int) *UserCreate {
+	if id != nil {
+		uc = uc.SetMembershipID(*id)
+	}
+	return uc
+}
+
+// SetMembership sets the "membership" edge to the Member entity.
+func (uc *UserCreate) SetMembership(m *Member) *UserCreate {
+	return uc.SetMembershipID(m.ID)
+}
+
 // AddSubscriptionIDs adds the "subscriptions" edge to the UserSubscription entity by IDs.
 func (uc *UserCreate) AddSubscriptionIDs(ids ...int) *UserCreate {
 	uc.mutation.AddSubscriptionIDs(ids...)
@@ -800,6 +819,23 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 		for _, k := range nodes {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := uc.mutation.MembershipIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: true,
+			Table:   user.MembershipTable,
+			Columns: []string{user.MembershipColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.member_account = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	if nodes := uc.mutation.SubscriptionsIDs(); len(nodes) > 0 {

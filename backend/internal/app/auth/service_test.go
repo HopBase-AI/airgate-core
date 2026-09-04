@@ -447,3 +447,7 @@ func (s authStubRepository) GetAPIKeyBrief(_ context.Context, keyID int) (APIKey
 	}
 	return APIKeyBrief{}, nil
 }
+
+func (s authStubRepository) MemberAccountState(context.Context, int) (bool, bool, error) {
+	return false, false, nil
+}

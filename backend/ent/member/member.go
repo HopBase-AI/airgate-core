@@ -37,6 +37,8 @@ const (
 	FieldUsedQuotaActual = "used_quota_actual"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
+	// FieldAllowedGroupIds holds the string denoting the allowed_group_ids field in the database.
+	FieldAllowedGroupIds = "allowed_group_ids"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
@@ -45,6 +47,8 @@ const (
 	EdgeOwner = "owner"
 	// EdgeAPIKeys holds the string denoting the api_keys edge name in mutations.
 	EdgeAPIKeys = "api_keys"
+	// EdgeAccount holds the string denoting the account edge name in mutations.
+	EdgeAccount = "account"
 	// Table holds the table name of the member in the database.
 	Table = "members"
 	// OwnerTable is the table that holds the owner relation/edge.
@@ -61,6 +65,13 @@ const (
 	APIKeysInverseTable = "api_keys"
 	// APIKeysColumn is the table column denoting the api_keys relation/edge.
 	APIKeysColumn = "member_api_keys"
+	// AccountTable is the table that holds the account relation/edge.
+	AccountTable = "users"
+	// AccountInverseTable is the table name for the User entity.
+	// It exists in this package in order to avoid circular dependency with the "user" package.
+	AccountInverseTable = "users"
+	// AccountColumn is the table column denoting the account relation/edge.
+	AccountColumn = "member_account"
 )
 
 // Columns holds all SQL columns for member fields.
@@ -77,6 +88,7 @@ var Columns = []string{
 	FieldUsedQuota,
 	FieldUsedQuotaActual,
 	FieldStatus,
+	FieldAllowedGroupIds,
 	FieldCreatedAt,
 	FieldUpdatedAt,
 }
@@ -280,6 +292,13 @@ func ByAPIKeys(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newAPIKeysStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByAccountField orders the results by account field.
+func ByAccountField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAccountStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newOwnerStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -292,5 +311,12 @@ func newAPIKeysStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(APIKeysInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, APIKeysTable, APIKeysColumn),
+	)
+}
+func newAccountStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AccountInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2O, false, AccountTable, AccountColumn),
 	)
 }

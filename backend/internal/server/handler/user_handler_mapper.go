@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"time"
+
 	appapikey "github.com/DouDOU-start/airgate-core/internal/app/apikey"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
 	"github.com/DouDOU-start/airgate-core/internal/server/dto"
@@ -79,4 +81,20 @@ func toAPIKeyRespFromUserDomain(item appuser.APIKey, userID int) dto.APIKeyResp 
 		resp.ExpiresAt = &value
 	}
 	return resp
+}
+
+// applyMembershipToUserResp 把成员账号的团队投影叠加到 /users/me 响应。
+func applyMembershipToUserResp(resp *dto.UserResp, brief appuser.MembershipBrief) {
+	resp.MemberID = int64(brief.MemberID)
+	resp.MemberName = brief.MemberName
+	resp.MemberQuotaUSD = brief.QuotaUSD
+	resp.MemberUsedQuota = brief.UsedQuota
+	if brief.PeriodEnd != nil {
+		resp.MemberPeriodEnd = brief.PeriodEnd.Format(time.RFC3339)
+	}
+	resp.MemberAllowedGroupIDs = brief.AllowedGroupIDs
+	resp.TeamOwnerEmail = brief.OwnerEmail
+	resp.Balance = brief.OwnerBalance
+	resp.MaxConcurrency = brief.OwnerMaxConc
+	// 成员不是分销/企业主主体：这些能力位随成员账号本身（默认关）即可，不继承 owner。
 }

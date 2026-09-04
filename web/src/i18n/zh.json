@@ -488,7 +488,9 @@
     "max_concurrency": "最大并发",
     "recent_usage": "最近使用记录",
     "today": "今日统计",
-    "cumulative": "累计统计"
+    "cumulative": "累计统计",
+    "team_balance": "团队余额",
+    "member_quota": "我的额度"
   },
   "users": {
     "title": "用户管理",
@@ -1542,7 +1544,9 @@
     "balance_alert_threshold": "预警阈值（美元）",
     "balance_alert_hint": "当前余额：${{balance}}",
     "balance_alert_saved": "余额预警设置已保存",
-    "balance_history": "余额记录"
+    "balance_history": "余额记录",
+    "team_balance": "团队余额",
+    "team_owner": "所属团队"
   },
   "user_keys": {
     "title": "API 密钥",
@@ -1635,13 +1639,13 @@
   },
   "team": {
     "title": "团队成员",
-    "description": "为企业成员分配额度，消耗统一从主账号余额扣除",
+    "description": "给团队成员开登录账号、分配额度与可用分组；成员用自己的账号正常登录、功能与普通用户一致，消耗统一从您的余额扣除，用量归属到成员。",
     "create": "添加成员",
     "edit": "编辑成员",
     "name": "成员名称",
     "name_placeholder": "例如：张三 / 研发组",
-    "email": "联系邮箱",
-    "email_placeholder": "可选，仅用于辨识成员",
+    "email": "登录邮箱",
+    "email_placeholder": "成员用它登录，例如 zhangsan@company.com",
     "note": "备注",
     "note_placeholder": "可选",
     "quota_label": "额度 (USD)",
@@ -1661,14 +1665,14 @@
     "reset_confirm": "确定把「{{name}}」的本期已用清零吗？累计用量不受影响。",
     "reset_success": "本期已用已清零",
     "delete_member": "删除成员",
-    "delete_confirm": "确定删除成员「{{name}}」吗？其名下所有密钥将一并删除，历史用量保留。",
+    "delete_confirm": "确定删除成员「{{name}}」吗？其登录账号与名下所有密钥将一并删除，历史用量保留。",
     "create_success": "成员已添加",
     "update_success": "成员已更新",
     "delete_success": "成员已删除",
     "enable_success": "成员已启用",
     "disable_success": "成员已停用",
-    "empty_hint": "还没有团队成员。添加成员后，为其创建密钥并分配额度。",
-    "login_hint": "成员用自己的密钥在登录页选择「密钥登录」，即可查看本人用量与剩余额度。",
+    "empty_hint": "还没有团队成员。添加成员后，成员即可用邮箱和密码登录，自己创建密钥、使用工作台与 AI Chat。",
+    "login_hint": "成员用登录邮箱和密码在登录页正常登录即可，无需密钥登录。",
     "usage_today": "今日",
     "usage_30d": "近30天",
     "cumulative": "累计",
@@ -1676,7 +1680,20 @@
     "member_deleted": "已删除成员",
     "no_member": "未归属",
     "unlimited": "不限",
-    "disabled_note": "停用后该成员名下所有密钥立即不可用"
+    "disabled_note": "停用后该成员名下所有密钥立即不可用",
+    "email_hint": "作为成员的登录账号，全站唯一",
+    "email_required": "请填写成员登录邮箱",
+    "password": "初始密码",
+    "password_placeholder": "至少 6 位，成员登录后可自行修改",
+    "password_hint": "密码至少 6 位",
+    "password_reset": "重置密码",
+    "password_reset_placeholder": "留空则不修改",
+    "groups": "可用分组",
+    "groups_hint": "勾选成员可以使用的分组；一个都不勾表示继承您的全部分组",
+    "groups_all": "全部分组",
+    "groups_count": "{{count}} 个分组",
+    "no_account": "未开通登录账号",
+    "no_account_hint": "旧版成员没有登录账号，只能用您代建的密钥；如需登录请删除后重新添加"
   },
   "setup": {
     "title": "系统安装向导",

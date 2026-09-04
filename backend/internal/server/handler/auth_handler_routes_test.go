@@ -337,3 +337,7 @@ func (stubAuthRepo) LinkIdentity(_ context.Context, _ int, _ appauth.IdentityInp
 func (stubAuthRepo) FindUserIDByInviteCode(_ context.Context, _ string) (int, error) {
 	return 0, appauth.ErrUserNotFound
 }
+
+func (stubAuthRepo) MemberAccountState(context.Context, int) (bool, bool, error) {
+	return false, false, nil
+}

@@ -62,6 +62,13 @@ func (s *GroupStore) ListAvailable(ctx context.Context, filter appgroup.Availabl
 		),
 	)
 	query = applyGroupListFilters(query, filter.Keyword, filter.Platform, "")
+	if len(filter.AllowedGroupIDs) > 0 {
+		ids := make([]int, 0, len(filter.AllowedGroupIDs))
+		for _, id := range filter.AllowedGroupIDs {
+			ids = append(ids, int(id))
+		}
+		query = query.Where(entgroup.IDIn(ids...))
+	}
 
 	total, err := query.Count(ctx)
 	if err != nil {

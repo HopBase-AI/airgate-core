@@ -1,11 +1,19 @@
 import { useTranslation } from 'react-i18next';
-import { Button, Description, Input, Label, ListBox, Select, Spinner, TextField as HeroTextField, useOverlayState } from '@heroui/react';
+import { useQuery } from '@tanstack/react-query';
+import { Button, Checkbox, Description, Input, Label, ListBox, Select, Spinner, TextField as HeroTextField, useOverlayState } from '@heroui/react';
 import { CommonModal } from '../../../shared/components/CommonModal';
+import { groupsApi } from '../../../shared/api/groups';
+import { queryKeys } from '../../../shared/queryKeys';
+import { FETCH_ALL_PARAMS } from '../../../shared/constants';
+import { localizedGroupText } from '../../../shared/groupText';
 import type { MemberForm } from './types';
 
+// 成员表单：成员是真实登录账号——新建时邮箱+密码必填；编辑时邮箱可改、密码留空不动。
+// 分组白名单从企业主自己可见的分组里勾选，一个都不勾 = 继承全部。
 export function EditMemberModal({
   open,
   isEdit,
+  hasAccount,
   form,
   setForm,
   onClose,
@@ -14,23 +22,40 @@ export function EditMemberModal({
 }: {
   open: boolean;
   isEdit: boolean;
+  /** 编辑的成员是否有登录账号（老模型成员没有，此时不展示密码栏） */
+  hasAccount: boolean;
   form: MemberForm;
   setForm: (form: MemberForm) => void;
   onClose: () => void;
   onSubmit: () => void;
   loading: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const modalState = useOverlayState({
     isOpen: open,
     onOpenChange: (nextOpen) => {
       if (!nextOpen) onClose();
     },
   });
+  const { data: groupsData, isLoading: groupsLoading } = useQuery({
+    queryKey: queryKeys.groupsForKeys(),
+    queryFn: () => groupsApi.listAvailable(FETCH_ALL_PARAMS),
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const groups = groupsData?.list ?? [];
   const monthlyItem = { id: 'monthly', label: t('team.period_monthly'), hint: t('team.period_monthly_hint') };
   const noneItem = { id: 'none', label: t('team.period_none'), hint: t('team.period_none_hint') };
   const periodItems = [monthlyItem, noneItem];
   const selectedPeriod = form.quota_period === 'none' ? noneItem : monthlyItem;
+  const showPassword = !isEdit || hasAccount;
+
+  const toggleGroup = (groupId: number, selected: boolean) => {
+    const next = selected
+      ? [...new Set([...form.allowed_group_ids, groupId])]
+      : form.allowed_group_ids.filter((id) => id !== groupId);
+    setForm({ ...form, allowed_group_ids: next });
+  };
 
   return (
     <CommonModal
@@ -59,7 +84,7 @@ export function EditMemberModal({
             required
           />
         </HeroTextField>
-        <HeroTextField fullWidth>
+        <HeroTextField fullWidth isRequired={!isEdit || hasAccount}>
           <Label>{t('team.email')}</Label>
           <Input
             type="email"
@@ -67,8 +92,24 @@ export function EditMemberModal({
             onChange={(e) => setForm({ ...form, email: e.target.value })}
             placeholder={t('team.email_placeholder')}
             maxLength={255}
+            autoComplete="off"
           />
+          <Description>{t('team.email_hint')}</Description>
         </HeroTextField>
+        {showPassword ? (
+          <HeroTextField fullWidth isRequired={!isEdit}>
+            <Label>{isEdit ? t('team.password_reset') : t('team.password')}</Label>
+            <Input
+              type="password"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              placeholder={isEdit ? t('team.password_reset_placeholder') : t('team.password_placeholder')}
+              minLength={6}
+              maxLength={72}
+              autoComplete="new-password"
+            />
+          </HeroTextField>
+        ) : null}
         <HeroTextField fullWidth>
           <Label>{t('team.quota_label')}</Label>
           <Input
@@ -104,6 +145,34 @@ export function EditMemberModal({
           </Select.Popover>
         </Select>
         <p className="-mt-2 text-xs leading-5 text-text-tertiary">{selectedPeriod.hint}</p>
+
+        <div>
+          <p className="mb-1 text-sm font-medium text-text">{t('team.groups')}</p>
+          <p className="mb-2 text-xs leading-5 text-text-tertiary">{t('team.groups_hint')}</p>
+          {groupsLoading ? (
+            <p className="py-3 text-center text-xs text-text-tertiary">{t('common.loading')}</p>
+          ) : groups.length === 0 ? (
+            <p className="py-3 text-center text-xs text-text-tertiary">{t('common.no_data')}</p>
+          ) : (
+            <div className="max-h-48 space-y-0.5 overflow-y-auto rounded-lg border border-border p-1">
+              {groups.map((group) => (
+                <div key={group.id} className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm">
+                  <Checkbox
+                    isSelected={form.allowed_group_ids.includes(group.id)}
+                    onChange={(selected) => toggleGroup(group.id, selected)}
+                  >
+                    <Checkbox.Control>
+                      <Checkbox.Indicator />
+                    </Checkbox.Control>
+                    <span className="text-text">{localizedGroupText(group.name, group.name_i18n, i18n.language)}</span>
+                  </Checkbox>
+                  <span className="text-[10px] text-text-tertiary">{group.platform}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <HeroTextField fullWidth>
           <Label>{t('team.note')}</Label>
           <Input

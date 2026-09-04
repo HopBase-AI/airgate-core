@@ -95,6 +95,8 @@ type AvailableFilter struct {
 	PageSize int
 	Keyword  string
 	Platform string
+	// AllowedGroupIDs 非空时只返回其中的分组（团队成员的分组白名单）；UserID 此时应为企业主。
+	AllowedGroupIDs []int64
 }
 
 // ListResult 描述分页结果。

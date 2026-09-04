@@ -14,6 +14,7 @@ import (
 	entusagelog "github.com/DouDOU-start/airgate-core/ent/usagelog"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
 	appapikey "github.com/DouDOU-start/airgate-core/internal/app/apikey"
+	"github.com/DouDOU-start/airgate-core/internal/auth"
 )
 
 // APIKeyStore 使用 Ent 实现 API Key 仓储。
@@ -28,8 +29,14 @@ func NewAPIKeyStore(db *ent.Client) *APIKeyStore {
 
 // ListByUser 查询当前用户 API Key 列表。
 func (s *APIKeyStore) ListByUser(ctx context.Context, userID int, filter appapikey.ListFilter) ([]appapikey.Key, int64, error) {
+	// 企业主按成员筛选时，成员账号自己建的 key（user 边是成员账号）也要露出来——
+	// 归属谓词改为"成员属于我"，而不是"key 属于我"。
+	ownership := entapikey.HasUserWith(entuser.IDEQ(userID))
+	if filter.MemberID != nil {
+		ownership = entapikey.HasMemberWith(entmember.HasOwnerWith(entuser.IDEQ(userID)))
+	}
 	query := s.db.APIKey.Query().
-		Where(entapikey.HasUserWith(entuser.IDEQ(userID))).
+		Where(ownership).
 		WithUser().
 		WithGroup().
 		WithMember()
@@ -190,7 +197,7 @@ func (s *APIKeyStore) Create(ctx context.Context, mutation appapikey.Mutation) (
 // UpdateOwned 更新当前用户的 API Key。
 func (s *APIKeyStore) UpdateOwned(ctx context.Context, userID, id int, mutation appapikey.Mutation) (appapikey.Key, error) {
 	exists, err := s.db.APIKey.Query().
-		Where(entapikey.IDEQ(id), entapikey.HasUserWith(entuser.IDEQ(userID))).
+		Where(entapikey.IDEQ(id), apiKeyOwnedBy(userID)).
 		Exist(ctx)
 	if err != nil {
 		return appapikey.Key{}, err
@@ -209,7 +216,7 @@ func (s *APIKeyStore) UpdateAdmin(ctx context.Context, id int, mutation appapike
 // DeleteOwned 删除当前用户 API Key。
 func (s *APIKeyStore) DeleteOwned(ctx context.Context, userID, id int) error {
 	exists, err := s.db.APIKey.Query().
-		Where(entapikey.IDEQ(id), entapikey.HasUserWith(entuser.IDEQ(userID))).
+		Where(entapikey.IDEQ(id), apiKeyOwnedBy(userID)).
 		Exist(ctx)
 	if err != nil {
 		return err
@@ -241,7 +248,7 @@ func (s *APIKeyStore) DeleteOwned(ctx context.Context, userID, id int) error {
 // FindOwned 查询当前用户的 API Key。
 func (s *APIKeyStore) FindOwned(ctx context.Context, userID, id int) (appapikey.Key, error) {
 	item, err := s.db.APIKey.Query().
-		Where(entapikey.IDEQ(id), entapikey.HasUserWith(entuser.IDEQ(userID))).
+		Where(entapikey.IDEQ(id), apiKeyOwnedBy(userID)).
 		WithUser().
 		WithGroup().
 		WithMember().
@@ -414,3 +421,28 @@ func cloneStringSlice(input []string) []string {
 }
 
 var _ appapikey.Repository = (*APIKeyStore)(nil)
+
+// apiKeyOwnedBy 归属谓词：key 是该用户自己的，或挂在该用户（企业主）名下某个成员账号上——
+// 企业主对成员的 key 有完整管理权（查看/停用/删除/看明文），成员自己也管自己的 key。
+func apiKeyOwnedBy(userID int) predicate.APIKey {
+	return entapikey.Or(
+		entapikey.HasUserWith(entuser.IDEQ(userID)),
+		entapikey.HasMemberWith(entmember.HasOwnerWith(entuser.IDEQ(userID))),
+	)
+}
+
+// TeamIdentity 用户的团队归属（成员账号 → 企业主）。
+func (s *APIKeyStore) TeamIdentity(ctx context.Context, userID int) (appapikey.TeamIdentity, error) {
+	identity, err := auth.ResolveTeamIdentity(ctx, s.db, userID)
+	if err != nil {
+		return appapikey.TeamIdentity{}, err
+	}
+	if !identity.IsMember() {
+		return appapikey.TeamIdentity{OwnerID: userID}, nil
+	}
+	return appapikey.TeamIdentity{
+		OwnerID:         identity.Owner.ID,
+		MemberID:        identity.Member.ID,
+		AllowedGroupIDs: append([]int64(nil), identity.Member.AllowedGroupIds...),
+	}, nil
+}

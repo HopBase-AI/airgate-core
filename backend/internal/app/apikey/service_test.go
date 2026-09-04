@@ -364,3 +364,7 @@ func derefInt(value *int) int {
 	}
 	return *value
 }
+
+func (s apiKeyStubRepository) TeamIdentity(_ context.Context, userID int) (TeamIdentity, error) {
+	return TeamIdentity{OwnerID: userID}, nil
+}

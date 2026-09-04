@@ -28,7 +28,7 @@ func (h *AuthHandler) handleLoginError(err error) (int, string, bool) {
 	switch {
 	case errors.Is(err, appauth.ErrInvalidCredentials):
 		return 401, err.Error(), true
-	case errors.Is(err, appauth.ErrUserDisabled):
+	case errors.Is(err, appauth.ErrUserDisabled), errors.Is(err, appauth.ErrMemberDisabled):
 		return 403, err.Error(), true
 	default:
 		slog.Error("登录失败", "error", err)

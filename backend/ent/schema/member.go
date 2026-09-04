@@ -9,12 +9,20 @@ import (
 
 // Member 团队成员：企业主账号（owner）名下的子身份。
 //
-// 成员没有独立密码与余额，只是主账号密钥的归属单元与额度分配单元：
-//   - 一个成员可挂多把 API Key（跨分组），额度记在成员头上而非单把 key；
-//   - 请求扣费仍落主账号 users.balance（统一从主账号走消耗），成员只累加账面用量；
-//   - 额度支持一次性总额与按月惰性换期：无定时任务，鉴权时读到跨期才把
-//     period_start 推进并把 used_quota 快照进 period_used_base，本期已用 =
-//     used_quota − period_used_base。
+// 2026-09-04 起成员是**真实账号**：企业主在团队页直接创建成员的邮箱+密码，成员用自己的
+// 账号正常登录、使用全部控制台功能（密钥/用量/模型广场/工作台/AI Chat）。与普通用户
+// 唯一的差别是**消耗与归属**：
+//   - 成员名下的 key（以及成员账号发起的 Host 转发）付费身份统一解析到 owner——扣
+//     owner 的 users.balance、按 owner 的 group_rates/pricing_mode 计价、走 owner 的
+//     并发预算；usage_logs.user 记 owner、member_id 记该成员，owner 看全员用量，
+//     成员只看自己；
+//   - 额度：一次性总额或按月惰性换期（无定时任务，鉴权读到跨期才推进 period_start
+//     并把 used_quota 快照进 period_used_base，本期已用 = used_quota − period_used_base）；
+//   - 分组权限：allowed_group_ids 非空时成员只能用其中的分组（建 key / 工作台选组 /
+//     转发时三处同口径），为空则继承 owner 全部可见分组。
+//
+// 兼容：account 为空的老成员（2026-09-03 的「密钥归属」模型）仍按 owner 自己名下
+// 带 member 边的 key 计量，行为不变。
 type Member struct {
 	ent.Schema
 }
@@ -40,6 +48,9 @@ func (Member) Fields() []ent.Field {
 		field.Float("used_quota_actual").Default(0).
 			Comment("累计真实成本：累加 actual_cost，即主账号为该成员实际付出的余额。"),
 		field.Enum("status").Values("active", "disabled").Default("active"),
+		field.JSON("allowed_group_ids", []int64{}).Optional().
+			Comment("企业主授予成员可用的分组 ID 白名单；空/NULL 表示继承 owner 全部可见分组。" +
+				"建 key、工作台选组、转发鉴权三处同口径校验。"),
 		field.Time("created_at").Default(timeNow).Immutable(),
 		field.Time("updated_at").Default(timeNow).UpdateDefault(timeNow),
 	}
@@ -50,6 +61,10 @@ func (Member) Edges() []ent.Edge {
 		// 归属的主账号；成员随主账号删除而删除。
 		edge.From("owner", User.Type).Ref("members").Unique().Required(),
 		edge.To("api_keys", APIKey.Type),
+		// 成员自己的登录账号（users 行，role=user）。为空表示 2026-09-03 的老模型成员
+		// （仅作为 owner 密钥的归属单元）。O2O：外键 member_account 落在 users 表并唯一，
+		// 一个账号至多是一个成员；从用户侧 WithMembership() 一跳即可判定是否成员账号。
+		edge.To("account", User.Type).Unique(),
 	}
 }
 

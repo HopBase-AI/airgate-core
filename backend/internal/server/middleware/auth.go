@@ -28,9 +28,15 @@ const (
 	CtxKeyEmail    = "email"
 	CtxKeyKeyInfo  = "api_key_info"
 	CtxKeyAPIKeyID = "jwt_api_key_id" // JWT 中的 API Key ID（API Key 登录场景）
-	// CtxKeyMemberID API Key 登录会话所属的团队成员 ID（按 key 实时解析，不进 JWT）。
-	// >0 时用户侧查询按成员范围收敛（成员名下全部 key），而非单把 key。
+	// CtxKeyMemberID 会话所属的团队成员 ID（按 key / 账号实时解析，不进 JWT）。
+	// >0 时用户侧用量查询按成员范围收敛（成员名下全部 key），而非单把 key。
+	// 两种来源：API Key 登录会话的 key 归属成员；成员账号（members.account）本人登录。
 	CtxKeyMemberID = "session_member_id"
+	// CtxKeyTeamOwnerID 成员账号所属企业主的 user id。成员的消耗与归属都记在 owner 名下，
+	// 用量 / 分组 / 报价等"按谁付钱"的读取必须用它而不是 CtxKeyUserID。
+	CtxKeyTeamOwnerID = "session_team_owner_id"
+	// CtxKeyMemberAllowedGroups 成员账号的分组白名单（空=继承企业主全部可见分组）。
+	CtxKeyMemberAllowedGroups = "session_member_allowed_groups"
 )
 
 // JWTAuth JWT 认证中间件
@@ -107,6 +113,27 @@ func jwtAuth(jwtMgr *auth.JWTManager, db *ent.Client, allowAdminAPIKey bool) gin
 			userID = resolvedUserID
 			if memberID > 0 {
 				c.Set(CtxKeyMemberID, memberID)
+			}
+		}
+
+		// 成员账号：解析团队归属。成员被企业主停用后，已登录的会话下一次请求即失效
+		// （与 API Key 会话的 resolveAPIKeySessionOwner 口径一致）。
+		if claims.Role != auth.APIKeySessionRole && db != nil {
+			identity, err := auth.ResolveTeamIdentity(c.Request.Context(), db, userID)
+			if err != nil {
+				response.Error(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "认证服务暂不可用")
+				c.Abort()
+				return
+			}
+			if identity.IsMember() {
+				if identity.Member.Status != entmember.StatusActive || identity.Owner.Status != entuser.StatusActive {
+					response.Unauthorized(c, "团队成员已被停用，请联系企业管理员")
+					c.Abort()
+					return
+				}
+				c.Set(CtxKeyMemberID, identity.Member.ID)
+				c.Set(CtxKeyTeamOwnerID, identity.Owner.ID)
+				c.Set(CtxKeyMemberAllowedGroups, append([]int64(nil), identity.Member.AllowedGroupIds...))
 			}
 		}
 
@@ -222,6 +249,10 @@ func APIKeyAuth(db *ent.Client) gin.HandlerFunc {
 				code = "insufficient_quota"
 				status = http.StatusPaymentRequired
 				reason = "member_quota_exceeded"
+			case auth.ErrMemberGroupForbidden:
+				code = "member_group_forbidden"
+				status = http.StatusForbidden
+				reason = "member_group_forbidden"
 			default:
 				// DB 超时 / 连接池满 / ctx 取消 等服务端侧问题：返 503 让客户端重试，
 				// 绝不能误判为"凭证无效"让客户端以为 key 被吊销。
@@ -410,4 +441,38 @@ func HasAPIKey(c *gin.Context) bool {
 		return strings.HasPrefix(token, "sk-") || auth.IsAdminAPIKey(token)
 	}
 	return false
+}
+
+// TeamOwnerID 返回成员账号所属企业主 id；非成员账号返回 0。
+func TeamOwnerID(c *gin.Context) int {
+	if v, ok := c.Get(CtxKeyTeamOwnerID); ok {
+		if id, ok := v.(int); ok {
+			return id
+		}
+	}
+	return 0
+}
+
+// BillingUserID 返回"按谁付钱"的用户 id：成员账号取企业主，其余取会话用户本人。
+// 用量 / 可用分组 / 报价 / 余额展示都应以它为主体。
+func BillingUserID(c *gin.Context) (int, bool) {
+	if owner := TeamOwnerID(c); owner > 0 {
+		return owner, true
+	}
+	v, ok := c.Get(CtxKeyUserID)
+	if !ok {
+		return 0, false
+	}
+	id, ok := v.(int)
+	return id, ok
+}
+
+// MemberAllowedGroupIDs 成员账号的分组白名单；非成员或未限定返回 nil。
+func MemberAllowedGroupIDs(c *gin.Context) []int64 {
+	if v, ok := c.Get(CtxKeyMemberAllowedGroups); ok {
+		if ids, ok := v.([]int64); ok && len(ids) > 0 {
+			return ids
+		}
+	}
+	return nil
 }

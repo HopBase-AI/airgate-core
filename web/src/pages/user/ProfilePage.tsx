@@ -31,6 +31,7 @@ export default function ProfilePage() {
   const { t } = useTranslation();
   const { toast } = useToast();
   const { user } = useAuth();
+  const isTeamMember = !user?.api_key_id && (user?.member_id ?? 0) > 0;
 
   // 修改用户名
   const [username, setUsername] = useState(user?.username || '');
@@ -112,20 +113,39 @@ export default function ProfilePage() {
                 {user.role === 'admin' ? t('nav.admin') : t('nav.user')}
               </Chip>
             </div>
-            <button
-              type="button"
-              className="flex items-center gap-4 w-full rounded-md px-1 -mx-1 py-1 transition-colors hover:bg-surface-hover cursor-pointer text-left"
-              onClick={() => setBalanceHistoryOpen(true)}
-            >
-              <div className="flex items-center gap-2 w-28 shrink-0">
-                <Wallet className="w-4 h-4 text-text-tertiary" />
-                <span className="text-xs font-medium text-text-secondary">{t('profile.balance')}</span>
-              </div>
-              <span className="text-sm text-text font-mono">
-                ${formatBalance(user.balance)}
-              </span>
-              <ChevronRight className="w-4 h-4 text-text-tertiary ml-auto" />
-            </button>
+            {isTeamMember ? (
+              <>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2 w-28 shrink-0">
+                    <Wallet className="w-4 h-4 text-text-tertiary" />
+                    <span className="text-xs font-medium text-text-secondary">{t('profile.team_balance')}</span>
+                  </div>
+                  <span className="text-sm text-text font-mono">${formatBalance(user.balance)}</span>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2 w-28 shrink-0">
+                    <Shield className="w-4 h-4 text-text-tertiary" />
+                    <span className="text-xs font-medium text-text-secondary">{t('profile.team_owner')}</span>
+                  </div>
+                  <span className="text-sm text-text">{user.team_owner_email}</span>
+                </div>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="flex items-center gap-4 w-full rounded-md px-1 -mx-1 py-1 transition-colors hover:bg-surface-hover cursor-pointer text-left"
+                onClick={() => setBalanceHistoryOpen(true)}
+              >
+                <div className="flex items-center gap-2 w-28 shrink-0">
+                  <Wallet className="w-4 h-4 text-text-tertiary" />
+                  <span className="text-xs font-medium text-text-secondary">{t('profile.balance')}</span>
+                </div>
+                <span className="text-sm text-text font-mono">
+                  ${formatBalance(user.balance)}
+                </span>
+                <ChevronRight className="w-4 h-4 text-text-tertiary ml-auto" />
+              </button>
+            )}
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2 w-28 shrink-0">
                 <Layers className="w-4 h-4 text-text-tertiary" />
@@ -139,11 +159,13 @@ export default function ProfilePage() {
         </Card.Content>
       </Card>
 
-      {/* 余额预警 */}
-      <BalanceAlertCard
-        threshold={user.balance_alert_threshold}
-        balance={user.balance}
-      />
+      {/* 余额预警：团队成员的余额是企业主的，预警由企业主自己设 */}
+      {!isTeamMember ? (
+        <BalanceAlertCard
+          threshold={user.balance_alert_threshold}
+          balance={user.balance}
+        />
+      ) : null}
 
       {/* 修改用户名 */}
       <Card className="mb-6">

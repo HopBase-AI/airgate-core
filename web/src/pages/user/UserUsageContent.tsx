@@ -66,7 +66,10 @@ function APIKeyInfoBar() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [ccsOpen, setCcsOpen] = useState(false);
-  if (!user?.api_key_id) return null;
+  if (!user) return null;
+  // 密钥会话 或 团队成员账号本人登录（后者没有 api_key_id，只展示成员归属与额度）
+  const isMemberAccount = !user.api_key_id && (user.member_id ?? 0) > 0;
+  if (!user.api_key_id && !isMemberAccount) return null;
 
   const quota = user.api_key_quota_usd ?? 0;
   const used = user.api_key_used_quota ?? 0;
@@ -83,7 +86,7 @@ function APIKeyInfoBar() {
   // 此时按钮会提示用户重新登录。
   const sessionKey = getSessionAPIKey();
   const platform = user.api_key_platform || '';
-  const canImportCcs = !!sessionKey;
+  const canImportCcs = !!sessionKey && !isMemberAccount;
 
   function handleImportCcs() {
     if (!sessionKey) {
@@ -198,17 +201,19 @@ function APIKeyInfoBar() {
           </div>
         )}
 
-        <Button
-          type="button"
-          onPress={handleImportCcs}
-          isDisabled={!canImportCcs}
-          className="ml-auto"
-          size="sm"
-          variant="outline"
-        >
-          <Upload className="w-3.5 h-3.5" />
-          <span>{t('user_keys.import_ccs')}</span>
-        </Button>
+        {!isMemberAccount ? (
+          <Button
+            type="button"
+            onPress={handleImportCcs}
+            isDisabled={!canImportCcs}
+            className="ml-auto"
+            size="sm"
+            variant="outline"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>{t('user_keys.import_ccs')}</span>
+          </Button>
+        ) : null}
 
         <CcsImportModal
           open={ccsOpen}
@@ -226,6 +231,8 @@ export default function UserUsageContent() {
   const { toast } = useToast();
   const { user } = useAuth();
   const customerScope = !!user?.api_key_id;
+  // 成员筛选只有企业主/管理员才有数据；成员账号本人调 /members 会被 403，直接不请求
+  const canListMembers = !customerScope && (user?.role === 'admin' || !!user?.is_enterprise_owner) && !((user?.member_id ?? 0) > 0);
   const { page, setPage, pageSize, setPageSize } = usePagination(20, 'user.usage');
   // 团队成员页「查看用量」经 ?member_id= 跳入：预置成员筛选
   const search: { member_id?: number | string } = useSearch({ strict: false });
@@ -275,7 +282,7 @@ export default function UserUsageContent() {
   const { data: membersData } = useQuery({
     queryKey: queryKeys.membersForKeys(),
     queryFn: () => membersApi.list(FETCH_ALL_PARAMS),
-    enabled: !customerScope,
+    enabled: canListMembers,
     staleTime: 60_000,
   });
   const memberOptions = [

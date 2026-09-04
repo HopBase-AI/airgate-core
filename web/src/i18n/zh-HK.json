@@ -488,7 +488,9 @@
     "max_concurrency": "最大並行",
     "recent_usage": "最近使用記錄",
     "today": "今日統計",
-    "cumulative": "累計統計"
+    "cumulative": "累計統計",
+    "team_balance": "團隊餘額",
+    "member_quota": "我的額度"
   },
   "users": {
     "title": "用戶管理",
@@ -1542,7 +1544,9 @@
     "balance_alert_threshold": "預警門檻（美元）",
     "balance_alert_hint": "目前餘額：${{balance}}",
     "balance_alert_saved": "餘額預警設定已儲存",
-    "balance_history": "餘額紀錄"
+    "balance_history": "餘額紀錄",
+    "team_balance": "團隊餘額",
+    "team_owner": "所屬團隊"
   },
   "user_keys": {
     "title": "API 金鑰",
@@ -1635,13 +1639,13 @@
   },
   "team": {
     "title": "團隊成員",
-    "description": "為企業成員分配額度，消耗統一從主帳號餘額扣除",
+    "description": "為團隊成員開通登入帳號、分配額度與可用分組；成員用自己的帳號正常登入、功能與普通用戶一致，消耗統一從您的餘額扣除，用量歸屬到成員。",
     "create": "新增成員",
     "edit": "編輯成員",
     "name": "成員名稱",
     "name_placeholder": "例如：張三 / 研發組",
-    "email": "聯絡電郵",
-    "email_placeholder": "可選，僅用於辨識成員",
+    "email": "登入郵箱",
+    "email_placeholder": "成員用它登入，例如 zhangsan@company.com",
     "note": "備註",
     "note_placeholder": "可選",
     "quota_label": "額度 (USD)",
@@ -1661,14 +1665,14 @@
     "reset_confirm": "確定把「{{name}}」的本期已用清零嗎？累計用量不受影響。",
     "reset_success": "本期已用已清零",
     "delete_member": "刪除成員",
-    "delete_confirm": "確定刪除成員「{{name}}」嗎？其名下所有密鑰將一併刪除，歷史用量保留。",
+    "delete_confirm": "確定刪除成員「{{name}}」嗎？其登入帳號與名下所有密鑰將一併刪除，歷史用量保留。",
     "create_success": "成員已新增",
     "update_success": "成員已更新",
     "delete_success": "成員已刪除",
     "enable_success": "成員已啟用",
     "disable_success": "成員已停用",
-    "empty_hint": "還沒有團隊成員。新增成員後，為其建立密鑰並分配額度。",
-    "login_hint": "成員用自己的密鑰在登入頁選擇「密鑰登入」，即可查看本人用量與剩餘額度。",
+    "empty_hint": "還沒有團隊成員。新增成員後，成員即可用郵箱和密碼登入，自行建立密鑰、使用工作台與 AI Chat。",
+    "login_hint": "成員用登入郵箱和密碼在登入頁正常登入即可，無需密鑰登入。",
     "usage_today": "今日",
     "usage_30d": "近30天",
     "cumulative": "累計",
@@ -1676,7 +1680,20 @@
     "member_deleted": "已刪除成員",
     "no_member": "未歸屬",
     "unlimited": "不限",
-    "disabled_note": "停用後該成員名下所有密鑰立即不可用"
+    "disabled_note": "停用後該成員名下所有密鑰立即不可用",
+    "email_hint": "作為成員的登入帳號，全站唯一",
+    "email_required": "請填寫成員登入郵箱",
+    "password": "初始密碼",
+    "password_placeholder": "至少 6 位，成員登入後可自行修改",
+    "password_hint": "密碼至少 6 位",
+    "password_reset": "重設密碼",
+    "password_reset_placeholder": "留空則不修改",
+    "groups": "可用分組",
+    "groups_hint": "勾選成員可以使用的分組；一個都不勾表示繼承您的全部分組",
+    "groups_all": "全部分組",
+    "groups_count": "{{count}} 個分組",
+    "no_account": "未開通登入帳號",
+    "no_account_hint": "舊版成員沒有登入帳號，只能用您代建的密鑰；如需登入請刪除後重新新增"
   },
   "setup": {
     "title": "系統安裝向導",

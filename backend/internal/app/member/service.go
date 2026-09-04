@@ -2,8 +2,11 @@ package member
 
 import (
 	"context"
+	"net/mail"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/pkg/pagination"
@@ -79,6 +82,9 @@ func (s *Service) Get(ctx context.Context, ownerID, id int) (Member, error) {
 }
 
 // Create 创建成员。额度周期默认 monthly，锚点取创建时刻。
+//
+// 传了密码即同时创建成员的登录账号（邮箱必填且全站唯一）：成员用邮箱+密码正常登录，
+// 与普通用户唯一的差别是消耗与归属落在企业主名下。
 func (s *Service) Create(ctx context.Context, ownerID int, input CreateInput) (Member, error) {
 	logger := sdk.LoggerFromContext(ctx)
 	name := strings.TrimSpace(input.Name)
@@ -95,26 +101,105 @@ func (s *Service) Create(ctx context.Context, ownerID int, input CreateInput) (M
 	if !validQuotaPeriod(quotaPeriod) {
 		return Member{}, ErrInvalidQuotaPeriod
 	}
+	allowed, err := s.normalizeAllowedGroups(ctx, ownerID, input.AllowedGroupIDs)
+	if err != nil {
+		return Member{}, err
+	}
 	now := s.now()
 	email := strings.TrimSpace(input.Email)
 	note := strings.TrimSpace(input.Note)
-	item, err := s.repo.Create(ctx, Mutation{
-		OwnerID:      &ownerID,
-		Name:         &name,
-		Email:        &email,
-		Note:         &note,
-		QuotaUSD:     &input.QuotaUSD,
-		QuotaPeriod:  &quotaPeriod,
-		PeriodAnchor: &now,
-		PeriodStart:  &now,
-	})
-	if err != nil {
-		logger.Error("member_create_failed", sdk.LogFieldUserID, ownerID, sdk.LogFieldError, err)
-		return Member{}, err
+	mutation := Mutation{
+		OwnerID:            &ownerID,
+		Name:               &name,
+		Email:              &email,
+		Note:               &note,
+		QuotaUSD:           &input.QuotaUSD,
+		QuotaPeriod:        &quotaPeriod,
+		AllowedGroupIDs:    allowed,
+		HasAllowedGroupIDs: true,
+		PeriodAnchor:       &now,
+		PeriodStart:        &now,
 	}
-	logger.Info("member_created", sdk.LogFieldUserID, ownerID, "member_id", item.ID)
+
+	var item Member
+	if password := input.Password; password != "" {
+		email = strings.ToLower(email)
+		mutation.Email = &email
+		account, err := s.buildAccount(ctx, email, password, name)
+		if err != nil {
+			return Member{}, err
+		}
+		item, err = s.repo.CreateWithAccount(ctx, mutation, account)
+		if err != nil {
+			logger.Error("member_create_failed", sdk.LogFieldUserID, ownerID, sdk.LogFieldReason, "with_account", sdk.LogFieldError, err)
+			return Member{}, err
+		}
+	} else {
+		item, err = s.repo.Create(ctx, mutation)
+		if err != nil {
+			logger.Error("member_create_failed", sdk.LogFieldUserID, ownerID, sdk.LogFieldError, err)
+			return Member{}, err
+		}
+	}
+	logger.Info("member_created", sdk.LogFieldUserID, ownerID, "member_id", item.ID, "with_account", item.AccountUserID > 0)
 	Decorate(&item, now)
 	return item, nil
+}
+
+// buildAccount 校验邮箱/密码并生成账号写入；邮箱与全站用户唯一。
+func (s *Service) buildAccount(ctx context.Context, email, password, username string) (AccountInput, error) {
+	if email == "" {
+		return AccountInput{}, ErrEmailRequired
+	}
+	if addr, err := mail.ParseAddress(email); err != nil || addr.Address != email {
+		return AccountInput{}, ErrInvalidEmail
+	}
+	if len(password) < 6 {
+		return AccountInput{}, ErrPasswordTooShort
+	}
+	exists, err := s.repo.AccountEmailExists(ctx, email)
+	if err != nil {
+		return AccountInput{}, err
+	}
+	if exists {
+		return AccountInput{}, ErrEmailAlreadyExists
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return AccountInput{}, err
+	}
+	return AccountInput{Email: email, PasswordHash: string(hash), Username: username}, nil
+}
+
+// normalizeAllowedGroups 去重并校验白名单只能选企业主自己可见的分组；空即不限。
+func (s *Service) normalizeAllowedGroups(ctx context.Context, ownerID int, ids []int64) ([]int64, error) {
+	if len(ids) == 0 {
+		return []int64{}, nil
+	}
+	visible, err := s.repo.OwnerVisibleGroupIDs(ctx, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	visibleSet := make(map[int64]struct{}, len(visible))
+	for _, id := range visible {
+		visibleSet[id] = struct{}{}
+	}
+	out := make([]int64, 0, len(ids))
+	seen := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		if _, ok := visibleSet[id]; !ok {
+			return nil, ErrGroupNotAllowed
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out, nil
 }
 
 // Update 更新成员资料 / 额度 / 周期 / 状态。改周期不动锚点：从 none 切回 monthly 时
@@ -152,6 +237,63 @@ func (s *Service) Update(ctx context.Context, ownerID, id int, input UpdateInput
 		}
 		mutation.Status = input.Status
 	}
+	if input.AllowedGroupIDs != nil {
+		allowed, err := s.normalizeAllowedGroups(ctx, ownerID, *input.AllowedGroupIDs)
+		if err != nil {
+			return Member{}, err
+		}
+		mutation.AllowedGroupIDs = allowed
+		mutation.HasAllowedGroupIDs = true
+	}
+
+	// 账号资料（邮箱/密码）先于成员资料写：有账号的成员邮箱是登录凭证，须全站唯一。
+	current, err := s.repo.FindOwned(ctx, ownerID, id)
+	if err != nil {
+		return Member{}, err
+	}
+	if current.AccountUserID > 0 {
+		patch := AccountPatch{}
+		if mutation.Email != nil && !strings.EqualFold(*mutation.Email, current.AccountEmail) {
+			email := strings.ToLower(*mutation.Email)
+			if email == "" {
+				return Member{}, ErrEmailRequired
+			}
+			if addr, err := mail.ParseAddress(email); err != nil || addr.Address != email {
+				return Member{}, ErrInvalidEmail
+			}
+			exists, err := s.repo.AccountEmailExists(ctx, email)
+			if err != nil {
+				return Member{}, err
+			}
+			if exists {
+				return Member{}, ErrEmailAlreadyExists
+			}
+			mutation.Email = &email
+			patch.Email = &email
+		}
+		if input.Password != nil && *input.Password != "" {
+			if len(*input.Password) < 6 {
+				return Member{}, ErrPasswordTooShort
+			}
+			hash, err := bcrypt.GenerateFromPassword([]byte(*input.Password), bcrypt.DefaultCost)
+			if err != nil {
+				return Member{}, err
+			}
+			hashed := string(hash)
+			patch.PasswordHash = &hashed
+		}
+		if patch.Email != nil || patch.PasswordHash != nil {
+			if err := s.repo.UpdateAccountOwned(ctx, ownerID, id, patch); err != nil {
+				logger.Error("member_account_update_failed", sdk.LogFieldUserID, ownerID, "member_id", id, sdk.LogFieldError, err)
+				return Member{}, err
+			}
+			if patch.PasswordHash != nil {
+				logger.Info("member_password_reset", sdk.LogFieldUserID, ownerID, "member_id", id)
+			}
+		}
+	} else if input.Password != nil && *input.Password != "" {
+		return Member{}, ErrMemberNoAccount
+	}
 
 	updated, err := s.repo.UpdateOwned(ctx, ownerID, id, mutation)
 	if err != nil {
@@ -164,18 +306,26 @@ func (s *Service) Update(ctx context.Context, ownerID, id int, input UpdateInput
 	if mutation.QuotaUSD != nil || mutation.QuotaPeriod != nil {
 		logger.Info("member_quota_updated", sdk.LogFieldUserID, ownerID, "member_id", id)
 	}
+	if mutation.HasAllowedGroupIDs {
+		logger.Info("member_groups_updated", sdk.LogFieldUserID, ownerID, "member_id", id, "groups", len(mutation.AllowedGroupIDs))
+	}
 	s.invalidateKeyCaches(ctx, id)
+	auth.InvalidateTeamIdentity(updated.AccountUserID)
 	Decorate(&updated, s.now())
 	return updated, nil
 }
 
-// Delete 删除成员及其名下全部 API Key。
+// Delete 删除成员、其登录账号及名下全部 API Key（使用记录保留）。
 func (s *Service) Delete(ctx context.Context, ownerID, id int) error {
 	logger := sdk.LoggerFromContext(ctx)
-	// 先取 hash 再删：删完就查不到 key 了，而缓存里仍可能放行至多 5s。
+	// 先取 hash / 账号再删：删完就查不到了，而缓存里仍可能放行至多 5s。
 	hashes, err := s.repo.KeyHashesByMember(ctx, id)
 	if err != nil {
 		logger.Warn("member_key_hash_lookup_failed", "member_id", id, sdk.LogFieldError, err)
+	}
+	accountUserID := 0
+	if current, err := s.repo.FindOwned(ctx, ownerID, id); err == nil {
+		accountUserID = current.AccountUserID
 	}
 	if err := s.repo.DeleteOwned(ctx, ownerID, id); err != nil {
 		logger.Error("member_delete_failed", sdk.LogFieldUserID, ownerID, "member_id", id, sdk.LogFieldError, err)
@@ -184,7 +334,8 @@ func (s *Service) Delete(ctx context.Context, ownerID, id int) error {
 	for _, hash := range hashes {
 		auth.InvalidateAPIKeyCacheByHash(hash)
 	}
-	logger.Info("member_deleted", sdk.LogFieldUserID, ownerID, "member_id", id, "keys", len(hashes))
+	auth.InvalidateTeamIdentity(accountUserID)
+	logger.Info("member_deleted", sdk.LogFieldUserID, ownerID, "member_id", id, "keys", len(hashes), "account_user_id", accountUserID)
 	return nil
 }
 

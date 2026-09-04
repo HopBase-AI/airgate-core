@@ -48,7 +48,7 @@ const (
 // 不会互相串行。底层 ListUser 只支持按日期过滤，因此先用日期把范围收窄，
 // 再在内存里按精确时刻裁剪。
 func (h *UsageHandler) UserUsageExport(c *gin.Context) {
-	userID, ok := currentUserID(c)
+	userID, ok := usageUserID(c)
 	if !ok {
 		response.Unauthorized(c, "用户未认证")
 		return

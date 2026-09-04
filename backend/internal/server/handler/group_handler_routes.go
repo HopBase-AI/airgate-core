@@ -5,6 +5,7 @@ import (
 
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 	"github.com/DouDOU-start/airgate-core/internal/server/dto"
+	"github.com/DouDOU-start/airgate-core/internal/server/middleware"
 	"github.com/DouDOU-start/airgate-core/internal/server/response"
 )
 
@@ -58,7 +59,8 @@ func (h *GroupHandler) ListGroups(c *gin.Context) {
 
 // ListAvailableGroups 查询当前用户可用分组列表。
 func (h *GroupHandler) ListAvailableGroups(c *gin.Context) {
-	userID, ok := currentUserID(c)
+	// 成员账号：可见分组按企业主判定（专属分组授权在 owner 身上），再按成员白名单收敛。
+	userID, ok := middleware.BillingUserID(c)
 	if !ok {
 		response.Unauthorized(c, "用户未认证")
 		return
@@ -71,11 +73,12 @@ func (h *GroupHandler) ListAvailableGroups(c *gin.Context) {
 	}
 
 	result, err := h.service.ListAvailable(c.Request.Context(), appgroup.AvailableFilter{
-		UserID:   userID,
-		Page:     page.Page,
-		PageSize: page.PageSize,
-		Keyword:  page.Keyword,
-		Platform: c.Query("platform"),
+		UserID:          userID,
+		Page:            page.Page,
+		PageSize:        page.PageSize,
+		Keyword:         page.Keyword,
+		Platform:        c.Query("platform"),
+		AllowedGroupIDs: middleware.MemberAllowedGroupIDs(c),
 	})
 	if err != nil {
 		httpCode, message := h.handleError("查询用户可用分组失败", "查询失败", err)

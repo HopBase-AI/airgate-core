@@ -165,4 +165,7 @@ type Repository interface {
 	LinkIdentity(ctx context.Context, userID int, identity IdentityInput) error
 	// FindUserIDByInviteCode 按邀请码查邀请人 ID（仅 active 用户）；未命中返回 ErrUserNotFound。
 	FindUserIDByInviteCode(ctx context.Context, code string) (int, error)
+	// MemberAccountState 该用户是否团队成员账号，以及成员与其企业主是否都处于启用状态。
+	// 非成员账号返回 isMember=false。
+	MemberAccountState(ctx context.Context, userID int) (isMember, active bool, err error)
 }
