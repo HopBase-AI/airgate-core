@@ -3093,18 +3093,19 @@ func (h *HostService) checkHostForwardBalance(ctx context.Context, userID int64)
 // 余额是否够用由提交时(非钉选路径)的检查负责。
 // 已记账的请求重放同样放行(幂等 usage 命中),整段上下文校验防止复用 request_id 绕过配额。
 func (h *HostService) checkHostForwardBalanceOrReplay(ctx context.Context, req hostForwardRequest) error {
-	if req.AccountID > 0 {
-		return nil
-	}
 	requestID := strings.TrimSpace(req.RequestID)
 	platform := h.hostForwardRequestPlatform(req)
-	if requestID != "" && platform != "" && strings.TrimSpace(req.Model) != "" {
+	if requestID != "" && req.AccountID > 0 && platform != "" && strings.TrimSpace(req.Model) != "" {
+		// 幂等/冲突校验照旧：同一 request_id 换了计费上下文必须拒绝,已记账则直接放行。
 		req.RequestID = requestID
 		if _, found, err := h.existingHostForwardUsageID(ctx, req, platform, req.Model); err != nil {
 			return err
 		} else if found {
 			return nil
 		}
+	}
+	if req.AccountID > 0 {
+		return nil
 	}
 	return h.checkHostForwardBalance(ctx, req.UserID)
 }
