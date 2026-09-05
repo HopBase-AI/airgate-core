@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -87,9 +88,10 @@ func RequestLogger() gin.HandlerFunc {
 		// downstream disconnect from Core's own deadline.
 		if err := c.Request.Context().Err(); err != nil {
 			attrs = append(attrs, "context_error", err.Error())
-			if err == context.Canceled {
+			switch {
+			case errors.Is(err, context.Canceled):
 				attrs = append(attrs, "termination_source", "request_context_canceled")
-			} else if err == context.DeadlineExceeded {
+			case errors.Is(err, context.DeadlineExceeded):
 				attrs = append(attrs, "termination_source", "request_context_deadline")
 			}
 		}
