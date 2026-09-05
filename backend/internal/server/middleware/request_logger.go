@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"log/slog"
 	"time"
 
@@ -81,6 +82,22 @@ func RequestLogger() gin.HandlerFunc {
 			"bytes_out", c.Writer.Size(),
 			sdk.LogFieldRequestID, rid,
 		}
+		// 499/504 alone do not identify who ended the request. Preserve the
+		// context cause and deadline state so production logs can distinguish a
+		// downstream disconnect from Core's own deadline.
+		if err := c.Request.Context().Err(); err != nil {
+			attrs = append(attrs, "context_error", err.Error())
+			if err == context.Canceled {
+				attrs = append(attrs, "termination_source", "request_context_canceled")
+			} else if err == context.DeadlineExceeded {
+				attrs = append(attrs, "termination_source", "request_context_deadline")
+			}
+		}
+		if deadline, ok := c.Request.Context().Deadline(); ok {
+			attrs = append(attrs, "request_deadline_at", deadline.UTC().Format(time.RFC3339Nano),
+				"deadline_remaining_ms", time.Until(deadline).Milliseconds())
+		}
+		attrs = append(attrs, "response_committed", c.Writer.Written())
 		// 业务层（如 forwarder）已写回的转发上下文，合并进 http_request 那一行
 		if v, ok := c.Get(CtxKeyAccessModel); ok {
 			if s, ok := v.(string); ok && s != "" {
