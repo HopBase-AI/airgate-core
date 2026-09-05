@@ -109,6 +109,43 @@ func TestHostForwardTimeout(t *testing.T) {
 	}
 }
 
+func TestHostForwardContextError(t *testing.T) {
+	t.Parallel()
+
+	deadlineExpired := contextWithDeadlineOnly{Context: context.Background(), deadline: time.Now().Add(-time.Second)}
+	for _, tc := range []struct {
+		name       string
+		ctx        context.Context
+		forwardErr error
+		wantCode   codes.Code
+	}{
+		{
+			name:       "independent upstream timeout stays eligible for failover",
+			ctx:        context.Background(),
+			forwardErr: status.Error(codes.DeadlineExceeded, "gateway timed out"),
+			wantCode:   codes.OK,
+		},
+		{
+			name:       "request deadline stops failover",
+			ctx:        deadlineExpired,
+			forwardErr: status.Error(codes.DeadlineExceeded, "gateway timed out"),
+			wantCode:   codes.DeadlineExceeded,
+		},
+		{
+			name:       "gateway cancellation stops request",
+			ctx:        context.Background(),
+			forwardErr: status.Error(codes.Canceled, "gateway canceled"),
+			wantCode:   codes.Canceled,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := status.Code(hostForwardContextError(tc.ctx, tc.forwardErr)); got != tc.wantCode {
+				t.Fatalf("hostForwardContextError() code = %s, want %s", got, tc.wantCode)
+			}
+		})
+	}
+}
+
 func TestHostForwardReasoningEffort(t *testing.T) {
 	t.Parallel()
 

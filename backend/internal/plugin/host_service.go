@@ -1298,7 +1298,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 				hasLastUpstream = true
 				lastUpstreamScrubber = newIdentityScrubber(accFull, model)
 			}
-			if cerr := hostContextError(fwdErr); cerr != nil {
+			if cerr := hostForwardContextError(fwdCtx, fwdErr); cerr != nil {
 				return nil, cerr
 			}
 
@@ -3188,13 +3188,25 @@ func hostContextError(err error) error {
 }
 
 func hostForwardContextError(ctx context.Context, forwardErr error) error {
-	if cerr := hostContextError(forwardErr); cerr != nil {
-		return cerr
+	if ctx != nil {
+		if cerr := hostContextError(ctx.Err()); cerr != nil {
+			return cerr
+		}
 	}
-	if ctx == nil {
+
+	// 插件返回取消意味着调用方已经断开；而单次上游超时仍可切换到下一个账号。
+	// 当总转发上下文的截止时间真正耗尽时，才把 DeadlineExceeded 视为请求终止。
+	forwardCode := status.Code(forwardErr)
+	if errors.Is(forwardErr, context.Canceled) || forwardCode == codes.Canceled {
+		return status.Error(codes.Canceled, forwardErr.Error())
+	}
+	if (!errors.Is(forwardErr, context.DeadlineExceeded) && forwardCode != codes.DeadlineExceeded) || ctx == nil {
 		return nil
 	}
-	return hostContextError(ctx.Err())
+	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		return status.Error(codes.DeadlineExceeded, forwardErr.Error())
+	}
+	return nil
 }
 
 func hostCanceledRequestStatus(ctx context.Context, forwardErr error) int {
