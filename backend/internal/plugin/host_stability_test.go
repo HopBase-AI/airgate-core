@@ -252,6 +252,65 @@ func TestHostForwardCooldownMixedWithDisabledReturns503Immediately(t *testing.T)
 	}
 }
 
+func TestHostForwardUpstreamTimeoutFailsOverToNextAccount(t *testing.T) {
+	var firstAccountID, secondAccountID int64
+	fixture := newHostStabilityFixture(t, 2, func(call int32, req *sdk.ForwardRequest) (sdk.ForwardOutcome, error) {
+		if call == 1 {
+			firstAccountID = req.Account.ID
+			return sdk.ForwardOutcome{}, context.DeadlineExceeded
+		}
+		secondAccountID = req.Account.ID
+		return hostQuotaSuccessOutcome(), nil
+	})
+
+	payload, err := fixture.host.forward(fixture.ctx, fixture.request(0))
+	if err != nil {
+		t.Fatalf("forward after upstream timeout: %v", err)
+	}
+	if got := payload["status_code"]; got != http.StatusOK {
+		t.Fatalf("status_code = %v, want %d", got, http.StatusOK)
+	}
+	if calls := fixture.gateway.calls.Load(); calls != 2 {
+		t.Fatalf("gateway calls = %d, want 2", calls)
+	}
+	if firstAccountID == 0 || secondAccountID == 0 || firstAccountID == secondAccountID {
+		t.Fatalf("failover accounts = %d then %d, want two different accounts", firstAccountID, secondAccountID)
+	}
+
+	totalRPM := 0
+	for _, acc := range fixture.accounts {
+		if got := fixture.concurrency.GetCurrentCount(fixture.ctx, acc.ID); got != 0 {
+			t.Fatalf("account %d concurrency slots = %d, want 0", acc.ID, got)
+		}
+		totalRPM += hostRPMCount(t, fixture.ctx, fixture.rdb, acc.ID)
+	}
+	if totalRPM != 1 {
+		t.Fatalf("RPM after timeout failover = %d, want only the successful request counted", totalRPM)
+	}
+}
+
+func TestHostForwardStreamUpstreamTimeoutFailsOverBeforeCommit(t *testing.T) {
+	fixture := newHostStabilityFixture(t, 2, func(call int32, _ *sdk.ForwardRequest) (sdk.ForwardOutcome, error) {
+		if call == 1 {
+			return sdk.ForwardOutcome{}, context.DeadlineExceeded
+		}
+		return hostQuotaSuccessOutcome(), nil
+	})
+	stream := &recordingHostStream{ctx: fixture.ctx}
+	req := fixture.request(0)
+	req.Stream = true
+
+	if err := fixture.host.forwardStream(fixture.ctx, req, stream); err != nil {
+		t.Fatalf("forwardStream after upstream timeout: %v", err)
+	}
+	if calls := fixture.gateway.calls.Load(); calls != 2 {
+		t.Fatalf("gateway calls = %d, want 2", calls)
+	}
+	if len(stream.frames) != 1 || stream.frames[0].Event != "done" || !stream.frames[0].Done {
+		t.Fatalf("stream frames = %+v, want one successful done frame", stream.frames)
+	}
+}
+
 func TestHostSecondGateKeepsSelectedProbeOwnership(t *testing.T) {
 	fixture := newHostStabilityFixture(t, 1, nil)
 	acc := fixture.accounts[0]
