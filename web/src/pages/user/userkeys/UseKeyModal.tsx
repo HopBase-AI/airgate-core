@@ -79,8 +79,8 @@ function getUseKeyConfig(
       const authPath = shell === 'unix' ? `${configDir}/auth.json` : `${configDir}\\auth.json`;
       const providerName = siteName || 'HopBase';
       const configToml = `model_provider = "${providerName}"
-model = "gpt-5.5"
-review_model = "gpt-5.5"
+model = "gpt-6-astra"
+review_model = "gpt-6-astra"
 model_reasoning_effort = "xhigh"
 disable_response_storage = true
 network_access = "enabled"

@@ -68,8 +68,8 @@ PROVIDER_KEY="$(printf '%s' "$SITE_NAME" | tr -cd 'A-Za-z0-9_-')"
 
 cat > "$CONFIG_FILE" <<TOMLEOF
 model_provider = "$PROVIDER_KEY"
-model = "gpt-5.5"
-review_model = "gpt-5.5"
+model = "gpt-6-astra"
+review_model = "gpt-6-astra"
 model_reasoning_effort = "xhigh"
 disable_response_storage = true
 network_access = "enabled"

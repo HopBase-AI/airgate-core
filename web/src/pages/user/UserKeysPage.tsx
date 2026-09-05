@@ -43,7 +43,6 @@ import {
   Upload,
   MoreHorizontal,
   RefreshCw,
-  Rocket,
   UsersRound,
   Search,
   X,
@@ -53,7 +52,6 @@ import { EditKeyModal } from './userkeys/EditKeyModal';
 import { CreateKeyModal } from './userkeys/CreateKeyModal';
 import { UseKeyModal, useUseKeyModal } from './userkeys/UseKeyModal';
 import { CcsImportModal, useCcsImportModal } from './userkeys/CcsImportModal';
-import { OneClickModal, useOneClickModal } from './userkeys/OneClickModal';
 import { type KeyForm, emptyForm } from './userkeys/types';
 import { GroupQuoteSuffix } from './userkeys/GroupQuoteSuffix';
 
@@ -421,17 +419,6 @@ export default function UserKeysPage() {
     openCcsModal,
     closeCcsModal,
   } = useCcsImportModal(groupMap);
-
-  // 一键接入弹窗
-  const {
-    oneClickTarget,
-    oneClickIssue,
-    oneClickGenerating,
-    oneClickPlatform,
-    openOneClickModal,
-    generateOneClick,
-    closeOneClickModal,
-  } = useOneClickModal(groupMap);
 
   const saving = createMutation.isPending || updateMutation.isPending;
   const rows = data?.list ?? [];
@@ -802,10 +789,10 @@ export default function UserKeysPage() {
                         isIconOnly
                         size="sm"
                         variant="secondary"
-                        aria-label={t('user_keys.one_click')}
-                        onPress={() => openOneClickModal(row)}
+                        aria-label={t('user_keys.import_ccs')}
+                        onPress={() => openCcsModal(row)}
                       >
-                        <Rocket className="w-3.5 h-3.5" style={{ color: 'var(--ag-primary)' }} />
+                        <Upload className="w-3.5 h-3.5" style={{ color: 'var(--ag-primary)' }} />
                       </Button>
                       <Dropdown>
                         <Dropdown.Trigger
@@ -972,16 +959,6 @@ export default function UserKeysPage() {
         ccsKeyValue={ccsKeyValue}
         ccsPlatform={ccsPlatform}
         onClose={closeCcsModal}
-      />
-
-      {/* 一键接入弹窗 */}
-      <OneClickModal
-        target={oneClickTarget}
-        issue={oneClickIssue}
-        generating={oneClickGenerating}
-        platform={oneClickPlatform}
-        onGenerate={generateOneClick}
-        onClose={closeOneClickModal}
       />
 
       {/* 删除确认 */}

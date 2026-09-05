@@ -62,8 +62,8 @@ function executeCcsImport(
     usageAutoInterval: '30',
   });
   if (app === 'codex') {
-    params.set('model', 'gpt-5.5');
-    params.set('reviewModel', 'gpt-5.5');
+    params.set('model', 'gpt-6-astra');
+    params.set('reviewModel', 'gpt-6-astra');
     params.set('modelReasoningEffort', 'xhigh');
     params.set('disableResponseStorage', 'true');
     params.set('networkAccess', 'enabled');
