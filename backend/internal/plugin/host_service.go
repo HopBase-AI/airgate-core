@@ -1772,8 +1772,10 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 
 // maxHostForwardAttempts 最大 failover 次数，与 Forwarder 保持一致。
 const (
-	maxHostForwardAttempts             = 3
-	defaultHostForwardTimeout          = 120 * time.Second
+	maxHostForwardAttempts = 3
+	// 长任务走直连入口时不受 Cloudflare 代理超时限制；为官方模型和大上下文请求
+	// 保留足够的单次转发时间，仍由客户端取消或上游自身超时提前结束。
+	defaultHostForwardTimeout          = 30 * time.Minute
 	imageHostForwardTimeout            = 300 * time.Second
 	hostForwardCapacityWaitTimeout     = 60 * time.Second
 	hostForwardCapacityPollInterval    = 200 * time.Millisecond
