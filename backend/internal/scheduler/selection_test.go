@@ -93,9 +93,20 @@ func TestClassifyRoutedAccounts(t *testing.T) {
 		},
 		{
 			// Norman 的真实场景：分组成员还在，但被逐个 disabled 后整组归零。
-			name:     "all members disabled is offline",
+			// 归零是可恢复的运维态，纯分类层不判永久下线——是否升级成 ErrGroupOffline
+			// 由 routeAccountTiers 按分组的 delisted 决定。
+			name:     "all members disabled is recoverable",
 			accounts: []*ent.Account{disabled(1), disabled(2)},
-			wantErr:  ErrGroupOffline,
+			wantErr:  ErrAllCandidatesDisabled,
+		},
+		{
+			// 2026-09-08 组 3 的真实布局：gpt-5.6 只路由到部分账号，另有账号在服务别的模型。
+			// 路由子集全停用时报"分组已下线"是误判——分组明明还活着。
+			name:     "routed subset disabled while group still has active member",
+			accounts: []*ent.Account{disabled(1), active(2)},
+			routing:  map[string][]int64{"claude-opus-5": {1}},
+			model:    "claude-opus-5",
+			wantErr:  ErrAllCandidatesDisabled,
 		},
 		{
 			name:     "routing filters everything out",
@@ -198,10 +209,10 @@ func TestClassifyRoutedAccountTiers(t *testing.T) {
 			wantErr:  ErrModelNotServed,
 		},
 		{
-			name:     "all pool candidates disabled is offline",
+			name:     "all pool candidates disabled is recoverable",
 			accounts: []*ent.Account{pool(1, account.StateDisabled), pool(2, account.StateDisabled)},
 			routing:  map[string][]int64{"gpt-5.6": {1}},
-			wantErr:  ErrGroupOffline,
+			wantErr:  ErrAllCandidatesDisabled,
 		},
 	}
 

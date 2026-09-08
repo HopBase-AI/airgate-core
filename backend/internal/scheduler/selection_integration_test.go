@@ -1035,3 +1035,93 @@ func mustPoolAccount(t *testing.T, ctx context.Context, db *ent.Client, grp *ent
 		SetState(account.StateActive).
 		SaveX(ctx)
 }
+
+// TestRouteAccountTiersDisabledCandidates 分组账号被停光时的两种收口。
+//
+// 背景（2026-09-08 生产事故）：Codex Plus 分组只剩一个活账号，运维为了测另一个分组把它
+// 关掉，整组客户立刻吃到 404「分组已下线，请重新创建 API Key」——而这只是一次十几分钟的
+// 临时开关。判永久下线的依据只能是分组自己的 delisted 标记，不能只看账号 state。
+func TestRouteAccountTiersDisabledCandidates(t *testing.T) {
+	t.Run("未下架分组账号全停用_可重试而非永久下线", func(t *testing.T) {
+		ctx := context.Background()
+		db := enttestOpenScheduler(t)
+		rdb, _ := newTestRedis(t)
+		s := NewScheduler(db, rdb)
+
+		grp := mustGroup(t, ctx, db)
+		acc := mustAccount(t, ctx, db, grp, "acc-disabled", nil)
+		mustState(t, ctx, db, acc.ID, account.StateDisabled)
+
+		_, err := s.routeAccountTiers(ctx, itPlatform, itModel, grp.ID)
+		if !errors.Is(err, ErrAllCandidatesDisabled) {
+			t.Fatalf("err = %v, want ErrAllCandidatesDisabled", err)
+		}
+		if errors.Is(err, ErrGroupOffline) {
+			t.Fatalf("未 delisted 的分组不得判永久下线: %v", err)
+		}
+	})
+
+	t.Run("已下架分组账号全停用_仍是永久下线", func(t *testing.T) {
+		ctx := context.Background()
+		db := enttestOpenScheduler(t)
+		rdb, _ := newTestRedis(t)
+		s := NewScheduler(db, rdb)
+
+		grp := mustGroup(t, ctx, db)
+		acc := mustAccount(t, ctx, db, grp, "acc-disabled", nil)
+		mustState(t, ctx, db, acc.ID, account.StateDisabled)
+		if err := db.Group.UpdateOneID(grp.ID).SetDelisted(true).Exec(ctx); err != nil {
+			t.Fatalf("下架分组: %v", err)
+		}
+
+		if _, err := s.routeAccountTiers(ctx, itPlatform, itModel, grp.ID); !errors.Is(err, ErrGroupOffline) {
+			t.Fatalf("err = %v, want ErrGroupOffline", err)
+		}
+	})
+
+	t.Run("路由子集全停用但分组另有活账号_可重试", func(t *testing.T) {
+		ctx := context.Background()
+		db := enttestOpenScheduler(t)
+		rdb, _ := newTestRedis(t)
+		s := NewScheduler(db, rdb)
+
+		grp := mustGroup(t, ctx, db)
+		routed := mustAccount(t, ctx, db, grp, "acc-routed", nil)
+		other := mustAccount(t, ctx, db, grp, "acc-other", nil)
+		mustState(t, ctx, db, routed.ID, account.StateDisabled)
+		// model_routing 只把本模型钉在 routed 上，other 服务别的模型——正是组 3 的布局。
+		if err := db.Group.UpdateOneID(grp.ID).SetModelRouting(map[string][]int64{
+			itModel:       {int64(routed.ID)},
+			"other-model": {int64(other.ID)},
+		}).Exec(ctx); err != nil {
+			t.Fatalf("写 model_routing: %v", err)
+		}
+
+		_, err := s.routeAccountTiers(ctx, itPlatform, itModel, grp.ID)
+		if !errors.Is(err, ErrAllCandidatesDisabled) {
+			t.Fatalf("err = %v, want ErrAllCandidatesDisabled", err)
+		}
+		if errors.Is(err, ErrGroupOffline) {
+			t.Fatalf("分组里还有账号在服务别的模型，不得判整组下线: %v", err)
+		}
+	})
+
+	t.Run("分组下没有账号_仍是永久下线", func(t *testing.T) {
+		ctx := context.Background()
+		db := enttestOpenScheduler(t)
+		rdb, _ := newTestRedis(t)
+		s := NewScheduler(db, rdb)
+
+		grp := mustGroup(t, ctx, db)
+		if _, err := s.routeAccountTiers(ctx, itPlatform, itModel, grp.ID); !errors.Is(err, ErrGroupOffline) {
+			t.Fatalf("err = %v, want ErrGroupOffline", err)
+		}
+	})
+}
+
+func mustState(t *testing.T, ctx context.Context, db *ent.Client, accountID int, state account.State) {
+	t.Helper()
+	if err := db.Account.UpdateOneID(accountID).SetState(state).Exec(ctx); err != nil {
+		t.Fatalf("设置账号 %d 状态 %s: %v", accountID, state, err)
+	}
+}

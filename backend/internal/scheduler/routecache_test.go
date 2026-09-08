@@ -13,33 +13,36 @@ import (
 func TestRouteCache_HitMiss(t *testing.T) {
 	c := newRouteCache(100 * time.Millisecond)
 
-	if _, _, ok := c.Get(1, "openai"); ok {
+	if _, ok := c.Get(1, "openai"); ok {
 		t.Fatalf("空缓存不应命中")
 	}
 
 	accounts := []*ent.Account{{ID: 10}, {ID: 20}}
 	routing := map[string][]int64{"gpt-4o": {10}}
-	c.Set(1, "openai", accounts, routing)
+	c.Set(1, "openai", groupRouteSnapshot{accounts: accounts, modelRouting: routing, delisted: true})
 
-	got, r, ok := c.Get(1, "openai")
+	snap, ok := c.Get(1, "openai")
 	if !ok {
 		t.Fatalf("写入后应命中")
 	}
-	if len(got) != 2 || got[0].ID != 10 || got[1].ID != 20 {
-		t.Errorf("命中的账号列表不符预期: %+v", got)
+	if len(snap.accounts) != 2 || snap.accounts[0].ID != 10 || snap.accounts[1].ID != 20 {
+		t.Errorf("命中的账号列表不符预期: %+v", snap.accounts)
 	}
-	if r["gpt-4o"][0] != 10 {
-		t.Errorf("routing 未正确缓存: %+v", r)
+	if snap.modelRouting["gpt-4o"][0] != 10 {
+		t.Errorf("routing 未正确缓存: %+v", snap.modelRouting)
+	}
+	if !snap.delisted {
+		t.Error("delisted 未随快照缓存")
 	}
 }
 
 // TestRouteCache_Expiry TTL 过期后要返回 miss，避免把陈旧数据喂给调度器。
 func TestRouteCache_Expiry(t *testing.T) {
 	c := newRouteCache(20 * time.Millisecond)
-	c.Set(1, "openai", []*ent.Account{{ID: 1}}, nil)
+	c.Set(1, "openai", groupRouteSnapshot{accounts: []*ent.Account{{ID: 1}}})
 
 	time.Sleep(40 * time.Millisecond)
-	if _, _, ok := c.Get(1, "openai"); ok {
+	if _, ok := c.Get(1, "openai"); ok {
 		t.Fatalf("超过 TTL 应返回 miss")
 	}
 }
@@ -47,19 +50,19 @@ func TestRouteCache_Expiry(t *testing.T) {
 // TestRouteCache_InvalidateGroup 清指定 group 的所有 platform；不影响其它 group。
 func TestRouteCache_InvalidateGroup(t *testing.T) {
 	c := newRouteCache(1 * time.Second)
-	c.Set(1, "openai", []*ent.Account{{ID: 1}}, nil)
-	c.Set(1, "claude", []*ent.Account{{ID: 2}}, nil)
-	c.Set(2, "openai", []*ent.Account{{ID: 3}}, nil)
+	c.Set(1, "openai", groupRouteSnapshot{accounts: []*ent.Account{{ID: 1}}})
+	c.Set(1, "claude", groupRouteSnapshot{accounts: []*ent.Account{{ID: 2}}})
+	c.Set(2, "openai", groupRouteSnapshot{accounts: []*ent.Account{{ID: 3}}})
 
 	c.InvalidateGroup(1)
 
-	if _, _, ok := c.Get(1, "openai"); ok {
+	if _, ok := c.Get(1, "openai"); ok {
 		t.Errorf("group=1 openai 应被清除")
 	}
-	if _, _, ok := c.Get(1, "claude"); ok {
+	if _, ok := c.Get(1, "claude"); ok {
 		t.Errorf("group=1 claude 应被清除")
 	}
-	if _, _, ok := c.Get(2, "openai"); !ok {
+	if _, ok := c.Get(2, "openai"); !ok {
 		t.Errorf("group=2 不应受影响")
 	}
 }
@@ -67,15 +70,15 @@ func TestRouteCache_InvalidateGroup(t *testing.T) {
 // TestRouteCache_InvalidateAll 全量清空（状态机关键转移时触发）。
 func TestRouteCache_InvalidateAll(t *testing.T) {
 	c := newRouteCache(1 * time.Second)
-	c.Set(1, "openai", []*ent.Account{{ID: 1}}, nil)
-	c.Set(2, "openai", []*ent.Account{{ID: 2}}, nil)
+	c.Set(1, "openai", groupRouteSnapshot{accounts: []*ent.Account{{ID: 1}}})
+	c.Set(2, "openai", groupRouteSnapshot{accounts: []*ent.Account{{ID: 2}}})
 
 	c.InvalidateAll()
 
-	if _, _, ok := c.Get(1, "openai"); ok {
+	if _, ok := c.Get(1, "openai"); ok {
 		t.Errorf("InvalidateAll 后 group=1 应 miss")
 	}
-	if _, _, ok := c.Get(2, "openai"); ok {
+	if _, ok := c.Get(2, "openai"); ok {
 		t.Errorf("InvalidateAll 后 group=2 应 miss")
 	}
 }
@@ -83,12 +86,12 @@ func TestRouteCache_InvalidateAll(t *testing.T) {
 // TestRouteCache_NilSafe 零值 / nil 接收者不能 panic。
 func TestRouteCache_NilSafe(t *testing.T) {
 	var c *routeCache
-	if _, _, ok := c.Get(1, "openai"); ok {
+	if _, ok := c.Get(1, "openai"); ok {
 		t.Errorf("nil 缓存不应命中")
 	}
-	c.Set(1, "openai", nil, nil) // 不应 panic
-	c.InvalidateGroup(1)         // 不应 panic
-	c.InvalidateAll()            // 不应 panic
+	c.Set(1, "openai", groupRouteSnapshot{}) // 不应 panic
+	c.InvalidateGroup(1)                     // 不应 panic
+	c.InvalidateAll()                        // 不应 panic
 }
 
 // TestApplyModelRouting_PassThrough routing 为空时原样返回。
@@ -198,8 +201,11 @@ func TestClassifyRoutedAccountTiers_ModelLessRejectsDisabledRoutedAccount(t *tes
 		map[string][]int64{"kling-image-v1": {1}},
 		"",
 	)
-	if !errors.Is(err, ErrGroupOffline) {
-		t.Fatalf("disabled routed account error = %v, want ErrGroupOffline", err)
+	if !errors.Is(err, ErrAllCandidatesDisabled) {
+		t.Fatalf("disabled routed account error = %v, want ErrAllCandidatesDisabled", err)
+	}
+	if errors.Is(err, ErrGroupOffline) {
+		t.Fatalf("未 delisted 的分组不该被判成永久下线: %v", err)
 	}
 }
 
