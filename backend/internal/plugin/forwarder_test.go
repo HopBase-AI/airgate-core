@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/DouDOU-start/airgate-core/ent"
+	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/routing"
 	"github.com/DouDOU-start/airgate-core/internal/scheduler"
@@ -744,6 +745,12 @@ func TestRecordPickAccountErrorClassifies(t *testing.T) {
 			err:         fmt.Errorf("pick account: %w", scheduler.ErrGroupOffline),
 			wantOffline: true,
 		},
+		{
+			// 候选全被停用但分组未下架：可恢复，绝不能落进 groupOfflineSeen 的 404 分支。
+			name:          "all candidates disabled stays retryable",
+			err:           scheduler.ErrAllCandidatesDisabled,
+			wantTransient: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -854,10 +861,30 @@ func TestShouldWaitForLocalCapacityDoesNotCarryAcrossNewFailureKinds(t *testing.
 func TestClassifiedErrorsRemainNoAvailableAccount(t *testing.T) {
 	t.Parallel()
 
-	for _, err := range []error{scheduler.ErrGroupOffline, scheduler.ErrModelNotServed} {
+	for _, err := range []error{scheduler.ErrGroupOffline, scheduler.ErrModelNotServed, scheduler.ErrAllCandidatesDisabled} {
 		if !errors.Is(err, scheduler.ErrNoAvailableAccount) {
 			t.Fatalf("errors.Is(%v, ErrNoAvailableAccount) = false, want true", err)
 		}
+	}
+}
+
+// TestAllCandidatesDisabledResponse 端到端口径：候选全停用只能收成可重试的 503，
+// 不能是「分组已下线」的 404——2026-09-08 生产事故就毁在这一步分类上。
+func TestAllCandidatesDisabledResponse(t *testing.T) {
+	t.Parallel()
+
+	summary := allRoutesFailureSummary{}
+	summary.recordPickAccountError(scheduler.ErrAllCandidatesDisabled)
+
+	got := selectAllRoutesFailureResponse(summary)
+	if got.status != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", got.status, http.StatusServiceUnavailable)
+	}
+	if got.code != appusage.ErrorCodeNoAvailableAccount {
+		t.Fatalf("code = %q, want %q", got.code, appusage.ErrorCodeNoAvailableAccount)
+	}
+	if got.code == appusage.ErrorCodeGroupOffline {
+		t.Fatalf("候选全停用被误判成分组已下线")
 	}
 }
 

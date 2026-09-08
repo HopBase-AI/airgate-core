@@ -17,9 +17,13 @@ var (
 	ErrNoAvailableAccount = errors.New("无可用账户")
 	ErrGroupNotFound      = errors.New("分组不存在")
 
-	// ErrGroupOffline 分组已下线：该分组在本平台下没有任何账号，或全部账号都是 disabled。
-	// 与 ErrNoAvailableAccount 的容量语义相反——这是结构性的，重试不会恢复，需要管理员
-	// 重新配置分组或用户改用其它分组的 API Key。
+	// ErrGroupOffline 分组已下线：该分组在本平台下没有绑任何账号，或分组已 delisted 且
+	// 候选账号全被停用。与 ErrNoAvailableAccount 的容量语义相反——这是结构性的，重试不会
+	// 恢复，需要管理员重新配置分组或用户改用其它分组的 API Key。
+	//
+	// 判定口径刻意收窄到这两种：按 ent/schema/group.go 的契约，真正下线一个分组靠
+	// delisted + 清空账号绑定，而 disabled 同时也是管理员随手开关、判死自愈的临时态。
+	// 只凭 disabled 就报永久下线，会在运维改一个账号时把整组客户打成不可重试的 404。
 	ErrGroupOffline = fmt.Errorf("%w: 分组已下线", ErrNoAvailableAccount)
 
 	// ErrModelNotServed 分组的 model_routing 规则把候选账号过滤空了：分组本身还在服务，
@@ -30,6 +34,12 @@ var (
 	// unknown 等非上游冷却原因。它仍兼容 ErrNoAvailableAccount，但会阻止 Forwarder
 	// 把混合失败误报成“全部账号限流”。
 	ErrNonRateLimitedCandidatesUnavailable = fmt.Errorf("%w: 候选账号存在非限流不可用状态", ErrNoAvailableAccount)
+
+	// ErrAllCandidatesDisabled 分组下还绑着账号、且分组未 delisted，但本次路由命中的候选
+	// 全是 disabled。这是可恢复的运维态而非结构性下线——管理员把账号开回来即自愈，
+	// 也可能分组里另有账号正为别的模型服务，只是没被 model_routing 命中。
+	// 因此走 5xx 重试路径，不能报 ErrGroupOffline 的 404。
+	ErrAllCandidatesDisabled = fmt.Errorf("%w: 候选账号全部已停用", ErrNonRateLimitedCandidatesUnavailable)
 
 	// ErrLocalCapacityUnavailable 表示至少一个可行账号仅被本地并发、RPM、窗口费用
 	// 或 session 容量挡住。Host 可以只对这一类错误做有界排队等待。

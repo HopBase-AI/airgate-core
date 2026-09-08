@@ -439,13 +439,37 @@ type routedAccountTiers struct {
 }
 
 func (s *Scheduler) routeAccountTiers(ctx context.Context, platform, model string, groupID int) (routedAccountTiers, error) {
-	if accounts, routing, ok := s.routeCache.Get(groupID, platform); ok {
-		return classifyRoutedAccountTiers(accounts, routing, model)
+	snapshot, err := s.groupRouteSnapshot(ctx, platform, groupID)
+	if err != nil {
+		return routedAccountTiers{}, err
+	}
+	tiers, err := classifyRoutedAccountTiers(snapshot.accounts, snapshot.modelRouting, model)
+	if !errors.Is(err, ErrAllCandidatesDisabled) {
+		return tiers, err
+	}
+	// 候选全被停用。分组已 delisted 说明管理员确实把它退役了（退役 SOP = delisted +
+	// 停账号 + 目录禁用），此时报永久下线，免得客户端对着一个不会回来的分组无限退避。
+	// 未 delisted 则只是运维临时关号，或分组里另有账号在服务别的模型——必须留可重试的 5xx。
+	if snapshot.delisted {
+		return routedAccountTiers{}, ErrGroupOffline
+	}
+	slog.Warn("scheduler_group_candidates_all_disabled",
+		sdk.LogFieldGroupID, groupID,
+		sdk.LogFieldPlatform, platform,
+		sdk.LogFieldModel, model,
+	)
+	return routedAccountTiers{}, err
+}
+
+// groupRouteSnapshot 取分组在本平台下的账号列表 + model_routing + delisted，先走 routeCache。
+func (s *Scheduler) groupRouteSnapshot(ctx context.Context, platform string, groupID int) (groupRouteSnapshot, error) {
+	if snapshot, ok := s.routeCache.Get(groupID, platform); ok {
+		return snapshot, nil
 	}
 
 	grp, err := s.db.Group.Get(ctx, groupID)
 	if err != nil {
-		return routedAccountTiers{}, normalizeGroupLookupError(err)
+		return groupRouteSnapshot{}, normalizeGroupLookupError(err)
 	}
 
 	accounts, err := grp.QueryAccounts().
@@ -453,13 +477,13 @@ func (s *Scheduler) routeAccountTiers(ctx context.Context, platform, model strin
 		WithProxy().
 		All(ctx)
 	if err != nil {
-		return routedAccountTiers{}, normalizeGroupAccountsLookupError(err)
+		return groupRouteSnapshot{}, normalizeGroupAccountsLookupError(err)
 	}
 
-	// 缓存全量 platform 账号（包含所有 state）+ group 的 ModelRouting
-	s.routeCache.Set(groupID, platform, accounts, grp.ModelRouting)
-
-	return classifyRoutedAccountTiers(accounts, grp.ModelRouting, model)
+	// 缓存全量 platform 账号（包含所有 state）+ group 的 ModelRouting + delisted
+	snapshot := groupRouteSnapshot{accounts: accounts, modelRouting: grp.ModelRouting, delisted: grp.Delisted}
+	s.routeCache.Set(groupID, platform, snapshot)
+	return snapshot, nil
 }
 
 // classifyRoutedAccounts 在候选为空时区分"结构性不可用"与"暂时不可用"，让上层能给客户端
@@ -468,7 +492,12 @@ func (s *Scheduler) routeAccountTiers(ctx context.Context, platform, model strin
 // 判定顺序即语义优先级：
 //  1. 分组在本平台下没有任何账号        → ErrGroupOffline
 //  2. model_routing 把候选过滤空了      → ErrModelNotServed（分组还在，只是不供这个模型）
-//  3. 候选全是 disabled                 → ErrGroupOffline（管理员下线，或账号全部判死）
+//  3. 候选全是 disabled                 → ErrAllCandidatesDisabled（可恢复，见下）
+//
+// 第 3 步刻意不判 ErrGroupOffline：本次路由命中的候选全停用，既可能是管理员临时关号，
+// 也可能分组里另有账号正为别的模型服务、只是没被 model_routing 命中——两种都会随
+// 管理员一次操作自愈，报成永久 404 会把整组客户打死。调用方 routeAccountTiers 只在
+// 分组已 delisted 时才把它升级成 ErrGroupOffline。
 //
 // 第 3 步只认 disabled 这一个终态：rate_limited / degraded 都会自行到期恢复，属于容量问题，
 // 必须继续走 ErrNoAvailableAccount 的 503 重试路径。读的 State 与 SchedulabilityOf 同源
@@ -502,7 +531,7 @@ func classifyRoutedAccountTiers(accounts []*ent.Account, routing map[string][]in
 			return routedAccountTiers{primary: routed, poolFallback: fallback}, nil
 		}
 	}
-	return routedAccountTiers{}, ErrGroupOffline
+	return routedAccountTiers{}, ErrAllCandidatesDisabled
 }
 
 func poolFallbackAccounts(accounts, routed []*ent.Account) []*ent.Account {

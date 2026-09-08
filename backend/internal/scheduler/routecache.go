@@ -30,10 +30,18 @@ type routeCacheKey struct {
 	platform string
 }
 
-type routeCacheEntry struct {
+// groupRouteSnapshot 一次调度所需的分组快照：本平台下的账号列表 + model_routing +
+// delisted。delisted 一并缓存，是因为"候选全被停用"要区分永久下线与临时运维态时必须读它，
+// 不能为此在热路径上多打一次 DB。
+type groupRouteSnapshot struct {
 	accounts     []*ent.Account
 	modelRouting map[string][]int64
-	expiresAt    time.Time
+	delisted     bool
+}
+
+type routeCacheEntry struct {
+	snapshot  groupRouteSnapshot
+	expiresAt time.Time
 }
 
 // routeCache 路由结果缓存。并发安全，所有 method 都是 O(1)。
@@ -50,30 +58,29 @@ func newRouteCache(ttl time.Duration) *routeCache {
 	}
 }
 
-// Get 返回命中的账号列表 + model routing（若未过期）。未命中或过期返回 ok=false。
-func (c *routeCache) Get(groupID int, platform string) ([]*ent.Account, map[string][]int64, bool) {
+// Get 返回命中的分组快照（若未过期）。未命中或过期返回 ok=false。
+func (c *routeCache) Get(groupID int, platform string) (groupRouteSnapshot, bool) {
 	if c == nil {
-		return nil, nil, false
+		return groupRouteSnapshot{}, false
 	}
 	c.mu.RLock()
 	e, ok := c.store[routeCacheKey{groupID, platform}]
 	c.mu.RUnlock()
 	if !ok || time.Now().After(e.expiresAt) {
-		return nil, nil, false
+		return groupRouteSnapshot{}, false
 	}
-	return e.accounts, e.modelRouting, true
+	return e.snapshot, true
 }
 
 // Set 写入一条缓存。
-func (c *routeCache) Set(groupID int, platform string, accounts []*ent.Account, routing map[string][]int64) {
+func (c *routeCache) Set(groupID int, platform string, snapshot groupRouteSnapshot) {
 	if c == nil {
 		return
 	}
 	c.mu.Lock()
 	c.store[routeCacheKey{groupID, platform}] = routeCacheEntry{
-		accounts:     accounts,
-		modelRouting: routing,
-		expiresAt:    time.Now().Add(c.ttl),
+		snapshot:  snapshot,
+		expiresAt: time.Now().Add(c.ttl),
 	}
 	c.mu.Unlock()
 }
