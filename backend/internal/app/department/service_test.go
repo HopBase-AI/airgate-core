@@ -158,15 +158,19 @@ func TestSetBillingDayValidatesAndSyncsAnchor(t *testing.T) {
 	repo := &stubRepo{anchor: time.Date(2026, 7, 3, 14, 22, 0, 0, time.UTC)}
 	svc := NewService(repo, repo)
 	svc.now = func() time.Time { return time.Date(2026, 9, 9, 10, 0, 0, 0, time.UTC) }
-	if _, err := svc.SetBillingDay(context.Background(), 7, 31); !errors.Is(err, ErrInvalidBillingDay) {
+	if _, err := svc.SetBillingDay(context.Background(), 7, 31, "UTC"); !errors.Is(err, ErrInvalidBillingDay) {
 		t.Fatalf("day 31 must be rejected: %v", err)
 	}
-	overview, err := svc.SetBillingDay(context.Background(), 7, 15)
+	overview, err := svc.SetBillingDay(context.Background(), 7, 15, "Asia/Shanghai")
 	if err != nil {
 		t.Fatalf("SetBillingDay: %v", err)
 	}
-	if repo.setAnchor == nil || repo.setAnchor.Day() != 15 || !repo.setAnchor.After(svc.now()) {
-		t.Fatalf("anchor = %v, want next 15th after now", repo.setAnchor)
+	if repo.setAnchor == nil || repo.setAnchor.After(svc.now()) == false {
+		t.Fatalf("anchor = %v, want after now", repo.setAnchor)
+	}
+	// 上海时区 15 日零点 = UTC 14 日 16:00；账期日按展示时区取
+	if got := repo.setAnchor.In(time.FixedZone("CST", 8*3600)); got.Day() != 15 || got.Hour() != 0 {
+		t.Fatalf("anchor in Asia/Shanghai = %v, want 15th 00:00", got)
 	}
 	if overview.BillingDay != 15 || overview.Balance != 1000 || overview.MemberCount != 4 || overview.PeriodUsedActual != 55 {
 		t.Fatalf("overview = %+v", overview)

@@ -9,6 +9,14 @@ import (
 )
 
 func toUserRespFromDomain(item appuser.User) dto.UserResp {
+	resp := userRespFromDomain(item)
+	// 后台列表：成员账号标注所属企业主（/users/me 的同名字段由 applyMembershipToUserResp 填）。
+	resp.TeamOwnerID = int64(item.TeamOwnerID)
+	resp.TeamOwnerEmail = item.TeamOwnerEmail
+	return resp
+}
+
+func userRespFromDomain(item appuser.User) dto.UserResp {
 	return dto.UserResp{
 		ID:                    int64(item.ID),
 		Email:                 item.Email,

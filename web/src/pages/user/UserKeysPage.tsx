@@ -260,6 +260,10 @@ export default function UserKeysPage() {
           : t('user_keys.disable_success'),
       );
       queryClient.invalidateQueries({ queryKey: queryKeys.userKeys() });
+      // 部门密钥数、企业总览、操作记录都随密钥增删改变化
+      queryClient.invalidateQueries({ queryKey: queryKeys.departments() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.teamOverview() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.teamAuditLogs() });
     },
     onError: (err: Error) => toast('error', err.message),
   });

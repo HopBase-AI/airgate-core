@@ -174,6 +174,7 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 		Keyword:  page.Keyword,
 		Status:   c.Query("status"),
 		Role:     c.Query("role"),
+		Identity: c.Query("identity"),
 	})
 	if err != nil {
 		httpCode, message := h.handleError("查询用户列表失败", "查询失败", err)

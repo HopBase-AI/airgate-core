@@ -57,8 +57,9 @@ func Window(anchor, periodStart, now time.Time) (start, end time.Time, rolled bo
 	return start, end, start.After(periodStart)
 }
 
-// AnchorForDay 返回以 dayOfMonth 为账期日、严格晚于 now 的下一个锚点时刻（时分秒取 now 的），
-// 月份天数不足时夹紧到月末。企业主改账期日就用它：当前期延续到新锚点，之后按新账期日按月推进。
+// AnchorForDay 返回以 dayOfMonth 为账期日、严格晚于 now 的下一个锚点时刻，取 now 所在时区的**零点**
+// （账期边界落在整日，而不是点按钮那一刻的随机时分），月份天数不足时夹紧到月末。
+// 企业主改账期日就用它：当前期延续到新锚点，之后按新账期日按月推进。
 func AnchorForDay(now time.Time, dayOfMonth int) time.Time {
 	if dayOfMonth < 1 {
 		dayOfMonth = 1
@@ -66,13 +67,12 @@ func AnchorForDay(now time.Time, dayOfMonth int) time.Time {
 	if dayOfMonth > 31 {
 		dayOfMonth = 31
 	}
-	h, mi, s := now.Clock()
 	candidate := func(year int, month time.Month) time.Time {
 		d := dayOfMonth
 		if last := daysIn(year, month); d > last {
 			d = last
 		}
-		return time.Date(year, month, d, h, mi, s, now.Nanosecond(), now.Location())
+		return time.Date(year, month, d, 0, 0, 0, 0, now.Location())
 	}
 	next := candidate(now.Year(), now.Month())
 	if !next.After(now) {

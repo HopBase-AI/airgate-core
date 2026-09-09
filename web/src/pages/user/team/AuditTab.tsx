@@ -48,14 +48,14 @@ function diffLines(entry: TeamAuditLogResp, t: (key: string) => string): string[
 export function AuditTab() {
   const { t, i18n } = useTranslation();
   const { page, setPage, pageSize, setPageSize } = usePagination(20, 'user.team.audit');
-  const [targetType, setTargetType] = useState('');
+  const [targetType, setTargetType] = useState<'' | (typeof TARGET_TYPES)[number]>('');
   const [startDate, setStartDate] = useState<string | undefined>();
   const [endDate, setEndDate] = useState<string | undefined>();
 
   const params = {
     page,
     page_size: pageSize,
-    target_type: (targetType || undefined) as (typeof TARGET_TYPES)[number] | undefined,
+    target_type: targetType || undefined,
     start_date: startDate,
     end_date: endDate,
     tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -95,7 +95,7 @@ export function AuditTab() {
             aria-label={t('team.audit_target')}
             fullWidth
             selectedKey={targetType}
-            onSelectionChange={(key) => { setTargetType(key == null ? '' : String(key)); setPage(1); }}
+            onSelectionChange={(key) => { setTargetType(key == null ? '' : (String(key) as typeof targetType)); setPage(1); }}
           >
             <Select.Trigger>
               <Select.Value>

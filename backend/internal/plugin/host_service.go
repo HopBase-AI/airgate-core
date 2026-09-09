@@ -2148,6 +2148,11 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 	if usage == nil {
 		return 0, nil
 	}
+	// 只读元信息路径（如 /v1/video/estimate 估价）不计费也不落使用记录：否则每次估价都写一条
+	// 零费用的 usage_logs，污染使用记录、概览模型分布与总请求数。
+	if h.isHostMetadataOnlyPath(req.Path) {
+		return 0, nil
+	}
 	req.RequestID = strings.TrimSpace(req.RequestID)
 	usageValues := usageSnapshotFromSDK(usage)
 
@@ -2512,10 +2517,23 @@ func (h *HostService) updateUserBalance(ctx context.Context, pluginID string, re
 		"amount", req.Amount,
 		"idempotency_key", req.IdempotencyKey,
 	)
-	u, err := h.users.AdjustBalance(ctx, int(req.UserID), appuser.BalanceChange{
+	// 团队成员账号充值（支付插件经此入账）一律落到企业主余额：成员自己的 users.balance 永远不参与扣费，
+	// 钱进去就是死钱。备注里留成员邮箱，企业主在充值记录里能看出是谁充的。
+	targetUserID := int(req.UserID)
+	remark := req.Remark
+	if identity, err := auth.ResolveTeamIdentity(ctx, h.db, targetUserID); err == nil && identity.IsMember() {
+		slog.Info("host_service_update_balance_member_redirect",
+			"module", "host", sdk.LogFieldPluginID, pluginID,
+			sdk.LogFieldUserID, req.UserID, "owner_id", identity.Owner.ID, "member_id", identity.Member.ID)
+		targetUserID = identity.Owner.ID
+		if identity.Member.Email != "" {
+			remark = strings.TrimSpace(remark + " [成员 " + identity.Member.Email + "]")
+		}
+	}
+	u, err := h.users.AdjustBalance(ctx, targetUserID, appuser.BalanceChange{
 		Action:         req.Action,
 		Amount:         req.Amount,
-		Remark:         req.Remark,
+		Remark:         remark,
 		IdempotencyKey: req.IdempotencyKey,
 	})
 	if err != nil {

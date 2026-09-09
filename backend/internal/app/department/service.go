@@ -255,7 +255,7 @@ func (s *Service) ResetPeriod(ctx context.Context, ownerID, id int) (Department,
 }
 
 // Overview 企业层总览：余额、部门/成员数、已分配额度（限额之和）、账期与本期消耗。
-func (s *Service) Overview(ctx context.Context, ownerID int) (Overview, error) {
+func (s *Service) Overview(ctx context.Context, ownerID int, tz string) (Overview, error) {
 	logger := sdk.LoggerFromContext(ctx)
 	departments, err := s.repo.AllByOwner(ctx, ownerID)
 	if err != nil {
@@ -282,6 +282,8 @@ func (s *Service) Overview(ctx context.Context, ownerID int) (Overview, error) {
 		logger.Error("team_overview_failed", sdk.LogFieldUserID, ownerID, sdk.LogFieldReason, "usage", sdk.LogFieldError, err)
 		return Overview{}, err
 	}
+	// 账期日按企业主的展示时区取（锚点是该时区零点；服务端 UTC 取 Day 会差一天）
+	loc := timezone.Resolve(tz)
 	overview := Overview{
 		Balance:               balance,
 		DepartmentCount:       len(departments),
@@ -291,7 +293,7 @@ func (s *Service) Overview(ctx context.Context, ownerID int) (Overview, error) {
 		PeriodAnchor:          anchor,
 		PeriodStart:           start,
 		PeriodEnd:             end,
-		BillingDay:            anchor.Day(),
+		BillingDay:            anchor.In(loc).Day(),
 		PeriodUsedActual:      actual,
 		PeriodUsedBilled:      billed,
 	}
@@ -301,9 +303,9 @@ func (s *Service) Overview(ctx context.Context, ownerID int) (Overview, error) {
 	return overview, nil
 }
 
-// SetBillingDay 把企业账期日改成每月固定日（1~28）：新锚点取严格晚于现在的下一个该日，
-// 当前期延续到新锚点，之后按新账期日按月推进；名下全部部门与成员的锚点同步改动。
-func (s *Service) SetBillingDay(ctx context.Context, ownerID, day int) (Overview, error) {
+// SetBillingDay 把企业账期日改成每月固定日（1~28）：新锚点取严格晚于现在的下一个该日在企业主时区的零点，
+// 当前期延续到新锚点，之后按新账期日按月推进；名下全部部门与成员的锚点同步改动（闲置行先结转旧期）。
+func (s *Service) SetBillingDay(ctx context.Context, ownerID, day int, tz string) (Overview, error) {
 	logger := sdk.LoggerFromContext(ctx)
 	if day < 1 || day > 28 {
 		return Overview{}, ErrInvalidBillingDay
@@ -312,7 +314,7 @@ func (s *Service) SetBillingDay(ctx context.Context, ownerID, day int) (Overview
 	if err != nil {
 		return Overview{}, err
 	}
-	anchor := period.AnchorForDay(s.now(), day)
+	anchor := period.AnchorForDay(s.now().In(timezone.Resolve(tz)), day)
 	if err := s.repo.SetOwnerBillingAnchor(ctx, ownerID, anchor); err != nil {
 		logger.Error("team_billing_anchor_update_failed", sdk.LogFieldUserID, ownerID, sdk.LogFieldError, err)
 		return Overview{}, err
@@ -325,7 +327,7 @@ func (s *Service) SetBillingDay(ctx context.Context, ownerID, day int) (Overview
 		Before: map[string]any{"billing_day": before.Day(), "period_anchor": before},
 		After:  map[string]any{"billing_day": day, "period_anchor": anchor},
 	})
-	return s.Overview(ctx, ownerID)
+	return s.Overview(ctx, ownerID, tz)
 }
 
 func (s *Service) invalidateCaches(ctx context.Context, departmentID int) {

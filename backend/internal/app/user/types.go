@@ -27,9 +27,19 @@ type User struct {
 	Status                string
 	// SignupSource 注册来源站点 ID（ToC 落地页归因），空表示直接注册。
 	SignupSource string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// TeamOwnerID / TeamOwnerEmail 本账号是哪个企业主的成员账号（仅列表预载 membership 时填充；0/空=不是成员）。
+	TeamOwnerID    int
+	TeamOwnerEmail string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
+
+// 用户列表身份筛选取值。
+const (
+	IdentityEnterpriseOwner = "enterprise_owner"
+	IdentityMember          = "member"
+	IdentityRegular         = "regular"
+)
 
 // ListFilter 用户列表筛选。
 type ListFilter struct {
@@ -38,6 +48,8 @@ type ListFilter struct {
 	Keyword  string
 	Status   string
 	Role     string
+	// Identity 身份筛选：enterprise_owner / member / regular（空=全部）。
+	Identity string
 }
 
 // ListResult 用户列表结果。

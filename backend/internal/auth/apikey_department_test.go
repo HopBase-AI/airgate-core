@@ -137,3 +137,10 @@ func TestTeamIdentityEffectiveRemainingTakesThreeWayMin(t *testing.T) {
 		t.Fatalf("owner balance must cap: %v", remaining)
 	}
 }
+
+// 中间件把部门额度用尽映射成 402（与成员/密钥额度同码），而不是落到 503 默认分支。
+func TestDepartmentQuotaErrorIsPaymentRequiredCode(t *testing.T) {
+	if code := apiKeyCacheErrorCode(ErrDepartmentQuota); code != "department_quota" {
+		t.Fatalf("cache code = %q", code)
+	}
+}

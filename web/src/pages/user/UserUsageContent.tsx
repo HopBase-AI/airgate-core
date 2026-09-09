@@ -13,7 +13,7 @@ import { usePagination } from '../../shared/hooks/usePagination';
 import { usePlatforms } from '../../shared/hooks/usePlatforms';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { useToast } from '../../shared/ui';
-import { Building2, Clock, Download, Gauge, Percent, Upload, UsersRound } from 'lucide-react';
+import { Building2, Clock, Download, Gauge, Percent, Upload, UsersRound, X } from 'lucide-react';
 import type { UsageQuery } from '../../shared/types';
 import { useUsageColumns, fmtNum, type UsageColumnConfig, type UsageRow } from '../../shared/columns/usageColumns';
 import { getSessionAPIKey } from '../../shared/api/client';
@@ -169,7 +169,8 @@ function APIKeyInfoBar() {
           </div>
         )}
 
-        {quota === 0 && (
+        {/* 单把 key 的额度 / 到期只在密钥登录会话有意义；成员账号本人登录只看成员与部门额度 */}
+        {quota === 0 && !isMemberAccount && (
           <div className="flex items-center gap-2 text-text-tertiary">
             <Gauge className="w-3.5 h-3.5" />
             <span>{t('auth.apikey_quota')}: {t('auth.apikey_unlimited')}</span>
@@ -186,7 +187,7 @@ function APIKeyInfoBar() {
           </div>
         )}
 
-        {!expiresAt && (
+        {!expiresAt && !isMemberAccount && (
           <div className="flex items-center gap-2 text-text-tertiary">
             <Clock className="w-3.5 h-3.5" />
             <span>{t('auth.apikey_expires')}: {t('auth.apikey_never')}</span>
@@ -284,20 +285,22 @@ export default function UserUsageContent() {
   ];
   const selectedApiKeyLabel = apiKeyOptions.find((item) => item.id === String(filters.api_key_id ?? ''))?.label ?? t('common.all');
 
-  const { data: membersData } = useQuery({
+  const { data: membersData, isFetched: membersFetched } = useQuery({
     queryKey: queryKeys.membersForKeys(),
     queryFn: () => membersApi.list(FETCH_ALL_PARAMS),
     enabled: canListMembers,
     staleTime: 60_000,
   });
+  // member_id=0 是「企业主本人 / 未归属」这一有效取值（下钻面板可选中），要有对应选项
   const memberOptions = [
     { id: '', label: t('common.all') },
     ...(membersData?.list ?? []).map((member) => ({ id: String(member.id), label: member.name })),
+    { id: '0', label: t('usage.owner_self') },
   ];
   const hasMembers = (membersData?.list?.length ?? 0) > 0;
   const selectedMemberLabel = memberOptions.find((item) => item.id === String(filters.member_id ?? ''))?.label ?? t('common.all');
 
-  const { data: departmentsData } = useQuery({
+  const { data: departmentsData, isFetched: departmentsFetched } = useQuery({
     queryKey: queryKeys.departmentsAll(),
     queryFn: () => departmentsApi.list(FETCH_ALL_PARAMS),
     enabled: canListMembers,
@@ -312,8 +315,13 @@ export default function UserUsageContent() {
   const selectedDepartmentLabel = departmentOptions.find((item) => item.id === String(filters.department_id ?? ''))?.label ?? t('common.all');
   // 分层下钻只对企业主（能列成员的完整视角）开放；默认按密钥，有部门时按部门起步
   const [breakdownTouched, setBreakdownTouched] = useState(false);
-  const effectiveBreakdown: BreakdownDimension = breakdownTouched ? breakdown : hasDepartments ? 'department' : hasMembers ? 'member' : 'key';
+  const defaultBreakdown: BreakdownDimension = hasDepartments ? 'department' : hasMembers ? 'member' : 'key';
+  const breakdownVisible = (dim: BreakdownDimension) => (dim === 'department' ? hasDepartments : dim === 'member' ? hasMembers : true);
+  // 手动选过就用选的；选中的维度已不可见（部门全删了）则回落默认
+  const effectiveBreakdown: BreakdownDimension = breakdownTouched && breakdownVisible(breakdown) ? breakdown : defaultBreakdown;
   const breakdownParam = canListMembers ? effectiveBreakdown : undefined;
+  // 企业主视角：等部门/成员列表回来再拉统计，避免默认维度翻转导致统计接口打两次、面板闪一下
+  const breakdownReady = !canListMembers || (departmentsFetched && membersFetched);
 
   const {
     data,
@@ -335,6 +343,7 @@ export default function UserUsageContent() {
   const { data: stats, isFetching: isStatsFetching, refetch: refetchStats } = useQuery({
     queryKey: queryKeys.userUsageStats(filters, breakdownParam),
     queryFn: ({ signal }) => usageApi.userStats({ ...filters, breakdown: breakdownParam }, { signal }),
+    enabled: breakdownReady,
     meta: { globalLoading: false },
     refetchOnReconnect: false,
     refetchOnWindowFocus: false,
@@ -403,6 +412,11 @@ export default function UserUsageContent() {
     else if (next.member_id != null) { setBreakdown('key'); setBreakdownTouched(true); }
     else if (next.api_key_id != null) { setBreakdown('group'); setBreakdownTouched(true); }
   };
+  // 当前生效的下钻筛选（部门 / 成员 / 密钥）显式列出来，可一键去掉；否则 member_id=0 这类筛选看起来像没选
+  const activeDrillFilters: Array<{ key: 'department_id' | 'member_id' | 'api_key_id'; label: string }> = [];
+  if (filters.department_id != null) activeDrillFilters.push({ key: 'department_id', label: `${t('team.department')}: ${selectedDepartmentLabel}` });
+  if (filters.member_id != null) activeDrillFilters.push({ key: 'member_id', label: `${t('team.filter_member')}: ${memberOptions.find((item) => item.id === String(filters.member_id))?.label ?? filters.member_id}` });
+  if (filters.api_key_id != null) activeDrillFilters.push({ key: 'api_key_id', label: `API Key: ${selectedApiKeyLabel}` });
 
   const list = data?.list ?? [];
   const total = data?.total ?? 0;
@@ -524,6 +538,18 @@ export default function UserUsageContent() {
           totalActualCost={stats?.total_actual_cost ?? 0}
           onDrill={drillInto}
         />
+      ) : null}
+
+      {activeDrillFilters.length > 0 ? (
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-text-tertiary">{t('usage.active_filters')}</span>
+          {activeDrillFilters.map((item) => (
+            <Button key={item.key} size="sm" variant="secondary" onPress={() => updateFilter(item.key, '')}>
+              {item.label}
+              <X className="h-3 w-3" />
+            </Button>
+          ))}
+        </div>
       ) : null}
 
       {/* 筛选栏 */}
@@ -655,12 +681,12 @@ export default function UserUsageContent() {
             <Select
               aria-label={t('team.filter_member')}
               fullWidth
-              selectedKey={String(filters.member_id ?? '')}
+              selectedKey={filters.member_id != null ? String(filters.member_id) : ''}
               onSelectionChange={(key) => updateFilter('member_id', key == null ? '' : String(key))}
             >
               <Select.Trigger>
                 <Select.Value>
-                  {filters.member_id ? selectedMemberLabel : (
+                  {filters.member_id != null ? selectedMemberLabel : (
                     <span className="text-text-tertiary">{t('team.filter_member')}</span>
                   )}
                 </Select.Value>

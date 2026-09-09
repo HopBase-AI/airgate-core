@@ -145,7 +145,7 @@ func (h *DepartmentHandler) TeamOverview(c *gin.Context) {
 		response.Unauthorized(c, "用户未认证")
 		return
 	}
-	overview, err := h.service.Overview(c.Request.Context(), userID)
+	overview, err := h.service.Overview(c.Request.Context(), userID, c.Query("tz"))
 	if err != nil {
 		httpCode, message := h.handleError("查询企业总览失败", "查询失败", err)
 		response.Error(c, httpCode, httpCode, message)
@@ -166,7 +166,7 @@ func (h *DepartmentHandler) UpdateBillingPeriod(c *gin.Context) {
 		response.BindError(c, err)
 		return
 	}
-	overview, err := h.service.SetBillingDay(auditContext(c).Request.Context(), userID, req.BillingDay)
+	overview, err := h.service.SetBillingDay(auditContext(c).Request.Context(), userID, req.BillingDay, c.Query("tz"))
 	if err != nil {
 		httpCode, message := h.handleError("修改企业账期失败", "修改失败", err)
 		response.Error(c, httpCode, httpCode, message)

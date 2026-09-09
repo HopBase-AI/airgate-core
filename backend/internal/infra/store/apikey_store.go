@@ -107,10 +107,15 @@ func applyAPIKeyFilters(query *ent.APIKeyQuery, filter appapikey.ListFilter) *en
 		if *filter.DepartmentID > 0 {
 			query = query.Where(apiKeyEffectiveDepartment(*filter.DepartmentID))
 		} else {
-			// 未分配：既没直挂部门，所属成员（如有）也没有部门。
+			// 未分配：既没直挂部门，且（没有成员 或 成员也没有部门）。
+			// 不能写成 Not(HasMemberWith(HasDepartment()))：ent 会渲染成 NOT (member_fk IN (...))，
+			// 成员外键为 NULL 的 key 得到 NOT (NULL IN ...) = NULL 而被整体排除（Postgres 实测）。
 			query = query.Where(
 				entapikey.Not(entapikey.HasDepartment()),
-				entapikey.Not(entapikey.HasMemberWith(entmember.HasDepartment())),
+				entapikey.Or(
+					entapikey.Not(entapikey.HasMember()),
+					entapikey.HasMemberWith(entmember.Not(entmember.HasDepartment())),
+				),
 			)
 		}
 	}

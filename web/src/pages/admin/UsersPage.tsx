@@ -46,6 +46,7 @@ export default function UsersPage() {
   const [keyword, setKeyword] = useState('');
   const debouncedKeyword = useDebouncedValue(keyword.trim(), 250);
   const [statusFilter, setStatusFilter] = useState('');
+  const [identityFilter, setIdentityFilter] = useState<'' | 'enterprise_owner' | 'member' | 'regular'>('');
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingUser, setEditingUser] = useState<UserResp | null>(null);
@@ -58,13 +59,14 @@ export default function UsersPage() {
   const [quoteUser, setQuoteUser] = useState<UserResp | null>(null);
 
   const { data, isLoading, refetch, isFetching } = useQuery({
-    queryKey: queryKeys.users(page, pageSize, debouncedKeyword, statusFilter),
+    queryKey: queryKeys.users(page, pageSize, debouncedKeyword, statusFilter, identityFilter),
     queryFn: () =>
       usersApi.list({
         page,
         page_size: pageSize,
         keyword: debouncedKeyword || undefined,
         status: statusFilter || undefined,
+        identity: identityFilter || undefined,
       }),
     placeholderData: keepPreviousData,
   });
@@ -120,6 +122,14 @@ export default function UsersPage() {
     { id: 'disabled', label: t('status.disabled') },
   ];
   const selectedStatusLabel = statusOptions.find((item) => item.id === statusFilter)?.label ?? t('users.all_status');
+  // 企业用户筛选：企业主 / 成员账号 / 普通用户
+  const identityOptions = [
+    { id: '', label: t('users.identity_all') },
+    { id: 'enterprise_owner', label: t('users.identity_enterprise_owner') },
+    { id: 'member', label: t('users.identity_member') },
+    { id: 'regular', label: t('users.identity_regular') },
+  ];
+  const selectedIdentityLabel = identityOptions.find((item) => item.id === identityFilter)?.label ?? t('users.identity_all');
 
   return (
     <div>
@@ -153,6 +163,31 @@ export default function UsersPage() {
             </Select.Trigger>
             <Select.Popover>
               <ListBox items={statusOptions}>
+                {(item) => (
+                  <ListBox.Item id={item.id} textValue={item.label}>
+                    {item.label}
+                  </ListBox.Item>
+                )}
+              </ListBox>
+            </Select.Popover>
+          </Select>
+        </div>
+        <div className="w-full sm:w-44">
+          <Select
+            fullWidth
+            selectedKey={identityFilter}
+            onSelectionChange={(key) => {
+              setIdentityFilter(key == null ? '' : (String(key) as typeof identityFilter));
+              setPage(1);
+            }}
+          >
+            <Label className="sr-only">{t('users.identity_filter')}</Label>
+            <Select.Trigger>
+              <Select.Value>{selectedIdentityLabel}</Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox items={identityOptions}>
                 {(item) => (
                   <ListBox.Item id={item.id} textValue={item.label}>
                     {item.label}
@@ -242,9 +277,19 @@ export default function UsersPage() {
                       <span className="text-text-secondary">{row.username || '-'}</span>
                     </CommonTable.Cell>
                     <CommonTable.Cell>
-                      <Chip color={row.role === 'admin' ? 'accent' : 'default'} size="sm" variant="soft">
-                        {row.role === 'admin' ? t('users.role_admin') : t('users.role_user')}
-                      </Chip>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Chip color={row.role === 'admin' ? 'accent' : 'default'} size="sm" variant="soft">
+                          {row.role === 'admin' ? t('users.role_admin') : t('users.role_user')}
+                        </Chip>
+                        {row.is_enterprise_owner && row.role !== 'admin' ? (
+                          <Chip color="warning" size="sm" variant="soft">{t('users.identity_enterprise_owner')}</Chip>
+                        ) : null}
+                        {row.team_owner_id ? (
+                          <Chip color="default" size="sm" variant="soft" title={row.team_owner_email}>
+                            {t('users.badge_member_of', { owner: row.team_owner_email })}
+                          </Chip>
+                        ) : null}
+                      </div>
                     </CommonTable.Cell>
                     <CommonTable.Cell>
                       <span className="font-mono">${formatBalance(row.balance)}</span>

@@ -59,6 +59,14 @@ func (s *UserStore) List(ctx context.Context, filter appuser.ListFilter) ([]appu
 	if filter.Role != "" {
 		query = query.Where(entuser.RoleEQ(entuser.Role(filter.Role)))
 	}
+	switch filter.Identity {
+	case appuser.IdentityEnterpriseOwner:
+		query = query.Where(entuser.IsEnterpriseOwnerEQ(true))
+	case appuser.IdentityMember:
+		query = query.Where(entuser.HasMembership())
+	case appuser.IdentityRegular:
+		query = query.Where(entuser.IsEnterpriseOwnerEQ(false), entuser.Not(entuser.HasMembership()))
+	}
 
 	total, err := query.Count(ctx)
 	if err != nil {
@@ -67,6 +75,7 @@ func (s *UserStore) List(ctx context.Context, filter appuser.ListFilter) ([]appu
 
 	users, err := query.
 		WithAllowedGroups().
+		WithMembership(func(q *ent.MemberQuery) { q.WithOwner() }).
 		Offset((filter.Page - 1) * filter.PageSize).
 		Limit(filter.PageSize).
 		Order(ent.Desc(entuser.FieldCreatedAt)).
@@ -557,6 +566,10 @@ func mapUser(item *ent.User) appuser.User {
 		for _, group := range item.Edges.AllowedGroups {
 			result.AllowedGroupIDs = append(result.AllowedGroupIDs, int64(group.ID))
 		}
+	}
+	if m := item.Edges.Membership; m != nil && m.Edges.Owner != nil {
+		result.TeamOwnerID = m.Edges.Owner.ID
+		result.TeamOwnerEmail = m.Edges.Owner.Email
 	}
 	return result
 }

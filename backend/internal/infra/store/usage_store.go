@@ -965,7 +965,9 @@ func mapUsageLog(item *ent.UsageLog) appusage.LogRecord {
 	}
 	record.MemberID = int64(item.MemberID)
 	record.DepartmentID = int64(item.DepartmentID)
-	record.APIKeyDeleted = item.Edges.APIKey == nil
+	// Host 路径（AI Chat / 工作台 / 插件自报用量）本来就没有密钥，不是「已删除密钥」：
+	// 这类记录不带客户端 UA / IP（不经 HTTP 转发管线），据此与真删了密钥的记录区分。
+	record.APIKeyDeleted = item.Edges.APIKey == nil && (item.UserAgent != "" || item.IPAddress != "")
 	if item.Edges.APIKey != nil {
 		record.APIKeyID = int64(item.Edges.APIKey.ID)
 		record.APIKeyName = item.Edges.APIKey.Name

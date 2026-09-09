@@ -231,7 +231,7 @@ export default function UserOverviewPage() {
                 ? t('user_overview.team_balance')
                 : t('user_overview.balance')
           }
-          value={`$${formatBalance(user?.balance)}`}
+          value={isTeamMember ? `$${(user?.balance ?? 0).toFixed(2)}` : `$${formatBalance(user?.balance)}`}
           icon={<Wallet className="w-5 h-5" />}
           tone="blue"
         />

@@ -84,12 +84,12 @@ export function TeamOverviewBar() {
 
   return (
     <div className="ag-team-overview mb-5">
-      <dl className="ag-team-overview-grid">
+      <div className="ag-team-overview-grid">
         {items.map((item) => (
           <div key={item.key} className="ag-team-overview-item" data-tone={item.tone}>
-            <dt>{item.label}</dt>
-            <dd>{item.value}</dd>
-            {item.hint ? <p>{item.hint}</p> : null}
+            <span className="ag-team-overview-label">{item.label}</span>
+            <span className="ag-team-overview-value">{item.value}</span>
+            {item.hint ? <span className="ag-team-overview-hint">{item.hint}</span> : null}
           </div>
         ))}
         <div className="ag-team-overview-item ag-team-overview-action">
@@ -98,7 +98,7 @@ export function TeamOverviewBar() {
             {t('team.billing_day_edit')}
           </Button>
         </div>
-      </dl>
+      </div>
 
       <CommonModal
         footer={(

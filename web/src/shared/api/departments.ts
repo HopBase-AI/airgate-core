@@ -11,6 +11,8 @@ import type {
 
 type RequestOptions = { signal?: AbortSignal };
 
+const browserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 export type TeamAuditListParams = PageReq & {
   target_type?: 'department' | 'member' | 'apikey' | 'team';
   target_id?: number;
@@ -28,8 +30,10 @@ export const departmentsApi = {
   update: (id: number, data: UpdateDepartmentReq) => put<DepartmentResp>(`/api/v1/departments/${id}`, data),
   delete: (id: number) => del<void>(`/api/v1/departments/${id}`),
   resetPeriod: (id: number) => post<DepartmentResp>(`/api/v1/departments/${id}/reset-period`),
-  overview: (options?: RequestOptions) => get<TeamOverviewResp>('/api/v1/team/overview', undefined, options),
-  updateBillingPeriod: (billingDay: number) => put<TeamOverviewResp>('/api/v1/team/billing-period', { billing_day: billingDay }),
+  // 账期日按企业主的浏览器时区取零点、按该时区显示，所以两处都带 tz
+  overview: (options?: RequestOptions) => get<TeamOverviewResp>('/api/v1/team/overview', { tz: browserTimeZone() }, options),
+  updateBillingPeriod: (billingDay: number) =>
+    put<TeamOverviewResp>(`/api/v1/team/billing-period?tz=${encodeURIComponent(browserTimeZone())}`, { billing_day: billingDay }),
   auditLogs: (params: TeamAuditListParams, options?: RequestOptions) =>
     get<PagedData<TeamAuditLogResp>>('/api/v1/team/audit-logs', params, options),
 };

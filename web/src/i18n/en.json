@@ -613,7 +613,13 @@
     "quote_create_standard_hint": "Site-wide standard pricing; adjust anytime later in the quote sheet.",
     "quote_create_note": "Applies to {{n}} public groups and enables quote mode; {{example}}fine-tune per group in the quote sheet afterwards.",
     "quote_create_example": "e.g. \"{{group}}\" defaults to {{zhe}} zhe; ",
-    "groups_pricing_moved_hint": "This panel only manages exclusive-group access; pricing has moved to the quote sheet."
+    "groups_pricing_moved_hint": "This panel only manages exclusive-group access; pricing has moved to the quote sheet.",
+    "identity_filter": "Identity",
+    "identity_all": "All identities",
+    "identity_enterprise_owner": "Enterprise owner",
+    "identity_member": "Team member",
+    "identity_regular": "Regular user",
+    "badge_member_of": "Member of {{owner}}"
   },
   "accounts": {
     "title": "Accounts",
@@ -1147,7 +1153,8 @@
     "unassigned": "Unassigned",
     "owner_self": "Owner account",
     "no_key_source": "Console / Studio (no key)",
-    "share": "Share"
+    "share": "Share",
+    "active_filters": "Active filters:"
   },
   "plugins": {
     "title": "Plugins",

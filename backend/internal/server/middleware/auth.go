@@ -249,6 +249,11 @@ func APIKeyAuth(db *ent.Client) gin.HandlerFunc {
 				code = "insufficient_quota"
 				status = http.StatusPaymentRequired
 				reason = "member_quota_exceeded"
+			case auth.ErrDepartmentQuota:
+				// 部门额度用尽同样是 402：落到默认分支会变成 503，客户端会当瞬时故障重试
+				code = "insufficient_quota"
+				status = http.StatusPaymentRequired
+				reason = "department_quota_exceeded"
 			case auth.ErrMemberGroupForbidden:
 				code = "member_group_forbidden"
 				status = http.StatusForbidden

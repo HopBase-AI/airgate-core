@@ -166,7 +166,7 @@ function pluginPagePath(pluginName: string, pagePath: string) {
   return `/plugins/${pluginName}${pagePath}`;
 }
 
-function usePluginMenuItems(isAdmin: boolean, isAPIKeySession: boolean): {
+function usePluginMenuItems(isAdmin: boolean, isAPIKeySession: boolean, isTeamMember = false): {
   adminItems: MenuItem[];
   userItems: MenuItem[];
 } {
@@ -189,8 +189,10 @@ function usePluginMenuItems(isAdmin: boolean, isAPIKeySession: boolean): {
       if (!p.frontend_pages?.length) continue;
       for (const page of p.frontend_pages) {
         const audience = page.audience || 'admin';
+        // 成员账号没有自己的余额：只面向普通用户的插件页（充值 / 充值记录等 audience=user）不挂，
+        // audience=all 的 AI Chat / 工作坊照常。
         const showInUser =
-          audience === 'user' || (audience === 'all' && !isAdmin);
+          (audience === 'user' && !isTeamMember) || (audience === 'all' && !isAdmin);
         const showInAdmin =
           isAdmin && (audience === 'admin' || audience === 'all');
 
@@ -217,7 +219,7 @@ function usePluginMenuItems(isAdmin: boolean, isAPIKeySession: boolean): {
       }
     }
     return { adminItems, userItems };
-  }, [data?.list, isAdmin]);
+  }, [data?.list, isAdmin, isTeamMember]);
 }
 
 export function AppShell({ children }: AppShellProps) {
@@ -259,9 +261,10 @@ export function AppShell({ children }: AppShellProps) {
   const isAPIKeySession = user?.role === 'api_key' || !!(user?.api_key_id && user.api_key_id > 0);
   const isAdmin = !isAPIKeySession && (getTokenRole() === 'admin' || user?.role === 'admin');
 
-  const { adminItems: pluginAdminItems, userItems: pluginUserItems } = usePluginMenuItems(isAdmin, isAPIKeySession);
-  // 团队成员账号：正常用户菜单，但不挂「团队成员」（不是企业主）与「我的邀请」（消耗记在企业主名下，不做分销主体）
+  // 团队成员账号：正常用户菜单，但不挂「团队成员」（不是企业主）与「我的邀请」（消耗记在企业主名下，不做分销主体）；
+  // 插件页（充值 / 充值记录等）同样不挂——成员没有自己的余额，充值只会落到企业主名下，这个动作该由企业主做。
   const isTeamMember = !isAPIKeySession && (user?.member_id ?? 0) > 0;
+  const { adminItems: pluginAdminItems, userItems: pluginUserItems } = usePluginMenuItems(isAdmin, isAPIKeySession, isTeamMember);
   const sections = useMemo(() => {
     const isEnterpriseOwner = !isAPIKeySession && !isTeamMember && (isAdmin || !!user?.is_enterprise_owner);
     const userItemsWithTeam = isEnterpriseOwner

@@ -344,7 +344,8 @@ func (s *Server) registerRoutes() {
 	// 用于支付插件等面向用户的扩展，让普通用户能调用插件接口（创建充值订单、查询自己订单等）。
 	// 插件需自行根据 X-Airgate-User-ID 头识别用户，并校验数据归属。
 	extUserGroup := r.Group("/api/v1/ext-user")
-	extUserGroup.Use(middleware.JWTAuth(s.jwtMgr), middleware.RequireRoles("admin", "user"))
+	// 带 db：成员账号停用后经插件页面（充值/AI Chat/工作台）的会话同样即时失效，与核心会话口径一致。
+	extUserGroup.Use(middleware.JWTAuth(s.jwtMgr, s.db), middleware.RequireRoles("admin", "user"))
 	{
 		extUserGroup.Any("/:pluginName/*path", s.extensionProxy.Handle)
 	}

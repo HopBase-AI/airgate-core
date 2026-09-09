@@ -13,6 +13,7 @@ import (
 	entusagelog "github.com/DouDOU-start/airgate-core/ent/usagelog"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
 	appdepartment "github.com/DouDOU-start/airgate-core/internal/app/department"
+	"github.com/DouDOU-start/airgate-core/internal/pkg/period"
 )
 
 // DepartmentStore 使用 Ent 实现部门仓储。
@@ -289,12 +290,43 @@ func (s *DepartmentStore) OwnerBillingAnchor(ctx context.Context, ownerID int) (
 }
 
 // SetOwnerBillingAnchor 写企业账期锚点并同步名下部门/成员的锚点（同一事务）。
+//
+// 换期是惰性的（鉴权读到跨期才推进），闲置的部门/成员可能还停在上一期：先按各自旧锚点把
+// 已跨期的行结转（period_start=当前期起点、period_used_base=当前累计），再覆盖锚点——否则
+// 新锚点晚于 now 时 Window 会直接延续旧期，把上期消耗当本期已用锁到新账期日。
 func (s *DepartmentStore) SetOwnerBillingAnchor(ctx context.Context, ownerID int, anchor time.Time) error {
+	now := time.Now()
 	tx, err := s.db.Tx(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	departments, err := tx.Department.Query().
+		Where(entdepartment.HasOwnerWith(entuser.IDEQ(ownerID)), entdepartment.QuotaPeriodEQ(entdepartment.QuotaPeriodMonthly)).
+		All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, d := range departments {
+		if start, _, rolled := period.Window(d.PeriodAnchor, d.PeriodStart, now); rolled {
+			if err := tx.Department.UpdateOneID(d.ID).SetPeriodStart(start).SetPeriodUsedBase(d.UsedQuota).Exec(ctx); err != nil {
+				return err
+			}
+		}
+	}
+	members, err := tx.Member.Query().
+		Where(entmember.HasOwnerWith(entuser.IDEQ(ownerID)), entmember.QuotaPeriodEQ(entmember.QuotaPeriodMonthly)).
+		All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, m := range members {
+		if start, _, rolled := period.Window(m.PeriodAnchor, m.PeriodStart, now); rolled {
+			if err := tx.Member.UpdateOneID(m.ID).SetPeriodStart(start).SetPeriodUsedBase(m.UsedQuota).Exec(ctx); err != nil {
+				return err
+			}
+		}
+	}
 	if err := tx.User.UpdateOneID(ownerID).SetBillingPeriodAnchor(anchor).Exec(ctx); err != nil {
 		return err
 	}

@@ -613,7 +613,13 @@
     "quote_create_standard_hint": "全サイト標準価格。作成後に見積シートでいつでも調整できます。",
     "quote_create_note": "{{n}} 個の一般グループに適用し見積モードを有効化します。{{example}}作成後に見積シートで個別調整できます。",
     "quote_create_example": "例：「{{group}}」の既定は {{zhe}} 折。",
-    "groups_pricing_moved_hint": "ここでは専用グループの権限のみ管理します。価格設定は見積シートに移動しました。"
+    "groups_pricing_moved_hint": "ここでは専用グループの権限のみ管理します。価格設定は見積シートに移動しました。",
+    "identity_filter": "種別",
+    "identity_all": "すべての種別",
+    "identity_enterprise_owner": "企業オーナー",
+    "identity_member": "メンバーアカウント",
+    "identity_regular": "一般ユーザー",
+    "badge_member_of": "{{owner}} のメンバー"
   },
   "accounts": {
     "title": "アカウント管理",
@@ -1147,7 +1153,8 @@
     "unassigned": "未割り当て",
     "owner_self": "オーナー本人",
     "no_key_source": "コンソール / スタジオ（キーなし）",
-    "share": "割合"
+    "share": "割合",
+    "active_filters": "適用中の絞り込み："
   },
   "plugins": {
     "title": "プラグイン管理",

@@ -613,7 +613,13 @@
     "quote_create_standard_hint": "Precios estándar de todo el sitio; ajústelos cuando quiera más adelante en la hoja de cotización.",
     "quote_create_note": "Se aplica a {{n}} grupos públicos y habilita el modo de cotización; {{example}}ajuste con precisión por grupo después en la hoja de cotización.",
     "quote_create_example": "p. ej., «{{group}}» tiene por defecto {{zhe}} zhe; ",
-    "groups_pricing_moved_hint": "Este panel solo administra el acceso a grupos exclusivos; los precios se trasladaron a la hoja de cotización."
+    "groups_pricing_moved_hint": "Este panel solo administra el acceso a grupos exclusivos; los precios se trasladaron a la hoja de cotización.",
+    "identity_filter": "Identidad",
+    "identity_all": "Todas las identidades",
+    "identity_enterprise_owner": "Propietario empresarial",
+    "identity_member": "Miembro de equipo",
+    "identity_regular": "Usuario normal",
+    "badge_member_of": "Miembro de {{owner}}"
   },
   "accounts": {
     "title": "Cuentas",
@@ -1147,7 +1153,8 @@
     "unassigned": "Sin asignar",
     "owner_self": "Cuenta del propietario",
     "no_key_source": "Consola / Studio (sin clave)",
-    "share": "Cuota"
+    "share": "Cuota",
+    "active_filters": "Filtros activos:"
   },
   "plugins": {
     "title": "Plugins",

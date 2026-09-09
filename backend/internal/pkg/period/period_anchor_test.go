@@ -31,10 +31,10 @@ func TestAnchorForDay(t *testing.T) {
 		day  int
 		want time.Time
 	}{
-		{15, time.Date(2026, 9, 15, 8, 30, 0, 0, time.UTC)},
-		{9, time.Date(2026, 10, 9, 8, 30, 0, 0, time.UTC)}, // 当天已过（严格晚于 now）→ 下月
-		{1, time.Date(2026, 10, 1, 8, 30, 0, 0, time.UTC)},
-		{31, time.Date(2026, 9, 30, 8, 30, 0, 0, time.UTC)}, // 月末夹紧
+		{15, time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC)},
+		{9, time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC)}, // 当天零点已过（严格晚于 now）→ 下月
+		{1, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)},
+		{31, time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC)}, // 月末夹紧
 	}
 	for _, tc := range cases {
 		if got := AnchorForDay(now, tc.day); !got.Equal(tc.want) {

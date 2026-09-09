@@ -123,6 +123,8 @@ export interface UserResp {
   member_period_end?: string;
   member_allowed_group_ids?: number[];
   team_owner_email?: string;
+  /** 后台列表：成员账号所属企业主 id（0/缺省 = 不是成员账号） */
+  team_owner_id?: number;
   /** 成员所属部门（0/缺省 = 未分配）与部门本期额度口径（部门不限额时缺省） */
   member_department_id?: number;
   member_department_name?: string;

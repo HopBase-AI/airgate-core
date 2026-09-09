@@ -613,7 +613,13 @@
     "quote_create_standard_hint": "按全站標準牌價；建號後可隨時在「報價單」調整。",
     "quote_create_note": "將套用到 {{n}} 個普通分組並開啟報價模式；{{example}}建號後可在「報價單」逐組微調。",
     "quote_create_example": "如「{{group}}」預設 {{zhe}} 折；",
-    "groups_pricing_moved_hint": "這裡只管理專屬分組授權；價格配置已遷至「報價單」。"
+    "groups_pricing_moved_hint": "這裡只管理專屬分組授權；價格配置已遷至「報價單」。",
+    "identity_filter": "身分",
+    "identity_all": "全部身分",
+    "identity_enterprise_owner": "企業主",
+    "identity_member": "成員帳號",
+    "identity_regular": "普通用戶",
+    "badge_member_of": "成員 · {{owner}}"
   },
   "accounts": {
     "title": "帳號管理",
@@ -1147,7 +1153,8 @@
     "unassigned": "未分配",
     "owner_self": "企業主本人",
     "no_key_source": "控制台 / 工作台（無密鑰）",
-    "share": "佔比"
+    "share": "佔比",
+    "active_filters": "目前篩選："
   },
   "plugins": {
     "title": "插件管理",

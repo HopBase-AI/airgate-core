@@ -36,7 +36,7 @@ export function UsageBreakdownPanel({
   hasDepartments: boolean;
   hasMembers: boolean;
   totalActualCost: number;
-  onDrill: (filter: { department_id?: number; member_id?: number; api_key_id?: number; group_id?: number }) => void;
+  onDrill: (filter: { department_id?: number; member_id?: number; api_key_id?: number }) => void;
 }) {
   const { t } = useTranslation();
   const allTabs: Array<{ key: BreakdownDimension; label: string; icon: typeof Layers; visible: boolean }> = [
@@ -46,6 +46,7 @@ export function UsageBreakdownPanel({
     { key: 'group', label: t('usage.breakdown_group'), icon: Layers, visible: true },
   ];
   const tabs = allTabs.filter((tab) => tab.visible);
+  const activeTab = tabs.find((tab) => tab.key === dimension) ?? tabs[0];
 
   const rows: BreakdownRow[] = (() => {
     switch (dimension) {
@@ -84,7 +85,8 @@ export function UsageBreakdownPanel({
           requests: g.requests,
           tokens: g.tokens,
           actualCost: g.actual_cost,
-          drill: () => onDrill({ group_id: g.group_id }),
+          // 用量页没有分组筛选控件，分组这一层不再往下钻
+          drill: undefined,
         }));
     }
   })();
@@ -92,7 +94,7 @@ export function UsageBreakdownPanel({
   const columns: CompactDataTableColumn<BreakdownRow>[] = [
     {
       key: 'name',
-      title: tabs.find((tab) => tab.key === dimension)?.label ?? '',
+      title: activeTab?.label ?? '',
       render: (row) => (
         row.drill ? (
           <Button className="max-w-full justify-start px-0 text-left" size="sm" variant="ghost" onPress={row.drill}>
@@ -145,7 +147,7 @@ export function UsageBreakdownPanel({
         <span className="text-xs text-text-tertiary sm:ml-auto">{t('usage.breakdown_hint')}</span>
       </div>
       <CompactDataTable
-        ariaLabel={tabs.find((tab) => tab.key === dimension)?.label ?? ''}
+        ariaLabel={activeTab?.label ?? ''}
         columns={columns}
         emptyText={t('common.no_data')}
         rowKey={(row) => `${dimension}-${row.id}`}
