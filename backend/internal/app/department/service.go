@@ -153,7 +153,7 @@ func (s *Service) Create(ctx context.Context, ownerID int, input CreateInput) (D
 	return item, nil
 }
 
-// Update 更新部门资料 / 额度 / 周期。改周期不动锚点。
+// Update 更新部门资料 / 额度 / 周期 / 负责人。改周期不动锚点；负责人必须是当前在本部门的成员。
 func (s *Service) Update(ctx context.Context, ownerID, id int, input UpdateInput) (Department, error) {
 	logger := sdk.LoggerFromContext(ctx)
 	current, err := s.repo.FindOwned(ctx, ownerID, id)
@@ -190,6 +190,19 @@ func (s *Service) Update(ctx context.Context, ownerID, id int, input UpdateInput
 		}
 		mutation.QuotaPeriod = input.QuotaPeriod
 	}
+	if input.ManagerMemberID != nil {
+		mutation.HasManagerMemberID = true
+		if memberID := int(*input.ManagerMemberID); memberID > 0 {
+			in, err := s.repo.MemberInDepartment(ctx, ownerID, id, memberID)
+			if err != nil {
+				return Department{}, err
+			}
+			if !in {
+				return Department{}, ErrManagerNotInDepartment
+			}
+			mutation.ManagerMemberID = &memberID
+		}
+	}
 	updated, err := s.repo.UpdateOwned(ctx, ownerID, id, mutation)
 	if err != nil {
 		logger.Error("department_update_failed", sdk.LogFieldUserID, ownerID, "department_id", id, sdk.LogFieldError, err)
@@ -197,6 +210,9 @@ func (s *Service) Update(ctx context.Context, ownerID, id int, input UpdateInput
 	}
 	if mutation.QuotaUSD != nil || mutation.QuotaPeriod != nil {
 		logger.Info("department_quota_updated", sdk.LogFieldUserID, ownerID, "department_id", id)
+	}
+	if mutation.HasManagerMemberID {
+		logger.Info("department_manager_changed", sdk.LogFieldUserID, ownerID, "department_id", id, "manager_member_id", updated.ManagerMemberID)
 	}
 	s.invalidateCaches(ctx, id)
 	s.audit.Record(ctx, audit.Entry{
@@ -368,10 +384,11 @@ func Decorate(d *Department, now time.Time) {
 // snapshot 审计用的关键字段快照。
 func snapshot(d Department) map[string]any {
 	return map[string]any{
-		"name":         d.Name,
-		"note":         d.Note,
-		"quota_usd":    d.QuotaUSD,
-		"quota_period": d.QuotaPeriod,
+		"name":              d.Name,
+		"note":              d.Note,
+		"quota_usd":         d.QuotaUSD,
+		"quota_period":      d.QuotaPeriod,
+		"manager_member_id": d.ManagerMemberID,
 	}
 }
 

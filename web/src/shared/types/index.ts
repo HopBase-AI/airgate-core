@@ -680,6 +680,9 @@ export interface DepartmentResp {
   member_quota_total: number;
   today_cost: number;
   thirty_day_cost: number;
+  /** 部门负责人（成员 ID），0 = 未设；只接收本部门额度预警，无管理权限 */
+  manager_member_id: number;
+  manager_name: string;
   created_at: string;
   updated_at: string;
 }
@@ -698,6 +701,8 @@ export interface UpdateDepartmentReq {
   sort?: number;
   quota_usd?: number;
   quota_period?: 'none' | 'monthly';
+  /** 部门负责人；不传 = 不动，0 = 清空，>0 须是本部门成员 */
+  manager_member_id?: number;
 }
 
 /** 企业层总览：「已分配」是限额之和而非预扣，允许超过企业余额 */

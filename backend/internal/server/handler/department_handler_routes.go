@@ -83,11 +83,12 @@ func (h *DepartmentHandler) UpdateDepartment(c *gin.Context) {
 		return
 	}
 	item, err := h.service.Update(auditContext(c).Request.Context(), userID, id, appdepartment.UpdateInput{
-		Name:        req.Name,
-		Note:        req.Note,
-		Sort:        req.Sort,
-		QuotaUSD:    req.QuotaUSD,
-		QuotaPeriod: req.QuotaPeriod,
+		Name:            req.Name,
+		Note:            req.Note,
+		Sort:            req.Sort,
+		QuotaUSD:        req.QuotaUSD,
+		QuotaPeriod:     req.QuotaPeriod,
+		ManagerMemberID: req.ManagerMemberID,
 	})
 	if err != nil {
 		httpCode, message := h.handleError("更新部门失败", "更新失败", err)

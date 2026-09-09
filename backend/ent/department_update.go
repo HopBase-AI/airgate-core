@@ -253,6 +253,25 @@ func (du *DepartmentUpdate) AddAPIKeys(a ...*APIKey) *DepartmentUpdate {
 	return du.AddAPIKeyIDs(ids...)
 }
 
+// SetManagerID sets the "manager" edge to the Member entity by ID.
+func (du *DepartmentUpdate) SetManagerID(id int) *DepartmentUpdate {
+	du.mutation.SetManagerID(id)
+	return du
+}
+
+// SetNillableManagerID sets the "manager" edge to the Member entity by ID if the given value is not nil.
+func (du *DepartmentUpdate) SetNillableManagerID(id *int) *DepartmentUpdate {
+	if id != nil {
+		du = du.SetManagerID(*id)
+	}
+	return du
+}
+
+// SetManager sets the "manager" edge to the Member entity.
+func (du *DepartmentUpdate) SetManager(m *Member) *DepartmentUpdate {
+	return du.SetManagerID(m.ID)
+}
+
 // Mutation returns the DepartmentMutation object of the builder.
 func (du *DepartmentUpdate) Mutation() *DepartmentMutation {
 	return du.mutation
@@ -304,6 +323,12 @@ func (du *DepartmentUpdate) RemoveAPIKeys(a ...*APIKey) *DepartmentUpdate {
 		ids[i] = a[i].ID
 	}
 	return du.RemoveAPIKeyIDs(ids...)
+}
+
+// ClearManager clears the "manager" edge to the Member entity.
+func (du *DepartmentUpdate) ClearManager() *DepartmentUpdate {
+	du.mutation.ClearManager()
+	return du
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -542,6 +567,35 @@ func (du *DepartmentUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if du.mutation.ManagerCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   department.ManagerTable,
+			Columns: []string{department.ManagerColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := du.mutation.ManagerIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   department.ManagerTable,
+			Columns: []string{department.ManagerColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -791,6 +845,25 @@ func (duo *DepartmentUpdateOne) AddAPIKeys(a ...*APIKey) *DepartmentUpdateOne {
 	return duo.AddAPIKeyIDs(ids...)
 }
 
+// SetManagerID sets the "manager" edge to the Member entity by ID.
+func (duo *DepartmentUpdateOne) SetManagerID(id int) *DepartmentUpdateOne {
+	duo.mutation.SetManagerID(id)
+	return duo
+}
+
+// SetNillableManagerID sets the "manager" edge to the Member entity by ID if the given value is not nil.
+func (duo *DepartmentUpdateOne) SetNillableManagerID(id *int) *DepartmentUpdateOne {
+	if id != nil {
+		duo = duo.SetManagerID(*id)
+	}
+	return duo
+}
+
+// SetManager sets the "manager" edge to the Member entity.
+func (duo *DepartmentUpdateOne) SetManager(m *Member) *DepartmentUpdateOne {
+	return duo.SetManagerID(m.ID)
+}
+
 // Mutation returns the DepartmentMutation object of the builder.
 func (duo *DepartmentUpdateOne) Mutation() *DepartmentMutation {
 	return duo.mutation
@@ -842,6 +915,12 @@ func (duo *DepartmentUpdateOne) RemoveAPIKeys(a ...*APIKey) *DepartmentUpdateOne
 		ids[i] = a[i].ID
 	}
 	return duo.RemoveAPIKeyIDs(ids...)
+}
+
+// ClearManager clears the "manager" edge to the Member entity.
+func (duo *DepartmentUpdateOne) ClearManager() *DepartmentUpdateOne {
+	duo.mutation.ClearManager()
+	return duo
 }
 
 // Where appends a list predicates to the DepartmentUpdate builder.
@@ -1110,6 +1189,35 @@ func (duo *DepartmentUpdateOne) sqlSave(ctx context.Context) (_node *Department,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(apikey.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if duo.mutation.ManagerCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   department.ManagerTable,
+			Columns: []string{department.ManagerColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := duo.mutation.ManagerIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   department.ManagerTable,
+			Columns: []string{department.ManagerColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

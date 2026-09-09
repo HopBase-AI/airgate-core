@@ -2,6 +2,7 @@ package quotaalert_test
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -59,7 +60,8 @@ type fixture struct {
 	svc     *quotaalert.Service
 	mail    *mailbox
 	owner   *ent.User
-	account *ent.User
+	account *ent.User // 被预警成员自己的登录账号
+	manager *ent.User // 部门负责人的登录账号
 	now     time.Time
 }
 
@@ -75,20 +77,59 @@ func newFixture(t *testing.T, name string) *fixture {
 	if err != nil {
 		t.Fatalf("create member account: %v", err)
 	}
+	manager, err := db.User.Create().SetEmail("manager-" + name + "@example.com").SetPasswordHash("x").Save(ctx)
+	if err != nil {
+		t.Fatalf("create manager account: %v", err)
+	}
 	mail := &mailbox{}
 	notifier := appnotification.NewService(store.NewNotificationStore(db))
 	svc := quotaalert.NewService(store.NewQuotaAlertStore(db), notifier)
 	svc.SetEmailSender(mail.send)
-	return &fixture{db: db, svc: svc, mail: mail, owner: owner, account: account, now: time.Now()}
+	return &fixture{db: db, svc: svc, mail: mail, owner: owner, account: account, manager: manager, now: time.Now()}
+}
+
+// createDepartment 建部门（quota 0 = 不限）。
+func (f *fixture) createDepartment(t *testing.T, quota, used float64) *ent.Department {
+	t.Helper()
+	d, err := f.db.Department.Create().SetName("研发部").SetOwnerID(f.owner.ID).
+		SetQuotaUsd(quota).SetUsedQuota(used).
+		SetPeriodAnchor(f.now.Add(-time.Hour)).SetPeriodStart(f.now.Add(-time.Hour)).Save(context.Background())
+	if err != nil {
+		t.Fatalf("create department: %v", err)
+	}
+	return d
+}
+
+// setManager 建一名挂在 f.manager 账号上的部门成员并设为负责人。
+func (f *fixture) setManager(t *testing.T, d *ent.Department) *ent.Member {
+	t.Helper()
+	ctx := context.Background()
+	m, err := f.db.Member.Create().SetName("负责人").SetOwnerID(f.owner.ID).SetDepartment(d).SetAccount(f.manager).
+		SetPeriodAnchor(f.now.Add(-time.Hour)).SetPeriodStart(f.now.Add(-time.Hour)).Save(ctx)
+	if err != nil {
+		t.Fatalf("create manager member: %v", err)
+	}
+	if _, err := f.db.Department.UpdateOneID(d.ID).SetManager(m).Save(ctx); err != nil {
+		t.Fatalf("set manager: %v", err)
+	}
+	return m
 }
 
 func (f *fixture) createMember(t *testing.T, quota, used float64, withAccount bool) *ent.Member {
+	return f.createMemberIn(t, nil, quota, used, withAccount)
+}
+
+// createMemberIn 建成员并挂到部门（dept 为 nil = 未分配）。
+func (f *fixture) createMemberIn(t *testing.T, dept *ent.Department, quota, used float64, withAccount bool) *ent.Member {
 	t.Helper()
 	builder := f.db.Member.Create().SetName("张三").SetOwnerID(f.owner.ID).
 		SetQuotaUsd(quota).SetUsedQuota(used).
 		SetPeriodAnchor(f.now.Add(-time.Hour)).SetPeriodStart(f.now.Add(-time.Hour))
 	if withAccount {
 		builder = builder.SetAccount(f.account)
+	}
+	if dept != nil {
+		builder = builder.SetDepartment(dept)
 	}
 	m, err := builder.Save(context.Background())
 	if err != nil {
@@ -109,33 +150,43 @@ func (f *fixture) notifications(t *testing.T, userID int) []*ent.UserNotificatio
 	return rows
 }
 
+// 成员预警收件人 = 企业主 + 所属部门负责人；成员本人不再收到自己的预警。
 func TestMemberThresholds(t *testing.T) {
 	cases := []struct {
 		name        string
 		quota, used float64
 		withAccount bool
+		withManager bool   // 成员挂在有负责人的部门下
 		wantLevel   string // "" = 不预警
-		wantTitle   string // 企业主标题片段
-		wantSelf    string // 成员自己标题片段
+		wantTitle   string // 标题片段（企业主与负责人同题）
 	}{
-		{"85% → warning，企业主与成员账号各一条", 10, 8.5, true, "warning", "成员 张三 本期额度已用 85%", "您的本期额度已用 85%"},
-		{"100% → danger 双方", 10, 10, true, "danger", "成员 张三 本期额度已用尽", "您的本期额度已用尽"},
-		{"超额 120% 仍 danger", 10, 12, true, "danger", "成员 张三 本期额度已用尽", "您的本期额度已用尽"},
-		{"79% 不预警", 10, 7.9, true, "", "", ""},
-		{"额度 0（不限）不预警", 0, 999, true, "", "", ""},
-		{"老模型成员无登录账号：只投企业主", 10, 9, false, "warning", "成员 张三 本期额度已用 90%", ""},
+		{"85% → warning，企业主与负责人各一条，成员本人不收", 10, 8.5, true, true, "warning", "成员 张三 本期额度已用 85%"},
+		{"100% → danger", 10, 10, true, true, "danger", "成员 张三 本期额度已用尽"},
+		{"超额 120% 仍 danger", 10, 12, true, true, "danger", "成员 张三 本期额度已用尽"},
+		{"79% 不预警", 10, 7.9, true, true, "", ""},
+		{"额度 0（不限）不预警", 0, 999, true, true, "", ""},
+		{"无负责人：只投企业主", 10, 9, true, false, "warning", "成员 张三 本期额度已用 90%"},
+		{"老模型成员无登录账号：企业主 + 负责人", 10, 9, false, true, "warning", "成员 张三 本期额度已用 90%"},
 	}
 	for i, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t, "quota_member_"+string(rune('a'+i)))
-			m := f.createMember(t, tc.quota, tc.used, tc.withAccount)
+			d := f.createDepartment(t, 0, 0)
+			if tc.withManager {
+				f.setManager(t, d)
+			}
+			m := f.createMemberIn(t, d, tc.quota, tc.used, tc.withAccount)
 			f.svc.Process(context.Background(), billing.ChargeEvent{MemberIDs: []int{m.ID}})
 
 			ownerRows := f.notifications(t, f.owner.ID)
 			selfRows := f.notifications(t, f.account.ID)
+			managerRows := f.notifications(t, f.manager.ID)
+			if len(selfRows) != 0 {
+				t.Fatalf("member self must not receive its own alert, got %d", len(selfRows))
+			}
 			if tc.wantLevel == "" {
-				if len(ownerRows)+len(selfRows) != 0 || f.mail.count() != 0 {
-					t.Fatalf("expected no alert, got owner=%d self=%d mail=%d", len(ownerRows), len(selfRows), f.mail.count())
+				if len(ownerRows)+len(managerRows) != 0 || f.mail.count() != 0 {
+					t.Fatalf("expected no alert, got owner=%d manager=%d mail=%d", len(ownerRows), len(managerRows), f.mail.count())
 				}
 				return
 			}
@@ -153,18 +204,22 @@ func TestMemberThresholds(t *testing.T) {
 				t.Fatalf("owner content = %q", row.Content)
 			}
 			wantMails := 1
-			if tc.withAccount {
+			if tc.withManager {
 				wantMails = 2
-				if len(selfRows) != 1 {
-					t.Fatalf("member-self notifications = %d, want 1", len(selfRows))
+				if len(managerRows) != 1 {
+					t.Fatalf("manager notifications = %d, want 1", len(managerRows))
 				}
-				self := selfRows[0]
-				if string(self.Level) != tc.wantLevel || self.Link != "/usage" || !strings.Contains(self.Title, tc.wantSelf) ||
-					!strings.Contains(self.Content, "请联系企业管理员") {
-					t.Fatalf("self row = level %s link %s title %q content %q", self.Level, self.Link, self.Title, self.Content)
+				mgr := managerRows[0]
+				wantLink := "/usage?department_id=" + strconv.Itoa(d.ID)
+				if string(mgr.Level) != tc.wantLevel || mgr.Link != wantLink || !strings.Contains(mgr.Title, tc.wantTitle) ||
+					!strings.Contains(mgr.Content, "请关注本部门用量，如需调整额度请联系企业管理员") {
+					t.Fatalf("manager row = level %s link %s title %q content %q", mgr.Level, mgr.Link, mgr.Title, mgr.Content)
 				}
-			} else if len(selfRows) != 0 {
-				t.Fatalf("member without account must not receive, got %d", len(selfRows))
+				if mgr.DedupeKey == row.DedupeKey || !strings.HasSuffix(mgr.DedupeKey, ":"+strconv.Itoa(f.manager.ID)) {
+					t.Fatalf("manager dedupe key = %q (owner %q)", mgr.DedupeKey, row.DedupeKey)
+				}
+			} else if len(managerRows) != 0 {
+				t.Fatalf("no manager must mean no manager row, got %d", len(managerRows))
 			}
 			if f.mail.count() != wantMails {
 				t.Fatalf("mails = %d, want %d", f.mail.count(), wantMails)
@@ -172,13 +227,39 @@ func TestMemberThresholds(t *testing.T) {
 
 			// 同一期再次触发：dedupe 拦下，站内信与邮件都不重复。
 			f.svc.Process(context.Background(), billing.ChargeEvent{MemberIDs: []int{m.ID}})
-			if n := len(f.notifications(t, f.owner.ID)) + len(f.notifications(t, f.account.ID)); n != len(ownerRows)+len(selfRows) {
+			if n := len(f.notifications(t, f.owner.ID)) + len(f.notifications(t, f.manager.ID)) + len(f.notifications(t, f.account.ID)); n != len(ownerRows)+len(managerRows) {
 				t.Fatalf("duplicate alert: rows = %d", n)
 			}
 			if f.mail.count() != wantMails {
 				t.Fatalf("duplicate mail: %d", f.mail.count())
 			}
 		})
+	}
+}
+
+// 负责人就是被预警的成员本人：本人不收（成员自身预警已取消），只有企业主一条。
+func TestMemberAlertSkipsManagerWhoIsTheMember(t *testing.T) {
+	f := newFixture(t, "quota_member_is_manager")
+	ctx := context.Background()
+	d := f.createDepartment(t, 0, 0)
+	m, err := f.db.Member.Create().SetName("张三").SetOwnerID(f.owner.ID).SetDepartment(d).SetAccount(f.manager).
+		SetQuotaUsd(10).SetUsedQuota(9).
+		SetPeriodAnchor(f.now.Add(-time.Hour)).SetPeriodStart(f.now.Add(-time.Hour)).Save(ctx)
+	if err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	if _, err := f.db.Department.UpdateOneID(d.ID).SetManager(m).Save(ctx); err != nil {
+		t.Fatalf("set manager: %v", err)
+	}
+	f.svc.Process(ctx, billing.ChargeEvent{MemberIDs: []int{m.ID}})
+	if n := len(f.notifications(t, f.owner.ID)); n != 1 {
+		t.Fatalf("owner rows = %d, want 1", n)
+	}
+	if n := len(f.notifications(t, f.manager.ID)); n != 0 {
+		t.Fatalf("manager who is the member must not receive, got %d", n)
+	}
+	if f.mail.count() != 1 {
+		t.Fatalf("mails = %d, want 1", f.mail.count())
 	}
 }
 
@@ -196,8 +277,9 @@ func TestMemberEscalatesFromWarningToDanger(t *testing.T) {
 	if len(rows) != 2 || rows[0].Level != entnotification.LevelWarning || rows[1].Level != entnotification.LevelDanger {
 		t.Fatalf("owner rows = %d (%v)", len(rows), rows)
 	}
-	if f.mail.count() != 4 {
-		t.Fatalf("mails = %d, want 4", f.mail.count())
+	// 成员本人不再收信：两级各一封给企业主。
+	if f.mail.count() != 2 {
+		t.Fatalf("mails = %d, want 2", f.mail.count())
 	}
 }
 
@@ -249,33 +331,35 @@ func TestMemberRolledPeriodNotYetAdvanced(t *testing.T) {
 	}
 }
 
+// 部门预警收件人 = 企业主 + 部门负责人（如有）。
 func TestDepartmentThresholds(t *testing.T) {
 	cases := []struct {
 		name        string
 		quota, used float64
+		withManager bool
 		wantLevel   string
 		wantTitle   string
 	}{
-		{"100% → danger 给企业主", 50, 50, "danger", "部门 研发部 本期额度已用尽"},
-		{"80% → warning", 50, 40, "warning", "部门 研发部 本期额度已用 80%"},
-		{"50% 不预警", 50, 25, "", ""},
-		{"额度 0 不预警", 0, 100, "", ""},
+		{"100% → danger 企业主 + 负责人", 50, 50, true, "danger", "部门 研发部 本期额度已用尽"},
+		{"80% → warning 企业主 + 负责人", 50, 40, true, "warning", "部门 研发部 本期额度已用 80%"},
+		{"无负责人：只投企业主", 50, 40, false, "warning", "部门 研发部 本期额度已用 80%"},
+		{"50% 不预警", 50, 25, true, "", ""},
+		{"额度 0 不预警", 0, 100, true, "", ""},
 	}
 	for i, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t, "quota_dept_"+string(rune('a'+i)))
 			ctx := context.Background()
-			d, err := f.db.Department.Create().SetName("研发部").SetOwnerID(f.owner.ID).
-				SetQuotaUsd(tc.quota).SetUsedQuota(tc.used).
-				SetPeriodAnchor(f.now.Add(-time.Hour)).SetPeriodStart(f.now.Add(-time.Hour)).Save(ctx)
-			if err != nil {
-				t.Fatalf("create department: %v", err)
+			d := f.createDepartment(t, tc.quota, tc.used)
+			if tc.withManager {
+				f.setManager(t, d)
 			}
 			f.svc.Process(ctx, billing.ChargeEvent{DepartmentIDs: []int{d.ID}})
 			rows := f.notifications(t, f.owner.ID)
+			managerRows := f.notifications(t, f.manager.ID)
 			if tc.wantLevel == "" {
-				if len(rows) != 0 || f.mail.count() != 0 {
-					t.Fatalf("expected no alert, got rows=%d mail=%d", len(rows), f.mail.count())
+				if len(rows)+len(managerRows) != 0 || f.mail.count() != 0 {
+					t.Fatalf("expected no alert, got rows=%d manager=%d mail=%d", len(rows), len(managerRows), f.mail.count())
 				}
 				return
 			}
@@ -283,11 +367,29 @@ func TestDepartmentThresholds(t *testing.T) {
 				!strings.Contains(rows[0].Title, tc.wantTitle) {
 				t.Fatalf("rows = %d %+v", len(rows), rows)
 			}
-			if f.mail.count() != 1 || !strings.HasPrefix(f.mail.sent[0], f.owner.Email+"|") {
+			if !strings.HasSuffix(rows[0].DedupeKey, ":"+strconv.Itoa(f.owner.ID)) {
+				t.Fatalf("owner dedupe key must end with recipient: %q", rows[0].DedupeKey)
+			}
+			wantMails := 1
+			if tc.withManager {
+				wantMails = 2
+				wantLink := "/usage?department_id=" + strconv.Itoa(d.ID)
+				if len(managerRows) != 1 || string(managerRows[0].Level) != tc.wantLevel || managerRows[0].Link != wantLink ||
+					!strings.Contains(managerRows[0].Title, tc.wantTitle) ||
+					!strings.Contains(managerRows[0].Content, "请关注本部门用量，如需调整额度请联系企业管理员") {
+					t.Fatalf("manager rows = %d %+v", len(managerRows), managerRows)
+				}
+				if !strings.HasSuffix(managerRows[0].DedupeKey, ":"+strconv.Itoa(f.manager.ID)) {
+					t.Fatalf("manager dedupe key = %q", managerRows[0].DedupeKey)
+				}
+			} else if len(managerRows) != 0 {
+				t.Fatalf("no manager must mean no manager row, got %d", len(managerRows))
+			}
+			if f.mail.count() != wantMails || !strings.HasPrefix(f.mail.sent[0], f.owner.Email+"|") {
 				t.Fatalf("mail = %v", f.mail.sent)
 			}
 			f.svc.Process(ctx, billing.ChargeEvent{DepartmentIDs: []int{d.ID}})
-			if len(f.notifications(t, f.owner.ID)) != 1 || f.mail.count() != 1 {
+			if len(f.notifications(t, f.owner.ID)) != 1 || len(f.notifications(t, f.manager.ID)) != len(managerRows) || f.mail.count() != wantMails {
 				t.Fatalf("duplicate department alert")
 			}
 		})

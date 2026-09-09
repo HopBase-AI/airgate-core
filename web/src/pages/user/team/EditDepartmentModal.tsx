@@ -1,13 +1,19 @@
 import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
 import { Button, Description, Input, Label, ListBox, Select, Spinner, TextField as HeroTextField, useOverlayState } from '@heroui/react';
 import { CommonModal } from '../../../shared/components/CommonModal';
+import { membersApi } from '../../../shared/api/members';
+import { queryKeys } from '../../../shared/queryKeys';
+import { FETCH_ALL_PARAMS } from '../../../shared/constants';
 import type { DepartmentForm } from './types';
 
-// 部门表单：名称 + 额度 + 周期 + 备注。额度是「限额」不是预扣——各部门额度之和可以超过企业余额，
-// 页面只提示超发不拦截；0 = 不限。
+// 部门表单：名称 + 额度 + 周期 + 备注 + 负责人（仅编辑）。额度是「限额」不是预扣——各部门额度之和
+// 可以超过企业余额，页面只提示超发不拦截；0 = 不限。负责人只能从本部门成员里选：只接收本部门及
+// 其成员的额度预警，不带管理权限；新建部门还没有成员，所以创建时不提供。
 export function EditDepartmentModal({
   open,
   isEdit,
+  departmentId,
   form,
   setForm,
   onClose,
@@ -16,6 +22,8 @@ export function EditDepartmentModal({
 }: {
   open: boolean;
   isEdit: boolean;
+  /** 编辑中的部门 ID（用于拉取本部门成员作负责人候选） */
+  departmentId?: number;
   form: DepartmentForm;
   setForm: (form: DepartmentForm) => void;
   onClose: () => void;
@@ -23,6 +31,18 @@ export function EditDepartmentModal({
   loading: boolean;
 }) {
   const { t } = useTranslation();
+  const managerQueryEnabled = open && isEdit && !!departmentId;
+  const { data: membersData } = useQuery({
+    queryKey: queryKeys.members('department-managers', departmentId),
+    queryFn: () => membersApi.list({ ...FETCH_ALL_PARAMS, department_id: departmentId }),
+    enabled: managerQueryEnabled,
+  });
+  const noManagerItem = { id: '', label: t('team.dept_manager_none') };
+  const managerItems = [
+    noManagerItem,
+    ...(membersData?.list ?? []).map((member) => ({ id: String(member.id), label: member.name })),
+  ];
+  const selectedManager = managerItems.find((item) => item.id === form.manager_member_id) ?? noManagerItem;
   const modalState = useOverlayState({
     isOpen: open,
     onOpenChange: (nextOpen) => {
@@ -96,6 +116,29 @@ export function EditDepartmentModal({
           </Select.Popover>
         </Select>
         <p className="-mt-2 text-xs leading-5 text-text-tertiary">{selectedPeriod.hint}</p>
+        {isEdit ? (
+          <Select
+            fullWidth
+            selectedKey={form.manager_member_id}
+            onSelectionChange={(key) => setForm({ ...form, manager_member_id: key == null ? '' : String(key) })}
+          >
+            <Label>{t('team.dept_manager')}</Label>
+            <Select.Trigger>
+              <Select.Value>{selectedManager.label}</Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover className="w-[var(--trigger-width)]">
+              <ListBox items={managerItems}>
+                {(item) => (
+                  <ListBox.Item id={item.id} textValue={item.label}>
+                    {item.label}
+                  </ListBox.Item>
+                )}
+              </ListBox>
+            </Select.Popover>
+            <Description>{t('team.dept_manager_hint')}</Description>
+          </Select>
+        ) : null}
         <HeroTextField fullWidth>
           <Label>{t('team.note')}</Label>
           <Input

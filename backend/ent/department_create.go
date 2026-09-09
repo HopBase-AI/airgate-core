@@ -224,6 +224,25 @@ func (dc *DepartmentCreate) AddAPIKeys(a ...*APIKey) *DepartmentCreate {
 	return dc.AddAPIKeyIDs(ids...)
 }
 
+// SetManagerID sets the "manager" edge to the Member entity by ID.
+func (dc *DepartmentCreate) SetManagerID(id int) *DepartmentCreate {
+	dc.mutation.SetManagerID(id)
+	return dc
+}
+
+// SetNillableManagerID sets the "manager" edge to the Member entity by ID if the given value is not nil.
+func (dc *DepartmentCreate) SetNillableManagerID(id *int) *DepartmentCreate {
+	if id != nil {
+		dc = dc.SetManagerID(*id)
+	}
+	return dc
+}
+
+// SetManager sets the "manager" edge to the Member entity.
+func (dc *DepartmentCreate) SetManager(m *Member) *DepartmentCreate {
+	return dc.SetManagerID(m.ID)
+}
+
 // Mutation returns the DepartmentMutation object of the builder.
 func (dc *DepartmentCreate) Mutation() *DepartmentMutation {
 	return dc.mutation
@@ -487,6 +506,23 @@ func (dc *DepartmentCreate) createSpec() (*Department, *sqlgraph.CreateSpec) {
 		for _, k := range nodes {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := dc.mutation.ManagerIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   department.ManagerTable,
+			Columns: []string{department.ManagerColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.department_manager = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

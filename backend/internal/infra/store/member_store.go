@@ -111,17 +111,35 @@ func (s *MemberStore) Create(ctx context.Context, mutation appmember.Mutation) (
 	return s.loadByID(ctx, item.ID)
 }
 
-// UpdateOwned 更新主账号名下的成员。
+// UpdateOwned 更新主账号名下的成员。调岗（部门变化）时，若该成员是原部门负责人则同事务清空
+// ——负责人必须是本部门成员这一不变量由此保住。
 func (s *MemberStore) UpdateOwned(ctx context.Context, ownerID, id int, mutation appmember.Mutation) (appmember.Member, error) {
 	if err := s.ensureOwned(ctx, ownerID, id); err != nil {
 		return appmember.Member{}, err
 	}
-	builder := s.db.Member.UpdateOneID(id)
+	tx, err := s.db.Tx(ctx)
+	if err != nil {
+		return appmember.Member{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if mutation.HasDepartmentID {
+		clear := tx.Department.Update().Where(entdepartment.HasManagerWith(entmember.IDEQ(id)))
+		if mutation.DepartmentID != nil {
+			clear = clear.Where(entdepartment.IDNEQ(*mutation.DepartmentID))
+		}
+		if _, err := clear.ClearManager().Save(ctx); err != nil {
+			return appmember.Member{}, err
+		}
+	}
+	builder := tx.Member.UpdateOneID(id)
 	applyMemberMutation(builder.Mutation(), mutation)
 	if err := builder.Exec(ctx); err != nil {
 		if ent.IsNotFound(err) {
 			return appmember.Member{}, appmember.ErrMemberNotFound
 		}
+		return appmember.Member{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return appmember.Member{}, err
 	}
 	return s.loadByID(ctx, id)
@@ -161,6 +179,10 @@ func (s *MemberStore) DeleteOwned(ctx context.Context, ownerID, id int) error {
 		if _, err := tx.APIKey.Delete().Where(entapikey.IDIn(keyIDs...)).Exec(ctx); err != nil {
 			return err
 		}
+	}
+	// 部门负责人边（外键在 departments，DB 层 ON DELETE SET NULL 也会清；显式清一次不依赖方言 FK 开关）。
+	if _, err := tx.Department.Update().Where(entdepartment.HasManagerWith(entmember.IDEQ(id))).ClearManager().Save(ctx); err != nil {
+		return err
 	}
 	if err := tx.Member.DeleteOneID(id).Exec(ctx); err != nil {
 		return err

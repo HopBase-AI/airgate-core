@@ -56,6 +56,10 @@ func (Department) Edges() []ent.Edge {
 		// 部门下的成员与直挂部门的密钥（删除部门时置空，回落「未分配」）。
 		edge.To("members", Member.Type),
 		edge.To("api_keys", APIKey.Type),
+		// 部门负责人（可空）：必须是本部门成员，只接收本部门及其成员的额度预警，不带任何管理权限。
+		// O2O：外键 department_manager 落在 departments 表；成员删除时 ON DELETE SET NULL 自动清空，
+		// 成员调岗 / 部门删除由 store 显式清空。
+		edge.To("manager", Member.Type).Unique(),
 	}
 }
 

@@ -21,6 +21,9 @@ type DepartmentResp struct {
 	MemberQuotaTotal float64 `json:"member_quota_total"`
 	TodayCost        float64 `json:"today_cost"`
 	ThirtyDayCost    float64 `json:"thirty_day_cost"`
+	// ManagerMemberID 部门负责人（成员 ID），0 = 未设；只接收本部门额度预警，无管理权限。
+	ManagerMemberID int64  `json:"manager_member_id"`
+	ManagerName     string `json:"manager_name"`
 	TimeMixin
 }
 
@@ -39,12 +42,14 @@ type CreateDepartmentReq struct {
 }
 
 // UpdateDepartmentReq 更新部门请求；未传字段不改动。
+// ManagerMemberID 不传 = 不动，0 = 清空负责人，>0 须是本部门成员（创建请求不收负责人：新部门还没有成员）。
 type UpdateDepartmentReq struct {
-	Name        *string  `json:"name" binding:"omitempty,max=64"`
-	Note        *string  `json:"note" binding:"omitempty,max=255"`
-	Sort        *int     `json:"sort"`
-	QuotaUSD    *float64 `json:"quota_usd" binding:"omitempty,gte=0"`
-	QuotaPeriod *string  `json:"quota_period" binding:"omitempty,oneof=none monthly"`
+	Name            *string  `json:"name" binding:"omitempty,max=64"`
+	Note            *string  `json:"note" binding:"omitempty,max=255"`
+	Sort            *int     `json:"sort"`
+	QuotaUSD        *float64 `json:"quota_usd" binding:"omitempty,gte=0"`
+	QuotaPeriod     *string  `json:"quota_period" binding:"omitempty,oneof=none monthly"`
+	ManagerMemberID *int64   `json:"manager_member_id" binding:"omitempty,gte=0"`
 }
 
 // TeamOverviewResp 企业层总览。「已分配」是限额之和而非预扣，允许超过企业余额（页面提示超发）。

@@ -103,6 +103,7 @@ export function DepartmentsTab({
       note: dept.note,
       quota_usd: dept.quota_usd > 0 ? String(dept.quota_usd) : '',
       quota_period: dept.quota_period,
+      manager_member_id: dept.manager_member_id > 0 ? String(dept.manager_member_id) : '',
     });
     setEditOpen(true);
   }
@@ -113,8 +114,13 @@ export function DepartmentsTab({
     const quota = form.quota_usd.trim() ? Number(form.quota_usd) : 0;
     if (!Number.isFinite(quota) || quota < 0) return;
     const payload = { name, note: form.note.trim(), quota_usd: quota, quota_period: form.quota_period };
-    if (editing) updateMutation.mutate({ id: editing.id, data: payload });
-    else createMutation.mutate(payload);
+    // 负责人只在编辑时可设：空 = 清空（传 0）；创建时新部门还没有成员，不传。
+    if (editing) {
+      const managerMemberId = form.manager_member_id ? Number(form.manager_member_id) : 0;
+      updateMutation.mutate({ id: editing.id, data: { ...payload, manager_member_id: managerMemberId } });
+    } else {
+      createMutation.mutate(payload);
+    }
   }
 
   const rows = data?.list ?? [];
@@ -163,6 +169,9 @@ export function DepartmentsTab({
                   <CommonTable.Cell>
                     <div className="min-w-0">
                       <div className="ag-cell-2line font-medium text-text">{row.name}</div>
+                      {row.manager_member_id > 0 && row.manager_name ? (
+                        <div className="truncate text-xs text-text-secondary">{t('team.dept_manager_label', { name: row.manager_name })}</div>
+                      ) : null}
                       {row.note ? <div className="truncate text-xs text-text-tertiary" title={row.note}>{row.note}</div> : null}
                     </div>
                   </CommonTable.Cell>
@@ -257,6 +266,7 @@ export function DepartmentsTab({
       <EditDepartmentModal
         open={modalOpen}
         isEdit={!!editing}
+        departmentId={editing?.id}
         form={form}
         setForm={setForm}
         onClose={closeModal}

@@ -264,6 +264,7 @@ var (
 		{Name: "used_quota_actual", Type: field.TypeFloat64, Default: 0},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "department_manager", Type: field.TypeInt, Nullable: true},
 		{Name: "user_departments", Type: field.TypeInt},
 	}
 	// DepartmentsTable holds the schema information for the "departments" table.
@@ -273,8 +274,14 @@ var (
 		PrimaryKey: []*schema.Column{DepartmentsColumns[0]},
 		ForeignKeys: []*schema.ForeignKey{
 			{
-				Symbol:     "departments_users_departments",
+				Symbol:     "departments_members_manager",
 				Columns:    []*schema.Column{DepartmentsColumns[13]},
+				RefColumns: []*schema.Column{MembersColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "departments_users_departments",
+				Columns:    []*schema.Column{DepartmentsColumns[14]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -283,12 +290,12 @@ var (
 			{
 				Name:    "department_user_departments",
 				Unique:  false,
-				Columns: []*schema.Column{DepartmentsColumns[13]},
+				Columns: []*schema.Column{DepartmentsColumns[14]},
 			},
 			{
 				Name:    "department_name_user_departments",
 				Unique:  true,
-				Columns: []*schema.Column{DepartmentsColumns[1], DepartmentsColumns[13]},
+				Columns: []*schema.Column{DepartmentsColumns[1], DepartmentsColumns[14]},
 			},
 		},
 	}
@@ -978,7 +985,8 @@ func init() {
 	AccountsTable.ForeignKeys[0].RefTable = ProxiesTable
 	AccountEventsTable.ForeignKeys[0].RefTable = AccountsTable
 	BalanceLogsTable.ForeignKeys[0].RefTable = UsersTable
-	DepartmentsTable.ForeignKeys[0].RefTable = UsersTable
+	DepartmentsTable.ForeignKeys[0].RefTable = MembersTable
+	DepartmentsTable.ForeignKeys[1].RefTable = UsersTable
 	MembersTable.ForeignKeys[0].RefTable = DepartmentsTable
 	MembersTable.ForeignKeys[1].RefTable = UsersTable
 	UsageLogsTable.ForeignKeys[0].RefTable = APIKeysTable

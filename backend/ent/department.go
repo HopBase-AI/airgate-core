@@ -10,6 +10,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/DouDOU-start/airgate-core/ent/department"
+	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 )
 
@@ -44,9 +45,10 @@ type Department struct {
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the DepartmentQuery when eager-loading is set.
-	Edges            DepartmentEdges `json:"edges"`
-	user_departments *int
-	selectValues     sql.SelectValues
+	Edges              DepartmentEdges `json:"edges"`
+	department_manager *int
+	user_departments   *int
+	selectValues       sql.SelectValues
 }
 
 // DepartmentEdges holds the relations/edges for other nodes in the graph.
@@ -57,9 +59,11 @@ type DepartmentEdges struct {
 	Members []*Member `json:"members,omitempty"`
 	// APIKeys holds the value of the api_keys edge.
 	APIKeys []*APIKey `json:"api_keys,omitempty"`
+	// Manager holds the value of the manager edge.
+	Manager *Member `json:"manager,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [4]bool
 }
 
 // OwnerOrErr returns the Owner value or an error if the edge
@@ -91,6 +95,17 @@ func (e DepartmentEdges) APIKeysOrErr() ([]*APIKey, error) {
 	return nil, &NotLoadedError{edge: "api_keys"}
 }
 
+// ManagerOrErr returns the Manager value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e DepartmentEdges) ManagerOrErr() (*Member, error) {
+	if e.Manager != nil {
+		return e.Manager, nil
+	} else if e.loadedTypes[3] {
+		return nil, &NotFoundError{label: member.Label}
+	}
+	return nil, &NotLoadedError{edge: "manager"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*Department) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
@@ -104,7 +119,9 @@ func (*Department) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullString)
 		case department.FieldPeriodAnchor, department.FieldPeriodStart, department.FieldCreatedAt, department.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
-		case department.ForeignKeys[0]: // user_departments
+		case department.ForeignKeys[0]: // department_manager
+			values[i] = new(sql.NullInt64)
+		case department.ForeignKeys[1]: // user_departments
 			values[i] = new(sql.NullInt64)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -201,6 +218,13 @@ func (d *Department) assignValues(columns []string, values []any) error {
 			}
 		case department.ForeignKeys[0]:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for edge-field department_manager", value)
+			} else if value.Valid {
+				d.department_manager = new(int)
+				*d.department_manager = int(value.Int64)
+			}
+		case department.ForeignKeys[1]:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for edge-field user_departments", value)
 			} else if value.Valid {
 				d.user_departments = new(int)
@@ -232,6 +256,11 @@ func (d *Department) QueryMembers() *MemberQuery {
 // QueryAPIKeys queries the "api_keys" edge of the Department entity.
 func (d *Department) QueryAPIKeys() *APIKeyQuery {
 	return NewDepartmentClient(d.config).QueryAPIKeys(d)
+}
+
+// QueryManager queries the "manager" edge of the Department entity.
+func (d *Department) QueryManager() *MemberQuery {
+	return NewDepartmentClient(d.config).QueryManager(d)
 }
 
 // Update returns a builder for updating this Department.

@@ -45,6 +45,8 @@ const (
 	EdgeMembers = "members"
 	// EdgeAPIKeys holds the string denoting the api_keys edge name in mutations.
 	EdgeAPIKeys = "api_keys"
+	// EdgeManager holds the string denoting the manager edge name in mutations.
+	EdgeManager = "manager"
 	// Table holds the table name of the department in the database.
 	Table = "departments"
 	// OwnerTable is the table that holds the owner relation/edge.
@@ -68,6 +70,13 @@ const (
 	APIKeysInverseTable = "api_keys"
 	// APIKeysColumn is the table column denoting the api_keys relation/edge.
 	APIKeysColumn = "department_api_keys"
+	// ManagerTable is the table that holds the manager relation/edge.
+	ManagerTable = "departments"
+	// ManagerInverseTable is the table name for the Member entity.
+	// It exists in this package in order to avoid circular dependency with the "member" package.
+	ManagerInverseTable = "members"
+	// ManagerColumn is the table column denoting the manager relation/edge.
+	ManagerColumn = "department_manager"
 )
 
 // Columns holds all SQL columns for department fields.
@@ -90,6 +99,7 @@ var Columns = []string{
 // ForeignKeys holds the SQL foreign-keys that are owned by the "departments"
 // table and are not defined as standalone fields in the schema.
 var ForeignKeys = []string{
+	"department_manager",
 	"user_departments",
 }
 
@@ -267,6 +277,13 @@ func ByAPIKeys(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newAPIKeysStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByManagerField orders the results by manager field.
+func ByManagerField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newManagerStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newOwnerStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -286,5 +303,12 @@ func newAPIKeysStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(APIKeysInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, APIKeysTable, APIKeysColumn),
+	)
+}
+func newManagerStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ManagerInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, false, ManagerTable, ManagerColumn),
 	)
 }

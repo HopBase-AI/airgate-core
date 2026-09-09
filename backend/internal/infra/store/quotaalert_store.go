@@ -22,7 +22,7 @@ func NewQuotaAlertStore(db *ent.Client) *QuotaAlertStore {
 	return &QuotaAlertStore{db: db}
 }
 
-// MemberSnapshots 按 id 读成员（含企业主与成员登录账号），只返回有额度（quota_usd > 0）的成员。
+// MemberSnapshots 按 id 读成员（含企业主、成员登录账号、所属部门负责人的登录账号），只返回有额度（quota_usd > 0）的成员。
 func (s *QuotaAlertStore) MemberSnapshots(ctx context.Context, ids []int, now time.Time) ([]appquotaalert.MemberSnapshot, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -31,6 +31,9 @@ func (s *QuotaAlertStore) MemberSnapshots(ctx context.Context, ids []int, now ti
 		Where(entmember.IDIn(ids...), entmember.QuotaUsdGT(0)).
 		WithOwner().
 		WithAccount().
+		WithDepartment(func(q *ent.DepartmentQuery) {
+			q.WithManager(func(mq *ent.MemberQuery) { mq.WithAccount() })
+		}).
 		All(ctx)
 	if err != nil {
 		return nil, err
@@ -50,12 +53,16 @@ func (s *QuotaAlertStore) MemberSnapshots(ctx context.Context, ids []int, now ti
 		if account := m.Edges.Account; account != nil {
 			snap.AccountUserID, snap.AccountEmail = account.ID, account.Email
 		}
+		if dept := m.Edges.Department; dept != nil {
+			snap.DepartmentID = dept.ID
+			snap.ManagerUserID, snap.ManagerEmail = managerAccount(dept)
+		}
 		out = append(out, snap)
 	}
 	return out, nil
 }
 
-// DepartmentSnapshots 按 id 读部门（含企业主），只返回有额度的部门。
+// DepartmentSnapshots 按 id 读部门（含企业主与负责人登录账号），只返回有额度的部门。
 func (s *QuotaAlertStore) DepartmentSnapshots(ctx context.Context, ids []int, now time.Time) ([]appquotaalert.DepartmentSnapshot, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -63,6 +70,7 @@ func (s *QuotaAlertStore) DepartmentSnapshots(ctx context.Context, ids []int, no
 	rows, err := s.db.Department.Query().
 		Where(entdepartment.IDIn(ids...), entdepartment.QuotaUsdGT(0)).
 		WithOwner().
+		WithManager(func(mq *ent.MemberQuery) { mq.WithAccount() }).
 		All(ctx)
 	if err != nil {
 		return nil, err
@@ -79,9 +87,19 @@ func (s *QuotaAlertStore) DepartmentSnapshots(ctx context.Context, ids []int, no
 		if owner := d.Edges.Owner; owner != nil {
 			snap.OwnerID, snap.OwnerEmail = owner.ID, owner.Email
 		}
+		snap.ManagerUserID, snap.ManagerEmail = managerAccount(d)
 		out = append(out, snap)
 	}
 	return out, nil
+}
+
+// managerAccount 部门负责人的登录账号（需已 WithManager(WithAccount)）；无负责人或负责人无账号返回 0 / 空。
+func managerAccount(d *ent.Department) (int, string) {
+	if d == nil || d.Edges.Manager == nil || d.Edges.Manager.Edges.Account == nil {
+		return 0, ""
+	}
+	account := d.Edges.Manager.Edges.Account
+	return account.ID, account.Email
 }
 
 // effectivePeriod 有效本期 [start, end)：monthly 已跨期但尚未推进 period_start 时取新期起点

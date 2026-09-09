@@ -13,6 +13,8 @@ var (
 	ErrInvalidQuota = errors.New("部门额度不能为负数")
 	// ErrInvalidQuotaPeriod 额度周期取值非法。
 	ErrInvalidQuotaPeriod = errors.New("额度周期只能是 none 或 monthly")
+	// ErrManagerNotInDepartment 负责人必须是当前在本部门的成员。
+	ErrManagerNotInDepartment = errors.New("负责人必须是本部门成员")
 	// ErrInvalidBillingDay 账期日只能是 1~28（避免月末夹紧带来的歧义）。
 	ErrInvalidBillingDay = errors.New("账期日只能是 1 到 28 之间的整数")
 )

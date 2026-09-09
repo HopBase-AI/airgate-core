@@ -1,5 +1,5 @@
 // Package quotaalert 额度预警引擎：扣费提交后复核本批涉及的成员 / 部门，本期用量达到阈值时
-// 给企业主（及成员自己的登录账号）投递站内通知与邮件。
+// 给企业主与部门负责人的登录账号投递站内通知与邮件（成员自己不再收到自己的额度预警）。
 //
 // 触发点是 billing.Recorder 的扣费提交回调（ChargeEvent），而不是定时扫描：只复核刚发生
 // 扣费的对象，成本与请求量线性。去重靠站内通知的 dedupe_key（含本期起点），换期 / 手动重置
@@ -30,8 +30,13 @@ type MemberSnapshot struct {
 	OwnerID     int
 	OwnerEmail  string
 	// AccountUserID / AccountEmail 成员自己的登录账号；0 / 空表示老模型成员（无账号）。
+	// 成员自己不收预警，这里只用来识别「负责人就是本人」的情形。
 	AccountUserID int
 	AccountEmail  string
+	// DepartmentID 所属部门（0 = 未分配）；ManagerUserID / ManagerEmail 该部门负责人的登录账号（0 / 空 = 无负责人或负责人无账号）。
+	DepartmentID  int
+	ManagerUserID int
+	ManagerEmail  string
 }
 
 // DepartmentSnapshot 部门额度快照。
@@ -44,6 +49,9 @@ type DepartmentSnapshot struct {
 	PeriodEnd   *time.Time
 	OwnerID     int
 	OwnerEmail  string
+	// ManagerUserID / ManagerEmail 部门负责人的登录账号（0 / 空 = 无负责人或负责人无账号）。
+	ManagerUserID int
+	ManagerEmail  string
 }
 
 // Repository 读取成员 / 部门额度快照。PeriodStart 须是**有效**本期起点：monthly 已跨期但鉴权

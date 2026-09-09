@@ -89,36 +89,43 @@ func levelFor(used, quota float64) string {
 	}
 }
 
+// 收件人规则：企业主 + 部门负责人的登录账号。成员本人不再收到自己的额度预警；
+// 负责人是被预警成员本人时也不投（负责人只盯部门，本人的额度由企业主处理）。
+const (
+	ownerHint   = "请在团队管理中调整额度。"
+	managerHint = "请关注本部门用量，如需调整额度请联系企业管理员。"
+)
+
 func (s *Service) checkMember(ctx context.Context, m MemberSnapshot) {
 	level := levelFor(m.PeriodUsed, m.QuotaUSD)
 	if level == "" {
 		return
 	}
-	subject := "成员 " + m.Name
+	title := alertTitle("成员 "+m.Name, m.PeriodUsed, m.QuotaUSD, level)
 	// 企业主：跳团队管理调额度。
 	if m.OwnerID > 0 {
 		s.deliver(ctx, alert{
 			recipient:  m.OwnerID,
 			email:      m.OwnerEmail,
-			dedupeKey:  fmt.Sprintf("member:%d:%d:%s:%d", m.ID, m.PeriodStart.Unix(), level, m.OwnerID),
+			dedupeKey:  memberDedupeKey(m, level, m.OwnerID),
 			level:      level,
-			title:      alertTitle(subject, m.PeriodUsed, m.QuotaUSD, level),
-			content:    alertContent(m.PeriodUsed, m.QuotaUSD, m.PeriodEnd, "请在团队管理中调整额度。"),
+			title:      title,
+			content:    alertContent(m.PeriodUsed, m.QuotaUSD, m.PeriodEnd, ownerHint),
 			link:       "/team",
 			targetKind: "member",
 			targetID:   m.ID,
 		})
 	}
-	// 成员自己的登录账号：看自己的用量、联系管理员。
-	if m.AccountUserID > 0 {
+	// 所属部门负责人：跳用量页按部门筛选；负责人就是本人或企业主时不重复投。
+	if m.ManagerUserID > 0 && m.ManagerUserID != m.AccountUserID && m.ManagerUserID != m.OwnerID {
 		s.deliver(ctx, alert{
-			recipient:  m.AccountUserID,
-			email:      m.AccountEmail,
-			dedupeKey:  fmt.Sprintf("member:%d:%d:%s:%d", m.ID, m.PeriodStart.Unix(), level, m.AccountUserID),
+			recipient:  m.ManagerUserID,
+			email:      m.ManagerEmail,
+			dedupeKey:  memberDedupeKey(m, level, m.ManagerUserID),
 			level:      level,
-			title:      alertTitle("您的", m.PeriodUsed, m.QuotaUSD, level),
-			content:    alertContent(m.PeriodUsed, m.QuotaUSD, m.PeriodEnd, "请联系企业管理员。"),
-			link:       "/usage",
+			title:      title,
+			content:    alertContent(m.PeriodUsed, m.QuotaUSD, m.PeriodEnd, managerHint),
+			link:       departmentUsageLink(m.DepartmentID),
 			targetKind: "member",
 			targetID:   m.ID,
 		})
@@ -127,20 +134,53 @@ func (s *Service) checkMember(ctx context.Context, m MemberSnapshot) {
 
 func (s *Service) checkDepartment(ctx context.Context, d DepartmentSnapshot) {
 	level := levelFor(d.PeriodUsed, d.QuotaUSD)
-	if level == "" || d.OwnerID <= 0 {
+	if level == "" {
 		return
 	}
-	s.deliver(ctx, alert{
-		recipient:  d.OwnerID,
-		email:      d.OwnerEmail,
-		dedupeKey:  fmt.Sprintf("department:%d:%d:%s", d.ID, d.PeriodStart.Unix(), level),
-		level:      level,
-		title:      alertTitle("部门 "+d.Name, d.PeriodUsed, d.QuotaUSD, level),
-		content:    alertContent(d.PeriodUsed, d.QuotaUSD, d.PeriodEnd, "请在团队管理中调整额度。"),
-		link:       "/team",
-		targetKind: "department",
-		targetID:   d.ID,
-	})
+	title := alertTitle("部门 "+d.Name, d.PeriodUsed, d.QuotaUSD, level)
+	if d.OwnerID > 0 {
+		s.deliver(ctx, alert{
+			recipient:  d.OwnerID,
+			email:      d.OwnerEmail,
+			dedupeKey:  departmentDedupeKey(d, level, d.OwnerID),
+			level:      level,
+			title:      title,
+			content:    alertContent(d.PeriodUsed, d.QuotaUSD, d.PeriodEnd, ownerHint),
+			link:       "/team",
+			targetKind: "department",
+			targetID:   d.ID,
+		})
+	}
+	if d.ManagerUserID > 0 && d.ManagerUserID != d.OwnerID {
+		s.deliver(ctx, alert{
+			recipient:  d.ManagerUserID,
+			email:      d.ManagerEmail,
+			dedupeKey:  departmentDedupeKey(d, level, d.ManagerUserID),
+			level:      level,
+			title:      title,
+			content:    alertContent(d.PeriodUsed, d.QuotaUSD, d.PeriodEnd, managerHint),
+			link:       departmentUsageLink(d.ID),
+			targetKind: "department",
+			targetID:   d.ID,
+		})
+	}
+}
+
+// 去重钥匙：对象:本期起点:级别:收件人——同一事件对每个收件人各去重一次，换期后自然重新预警。
+func memberDedupeKey(m MemberSnapshot, level string, recipient int) string {
+	return fmt.Sprintf("member:%d:%d:%s:%d", m.ID, m.PeriodStart.Unix(), level, recipient)
+}
+
+func departmentDedupeKey(d DepartmentSnapshot, level string, recipient int) string {
+	return fmt.Sprintf("department:%d:%d:%s:%d", d.ID, d.PeriodStart.Unix(), level, recipient)
+}
+
+// departmentUsageLink 负责人跳用量页按部门筛选；成员未分配部门时退回用量页。
+func departmentUsageLink(departmentID int) string {
+	if departmentID <= 0 {
+		return "/usage"
+	}
+	return fmt.Sprintf("/usage?department_id=%d", departmentID)
 }
 
 // alert 一条待投递的预警（站内 + 邮件）。
@@ -182,7 +222,7 @@ func (s *Service) deliver(ctx context.Context, a alert) {
 	}
 }
 
-// alertTitle 「成员 张三 本期额度已用 82%」/「部门 研发部 本期额度已用尽」/「您的本期额度已用 82%」。
+// alertTitle 「成员 张三 本期额度已用 82%」/「部门 研发部 本期额度已用尽」。
 func alertTitle(subject string, used, quota float64, level string) string {
 	prefix := subject
 	if !strings.HasSuffix(prefix, "的") {

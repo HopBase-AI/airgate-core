@@ -6889,6 +6889,8 @@ type DepartmentMutation struct {
 	api_keys             map[int]struct{}
 	removedapi_keys      map[int]struct{}
 	clearedapi_keys      bool
+	manager              *int
+	clearedmanager       bool
 	done                 bool
 	oldValue             func(context.Context) (*Department, error)
 	predicates           []predicate.Department
@@ -7671,6 +7673,45 @@ func (m *DepartmentMutation) ResetAPIKeys() {
 	m.removedapi_keys = nil
 }
 
+// SetManagerID sets the "manager" edge to the Member entity by id.
+func (m *DepartmentMutation) SetManagerID(id int) {
+	m.manager = &id
+}
+
+// ClearManager clears the "manager" edge to the Member entity.
+func (m *DepartmentMutation) ClearManager() {
+	m.clearedmanager = true
+}
+
+// ManagerCleared reports if the "manager" edge to the Member entity was cleared.
+func (m *DepartmentMutation) ManagerCleared() bool {
+	return m.clearedmanager
+}
+
+// ManagerID returns the "manager" edge ID in the mutation.
+func (m *DepartmentMutation) ManagerID() (id int, exists bool) {
+	if m.manager != nil {
+		return *m.manager, true
+	}
+	return
+}
+
+// ManagerIDs returns the "manager" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// ManagerID instead. It exists only for internal usage by the builders.
+func (m *DepartmentMutation) ManagerIDs() (ids []int) {
+	if id := m.manager; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetManager resets all changes to the "manager" edge.
+func (m *DepartmentMutation) ResetManager() {
+	m.manager = nil
+	m.clearedmanager = false
+}
+
 // Where appends a list predicates to the DepartmentMutation builder.
 func (m *DepartmentMutation) Where(ps ...predicate.Department) {
 	m.predicates = append(m.predicates, ps...)
@@ -8054,7 +8095,7 @@ func (m *DepartmentMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *DepartmentMutation) AddedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.owner != nil {
 		edges = append(edges, department.EdgeOwner)
 	}
@@ -8063,6 +8104,9 @@ func (m *DepartmentMutation) AddedEdges() []string {
 	}
 	if m.api_keys != nil {
 		edges = append(edges, department.EdgeAPIKeys)
+	}
+	if m.manager != nil {
+		edges = append(edges, department.EdgeManager)
 	}
 	return edges
 }
@@ -8087,13 +8131,17 @@ func (m *DepartmentMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case department.EdgeManager:
+		if id := m.manager; id != nil {
+			return []ent.Value{*id}
+		}
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *DepartmentMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.removedmembers != nil {
 		edges = append(edges, department.EdgeMembers)
 	}
@@ -8125,7 +8173,7 @@ func (m *DepartmentMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *DepartmentMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.clearedowner {
 		edges = append(edges, department.EdgeOwner)
 	}
@@ -8134,6 +8182,9 @@ func (m *DepartmentMutation) ClearedEdges() []string {
 	}
 	if m.clearedapi_keys {
 		edges = append(edges, department.EdgeAPIKeys)
+	}
+	if m.clearedmanager {
+		edges = append(edges, department.EdgeManager)
 	}
 	return edges
 }
@@ -8148,6 +8199,8 @@ func (m *DepartmentMutation) EdgeCleared(name string) bool {
 		return m.clearedmembers
 	case department.EdgeAPIKeys:
 		return m.clearedapi_keys
+	case department.EdgeManager:
+		return m.clearedmanager
 	}
 	return false
 }
@@ -8158,6 +8211,9 @@ func (m *DepartmentMutation) ClearEdge(name string) error {
 	switch name {
 	case department.EdgeOwner:
 		m.ClearOwner()
+		return nil
+	case department.EdgeManager:
+		m.ClearManager()
 		return nil
 	}
 	return fmt.Errorf("unknown Department unique edge %s", name)
@@ -8175,6 +8231,9 @@ func (m *DepartmentMutation) ResetEdge(name string) error {
 		return nil
 	case department.EdgeAPIKeys:
 		m.ResetAPIKeys()
+		return nil
+	case department.EdgeManager:
+		m.ResetManager()
 		return nil
 	}
 	return fmt.Errorf("unknown Department edge %s", name)

@@ -30,7 +30,8 @@ func NewDepartmentStore(db *ent.Client) *DepartmentStore {
 func (s *DepartmentStore) ListByOwner(ctx context.Context, ownerID int, filter appdepartment.ListFilter) ([]appdepartment.Department, int64, error) {
 	query := s.db.Department.Query().
 		Where(entdepartment.HasOwnerWith(entuser.IDEQ(ownerID))).
-		WithOwner()
+		WithOwner().
+		WithManager()
 	if keyword := strings.TrimSpace(filter.Keyword); keyword != "" {
 		query = query.Where(entdepartment.Or(
 			entdepartment.NameContainsFold(keyword),
@@ -57,6 +58,7 @@ func (s *DepartmentStore) AllByOwner(ctx context.Context, ownerID int) ([]appdep
 	items, err := s.db.Department.Query().
 		Where(entdepartment.HasOwnerWith(entuser.IDEQ(ownerID))).
 		WithOwner().
+		WithManager().
 		Order(ent.Asc(entdepartment.FieldSort), ent.Asc(entdepartment.FieldCreatedAt), ent.Asc(entdepartment.FieldID)).
 		All(ctx)
 	if err != nil {
@@ -70,6 +72,7 @@ func (s *DepartmentStore) FindOwned(ctx context.Context, ownerID, id int) (appde
 	item, err := s.db.Department.Query().
 		Where(entdepartment.IDEQ(id), entdepartment.HasOwnerWith(entuser.IDEQ(ownerID))).
 		WithOwner().
+		WithManager().
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -176,6 +179,17 @@ func (s *DepartmentStore) NameTaken(ctx context.Context, ownerID int, name strin
 		query = query.Where(entdepartment.IDNEQ(excludeID))
 	}
 	return query.Exist(ctx)
+}
+
+// MemberInDepartment 成员属于该企业主且当前在该部门。
+func (s *DepartmentStore) MemberInDepartment(ctx context.Context, ownerID, departmentID, memberID int) (bool, error) {
+	return s.db.Member.Query().
+		Where(
+			entmember.IDEQ(memberID),
+			entmember.HasOwnerWith(entuser.IDEQ(ownerID)),
+			entmember.HasDepartmentWith(entdepartment.IDEQ(departmentID)),
+		).
+		Exist(ctx)
 }
 
 // Counts 每个部门的成员数、有效密钥数（直挂 + 成员名下未直挂别的部门）、成员额度之和。
@@ -422,7 +436,7 @@ func (s *DepartmentStore) ensureOwned(ctx context.Context, ownerID, id int) erro
 }
 
 func (s *DepartmentStore) loadByID(ctx context.Context, id int) (appdepartment.Department, error) {
-	item, err := s.db.Department.Query().Where(entdepartment.IDEQ(id)).WithOwner().Only(ctx)
+	item, err := s.db.Department.Query().Where(entdepartment.IDEQ(id)).WithOwner().WithManager().Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			return appdepartment.Department{}, appdepartment.ErrDepartmentNotFound
@@ -457,6 +471,13 @@ func applyDepartmentMutation(m *ent.DepartmentMutation, mutation appdepartment.M
 	if mutation.PeriodUsedBase != nil {
 		m.SetPeriodUsedBase(*mutation.PeriodUsedBase)
 	}
+	if mutation.HasManagerMemberID {
+		if mutation.ManagerMemberID != nil {
+			m.SetManagerID(*mutation.ManagerMemberID)
+		} else {
+			m.ClearManager()
+		}
+	}
 }
 
 func mapDepartments(items []*ent.Department) []appdepartment.Department {
@@ -485,6 +506,10 @@ func mapDepartment(item *ent.Department) appdepartment.Department {
 	}
 	if item.Edges.Owner != nil {
 		result.OwnerID = item.Edges.Owner.ID
+	}
+	if item.Edges.Manager != nil {
+		result.ManagerMemberID = item.Edges.Manager.ID
+		result.ManagerName = item.Edges.Manager.Name
 	}
 	return result
 }

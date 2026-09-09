@@ -31,6 +31,8 @@ export interface DepartmentForm {
   /** 额度（USD）；空字符串或 "0" = 不限 */
   quota_usd: string;
   quota_period: 'none' | 'monthly';
+  /** 部门负责人成员 ID；空字符串 = 不设（仅编辑时可选，新建部门还没有成员） */
+  manager_member_id: string;
 }
 
 export const emptyDepartmentForm: DepartmentForm = {
@@ -38,6 +40,7 @@ export const emptyDepartmentForm: DepartmentForm = {
   note: '',
   quota_usd: '',
   quota_period: 'monthly',
+  manager_member_id: '',
 };
 
 export interface DepartmentOption {

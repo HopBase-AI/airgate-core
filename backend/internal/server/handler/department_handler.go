@@ -35,6 +35,7 @@ func (h *DepartmentHandler) handleError(logMessage, publicMessage string, err er
 	case errors.Is(err, appdepartment.ErrNameRequired),
 		errors.Is(err, appdepartment.ErrInvalidQuota),
 		errors.Is(err, appdepartment.ErrInvalidQuotaPeriod),
+		errors.Is(err, appdepartment.ErrManagerNotInDepartment),
 		errors.Is(err, appdepartment.ErrInvalidBillingDay):
 		return 400, err.Error()
 	default:
@@ -76,6 +77,8 @@ func toDepartmentResp(item appdepartment.Department) dto.DepartmentResp {
 		MemberQuotaTotal: item.MemberQuotaTotal,
 		TodayCost:        item.TodayCost,
 		ThirtyDayCost:    item.ThirtyDayCost,
+		ManagerMemberID:  int64(item.ManagerMemberID),
+		ManagerName:      item.ManagerName,
 		TimeMixin: dto.TimeMixin{
 			CreatedAt: item.CreatedAt,
 			UpdatedAt: item.UpdatedAt,

@@ -28,6 +28,7 @@ type DepartmentQuery struct {
 	withOwner   *UserQuery
 	withMembers *MemberQuery
 	withAPIKeys *APIKeyQuery
+	withManager *MemberQuery
 	withFKs     bool
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -124,6 +125,28 @@ func (dq *DepartmentQuery) QueryAPIKeys() *APIKeyQuery {
 			sqlgraph.From(department.Table, department.FieldID, selector),
 			sqlgraph.To(apikey.Table, apikey.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, department.APIKeysTable, department.APIKeysColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(dq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryManager chains the current query on the "manager" edge.
+func (dq *DepartmentQuery) QueryManager() *MemberQuery {
+	query := (&MemberClient{config: dq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := dq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := dq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(department.Table, department.FieldID, selector),
+			sqlgraph.To(member.Table, member.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, department.ManagerTable, department.ManagerColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(dq.driver.Dialect(), step)
 		return fromU, nil
@@ -326,6 +349,7 @@ func (dq *DepartmentQuery) Clone() *DepartmentQuery {
 		withOwner:   dq.withOwner.Clone(),
 		withMembers: dq.withMembers.Clone(),
 		withAPIKeys: dq.withAPIKeys.Clone(),
+		withManager: dq.withManager.Clone(),
 		// clone intermediate query.
 		sql:  dq.sql.Clone(),
 		path: dq.path,
@@ -362,6 +386,17 @@ func (dq *DepartmentQuery) WithAPIKeys(opts ...func(*APIKeyQuery)) *DepartmentQu
 		opt(query)
 	}
 	dq.withAPIKeys = query
+	return dq
+}
+
+// WithManager tells the query-builder to eager-load the nodes that are connected to
+// the "manager" edge. The optional arguments are used to configure the query builder of the edge.
+func (dq *DepartmentQuery) WithManager(opts ...func(*MemberQuery)) *DepartmentQuery {
+	query := (&MemberClient{config: dq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	dq.withManager = query
 	return dq
 }
 
@@ -444,13 +479,14 @@ func (dq *DepartmentQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*D
 		nodes       = []*Department{}
 		withFKs     = dq.withFKs
 		_spec       = dq.querySpec()
-		loadedTypes = [3]bool{
+		loadedTypes = [4]bool{
 			dq.withOwner != nil,
 			dq.withMembers != nil,
 			dq.withAPIKeys != nil,
+			dq.withManager != nil,
 		}
 	)
-	if dq.withOwner != nil {
+	if dq.withOwner != nil || dq.withManager != nil {
 		withFKs = true
 	}
 	if withFKs {
@@ -491,6 +527,12 @@ func (dq *DepartmentQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*D
 		if err := dq.loadAPIKeys(ctx, query, nodes,
 			func(n *Department) { n.Edges.APIKeys = []*APIKey{} },
 			func(n *Department, e *APIKey) { n.Edges.APIKeys = append(n.Edges.APIKeys, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := dq.withManager; query != nil {
+		if err := dq.loadManager(ctx, query, nodes, nil,
+			func(n *Department, e *Member) { n.Edges.Manager = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -588,6 +630,38 @@ func (dq *DepartmentQuery) loadAPIKeys(ctx context.Context, query *APIKeyQuery, 
 			return fmt.Errorf(`unexpected referenced foreign-key "department_api_keys" returned %v for node %v`, *fk, n.ID)
 		}
 		assign(node, n)
+	}
+	return nil
+}
+func (dq *DepartmentQuery) loadManager(ctx context.Context, query *MemberQuery, nodes []*Department, init func(*Department), assign func(*Department, *Member)) error {
+	ids := make([]int, 0, len(nodes))
+	nodeids := make(map[int][]*Department)
+	for i := range nodes {
+		if nodes[i].department_manager == nil {
+			continue
+		}
+		fk := *nodes[i].department_manager
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(member.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "department_manager" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
 	}
 	return nil
 }

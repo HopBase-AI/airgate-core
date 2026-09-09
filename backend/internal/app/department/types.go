@@ -25,6 +25,10 @@ type Department struct {
 	PeriodUsedBase  float64
 	UsedQuota       float64 // 累计账面已用
 	UsedQuotaActual float64 // 累计真实成本
+	// ManagerMemberID 部门负责人（成员 ID），0 = 未设；ManagerName 仅展示用。
+	// 负责人只接收本部门及其成员的额度预警，不带任何管理权限。
+	ManagerMemberID int
+	ManagerName     string
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 
@@ -63,12 +67,16 @@ type CreateInput struct {
 }
 
 // UpdateInput 更新部门输入；nil 表示不改动。
+//
+// 负责人只能在更新时设置（创建时部门尚无成员，CreateInput 不收负责人）：
+// ManagerMemberID nil = 不动；指向 0 = 清空；>0 必须是当前在本部门的成员。
 type UpdateInput struct {
-	Name        *string
-	Note        *string
-	Sort        *int
-	QuotaUSD    *float64
-	QuotaPeriod *string
+	Name            *string
+	Note            *string
+	Sort            *int
+	QuotaUSD        *float64
+	QuotaPeriod     *string
+	ManagerMemberID *int64
 }
 
 // Mutation 持久化写入；nil 表示不改动。
@@ -82,6 +90,9 @@ type Mutation struct {
 	PeriodAnchor   *time.Time
 	PeriodStart    *time.Time
 	PeriodUsedBase *float64
+	// ManagerMemberID 配合 HasManagerMemberID：nil 表示清空负责人。
+	ManagerMemberID    *int
+	HasManagerMemberID bool
 }
 
 // Overview 企业层总览：余额、已分配、账期。
@@ -115,6 +126,8 @@ type Repository interface {
 	ResetPeriodOwned(ctx context.Context, ownerID, id int, now time.Time) (Department, error)
 	// NameTaken 同一企业主名下是否已有同名部门（excludeID 排除自身）。
 	NameTaken(ctx context.Context, ownerID int, name string, excludeID int) (bool, error)
+	// MemberInDepartment 成员是否属于该企业主且当前在该部门（负责人校验）。
+	MemberInDepartment(ctx context.Context, ownerID, departmentID, memberID int) (bool, error)
 	// Counts 返回每个部门的成员数、有效密钥数与已分配给成员的额度之和。
 	Counts(ctx context.Context, departmentIDs []int) (members map[int]int, keys map[int]int, memberQuota map[int]float64, err error)
 	// Usage 返回每个部门"今日"与"近 30 天"的真实成本（按 usage_logs.department_id 快照列）。

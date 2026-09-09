@@ -689,6 +689,29 @@ func HasAPIKeysWith(preds ...predicate.APIKey) predicate.Department {
 	})
 }
 
+// HasManager applies the HasEdge predicate on the "manager" edge.
+func HasManager() predicate.Department {
+	return predicate.Department(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, ManagerTable, ManagerColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasManagerWith applies the HasEdge predicate on the "manager" edge with a given conditions (other predicates).
+func HasManagerWith(preds ...predicate.Member) predicate.Department {
+	return predicate.Department(func(s *sql.Selector) {
+		step := newManagerStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.Department) predicate.Department {
 	return predicate.Department(sql.AndPredicates(predicates...))

@@ -1360,6 +1360,22 @@ func (c *DepartmentClient) QueryAPIKeys(d *Department) *APIKeyQuery {
 	return query
 }
 
+// QueryManager queries the manager edge of a Department.
+func (c *DepartmentClient) QueryManager(d *Department) *MemberQuery {
+	query := (&MemberClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := d.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(department.Table, department.FieldID, id),
+			sqlgraph.To(member.Table, member.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, department.ManagerTable, department.ManagerColumn),
+		)
+		fromV = sqlgraph.Neighbors(d.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *DepartmentClient) Hooks() []Hook {
 	return c.hooks.Department

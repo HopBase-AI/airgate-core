@@ -15,6 +15,7 @@ type stubRepo struct {
 	find      Department
 	all       []Department
 	nameTaken bool
+	inDept    bool
 	anchor    time.Time
 	setAnchor *time.Time
 	deleted   int
@@ -53,6 +54,9 @@ func (s *stubRepo) ResetPeriodOwned(_ context.Context, _ int, id int, _ time.Tim
 }
 func (s *stubRepo) NameTaken(_ context.Context, _ int, _ string, _ int) (bool, error) {
 	return s.nameTaken, nil
+}
+func (s *stubRepo) MemberInDepartment(_ context.Context, _ int, _ int, _ int) (bool, error) {
+	return s.inDept, nil
 }
 func (s *stubRepo) Counts(_ context.Context, ids []int) (map[int]int, map[int]int, map[int]float64, error) {
 	m, k, q := map[int]int{}, map[int]int{}, map[int]float64{}
@@ -203,5 +207,43 @@ func TestUpdateAndDeleteRecordAudit(t *testing.T) {
 	}
 	if repo.audits[1].Action != audit.ActionDepartmentDelete || repo.audits[1].TargetName != "旧名" {
 		t.Fatalf("delete audit = %+v", repo.audits[1])
+	}
+}
+
+// 负责人必须是当前在本部门的成员：不在 → ErrManagerNotInDepartment；0 = 清空；在 → 写入并进审计快照。
+func TestUpdateManagerMustBeMemberOfDepartment(t *testing.T) {
+	repo := &stubRepo{find: Department{ID: 3, Name: "研发部", QuotaPeriod: QuotaPeriodMonthly, PeriodAnchor: time.Now(), PeriodStart: time.Now()}}
+	svc := NewService(repo, repo)
+	ctx := context.Background()
+	outsider := int64(9)
+	if _, err := svc.Update(ctx, 7, 3, UpdateInput{ManagerMemberID: &outsider}); !errors.Is(err, ErrManagerNotInDepartment) {
+		t.Fatalf("err = %v, want ErrManagerNotInDepartment", err)
+	}
+	if repo.updated.HasManagerMemberID {
+		t.Fatalf("rejected manager must not reach the store")
+	}
+	repo.inDept = true
+	if _, err := svc.Update(ctx, 7, 3, UpdateInput{ManagerMemberID: &outsider}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if !repo.updated.HasManagerMemberID || repo.updated.ManagerMemberID == nil || *repo.updated.ManagerMemberID != 9 {
+		t.Fatalf("mutation = %+v", repo.updated)
+	}
+	if got := repo.audits[len(repo.audits)-1].Before["manager_member_id"]; got != 0 {
+		t.Fatalf("audit snapshot must carry manager_member_id, got %v", got)
+	}
+	clear := int64(0)
+	if _, err := svc.Update(ctx, 7, 3, UpdateInput{ManagerMemberID: &clear}); err != nil {
+		t.Fatalf("Update clear: %v", err)
+	}
+	if !repo.updated.HasManagerMemberID || repo.updated.ManagerMemberID != nil {
+		t.Fatalf("clear mutation = %+v", repo.updated)
+	}
+	// nil = 不动
+	if _, err := svc.Update(ctx, 7, 3, UpdateInput{}); err != nil {
+		t.Fatalf("Update noop: %v", err)
+	}
+	if repo.updated.HasManagerMemberID {
+		t.Fatalf("nil manager must not touch the store")
 	}
 }
