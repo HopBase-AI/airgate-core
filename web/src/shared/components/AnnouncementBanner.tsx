@@ -69,8 +69,9 @@ export function AnnouncementBanner(_: { className?: string } = {}) {
   return (
     <CommonModal
       state={state}
-      size="sm"
       surface={false}
+      // 与通知中心点开单条消息的详情弹窗同宽，避免长公告在窄窗里拉成一长条
+      dialogStyle={{ maxWidth: '640px', width: 'min(100%, calc(100vw - 2rem))' }}
       icon={<Icon className="h-5 w-5" style={{ color }} />}
       title={site.announcement_title || t('settings.announcement_popup_title')}
       footer={(
