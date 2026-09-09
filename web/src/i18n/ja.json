@@ -1238,7 +1238,12 @@
     "empty": "通知はありません",
     "empty_hint": "新しいサイト内のお知らせがここに表示されます。",
     "default_title": "サイトからのお知らせ",
-    "time_unknown": "以前の通知"
+    "time_unknown": "以前の通知",
+    "kind_site": "サイトのお知らせ",
+    "kind_quota_alert": "クォータ警告",
+    "kind_balance_alert": "残高警告",
+    "kind_system": "システム",
+    "view_link": "表示"
   },
   "settings": {
     "title": "システム設定",

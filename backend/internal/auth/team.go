@@ -234,3 +234,20 @@ func memberPeriodUsed(m *ent.Member, now time.Time) float64 {
 	}
 	return used
 }
+
+// MemberPeriodUsed 成员本期已用（纯计算，不推进换期、不落库），口径同 memberPeriodUsed；
+// 供额度预警等非鉴权路径复用，避免各处重算"本期"。m 为 nil 返回 0。
+func MemberPeriodUsed(m *ent.Member, now time.Time) float64 {
+	if m == nil {
+		return 0
+	}
+	return memberPeriodUsed(m, now)
+}
+
+// DepartmentPeriodUsed 部门本期已用（纯计算），口径同 departmentPeriodUsed。d 为 nil 返回 0。
+func DepartmentPeriodUsed(d *ent.Department, now time.Time) float64 {
+	if d == nil {
+		return 0
+	}
+	return departmentPeriodUsed(d, now)
+}

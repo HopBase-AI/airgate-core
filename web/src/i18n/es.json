@@ -1238,7 +1238,12 @@
     "empty": "Sin notificaciones",
     "empty_hint": "Las nuevas actualizaciones de la aplicación aparecerán aquí.",
     "default_title": "Notificación del sitio",
-    "time_unknown": "Anteriormente"
+    "time_unknown": "Anteriormente",
+    "kind_site": "Anuncio",
+    "kind_quota_alert": "Alerta de cuota",
+    "kind_balance_alert": "Alerta de saldo",
+    "kind_system": "Sistema",
+    "view_link": "Ver"
   },
   "settings": {
     "title": "Configuración",

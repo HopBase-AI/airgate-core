@@ -33,6 +33,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 	"github.com/DouDOU-start/airgate-core/ent/useridentity"
+	"github.com/DouDOU-start/airgate-core/ent/usernotification"
 	"github.com/DouDOU-start/airgate-core/ent/usersubscription"
 )
 
@@ -77,6 +78,8 @@ type Client struct {
 	User *UserClient
 	// UserIdentity is the client for interacting with the UserIdentity builders.
 	UserIdentity *UserIdentityClient
+	// UserNotification is the client for interacting with the UserNotification builders.
+	UserNotification *UserNotificationClient
 	// UserSubscription is the client for interacting with the UserSubscription builders.
 	UserSubscription *UserSubscriptionClient
 }
@@ -108,6 +111,7 @@ func (c *Client) init() {
 	c.UsageLog = NewUsageLogClient(c.config)
 	c.User = NewUserClient(c.config)
 	c.UserIdentity = NewUserIdentityClient(c.config)
+	c.UserNotification = NewUserNotificationClient(c.config)
 	c.UserSubscription = NewUserSubscriptionClient(c.config)
 }
 
@@ -219,6 +223,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		UsageLog:           NewUsageLogClient(cfg),
 		User:               NewUserClient(cfg),
 		UserIdentity:       NewUserIdentityClient(cfg),
+		UserNotification:   NewUserNotificationClient(cfg),
 		UserSubscription:   NewUserSubscriptionClient(cfg),
 	}, nil
 }
@@ -257,6 +262,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		UsageLog:           NewUsageLogClient(cfg),
 		User:               NewUserClient(cfg),
 		UserIdentity:       NewUserIdentityClient(cfg),
+		UserNotification:   NewUserNotificationClient(cfg),
 		UserSubscription:   NewUserSubscriptionClient(cfg),
 	}, nil
 }
@@ -290,7 +296,7 @@ func (c *Client) Use(hooks ...Hook) {
 		c.APIKey, c.Account, c.AccountEvent, c.BalanceLog, c.BlogPost, c.Department,
 		c.Group, c.Member, c.Plugin, c.PluginSource, c.Proxy, c.ReferralCommission,
 		c.Setting, c.Task, c.TeamAuditLog, c.UsageLog, c.User, c.UserIdentity,
-		c.UserSubscription,
+		c.UserNotification, c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -303,7 +309,7 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.APIKey, c.Account, c.AccountEvent, c.BalanceLog, c.BlogPost, c.Department,
 		c.Group, c.Member, c.Plugin, c.PluginSource, c.Proxy, c.ReferralCommission,
 		c.Setting, c.Task, c.TeamAuditLog, c.UsageLog, c.User, c.UserIdentity,
-		c.UserSubscription,
+		c.UserNotification, c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -348,6 +354,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.User.mutate(ctx, m)
 	case *UserIdentityMutation:
 		return c.UserIdentity.mutate(ctx, m)
+	case *UserNotificationMutation:
+		return c.UserNotification.mutate(ctx, m)
 	case *UserSubscriptionMutation:
 		return c.UserSubscription.mutate(ctx, m)
 	default:
@@ -3357,6 +3365,139 @@ func (c *UserIdentityClient) mutate(ctx context.Context, m *UserIdentityMutation
 	}
 }
 
+// UserNotificationClient is a client for the UserNotification schema.
+type UserNotificationClient struct {
+	config
+}
+
+// NewUserNotificationClient returns a client for the UserNotification from the given config.
+func NewUserNotificationClient(c config) *UserNotificationClient {
+	return &UserNotificationClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `usernotification.Hooks(f(g(h())))`.
+func (c *UserNotificationClient) Use(hooks ...Hook) {
+	c.hooks.UserNotification = append(c.hooks.UserNotification, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `usernotification.Intercept(f(g(h())))`.
+func (c *UserNotificationClient) Intercept(interceptors ...Interceptor) {
+	c.inters.UserNotification = append(c.inters.UserNotification, interceptors...)
+}
+
+// Create returns a builder for creating a UserNotification entity.
+func (c *UserNotificationClient) Create() *UserNotificationCreate {
+	mutation := newUserNotificationMutation(c.config, OpCreate)
+	return &UserNotificationCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of UserNotification entities.
+func (c *UserNotificationClient) CreateBulk(builders ...*UserNotificationCreate) *UserNotificationCreateBulk {
+	return &UserNotificationCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UserNotificationClient) MapCreateBulk(slice any, setFunc func(*UserNotificationCreate, int)) *UserNotificationCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UserNotificationCreateBulk{err: fmt.Errorf("calling to UserNotificationClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UserNotificationCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UserNotificationCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for UserNotification.
+func (c *UserNotificationClient) Update() *UserNotificationUpdate {
+	mutation := newUserNotificationMutation(c.config, OpUpdate)
+	return &UserNotificationUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UserNotificationClient) UpdateOne(un *UserNotification) *UserNotificationUpdateOne {
+	mutation := newUserNotificationMutation(c.config, OpUpdateOne, withUserNotification(un))
+	return &UserNotificationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UserNotificationClient) UpdateOneID(id int) *UserNotificationUpdateOne {
+	mutation := newUserNotificationMutation(c.config, OpUpdateOne, withUserNotificationID(id))
+	return &UserNotificationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for UserNotification.
+func (c *UserNotificationClient) Delete() *UserNotificationDelete {
+	mutation := newUserNotificationMutation(c.config, OpDelete)
+	return &UserNotificationDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UserNotificationClient) DeleteOne(un *UserNotification) *UserNotificationDeleteOne {
+	return c.DeleteOneID(un.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UserNotificationClient) DeleteOneID(id int) *UserNotificationDeleteOne {
+	builder := c.Delete().Where(usernotification.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UserNotificationDeleteOne{builder}
+}
+
+// Query returns a query builder for UserNotification.
+func (c *UserNotificationClient) Query() *UserNotificationQuery {
+	return &UserNotificationQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUserNotification},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a UserNotification entity by its id.
+func (c *UserNotificationClient) Get(ctx context.Context, id int) (*UserNotification, error) {
+	return c.Query().Where(usernotification.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UserNotificationClient) GetX(ctx context.Context, id int) *UserNotification {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *UserNotificationClient) Hooks() []Hook {
+	return c.hooks.UserNotification
+}
+
+// Interceptors returns the client interceptors.
+func (c *UserNotificationClient) Interceptors() []Interceptor {
+	return c.inters.UserNotification
+}
+
+func (c *UserNotificationClient) mutate(ctx context.Context, m *UserNotificationMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UserNotificationCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UserNotificationUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UserNotificationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UserNotificationDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown UserNotification mutation op: %q", m.Op())
+	}
+}
+
 // UserSubscriptionClient is a client for the UserSubscription schema.
 type UserSubscriptionClient struct {
 	config
@@ -3527,11 +3668,12 @@ type (
 	hooks struct {
 		APIKey, Account, AccountEvent, BalanceLog, BlogPost, Department, Group, Member,
 		Plugin, PluginSource, Proxy, ReferralCommission, Setting, Task, TeamAuditLog,
-		UsageLog, User, UserIdentity, UserSubscription []ent.Hook
+		UsageLog, User, UserIdentity, UserNotification, UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountEvent, BalanceLog, BlogPost, Department, Group, Member,
 		Plugin, PluginSource, Proxy, ReferralCommission, Setting, Task, TeamAuditLog,
-		UsageLog, User, UserIdentity, UserSubscription []ent.Interceptor
+		UsageLog, User, UserIdentity, UserNotification,
+		UserSubscription []ent.Interceptor
 	}
 )

@@ -1238,7 +1238,12 @@
     "empty": "暂无通知",
     "empty_hint": "新的站内动态会显示在这里。",
     "default_title": "站点通知",
-    "time_unknown": "较早通知"
+    "time_unknown": "较早通知",
+    "kind_site": "站点公告",
+    "kind_quota_alert": "额度预警",
+    "kind_balance_alert": "余额预警",
+    "kind_system": "系统消息",
+    "view_link": "查看"
   },
   "settings": {
     "title": "系统设置",

@@ -24,6 +24,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 	"github.com/DouDOU-start/airgate-core/ent/useridentity"
+	"github.com/DouDOU-start/airgate-core/ent/usernotification"
 	"github.com/DouDOU-start/airgate-core/ent/usersubscription"
 )
 
@@ -1035,6 +1036,62 @@ func init() {
 	useridentityDescCreatedAt := useridentityFields[3].Descriptor()
 	// useridentity.DefaultCreatedAt holds the default value on creation for the created_at field.
 	useridentity.DefaultCreatedAt = useridentityDescCreatedAt.Default.(func() time.Time)
+	usernotificationFields := schema.UserNotification{}.Fields()
+	_ = usernotificationFields
+	// usernotificationDescKind is the schema descriptor for kind field.
+	usernotificationDescKind := usernotificationFields[1].Descriptor()
+	// usernotification.KindValidator is a validator for the "kind" field. It is called by the builders before save.
+	usernotification.KindValidator = func() func(string) error {
+		validators := usernotificationDescKind.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(kind string) error {
+			for _, fn := range fns {
+				if err := fn(kind); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// usernotificationDescTitle is the schema descriptor for title field.
+	usernotificationDescTitle := usernotificationFields[3].Descriptor()
+	// usernotification.TitleValidator is a validator for the "title" field. It is called by the builders before save.
+	usernotification.TitleValidator = func() func(string) error {
+		validators := usernotificationDescTitle.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(title string) error {
+			for _, fn := range fns {
+				if err := fn(title); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// usernotificationDescContent is the schema descriptor for content field.
+	usernotificationDescContent := usernotificationFields[4].Descriptor()
+	// usernotification.DefaultContent holds the default value on creation for the content field.
+	usernotification.DefaultContent = usernotificationDescContent.Default.(string)
+	// usernotificationDescLink is the schema descriptor for link field.
+	usernotificationDescLink := usernotificationFields[5].Descriptor()
+	// usernotification.DefaultLink holds the default value on creation for the link field.
+	usernotification.DefaultLink = usernotificationDescLink.Default.(string)
+	// usernotification.LinkValidator is a validator for the "link" field. It is called by the builders before save.
+	usernotification.LinkValidator = usernotificationDescLink.Validators[0].(func(string) error)
+	// usernotificationDescDedupeKey is the schema descriptor for dedupe_key field.
+	usernotificationDescDedupeKey := usernotificationFields[6].Descriptor()
+	// usernotification.DedupeKeyValidator is a validator for the "dedupe_key" field. It is called by the builders before save.
+	usernotification.DedupeKeyValidator = usernotificationDescDedupeKey.Validators[0].(func(string) error)
+	// usernotificationDescCreatedAt is the schema descriptor for created_at field.
+	usernotificationDescCreatedAt := usernotificationFields[8].Descriptor()
+	// usernotification.DefaultCreatedAt holds the default value on creation for the created_at field.
+	usernotification.DefaultCreatedAt = usernotificationDescCreatedAt.Default.(func() time.Time)
 	usersubscriptionFields := schema.UserSubscription{}.Fields()
 	_ = usersubscriptionFields
 	// usersubscriptionDescCreatedAt is the schema descriptor for created_at field.

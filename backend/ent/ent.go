@@ -30,6 +30,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 	"github.com/DouDOU-start/airgate-core/ent/useridentity"
+	"github.com/DouDOU-start/airgate-core/ent/usernotification"
 	"github.com/DouDOU-start/airgate-core/ent/usersubscription"
 )
 
@@ -109,6 +110,7 @@ func checkColumn(table, column string) error {
 			usagelog.Table:           usagelog.ValidColumn,
 			user.Table:               user.ValidColumn,
 			useridentity.Table:       useridentity.ValidColumn,
+			usernotification.Table:   usernotification.ValidColumn,
 			usersubscription.Table:   usersubscription.ValidColumn,
 		})
 	})

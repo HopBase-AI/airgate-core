@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"strings"
 
 	"github.com/redis/go-redis/v9"
@@ -26,10 +25,12 @@ import (
 	appmcp "github.com/DouDOU-start/airgate-core/internal/app/mcp"
 	appmember "github.com/DouDOU-start/airgate-core/internal/app/member"
 	appmodelpricing "github.com/DouDOU-start/airgate-core/internal/app/modelpricing"
+	appnotification "github.com/DouDOU-start/airgate-core/internal/app/notification"
 	apponeclick "github.com/DouDOU-start/airgate-core/internal/app/oneclick"
 	appopenclaw "github.com/DouDOU-start/airgate-core/internal/app/openclaw"
 	apppluginadmin "github.com/DouDOU-start/airgate-core/internal/app/pluginadmin"
 	appproxy "github.com/DouDOU-start/airgate-core/internal/app/proxy"
+	appquotaalert "github.com/DouDOU-start/airgate-core/internal/app/quotaalert"
 	appreferral "github.com/DouDOU-start/airgate-core/internal/app/referral"
 	apprelaydetect "github.com/DouDOU-start/airgate-core/internal/app/relaydetect"
 	appsettings "github.com/DouDOU-start/airgate-core/internal/app/settings"
@@ -37,6 +38,7 @@ import (
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
+	"github.com/DouDOU-start/airgate-core/internal/billing"
 	"github.com/DouDOU-start/airgate-core/internal/config"
 	"github.com/DouDOU-start/airgate-core/internal/infra/mailer"
 	"github.com/DouDOU-start/airgate-core/internal/infra/store"
@@ -56,6 +58,8 @@ type HTTPDependencies struct {
 	Marketplace *plugin.Marketplace
 	Concurrency *scheduler.ConcurrencyManager
 	Scheduler   *scheduler.Scheduler
+	// Recorder 计费记录器：额度预警引擎挂其扣费提交回调（须在 Recorder.Start 前装配）。可为 nil。
+	Recorder *billing.Recorder
 }
 
 // HTTPHandlers 聚合所有 HTTP 处理器。
@@ -67,6 +71,7 @@ type HTTPHandlers struct {
 	APIKey         *handler.APIKeyHandler
 	Member         *handler.MemberHandler
 	Department     *handler.DepartmentHandler
+	Notification   *handler.NotificationHandler
 	Subscription   *handler.SubscriptionHandler
 	Usage          *handler.UsageHandler
 	Proxy          *handler.ProxyHandler
@@ -154,8 +159,19 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 	userStore := store.NewUserStore(dep.DB)
 	userService := appuser.NewService(userStore)
 
-	// 余额预警回调：从设置读取 SMTP 配置发送邮件
-	userService.SetBalanceAlertCallback(func(email string, balance float64, threshold float64) {
+	// 站内通知 + 额度预警引擎：Recorder 扣费提交后复核本批成员 / 部门，达阈值投站内信 + 邮件。
+	notificationService := appnotification.NewService(store.NewNotificationStore(dep.DB))
+	quotaAlertService := appquotaalert.NewService(store.NewQuotaAlertStore(dep.DB), notificationService)
+	quotaAlertService.SetEmailSender(func(to, subject, body string) {
+		sendSystemEmail(settingsService, to, subject, body)
+	})
+	if dep.Recorder != nil {
+		dep.Recorder.SetChargeHook(quotaAlertService.OnCharged)
+	}
+
+	// 余额预警回调：发邮件（去重靠 balance_alert_notified 标记，余额回升自动重置）+ 投站内通知。
+	userService.SetBalanceAlertCallback(func(userID int, email string, balance float64, threshold float64) {
+		balanceAlertNotify(context.Background(), notificationService, userID, balance, threshold)
 		balanceAlertSendEmail(settingsService, email, balance, threshold)
 	})
 	usageStore := store.NewUsageStore(dep.DB)
@@ -182,6 +198,7 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 		APIKey:         handler.NewAPIKeyHandler(apiKeyService),
 		Member:         handler.NewMemberHandler(memberService),
 		Department:     handler.NewDepartmentHandler(departmentService, auditService),
+		Notification:   handler.NewNotificationHandler(notificationService),
 		Subscription:   handler.NewSubscriptionHandler(subscriptionService),
 		Usage:          handler.NewUsageHandler(usageService),
 		Proxy:          handler.NewProxyHandler(proxyService),
@@ -227,34 +244,9 @@ func (a *settingsAdapter) List(ctx context.Context, group string) ([]appauth.Set
 // buildMailerFactory 返回一个从系统设置构建邮件发送器的工厂函数。
 func buildMailerFactory(settingsService *appsettings.Service) appauth.MailSenderFactory {
 	return func(ctx context.Context) (appauth.MailSender, error) {
-		settings, err := settingsService.List(ctx, "smtp")
+		cfg, err := loadSMTPConfig(ctx, settingsService)
 		if err != nil {
 			return nil, err
-		}
-		cfg := mailer.Config{}
-		for _, s := range settings {
-			switch s.Key {
-			case "smtp_host":
-				cfg.Host = s.Value
-			case "smtp_port":
-				cfg.Port, _ = strconv.Atoi(s.Value)
-			case "smtp_username":
-				cfg.Username = s.Value
-			case "smtp_password":
-				cfg.Password = s.Value
-			case "smtp_from_email":
-				cfg.FromAddr = s.Value
-			case "smtp_from_name":
-				cfg.FromName = s.Value
-			case "smtp_use_tls":
-				cfg.UseTLS = s.Value == "true"
-			}
-		}
-		if cfg.Host == "" {
-			return nil, fmt.Errorf("SMTP 未配置")
-		}
-		if cfg.Port == 0 {
-			cfg.Port = 587
 		}
 		return mailer.New(cfg), nil
 	}
@@ -282,52 +274,34 @@ const defaultBalanceAlertBody = `<div style="font-family: -apple-system, BlinkMa
 </div>
 </div>`
 
-// balanceAlertSendEmail 发送余额预警邮件。
+// balanceAlertNotify 余额预警站内通知（与邮件同一触发点；去重由 users.balance_alert_notified 承担，
+// 余额回升会重置标记，因此不再额外设 dedupe_key）。
+func balanceAlertNotify(ctx context.Context, notifications *appnotification.Service, userID int, balance, threshold float64) {
+	if notifications == nil || userID <= 0 {
+		return
+	}
+	_, err := notifications.Create(ctx, appnotification.CreateInput{
+		UserID:  userID,
+		Kind:    appnotification.KindBalanceAlert,
+		Level:   appnotification.LevelWarning,
+		Title:   fmt.Sprintf("账户余额已低于预警阈值 $%.2f", threshold),
+		Content: fmt.Sprintf("当前余额 $%.4f，预警阈值 $%.2f。请及时充值以免影响正常使用；余额回到阈值以上后预警自动重置。", balance, threshold),
+		Link:    "/profile",
+	})
+	if err != nil {
+		slog.Error("balance_alert_notify_failed", "user_id", userID, sdk.LogFieldError, err)
+	}
+}
+
+// balanceAlertSendEmail 发送余额预警邮件：按设置里的自定义模板（或默认模板）渲染后经 sendSystemEmail 发出。
 func balanceAlertSendEmail(settingsService *appsettings.Service, email string, balance, threshold float64) {
 	ctx := context.Background()
-
-	// 读取 SMTP 配置
 	smtpSettings, err := settingsService.List(ctx, "smtp")
 	if err != nil {
 		slog.Error("balance_alert_smtp_load_failed", sdk.LogFieldError, err)
 		return
 	}
-	cfg := mailer.Config{}
-	for _, s := range smtpSettings {
-		switch s.Key {
-		case "smtp_host":
-			cfg.Host = s.Value
-		case "smtp_port":
-			cfg.Port, _ = strconv.Atoi(s.Value)
-		case "smtp_username":
-			cfg.Username = s.Value
-		case "smtp_password":
-			cfg.Password = s.Value
-		case "smtp_from_email":
-			cfg.FromAddr = s.Value
-		case "smtp_from_name":
-			cfg.FromName = s.Value
-		case "smtp_use_tls":
-			cfg.UseTLS = s.Value == "true"
-		}
-	}
-	if cfg.Host == "" {
-		slog.Warn("mail_disabled_no_config", "context", "balance_alert")
-		return
-	}
-	if cfg.Port == 0 {
-		cfg.Port = 587
-	}
-
-	// 读取站点名称及余额预警邮件模板
-	siteName := "HopBase"
 	var tplSubject, tplBody string
-	siteSettings, _ := settingsService.List(ctx, "site")
-	for _, s := range siteSettings {
-		if s.Key == "site_name" && s.Value != "" {
-			siteName = s.Value
-		}
-	}
 	for _, s := range smtpSettings {
 		switch s.Key {
 		case "balance_alert_email_subject":
@@ -336,33 +310,16 @@ func balanceAlertSendEmail(settingsService *appsettings.Service, email string, b
 			tplBody = s.Value
 		}
 	}
-
-	balanceStr := fmt.Sprintf("$%.4f", balance)
-	thresholdStr := fmt.Sprintf("$%.2f", threshold)
-
-	// 使用自定义模板或默认模板
 	if tplSubject == "" {
 		tplSubject = "{{site_name}} - 余额预警"
 	}
 	if tplBody == "" {
 		tplBody = defaultBalanceAlertBody
 	}
-
 	replacer := strings.NewReplacer(
-		"{{site_name}}", siteName,
-		"{{balance}}", balanceStr,
-		"{{threshold}}", thresholdStr,
+		"{{site_name}}", loadSiteName(ctx, settingsService),
+		"{{balance}}", fmt.Sprintf("$%.4f", balance),
+		"{{threshold}}", fmt.Sprintf("$%.2f", threshold),
 	)
-	subject := replacer.Replace(tplSubject)
-	body := replacer.Replace(tplBody)
-
-	m := mailer.New(cfg)
-	if err := m.Send(email, subject, body); err != nil {
-		slog.Error("balance_alert_email_failed", "to_hash", store.EmailHash(email), sdk.LogFieldError, err)
-	} else {
-		slog.Info("balance_alert_email_sent",
-			"to_hash", store.EmailHash(email),
-			"balance", balance,
-			"threshold", threshold)
-	}
+	sendSystemEmail(settingsService, email, replacer.Replace(tplSubject), replacer.Replace(tplBody))
 }

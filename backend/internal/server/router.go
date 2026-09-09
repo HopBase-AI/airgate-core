@@ -124,6 +124,11 @@ func (s *Server) registerRoutes() {
 		accountGroup.PUT("/users/me/balance-alert", handlers.User.UpdateBalanceAlert)
 		accountGroup.GET("/users/me/balance-history", handlers.User.GetMyBalanceHistory)
 
+		// 站内通知：任何已登录用户（含成员账号）看自己的通知，不经企业主解析
+		accountGroup.GET("/notifications/me", handlers.Notification.ListMine)
+		accountGroup.GET("/notifications/me/unread-count", handlers.Notification.UnreadCount)
+		accountGroup.POST("/notifications/me/read", handlers.Notification.MarkRead)
+
 		// 团队成员（企业子账号）：主账号侧增删改、分配额度、重置本期。
 		// 企业客户专属能力,须管理员授予 is_enterprise_owner(管理员天然可用)。
 		memberGroup := accountGroup.Group("")

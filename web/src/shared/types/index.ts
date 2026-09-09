@@ -1482,3 +1482,36 @@ export interface UpdateEntryCodeReq {
   enabled?: boolean;
   user_id?: number;
 }
+
+// ==================== User Notifications（站内个人通知） ====================
+
+export type UserNotificationKind = 'quota_alert' | 'balance_alert' | 'system';
+export type UserNotificationLevel = 'info' | 'warning' | 'danger';
+
+export interface UserNotificationResp {
+  id: number;
+  kind: UserNotificationKind;
+  level: UserNotificationLevel;
+  title: string;
+  content: string;
+  /** 控制台内路径（如 /team、/usage），空串表示无跳转 */
+  link: string;
+  read: boolean;
+  created_at: string;
+}
+
+export interface UserNotificationListParams {
+  page?: number;
+  page_size?: number;
+  unread_only?: boolean;
+}
+
+export interface UserNotificationUnreadCountResp {
+  count: number;
+}
+
+export type MarkNotificationsReadReq = { ids: number[] } | { all: true };
+
+export interface MarkNotificationsReadResp {
+  updated: number;
+}

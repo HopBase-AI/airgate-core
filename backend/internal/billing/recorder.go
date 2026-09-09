@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -179,6 +180,9 @@ type Recorder struct {
 
 	// onNegativeBalance 批量扣费提交后发现余额已透支的用户回调（如失效其 API Key 缓存）。
 	onNegativeBalance func(userIDs []int)
+	// onCharged 扣费事务提交成功后的回调（额度预警等）；可能被请求协程与刷盘协程并发调用，
+	// 实现须自行保证并发安全且快速返回。
+	onCharged func(context.Context, ChargeEvent)
 
 	spilledTotal atomic.Uint64 // 成功落 WAL 的记录数
 	droppedTotal atomic.Uint64 // 最终仍被丢弃的记录数（WAL 未启用或落盘失败）
@@ -213,6 +217,38 @@ func (r *Recorder) EnableWAL(dir string) error {
 // SetNegativeBalanceHook 注册负余额回调（须在 Start 之前调用）。
 func (r *Recorder) SetNegativeBalanceHook(fn func(userIDs []int)) {
 	r.onNegativeBalance = fn
+}
+
+// ChargeEvent 一次扣费事务提交成功后，本批**实际发生扣费/累加（>0）**的对象 ID（已去重、升序）。
+// 定义在 billing 包以避免反向依赖 app 层；额度预警引擎据此决定要复核哪些成员 / 部门。
+type ChargeEvent struct {
+	UserIDs       []int // 扣了余额（actual_cost > 0）的用户
+	MemberIDs     []int // 累加了用量的团队成员
+	DepartmentIDs []int // 累加了用量的部门
+}
+
+// Empty 本批没有任何对象发生扣费/累加。
+func (e ChargeEvent) Empty() bool {
+	return len(e.UserIDs) == 0 && len(e.MemberIDs) == 0 && len(e.DepartmentIDs) == 0
+}
+
+// SetChargeHook 注册扣费提交后回调（须在 Start 之前调用）。nil 安全；回调 panic 被吞掉只记日志，
+// 绝不反过来让计费失败。
+func (r *Recorder) SetChargeHook(fn func(context.Context, ChargeEvent)) {
+	r.onCharged = fn
+}
+
+// fireChargeHook 事务提交成功后触发扣费回调；空事件 / 未注册直接返回。
+func (r *Recorder) fireChargeHook(ctx context.Context, ev ChargeEvent) {
+	if r.onCharged == nil || ev.Empty() {
+		return
+	}
+	defer func() {
+		if rec := recover(); rec != nil {
+			slog.Error("billing_charge_hook_panic", "panic", rec)
+		}
+	}()
+	r.onCharged(ctx, ev)
 }
 
 // Record 提交使用记录（非阻塞）
@@ -261,12 +297,14 @@ func (r *Recorder) RecordSync(ctx context.Context, record UsageRecord) (int, err
 	if err != nil {
 		return 0, fmt.Errorf("插入 UsageLog 失败: %w", err)
 	}
-	if err := applyUsageCharges(ctx, tx, []UsageRecord{record}, refs); err != nil {
+	charged, err := applyUsageCharges(ctx, tx, []UsageRecord{record}, refs)
+	if err != nil {
 		return 0, err
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("提交事务失败: %w", err)
 	}
+	r.fireChargeHook(ctx, charged)
 	return log.ID, nil
 }
 
@@ -440,7 +478,8 @@ func (r *Recorder) batchInsert(ctx context.Context, batch []UsageRecord) error {
 		return fmt.Errorf("批量插入 UsageLog 失败: %w", err)
 	}
 
-	if err := applyUsageCharges(ctx, tx, batch, refs); err != nil {
+	charged, err := applyUsageCharges(ctx, tx, batch, refs)
+	if err != nil {
 		return err
 	}
 
@@ -451,6 +490,8 @@ func (r *Recorder) batchInsert(ctx context.Context, batch []UsageRecord) error {
 
 	// 4. 提交后检查本批扣费用户是否已透支（best-effort，失败仅记日志）
 	r.notifyNegativeBalance(ctx, batch)
+	// 5. 提交后通知额度预警等订阅方（best-effort）
+	r.fireChargeHook(ctx, charged)
 	return nil
 }
 
@@ -943,7 +984,8 @@ func parseCostMetadataPositiveInt(metadata map[string]string, key string) int {
 	return value
 }
 
-func applyUsageCharges(ctx context.Context, tx *ent.Tx, batch []UsageRecord, refs *usageLogRefs) error {
+// applyUsageCharges 在事务内扣费/累加，返回本批实际发生扣费/累加的对象 ID（供提交后回调）。
+func applyUsageCharges(ctx context.Context, tx *ent.Tx, batch []UsageRecord, refs *usageLogRefs) (ChargeEvent, error) {
 	// 在同一事务中扣费 —— 独立累加器：
 	// - User.balance：按 actual_cost 扣减。
 	// - APIKey.used_quota：按 billed_cost 累加。
@@ -987,7 +1029,7 @@ func applyUsageCharges(ctx context.Context, tx *ent.Tx, batch []UsageRecord, ref
 		if err := tx.User.UpdateOneID(userID).
 			AddBalance(-cost).
 			Exec(ctx); err != nil {
-			return fmt.Errorf("扣减用户余额失败 user_id=%d cost=%.8f: %w", userID, cost, err)
+			return ChargeEvent{}, fmt.Errorf("扣减用户余额失败 user_id=%d cost=%.8f: %w", userID, cost, err)
 		}
 	}
 
@@ -1012,7 +1054,7 @@ func applyUsageCharges(ctx context.Context, tx *ent.Tx, batch []UsageRecord, ref
 			update = update.AddUsedQuotaActual(actual)
 		}
 		if err := update.Exec(ctx); err != nil {
-			return fmt.Errorf("更新 API Key 用量失败 key_id=%d: %w", keyID, err)
+			return ChargeEvent{}, fmt.Errorf("更新 API Key 用量失败 key_id=%d: %w", keyID, err)
 		}
 	}
 
@@ -1032,7 +1074,7 @@ func applyUsageCharges(ctx context.Context, tx *ent.Tx, batch []UsageRecord, ref
 			update = update.AddUsedQuotaActual(actual)
 		}
 		if err := update.Exec(ctx); err != nil {
-			return fmt.Errorf("更新团队成员用量失败 member_id=%d: %w", memberID, err)
+			return ChargeEvent{}, fmt.Errorf("更新团队成员用量失败 member_id=%d: %w", memberID, err)
 		}
 	}
 
@@ -1052,8 +1094,38 @@ func applyUsageCharges(ctx context.Context, tx *ent.Tx, batch []UsageRecord, ref
 			update = update.AddUsedQuotaActual(actual)
 		}
 		if err := update.Exec(ctx); err != nil {
-			return fmt.Errorf("更新部门用量失败 department_id=%d: %w", deptID, err)
+			return ChargeEvent{}, fmt.Errorf("更新部门用量失败 department_id=%d: %w", deptID, err)
 		}
 	}
-	return nil
+	return ChargeEvent{
+		UserIDs:       sortedIDs(userActualCosts),
+		MemberIDs:     sortedIDSet(memberIDs),
+		DepartmentIDs: sortedIDSet(deptIDs),
+	}, nil
+}
+
+// sortedIDs map 键升序切片（空 map 返回 nil）。
+func sortedIDs(m map[int]float64) []int {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]int, 0, len(m))
+	for id := range m {
+		out = append(out, id)
+	}
+	sort.Ints(out)
+	return out
+}
+
+// sortedIDSet 集合键升序切片（空集合返回 nil）。
+func sortedIDSet(m map[int]struct{}) []int {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]int, 0, len(m))
+	for id := range m {
+		out = append(out, id)
+	}
+	sort.Ints(out)
+	return out
 }

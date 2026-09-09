@@ -823,6 +823,37 @@ var (
 			},
 		},
 	}
+	// UserNotificationsColumns holds the columns for the "user_notifications" table.
+	UserNotificationsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "user_id", Type: field.TypeInt},
+		{Name: "kind", Type: field.TypeString, Size: 32},
+		{Name: "level", Type: field.TypeEnum, Enums: []string{"info", "warning", "danger"}, Default: "info"},
+		{Name: "title", Type: field.TypeString, Size: 255},
+		{Name: "content", Type: field.TypeString, Default: ""},
+		{Name: "link", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "dedupe_key", Type: field.TypeString, Unique: true, Nullable: true, Size: 128},
+		{Name: "read_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// UserNotificationsTable holds the schema information for the "user_notifications" table.
+	UserNotificationsTable = &schema.Table{
+		Name:       "user_notifications",
+		Columns:    UserNotificationsColumns,
+		PrimaryKey: []*schema.Column{UserNotificationsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "user_notification_user_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{UserNotificationsColumns[1], UserNotificationsColumns[9]},
+			},
+			{
+				Name:    "user_notification_user_read_at",
+				Unique:  false,
+				Columns: []*schema.Column{UserNotificationsColumns[1], UserNotificationsColumns[8]},
+			},
+		},
+	}
 	// UserSubscriptionsColumns holds the columns for the "user_subscriptions" table.
 	UserSubscriptionsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -932,6 +963,7 @@ var (
 		UsageLogsTable,
 		UsersTable,
 		UserIdentitiesTable,
+		UserNotificationsTable,
 		UserSubscriptionsTable,
 		AccountGroupsTable,
 		UserAllowedGroupsTable,

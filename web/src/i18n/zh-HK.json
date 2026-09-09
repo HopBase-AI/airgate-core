@@ -1238,7 +1238,12 @@
     "empty": "暫無通知",
     "empty_hint": "新的站內動態會顯示在這裡。",
     "default_title": "站點通知",
-    "time_unknown": "較早通知"
+    "time_unknown": "較早通知",
+    "kind_site": "站點公告",
+    "kind_quota_alert": "額度預警",
+    "kind_balance_alert": "餘額預警",
+    "kind_system": "系統訊息",
+    "view_link": "查看"
   },
   "settings": {
     "title": "系統設定",

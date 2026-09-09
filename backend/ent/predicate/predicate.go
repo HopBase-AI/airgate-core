@@ -60,5 +60,8 @@ type User func(*sql.Selector)
 // UserIdentity is the predicate function for useridentity builders.
 type UserIdentity func(*sql.Selector)
 
+// UserNotification is the predicate function for usernotification builders.
+type UserNotification func(*sql.Selector)
+
 // UserSubscription is the predicate function for usersubscription builders.
 type UserSubscription func(*sql.Selector)

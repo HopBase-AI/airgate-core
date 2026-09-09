@@ -1238,7 +1238,12 @@
     "empty": "No notifications",
     "empty_hint": "New in-app updates will appear here.",
     "default_title": "Site notification",
-    "time_unknown": "Earlier"
+    "time_unknown": "Earlier",
+    "kind_site": "Announcement",
+    "kind_quota_alert": "Quota alert",
+    "kind_balance_alert": "Balance alert",
+    "kind_system": "System",
+    "view_link": "View"
   },
   "settings": {
     "title": "Settings",
