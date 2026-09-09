@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/DouDOU-start/airgate-core/ent/department"
 	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 )
@@ -49,9 +50,10 @@ type Member struct {
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the MemberQuery when eager-loading is set.
-	Edges        MemberEdges `json:"edges"`
-	user_members *int
-	selectValues sql.SelectValues
+	Edges              MemberEdges `json:"edges"`
+	department_members *int
+	user_members       *int
+	selectValues       sql.SelectValues
 }
 
 // MemberEdges holds the relations/edges for other nodes in the graph.
@@ -62,9 +64,11 @@ type MemberEdges struct {
 	APIKeys []*APIKey `json:"api_keys,omitempty"`
 	// Account holds the value of the account edge.
 	Account *User `json:"account,omitempty"`
+	// Department holds the value of the department edge.
+	Department *Department `json:"department,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [4]bool
 }
 
 // OwnerOrErr returns the Owner value or an error if the edge
@@ -98,6 +102,17 @@ func (e MemberEdges) AccountOrErr() (*User, error) {
 	return nil, &NotLoadedError{edge: "account"}
 }
 
+// DepartmentOrErr returns the Department value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e MemberEdges) DepartmentOrErr() (*Department, error) {
+	if e.Department != nil {
+		return e.Department, nil
+	} else if e.loadedTypes[3] {
+		return nil, &NotFoundError{label: department.Label}
+	}
+	return nil, &NotLoadedError{edge: "department"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*Member) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
@@ -113,7 +128,9 @@ func (*Member) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullString)
 		case member.FieldPeriodAnchor, member.FieldPeriodStart, member.FieldCreatedAt, member.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
-		case member.ForeignKeys[0]: // user_members
+		case member.ForeignKeys[0]: // department_members
+			values[i] = new(sql.NullInt64)
+		case member.ForeignKeys[1]: // user_members
 			values[i] = new(sql.NullInt64)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -224,6 +241,13 @@ func (m *Member) assignValues(columns []string, values []any) error {
 			}
 		case member.ForeignKeys[0]:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for edge-field department_members", value)
+			} else if value.Valid {
+				m.department_members = new(int)
+				*m.department_members = int(value.Int64)
+			}
+		case member.ForeignKeys[1]:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for edge-field user_members", value)
 			} else if value.Valid {
 				m.user_members = new(int)
@@ -255,6 +279,11 @@ func (m *Member) QueryAPIKeys() *APIKeyQuery {
 // QueryAccount queries the "account" edge of the Member entity.
 func (m *Member) QueryAccount() *UserQuery {
 	return NewMemberClient(m.config).QueryAccount(m)
+}
+
+// QueryDepartment queries the "department" edge of the Member entity.
+func (m *Member) QueryDepartment() *DepartmentQuery {
+	return NewMemberClient(m.config).QueryDepartment(m)
 }
 
 // Update returns a builder for updating this Member.

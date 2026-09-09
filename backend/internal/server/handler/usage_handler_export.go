@@ -83,6 +83,7 @@ func (h *UsageHandler) UserUsageExport(c *gin.Context) {
 		tz:           tz,
 		apiKeyFilter: apiKeyFilter,
 		memberFilter: memberFilter,
+		deptFilter:   sessionDepartmentFilter(scoped, filters.DepartmentID),
 		scoped:       scoped,
 	})
 	if err != nil {
@@ -105,6 +106,7 @@ type exportCollectParams struct {
 	tz           string
 	apiKeyFilter *int64
 	memberFilter *int64
+	deptFilter   *int64
 	scoped       bool
 }
 
@@ -156,14 +158,15 @@ func (h *UsageHandler) collectExportRows(c *gin.Context, p exportCollectParams) 
 collect:
 	for page := 1; ; page++ {
 		result, err := h.service.ListUser(c.Request.Context(), p.userID, appusage.ListFilter{
-			Page:        page,
-			PageSize:    exportPageSize,
-			APIKeyID:    p.apiKeyFilter,
-			MemberID:    p.memberFilter,
-			StartDate:   startDate,
-			EndDate:     endDate,
-			TZ:          p.tz,
-			ScopedToKey: p.scoped,
+			Page:         page,
+			PageSize:     exportPageSize,
+			APIKeyID:     p.apiKeyFilter,
+			MemberID:     p.memberFilter,
+			DepartmentID: p.deptFilter,
+			StartDate:    startDate,
+			EndDate:      endDate,
+			TZ:           p.tz,
+			ScopedToKey:  p.scoped,
 		})
 		if err != nil {
 			return nil, false, err

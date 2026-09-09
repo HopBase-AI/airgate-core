@@ -77,6 +77,18 @@ func migrateUserHistoryRefs(drv *entsql.Driver) {
 			sql:   `ALTER TABLE usage_logs ALTER COLUMN user_usage_logs DROP NOT NULL`,
 		},
 		{
+			// 2026-09-09 企业账期对齐：老成员的 period_anchor 是各自创建时刻，与部门/企业错窗。
+			// 一次性对齐到企业锚点（users.billing_period_anchor ?? users.created_at）；period_start 不动，
+			// 鉴权读到跨期时按新锚点惰性推进（只会出现一次缩短的过渡期，不改历史账）。
+			label: "members.period_anchor_align",
+			sql: `UPDATE members AS m
+				SET period_anchor = COALESCE(u.billing_period_anchor, u.created_at)
+				FROM users AS u
+				WHERE m.user_members = u.id
+					AND m.period_anchor <> COALESCE(u.billing_period_anchor, u.created_at)`,
+			logRows: true,
+		},
+		{
 			label: "balance_logs.user_id_snapshot",
 			sql:   `ALTER TABLE balance_logs ADD COLUMN IF NOT EXISTS user_id_snapshot integer NOT NULL DEFAULT 0`,
 		},

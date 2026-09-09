@@ -133,6 +133,15 @@ func (s *Server) registerRoutes() {
 		memberGroup.PUT("/members/:id", handlers.Member.UpdateMember)
 		memberGroup.DELETE("/members/:id", handlers.Member.DeleteMember)
 		memberGroup.POST("/members/:id/reset-period", handlers.Member.ResetMemberPeriod)
+		// 企业组织（部门）：三层额度的中间层；企业总览 / 账期 / 操作审计同属企业主能力。
+		memberGroup.GET("/departments", handlers.Department.ListDepartments)
+		memberGroup.POST("/departments", handlers.Department.CreateDepartment)
+		memberGroup.PUT("/departments/:id", handlers.Department.UpdateDepartment)
+		memberGroup.DELETE("/departments/:id", handlers.Department.DeleteDepartment)
+		memberGroup.POST("/departments/:id/reset-period", handlers.Department.ResetDepartmentPeriod)
+		memberGroup.GET("/team/overview", handlers.Department.TeamOverview)
+		memberGroup.PUT("/team/billing-period", handlers.Department.UpdateBillingPeriod)
+		memberGroup.GET("/team/audit-logs", handlers.Department.ListTeamAuditLogs)
 
 		// API Key 管理
 		accountGroup.GET("/api-keys", handlers.APIKey.ListKeys)

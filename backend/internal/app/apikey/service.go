@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/DouDOU-start/airgate-core/internal/app/audit"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/pkg/pagination"
 	"github.com/DouDOU-start/airgate-core/internal/pkg/timezone"
@@ -15,11 +16,70 @@ import (
 type Service struct {
 	repo   Repository
 	secret string
+	audit  audit.Recorder
 }
 
 // NewService 创建 API Key 服务。
 func NewService(repo Repository, secret string) *Service {
-	return &Service{repo: repo, secret: secret}
+	return &Service{repo: repo, secret: secret, audit: audit.Noop{}}
+}
+
+// SetAudit 注入团队审计写入口（企业主 / 成员账号名下的密钥操作可追溯）。
+func (s *Service) SetAudit(recorder audit.Recorder) {
+	if recorder != nil {
+		s.audit = recorder
+	}
+}
+
+// resolveDepartment 校验直挂部门：nil 不动；0 = 解除；>0 必须是本用户（企业主）的部门。
+func (s *Service) resolveDepartment(ctx context.Context, userID int, raw *int64) (departmentID *int, has bool, err error) {
+	if raw == nil {
+		return nil, false, nil
+	}
+	if *raw <= 0 {
+		return nil, true, nil
+	}
+	id := int(*raw)
+	owned, err := s.repo.DepartmentOwnedBy(ctx, userID, id)
+	if err != nil {
+		return nil, false, err
+	}
+	if !owned {
+		return nil, false, ErrDepartmentNotFound
+	}
+	return &id, true, nil
+}
+
+// recordAudit 密钥操作审计：企业主本人或成员账号的操作都归到企业主（identity.OwnerID）名下。
+func (s *Service) recordAudit(ctx context.Context, identity TeamIdentity, action string, key Key, before, after map[string]any) {
+	s.audit.Record(ctx, audit.Entry{
+		OwnerID: identity.OwnerID, Action: action, TargetType: audit.TargetAPIKey,
+		TargetID: key.ID, TargetName: key.Name, Before: before, After: after,
+	})
+}
+
+// keySnapshot 审计用的关键字段快照（不含密钥本身）。
+func keySnapshot(k Key) map[string]any {
+	snap := map[string]any{
+		"name":            k.Name,
+		"quota_usd":       k.QuotaUSD,
+		"sell_rate":       k.SellRate,
+		"max_concurrency": k.MaxConcurrency,
+		"status":          k.Status,
+	}
+	if k.GroupID != nil {
+		snap["group_id"] = *k.GroupID
+	}
+	if k.MemberID != nil {
+		snap["member_id"] = *k.MemberID
+	}
+	if k.DepartmentID != nil && k.DepartmentDirect {
+		snap["department_id"] = *k.DepartmentID
+	}
+	if k.ExpiresAt != nil {
+		snap["expires_at"] = k.ExpiresAt.Format(time.RFC3339)
+	}
+	return snap
 }
 
 // ListByUser 查询当前用户的 API Key 列表。
@@ -116,13 +176,21 @@ func (s *Service) CreateOwned(ctx context.Context, userID int, input CreateInput
 	}
 
 	var (
-		memberID  *int
-		hasMember bool
+		memberID      *int
+		hasMember     bool
+		departmentID  *int
+		hasDepartment bool
 	)
 	if identity.IsMember() {
 		mid := identity.MemberID
 		memberID, hasMember = &mid, true
 	} else {
+		// 直挂部门只对企业主开放：成员账号的 key 永远跟随成员自己的部门。
+		departmentID, hasDepartment, err = s.resolveDepartment(ctx, userID, input.DepartmentID)
+		if err != nil {
+			logger.Warn("api_key_create_rejected", sdk.LogFieldUserID, userID, sdk.LogFieldReason, "department_access", sdk.LogFieldError, err)
+			return Key{}, err
+		}
 		memberID, hasMember, err = s.resolveMember(ctx, userID, input.MemberID)
 		if err != nil {
 			logger.Warn("api_key_create_rejected",
@@ -166,23 +234,25 @@ func (s *Service) CreateOwned(ctx context.Context, userID int, input CreateInput
 		maxConc = 0
 	}
 	item, err := s.repo.Create(ctx, Mutation{
-		Name:           &input.Name,
-		KeyHint:        stringPtr(buildKeyHint(rawKey)),
-		KeyHash:        &keyHash,
-		KeyEncrypted:   &encrypted,
-		UserID:         &userID,
-		GroupID:        &groupID,
-		MemberID:       memberID,
-		HasMemberID:    hasMember,
-		IPWhitelist:    cloneStringSlice(input.IPWhitelist),
-		HasIPWhitelist: input.IPWhitelist != nil,
-		IPBlacklist:    cloneStringSlice(input.IPBlacklist),
-		HasIPBlacklist: input.IPBlacklist != nil,
-		QuotaUSD:       &input.QuotaUSD,
-		SellRate:       &input.SellRate,
-		MaxConcurrency: &maxConc,
-		ExpiresAt:      expiresAt,
-		HasExpiresAt:   hasExpiresAt,
+		Name:            &input.Name,
+		KeyHint:         stringPtr(buildKeyHint(rawKey)),
+		KeyHash:         &keyHash,
+		KeyEncrypted:    &encrypted,
+		UserID:          &userID,
+		GroupID:         &groupID,
+		MemberID:        memberID,
+		HasMemberID:     hasMember,
+		DepartmentID:    departmentID,
+		HasDepartmentID: hasDepartment,
+		IPWhitelist:     cloneStringSlice(input.IPWhitelist),
+		HasIPWhitelist:  input.IPWhitelist != nil,
+		IPBlacklist:     cloneStringSlice(input.IPBlacklist),
+		HasIPBlacklist:  input.IPBlacklist != nil,
+		QuotaUSD:        &input.QuotaUSD,
+		SellRate:        &input.SellRate,
+		MaxConcurrency:  &maxConc,
+		ExpiresAt:       expiresAt,
+		HasExpiresAt:    hasExpiresAt,
 	})
 	if err != nil {
 		logger.Error("api_key_create_failed",
@@ -199,6 +269,7 @@ func (s *Service) CreateOwned(ctx context.Context, userID int, input CreateInput
 		sdk.LogFieldAPIKeyID, item.ID,
 		sdk.LogFieldGroupID, groupID,
 	)
+	s.recordAudit(ctx, identity, audit.ActionAPIKeyCreate, item, nil, keySnapshot(item))
 
 	item.PlainKey = rawKey
 	return item, nil
@@ -207,10 +278,11 @@ func (s *Service) CreateOwned(ctx context.Context, userID int, input CreateInput
 // UpdateOwned 更新当前用户的 API Key。
 func (s *Service) UpdateOwned(ctx context.Context, userID, id int, input UpdateInput) (Key, error) {
 	logger := sdk.LoggerFromContext(ctx)
-	mutation, err := s.buildMutation(ctx, userID, input, true)
+	mutation, identity, err := s.buildMutationWithIdentity(ctx, userID, input, true)
 	if err != nil {
 		return Key{}, err
 	}
+	before, _ := s.repo.FindOwned(ctx, userID, id)
 	updated, err := s.repo.UpdateOwned(ctx, userID, id, mutation)
 	if err != nil {
 		logger.Error("api_key_update_failed",
@@ -221,6 +293,7 @@ func (s *Service) UpdateOwned(ctx context.Context, userID, id int, input UpdateI
 		return Key{}, err
 	}
 	logApiKeyMutationOutcome(logger, userID, id, mutation)
+	s.recordAudit(ctx, identity, audit.ActionAPIKeyUpdate, updated, keySnapshot(before), keySnapshot(updated))
 	return updated, nil
 }
 
@@ -247,6 +320,7 @@ func (s *Service) UpdateAdmin(ctx context.Context, id int, input UpdateInput) (K
 // DeleteOwned 删除当前用户的 API Key。
 func (s *Service) DeleteOwned(ctx context.Context, userID, id int) error {
 	logger := sdk.LoggerFromContext(ctx)
+	before, findErr := s.repo.FindOwned(ctx, userID, id)
 	if err := s.repo.DeleteOwned(ctx, userID, id); err != nil {
 		logger.Error("api_key_delete_failed",
 			sdk.LogFieldUserID, userID,
@@ -259,6 +333,11 @@ func (s *Service) DeleteOwned(ctx context.Context, userID, id int) error {
 		sdk.LogFieldUserID, userID,
 		sdk.LogFieldAPIKeyID, id,
 	)
+	if findErr == nil {
+		if identity, err := s.repo.TeamIdentity(ctx, userID); err == nil {
+			s.recordAudit(ctx, identity, audit.ActionAPIKeyDelete, before, keySnapshot(before), nil)
+		}
+	}
 	return nil
 }
 
@@ -316,9 +395,14 @@ func logApiKeyMutationOutcome(logger *slog.Logger, userID, keyID int, mutation M
 }
 
 func (s *Service) buildMutation(ctx context.Context, userID int, input UpdateInput, enforceGroupAccess bool) (Mutation, error) {
+	mutation, _, err := s.buildMutationWithIdentity(ctx, userID, input, enforceGroupAccess)
+	return mutation, err
+}
+
+func (s *Service) buildMutationWithIdentity(ctx context.Context, userID int, input UpdateInput, enforceGroupAccess bool) (Mutation, TeamIdentity, error) {
 	expiresAt, hasExpiresAt, err := parseExpiresAt(input.ExpiresAt)
 	if err != nil {
-		return Mutation{}, err
+		return Mutation{}, TeamIdentity{}, err
 	}
 
 	mutation := Mutation{
@@ -339,14 +423,14 @@ func (s *Service) buildMutation(ctx context.Context, userID int, input UpdateInp
 		var err error
 		identity, err = s.repo.TeamIdentity(ctx, userID)
 		if err != nil {
-			return Mutation{}, err
+			return Mutation{}, TeamIdentity{}, err
 		}
 	}
 	if input.GroupID != nil {
 		groupID := int(*input.GroupID)
 		if enforceGroupAccess {
 			if err := s.ensureIdentityCanUseGroup(ctx, identity, groupID); err != nil {
-				return Mutation{}, err
+				return Mutation{}, TeamIdentity{}, err
 			}
 		}
 		mutation.GroupID = &groupID
@@ -357,12 +441,21 @@ func (s *Service) buildMutation(ctx context.Context, userID int, input UpdateInp
 	if input.MemberID != nil && enforceGroupAccess && !identity.IsMember() {
 		memberID, hasMember, err := s.resolveMember(ctx, userID, input.MemberID)
 		if err != nil {
-			return Mutation{}, err
+			return Mutation{}, TeamIdentity{}, err
 		}
 		mutation.MemberID = memberID
 		mutation.HasMemberID = hasMember
 	}
-	return mutation, nil
+	// 直挂部门同样只在企业主自己的路径上可改。
+	if input.DepartmentID != nil && enforceGroupAccess && !identity.IsMember() {
+		departmentID, hasDepartment, err := s.resolveDepartment(ctx, userID, input.DepartmentID)
+		if err != nil {
+			return Mutation{}, TeamIdentity{}, err
+		}
+		mutation.DepartmentID = departmentID
+		mutation.HasDepartmentID = hasDepartment
+	}
+	return mutation, identity, nil
 }
 
 // ensureIdentityCanUseGroup 按付费身份校验分组：成员账号先过白名单，再以企业主身份过

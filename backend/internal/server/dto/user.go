@@ -37,6 +37,11 @@ type UserResp struct {
 	MemberPeriodEnd       string  `json:"member_period_end,omitempty"` // RFC3339；none 周期无
 	MemberAllowedGroupIDs []int64 `json:"member_allowed_group_ids,omitempty"`
 	TeamOwnerEmail        string  `json:"team_owner_email,omitempty"`
+	// 部门层（成员账号）：所属部门与部门本期额度口径；未分配部门时为空。
+	MemberDepartmentID   int64   `json:"member_department_id,omitempty"`
+	MemberDepartmentName string  `json:"member_department_name,omitempty"`
+	DepartmentQuotaUSD   float64 `json:"department_quota_usd,omitempty"`
+	DepartmentUsedQuota  float64 `json:"department_used_quota,omitempty"`
 	TimeMixin
 }
 

@@ -80,14 +80,15 @@ func (f *Forwarder) recordFailureUsage(c *gin.Context, state *forwardState, fail
 	}
 
 	record := billing.UsageRecord{
-		UserID:    state.keyInfo.UserID,
-		UserEmail: state.keyInfo.UserEmail,
-		APIKeyID:  state.keyInfo.KeyID,
-		MemberID:  state.keyInfo.MemberID,
-		GroupID:   state.keyInfo.GroupID,
-		Platform:  failureRecordPlatform(state),
-		Model:     failureRecordModel(state),
-		Stream:    state.stream,
+		UserID:       state.keyInfo.UserID,
+		UserEmail:    state.keyInfo.UserEmail,
+		APIKeyID:     state.keyInfo.KeyID,
+		MemberID:     state.keyInfo.MemberID,
+		DepartmentID: state.keyInfo.DepartmentID,
+		GroupID:      state.keyInfo.GroupID,
+		Platform:     failureRecordPlatform(state),
+		Model:        failureRecordModel(state),
+		Stream:       state.stream,
 		// 失败请求的耗时同样有诊断价值（区分"秒失败"与"卡 60s 超时"）。
 		DurationMs:    requestElapsedMs(state),
 		UserAgent:     c.Request.UserAgent(),

@@ -7,6 +7,8 @@ type MemberRequestOptions = {
 
 type MemberListParams = PageReq & {
   status?: 'active' | 'disabled';
+  /** 按部门筛选；0 = 未分配 */
+  department_id?: number;
 };
 
 // 团队成员（企业子账号）：主账号侧接口

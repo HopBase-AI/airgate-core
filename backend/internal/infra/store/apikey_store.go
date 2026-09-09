@@ -8,6 +8,7 @@ import (
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	entapikey "github.com/DouDOU-start/airgate-core/ent/apikey"
+	entdepartment "github.com/DouDOU-start/airgate-core/ent/department"
 	entgroup "github.com/DouDOU-start/airgate-core/ent/group"
 	entmember "github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
@@ -39,7 +40,8 @@ func (s *APIKeyStore) ListByUser(ctx context.Context, userID int, filter appapik
 		Where(ownership).
 		WithUser().
 		WithGroup().
-		WithMember()
+		WithMember(func(q *ent.MemberQuery) { q.WithDepartment() }).
+		WithDepartment()
 	query = applyAPIKeyFilters(query, filter)
 	query = applyAPIKeyKeyword(query, filter.Keyword, filter.SearchScope)
 
@@ -66,7 +68,7 @@ func (s *APIKeyStore) ListByUser(ctx context.Context, userID int, filter appapik
 
 // ListAdmin 查询全局 API Key 列表。
 func (s *APIKeyStore) ListAdmin(ctx context.Context, filter appapikey.ListFilter) ([]appapikey.Key, int64, error) {
-	query := applyAPIKeyFilters(s.db.APIKey.Query().WithUser().WithGroup().WithMember(), filter)
+	query := applyAPIKeyFilters(s.db.APIKey.Query().WithUser().WithGroup().WithMember(func(q *ent.MemberQuery) { q.WithDepartment() }).WithDepartment(), filter)
 	query = applyAPIKeyKeyword(query, filter.Keyword, filter.SearchScope)
 
 	total, err := query.Count(ctx)
@@ -100,6 +102,17 @@ func applyAPIKeyFilters(query *ent.APIKeyQuery, filter appapikey.ListFilter) *en
 		query = query.Where(entapikey.HasMemberWith(entmember.IDEQ(*filter.MemberID)))
 	case filter.MemberUnassigned:
 		query = query.Where(entapikey.Not(entapikey.HasMember()))
+	}
+	if filter.DepartmentID != nil {
+		if *filter.DepartmentID > 0 {
+			query = query.Where(apiKeyEffectiveDepartment(*filter.DepartmentID))
+		} else {
+			// 未分配：既没直挂部门，所属成员（如有）也没有部门。
+			query = query.Where(
+				entapikey.Not(entapikey.HasDepartment()),
+				entapikey.Not(entapikey.HasMemberWith(entmember.HasDepartment())),
+			)
+		}
 	}
 	if filter.GroupID != nil {
 		query = query.Where(entapikey.HasGroupWith(entgroup.IDEQ(*filter.GroupID)))
@@ -173,6 +186,13 @@ func (s *APIKeyStore) GetGroupAccess(ctx context.Context, userID, groupID int) (
 		return appapikey.GroupAccess{}, err
 	}
 	return appapikey.GroupAccess{Exists: true, Allowed: allowed}, nil
+}
+
+// DepartmentOwnedBy 部门是否存在且归属该用户。
+func (s *APIKeyStore) DepartmentOwnedBy(ctx context.Context, userID, departmentID int) (bool, error) {
+	return s.db.Department.Query().
+		Where(entdepartment.IDEQ(departmentID), entdepartment.HasOwnerWith(entuser.IDEQ(userID))).
+		Exist(ctx)
 }
 
 // MemberOwnedBy 团队成员是否存在且归属该用户。
@@ -251,7 +271,8 @@ func (s *APIKeyStore) FindOwned(ctx context.Context, userID, id int) (appapikey.
 		Where(entapikey.IDEQ(id), apiKeyOwnedBy(userID)).
 		WithUser().
 		WithGroup().
-		WithMember().
+		WithMember(func(q *ent.MemberQuery) { q.WithDepartment() }).
+		WithDepartment().
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -279,7 +300,8 @@ func (s *APIKeyStore) loadByID(ctx context.Context, id int) (appapikey.Key, erro
 		Where(entapikey.IDEQ(id)).
 		WithUser().
 		WithGroup().
-		WithMember().
+		WithMember(func(q *ent.MemberQuery) { q.WithDepartment() }).
+		WithDepartment().
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -312,6 +334,9 @@ func applyAPIKeyMutationCreate(builder *ent.APIKeyCreate, mutation appapikey.Mut
 	if mutation.HasMemberID && mutation.MemberID != nil {
 		builder.SetMemberID(*mutation.MemberID)
 	}
+	if mutation.HasDepartmentID && mutation.DepartmentID != nil {
+		builder.SetDepartmentID(*mutation.DepartmentID)
+	}
 	if mutation.HasIPWhitelist {
 		builder.SetIPWhitelist(cloneStringSlice(mutation.IPWhitelist))
 	}
@@ -341,6 +366,13 @@ func applyAPIKeyMutationUpdate(builder *ent.APIKeyUpdateOne, mutation appapikey.
 	}
 	if mutation.GroupID != nil {
 		builder.SetGroupID(*mutation.GroupID)
+	}
+	if mutation.HasDepartmentID {
+		if mutation.DepartmentID != nil {
+			builder.SetDepartmentID(*mutation.DepartmentID)
+		} else {
+			builder.ClearDepartment()
+		}
 	}
 	if mutation.HasMemberID {
 		if mutation.MemberID != nil {
@@ -409,6 +441,18 @@ func mapAPIKey(item *ent.APIKey) appapikey.Key {
 		memberID := item.Edges.Member.ID
 		result.MemberID = &memberID
 		result.MemberName = item.Edges.Member.Name
+	}
+	// 有效部门：直挂优先，否则跟随成员所属部门。
+	switch {
+	case item.Edges.Department != nil:
+		departmentID := item.Edges.Department.ID
+		result.DepartmentID = &departmentID
+		result.DepartmentName = item.Edges.Department.Name
+		result.DepartmentDirect = true
+	case item.Edges.Member != nil && item.Edges.Member.Edges.Department != nil:
+		departmentID := item.Edges.Member.Edges.Department.ID
+		result.DepartmentID = &departmentID
+		result.DepartmentName = item.Edges.Member.Edges.Department.Name
 	}
 	return result
 }

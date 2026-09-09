@@ -70,7 +70,8 @@ func (s *Server) handleCCCompatUserBalance(c *gin.Context) {
 			apikey.StatusEQ(apikey.StatusActive),
 		).
 		WithUser().
-		WithMember().
+		WithMember(func(q *ent.MemberQuery) { q.WithDepartment() }).
+		WithDepartment().
 		Only(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -112,7 +113,16 @@ func (s *Server) handleCCCompatUserBalance(c *gin.Context) {
 			return
 		}
 		used, _ := memberPeriodUsed(m, time.Now())
-		balance = billing.CapByMemberQuota(balance, m.QuotaUsd, used)
+		balance = billing.CapByQuotas(balance, m.QuotaUsd, used, 0, 0)
+	}
+	// 有效部门（直挂 ?? 成员所属）设了额度再压一层：三层取小。
+	if d := ak.Edges.Department; d != nil || (ak.Edges.Member != nil && ak.Edges.Member.Edges.Department != nil) {
+		if d == nil {
+			d = ak.Edges.Member.Edges.Department
+		}
+		if remaining, limited := auth.DepartmentRemainingQuota(d, time.Now()); limited {
+			balance = min(balance, remaining)
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"is_active": balance > 0,

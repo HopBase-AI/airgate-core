@@ -90,6 +90,11 @@ func IsEnterpriseOwner(v bool) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldIsEnterpriseOwner, v))
 }
 
+// BillingPeriodAnchor applies equality check predicate on the "billing_period_anchor" field. It's identical to BillingPeriodAnchorEQ.
+func BillingPeriodAnchor(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldBillingPeriodAnchor, v))
+}
+
 // MaxConcurrency applies equality check predicate on the "max_concurrency" field. It's identical to MaxConcurrencyEQ.
 func MaxConcurrency(v int) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldMaxConcurrency, v))
@@ -483,6 +488,56 @@ func IsEnterpriseOwnerEQ(v bool) predicate.User {
 // IsEnterpriseOwnerNEQ applies the NEQ predicate on the "is_enterprise_owner" field.
 func IsEnterpriseOwnerNEQ(v bool) predicate.User {
 	return predicate.User(sql.FieldNEQ(FieldIsEnterpriseOwner, v))
+}
+
+// BillingPeriodAnchorEQ applies the EQ predicate on the "billing_period_anchor" field.
+func BillingPeriodAnchorEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldBillingPeriodAnchor, v))
+}
+
+// BillingPeriodAnchorNEQ applies the NEQ predicate on the "billing_period_anchor" field.
+func BillingPeriodAnchorNEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldBillingPeriodAnchor, v))
+}
+
+// BillingPeriodAnchorIn applies the In predicate on the "billing_period_anchor" field.
+func BillingPeriodAnchorIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldIn(FieldBillingPeriodAnchor, vs...))
+}
+
+// BillingPeriodAnchorNotIn applies the NotIn predicate on the "billing_period_anchor" field.
+func BillingPeriodAnchorNotIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldBillingPeriodAnchor, vs...))
+}
+
+// BillingPeriodAnchorGT applies the GT predicate on the "billing_period_anchor" field.
+func BillingPeriodAnchorGT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGT(FieldBillingPeriodAnchor, v))
+}
+
+// BillingPeriodAnchorGTE applies the GTE predicate on the "billing_period_anchor" field.
+func BillingPeriodAnchorGTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldBillingPeriodAnchor, v))
+}
+
+// BillingPeriodAnchorLT applies the LT predicate on the "billing_period_anchor" field.
+func BillingPeriodAnchorLT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLT(FieldBillingPeriodAnchor, v))
+}
+
+// BillingPeriodAnchorLTE applies the LTE predicate on the "billing_period_anchor" field.
+func BillingPeriodAnchorLTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldBillingPeriodAnchor, v))
+}
+
+// BillingPeriodAnchorIsNil applies the IsNil predicate on the "billing_period_anchor" field.
+func BillingPeriodAnchorIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldBillingPeriodAnchor))
+}
+
+// BillingPeriodAnchorNotNil applies the NotNil predicate on the "billing_period_anchor" field.
+func BillingPeriodAnchorNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldBillingPeriodAnchor))
 }
 
 // MaxConcurrencyEQ applies the EQ predicate on the "max_concurrency" field.
@@ -1153,6 +1208,29 @@ func HasMembers() predicate.User {
 func HasMembersWith(preds ...predicate.Member) predicate.User {
 	return predicate.User(func(s *sql.Selector) {
 		step := newMembersStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasDepartments applies the HasEdge predicate on the "departments" edge.
+func HasDepartments() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, DepartmentsTable, DepartmentsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasDepartmentsWith applies the HasEdge predicate on the "departments" edge with a given conditions (other predicates).
+func HasDepartmentsWith(preds ...predicate.Department) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newDepartmentsStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

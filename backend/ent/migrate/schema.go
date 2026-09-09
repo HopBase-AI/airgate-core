@@ -27,6 +27,7 @@ var (
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "disabled"}, Default: "active"},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "department_api_keys", Type: field.TypeInt, Nullable: true},
 		{Name: "group_api_keys", Type: field.TypeInt, Nullable: true},
 		{Name: "member_api_keys", Type: field.TypeInt, Nullable: true},
 		{Name: "user_api_keys", Type: field.TypeInt},
@@ -38,20 +39,26 @@ var (
 		PrimaryKey: []*schema.Column{APIKeysColumns[0]},
 		ForeignKeys: []*schema.ForeignKey{
 			{
-				Symbol:     "api_keys_groups_api_keys",
+				Symbol:     "api_keys_departments_api_keys",
 				Columns:    []*schema.Column{APIKeysColumns[16]},
+				RefColumns: []*schema.Column{DepartmentsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "api_keys_groups_api_keys",
+				Columns:    []*schema.Column{APIKeysColumns[17]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "api_keys_members_api_keys",
-				Columns:    []*schema.Column{APIKeysColumns[17]},
+				Columns:    []*schema.Column{APIKeysColumns[18]},
 				RefColumns: []*schema.Column{MembersColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "api_keys_users_api_keys",
-				Columns:    []*schema.Column{APIKeysColumns[18]},
+				Columns:    []*schema.Column{APIKeysColumns[19]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -70,7 +77,12 @@ var (
 			{
 				Name:    "apikey_member_api_keys",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[17]},
+				Columns: []*schema.Column{APIKeysColumns[18]},
+			},
+			{
+				Name:    "apikey_department_api_keys",
+				Unique:  false,
+				Columns: []*schema.Column{APIKeysColumns[16]},
 			},
 		},
 	}
@@ -237,6 +249,49 @@ var (
 			},
 		},
 	}
+	// DepartmentsColumns holds the columns for the "departments" table.
+	DepartmentsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "name", Type: field.TypeString, Size: 64},
+		{Name: "note", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "sort", Type: field.TypeInt, Default: 0},
+		{Name: "quota_usd", Type: field.TypeFloat64, Default: 0},
+		{Name: "quota_period", Type: field.TypeEnum, Enums: []string{"none", "monthly"}, Default: "monthly"},
+		{Name: "period_anchor", Type: field.TypeTime},
+		{Name: "period_start", Type: field.TypeTime},
+		{Name: "period_used_base", Type: field.TypeFloat64, Default: 0},
+		{Name: "used_quota", Type: field.TypeFloat64, Default: 0},
+		{Name: "used_quota_actual", Type: field.TypeFloat64, Default: 0},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "user_departments", Type: field.TypeInt},
+	}
+	// DepartmentsTable holds the schema information for the "departments" table.
+	DepartmentsTable = &schema.Table{
+		Name:       "departments",
+		Columns:    DepartmentsColumns,
+		PrimaryKey: []*schema.Column{DepartmentsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "departments_users_departments",
+				Columns:    []*schema.Column{DepartmentsColumns[13]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "department_user_departments",
+				Unique:  false,
+				Columns: []*schema.Column{DepartmentsColumns[13]},
+			},
+			{
+				Name:    "department_name_user_departments",
+				Unique:  true,
+				Columns: []*schema.Column{DepartmentsColumns[1], DepartmentsColumns[13]},
+			},
+		},
+	}
 	// GroupsColumns holds the columns for the "groups" table.
 	GroupsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -282,6 +337,7 @@ var (
 		{Name: "allowed_group_ids", Type: field.TypeJSON, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "department_members", Type: field.TypeInt, Nullable: true},
 		{Name: "user_members", Type: field.TypeInt},
 	}
 	// MembersTable holds the schema information for the "members" table.
@@ -291,8 +347,14 @@ var (
 		PrimaryKey: []*schema.Column{MembersColumns[0]},
 		ForeignKeys: []*schema.ForeignKey{
 			{
-				Symbol:     "members_users_members",
+				Symbol:     "members_departments_members",
 				Columns:    []*schema.Column{MembersColumns[15]},
+				RefColumns: []*schema.Column{DepartmentsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "members_users_members",
+				Columns:    []*schema.Column{MembersColumns[16]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -300,6 +362,11 @@ var (
 		Indexes: []*schema.Index{
 			{
 				Name:    "member_user_members",
+				Unique:  false,
+				Columns: []*schema.Column{MembersColumns[16]},
+			},
+			{
+				Name:    "member_department_members",
 				Unique:  false,
 				Columns: []*schema.Column{MembersColumns[15]},
 			},
@@ -481,6 +548,40 @@ var (
 			},
 		},
 	}
+	// TeamAuditLogsColumns holds the columns for the "team_audit_logs" table.
+	TeamAuditLogsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "owner_id", Type: field.TypeInt},
+		{Name: "actor_user_id", Type: field.TypeInt, Default: 0},
+		{Name: "actor_email", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "action", Type: field.TypeString, Size: 64},
+		{Name: "target_type", Type: field.TypeString, Size: 32},
+		{Name: "target_id", Type: field.TypeInt, Default: 0},
+		{Name: "target_name", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "before", Type: field.TypeJSON, Nullable: true},
+		{Name: "after", Type: field.TypeJSON, Nullable: true},
+		{Name: "ip", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "request_id", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// TeamAuditLogsTable holds the schema information for the "team_audit_logs" table.
+	TeamAuditLogsTable = &schema.Table{
+		Name:       "team_audit_logs",
+		Columns:    TeamAuditLogsColumns,
+		PrimaryKey: []*schema.Column{TeamAuditLogsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "team_audit_owner_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{TeamAuditLogsColumns[1], TeamAuditLogsColumns[12]},
+			},
+			{
+				Name:    "team_audit_owner_target",
+				Unique:  false,
+				Columns: []*schema.Column{TeamAuditLogsColumns[1], TeamAuditLogsColumns[5], TeamAuditLogsColumns[6]},
+			},
+		},
+	}
 	// UsageLogsColumns holds the columns for the "usage_logs" table.
 	UsageLogsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -527,6 +628,7 @@ var (
 		{Name: "user_id_snapshot", Type: field.TypeInt, Default: 0},
 		{Name: "user_email_snapshot", Type: field.TypeString, Default: ""},
 		{Name: "member_id", Type: field.TypeInt, Default: 0},
+		{Name: "department_id", Type: field.TypeInt, Default: 0},
 		{Name: "status", Type: field.TypeString, Default: "success"},
 		{Name: "error_code", Type: field.TypeString, Default: ""},
 		{Name: "error_status", Type: field.TypeInt, Default: 0},
@@ -545,25 +647,25 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "usage_logs_api_keys_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[49]},
+				Columns:    []*schema.Column{UsageLogsColumns[50]},
 				RefColumns: []*schema.Column{APIKeysColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "usage_logs_accounts_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[50]},
+				Columns:    []*schema.Column{UsageLogsColumns[51]},
 				RefColumns: []*schema.Column{AccountsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "usage_logs_groups_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[51]},
+				Columns:    []*schema.Column{UsageLogsColumns[52]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "usage_logs_users_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[52]},
+				Columns:    []*schema.Column{UsageLogsColumns[53]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -572,7 +674,7 @@ var (
 			{
 				Name:    "usage_log_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[48]},
+				Columns: []*schema.Column{UsageLogsColumns[49]},
 			},
 			{
 				Name:    "usage_log_request_id_unique",
@@ -582,22 +684,22 @@ var (
 			{
 				Name:    "usage_log_platform_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[1], UsageLogsColumns[48]},
+				Columns: []*schema.Column{UsageLogsColumns[1], UsageLogsColumns[49]},
 			},
 			{
 				Name:    "usage_log_user_snapshot_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[41], UsageLogsColumns[48]},
+				Columns: []*schema.Column{UsageLogsColumns[41], UsageLogsColumns[49]},
 			},
 			{
 				Name:    "usage_log_model_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[2], UsageLogsColumns[48]},
+				Columns: []*schema.Column{UsageLogsColumns[2], UsageLogsColumns[49]},
 			},
 			{
 				Name:    "usage_log_error_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[48]},
+				Columns: []*schema.Column{UsageLogsColumns[49]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "error_code <> ''",
 				},
@@ -605,30 +707,38 @@ var (
 			{
 				Name:    "usage_log_member_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[43], UsageLogsColumns[48]},
+				Columns: []*schema.Column{UsageLogsColumns[43], UsageLogsColumns[49]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "member_id > 0",
 				},
 			},
 			{
+				Name:    "usage_log_department_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{UsageLogsColumns[44], UsageLogsColumns[49]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "department_id > 0",
+				},
+			},
+			{
 				Name:    "usage_log_user",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[52]},
+				Columns: []*schema.Column{UsageLogsColumns[53]},
 			},
 			{
 				Name:    "usage_log_api_key",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[49]},
+				Columns: []*schema.Column{UsageLogsColumns[50]},
 			},
 			{
 				Name:    "usage_log_account",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[50]},
+				Columns: []*schema.Column{UsageLogsColumns[51]},
 			},
 			{
 				Name:    "usage_log_group",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[51]},
+				Columns: []*schema.Column{UsageLogsColumns[52]},
 			},
 		},
 	}
@@ -643,6 +753,7 @@ var (
 		{Name: "role", Type: field.TypeEnum, Enums: []string{"admin", "user"}, Default: "user"},
 		{Name: "can_author_blog", Type: field.TypeBool, Default: false},
 		{Name: "is_enterprise_owner", Type: field.TypeBool, Default: false},
+		{Name: "billing_period_anchor", Type: field.TypeTime, Nullable: true},
 		{Name: "max_concurrency", Type: field.TypeInt, Default: 0},
 		{Name: "totp_secret", Type: field.TypeString, Nullable: true},
 		{Name: "group_rates", Type: field.TypeJSON, Nullable: true},
@@ -669,7 +780,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "users_members_account",
-				Columns:    []*schema.Column{UsersColumns[25]},
+				Columns:    []*schema.Column{UsersColumns[26]},
 				RefColumns: []*schema.Column{MembersColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -678,7 +789,7 @@ var (
 			{
 				Name:    "user_inviter_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsersColumns[19]},
+				Columns: []*schema.Column{UsersColumns[20]},
 			},
 		},
 	}
@@ -808,6 +919,7 @@ var (
 		AccountEventsTable,
 		BalanceLogsTable,
 		BlogPostsTable,
+		DepartmentsTable,
 		GroupsTable,
 		MembersTable,
 		PluginsTable,
@@ -816,6 +928,7 @@ var (
 		ReferralCommissionsTable,
 		SettingsTable,
 		TasksTable,
+		TeamAuditLogsTable,
 		UsageLogsTable,
 		UsersTable,
 		UserIdentitiesTable,
@@ -826,13 +939,16 @@ var (
 )
 
 func init() {
-	APIKeysTable.ForeignKeys[0].RefTable = GroupsTable
-	APIKeysTable.ForeignKeys[1].RefTable = MembersTable
-	APIKeysTable.ForeignKeys[2].RefTable = UsersTable
+	APIKeysTable.ForeignKeys[0].RefTable = DepartmentsTable
+	APIKeysTable.ForeignKeys[1].RefTable = GroupsTable
+	APIKeysTable.ForeignKeys[2].RefTable = MembersTable
+	APIKeysTable.ForeignKeys[3].RefTable = UsersTable
 	AccountsTable.ForeignKeys[0].RefTable = ProxiesTable
 	AccountEventsTable.ForeignKeys[0].RefTable = AccountsTable
 	BalanceLogsTable.ForeignKeys[0].RefTable = UsersTable
-	MembersTable.ForeignKeys[0].RefTable = UsersTable
+	DepartmentsTable.ForeignKeys[0].RefTable = UsersTable
+	MembersTable.ForeignKeys[0].RefTable = DepartmentsTable
+	MembersTable.ForeignKeys[1].RefTable = UsersTable
 	UsageLogsTable.ForeignKeys[0].RefTable = APIKeysTable
 	UsageLogsTable.ForeignKeys[1].RefTable = AccountsTable
 	UsageLogsTable.ForeignKeys[2].RefTable = GroupsTable

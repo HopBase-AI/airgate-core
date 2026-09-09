@@ -25,7 +25,8 @@ func (h *APIKeyHandler) handleError(logMessage, publicMessage string, err error)
 	case errors.Is(err, appapikey.ErrKeyNotFound):
 		return 404, err.Error()
 	case errors.Is(err, appapikey.ErrGroupNotFound),
-		errors.Is(err, appapikey.ErrMemberNotFound):
+		errors.Is(err, appapikey.ErrMemberNotFound),
+		errors.Is(err, appapikey.ErrDepartmentNotFound):
 		return 404, err.Error()
 	case errors.Is(err, appapikey.ErrGroupForbidden):
 		return 403, err.Error()

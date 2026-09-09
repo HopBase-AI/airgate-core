@@ -24,6 +24,7 @@ export function EditKeyModal({
   setForm,
   groupOptions,
   memberOptions = [],
+  departmentOptions = [],
   onClose,
   onSubmit,
   loading,
@@ -35,6 +36,8 @@ export function EditKeyModal({
   groupOptions: KeyGroupOption[];
   /** 团队成员选项；为空时不渲染归属成员字段（普通用户看不到这一层） */
   memberOptions?: KeyMemberOption[];
+  /** 企业主的部门列表；没建过部门时不展示直挂部门一栏 */
+  departmentOptions?: KeyMemberOption[];
   onClose: () => void;
   onSubmit: () => void;
   loading: boolean;
@@ -164,6 +167,32 @@ export function EditKeyModal({
               </ListBox>
             </Select.Popover>
             <Description>{t('user_keys.member_hint')}</Description>
+          </Select>
+        ) : null}
+        {/* 直挂部门：没挂成员的 key 也能按部门管控额度与看账（成员的 key 跟随成员部门，此项不生效） */}
+        {departmentOptions.length > 0 && !form.member_id ? (
+          <Select
+            fullWidth
+            selectedKey={form.department_id || ''}
+            onSelectionChange={(key) => setForm({ ...form, department_id: key == null || key === '' ? '' : String(key) })}
+          >
+            <Label>{t('user_keys.department_label')}</Label>
+            <Select.Trigger>
+              <Select.Value>
+                {departmentOptions.find((option) => option.value === form.department_id)?.label ?? t('user_keys.department_none')}
+              </Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover className="w-[var(--trigger-width)]">
+              <ListBox items={[{ id: '', label: t('user_keys.department_none') }, ...departmentOptions.map((option) => ({ id: option.value, label: option.label }))]}>
+                {(item) => (
+                  <ListBox.Item id={item.id} textValue={item.label}>
+                    {item.label}
+                  </ListBox.Item>
+                )}
+              </ListBox>
+            </Select.Popover>
+            <Description>{t('user_keys.department_hint')}</Description>
           </Select>
         ) : null}
         {/* 配额与并发并排,售价倍率单独一行:同一弹窗少滚一屏 */}

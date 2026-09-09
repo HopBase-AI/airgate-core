@@ -243,4 +243,13 @@ type MembershipBrief struct {
 	OwnerEmail      string
 	OwnerBalance    float64
 	OwnerMaxConc    int
+	// 部门层：成员所属部门（0=未分配）与部门本期剩余（DepartmentLimited=false 表示部门不限额）。
+	DepartmentID        int
+	DepartmentName      string
+	DepartmentQuotaUSD  float64
+	DepartmentUsedQuota float64
+	DepartmentLimited   bool
+	// EffectiveRemaining 三层取小的可用额度（成员剩余、部门剩余、企业主余额）；Limited=false 表示只剩企业主余额。
+	EffectiveRemaining float64
+	EffectiveLimited   bool
 }

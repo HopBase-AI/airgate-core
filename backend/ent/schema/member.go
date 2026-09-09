@@ -65,11 +65,14 @@ func (Member) Edges() []ent.Edge {
 		// （仅作为 owner 密钥的归属单元）。O2O：外键 member_account 落在 users 表并唯一，
 		// 一个账号至多是一个成员；从用户侧 WithMembership() 一跳即可判定是否成员账号。
 		edge.To("account", User.Type).Unique(),
+		// 所属部门（可空）。成员的消耗同时累加到部门额度；部门删除后回落「未分配」。
+		edge.From("department", Department.Type).Ref("members").Unique(),
 	}
 }
 
 func (Member) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Edges("owner"),
+		index.Edges("department"),
 	}
 }

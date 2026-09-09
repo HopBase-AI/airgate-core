@@ -94,6 +94,9 @@ func (UsageLog) Fields() []ent.Field {
 		// 与 user_id_snapshot 同思路；0 表示请求不属于任何成员。
 		field.Int("member_id").Default(0).
 			Comment("发起请求的 API Key 当时所属的团队成员 ID 快照；0 表示无成员归属。"),
+		// 部门归属快照，同样不做外键：成员调岗 / 部门删除后历史账单仍留在原部门。
+		field.Int("department_id").Default(0).
+			Comment("请求当时的有效部门 ID 快照（key.department ?? member.department）；0 表示未分配。"),
 		// 请求结果。失败请求也落一条记录（token/费用全 0），供用户自查与排障。
 		// 历史行经自动迁移取默认值 success，既有统计口径不受影响。
 		field.String("status").Default("success").
@@ -142,6 +145,10 @@ func (UsageLog) Indexes() []ent.Index {
 		index.Fields("member_id", "created_at").
 			StorageKey("usage_log_member_created_at").
 			Annotations(entsql.IndexWhere("member_id > 0")),
+		// 按部门查用量，同样是 partial index。
+		index.Fields("department_id", "created_at").
+			StorageKey("usage_log_department_created_at").
+			Annotations(entsql.IndexWhere("department_id > 0")),
 		index.Edges("user").
 			StorageKey("usage_log_user"),
 		index.Edges("api_key").

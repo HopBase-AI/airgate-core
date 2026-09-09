@@ -18,6 +18,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent"
 	entaccount "github.com/DouDOU-start/airgate-core/ent/account"
 	entapikey "github.com/DouDOU-start/airgate-core/ent/apikey"
+	entdepartment "github.com/DouDOU-start/airgate-core/ent/department"
 	entgroup "github.com/DouDOU-start/airgate-core/ent/group"
 	entmember "github.com/DouDOU-start/airgate-core/ent/member"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
@@ -48,6 +49,7 @@ type UsageRecord struct {
 	UserEmail                    string
 	APIKeyID                     int
 	MemberID                     int // 发起 key 所属的团队成员，0 表示无归属；落库为快照列、并累加成员用量
+	DepartmentID                 int // 请求当时的有效部门（key.department ?? member.department），0 表示未分配；快照列 + 累加部门用量
 	AccountID                    int
 	GroupID                      int
 	Platform                     string
@@ -480,11 +482,12 @@ func (r *Recorder) notifyNegativeBalance(ctx context.Context, batch []UsageRecor
 }
 
 type usageLogRefs struct {
-	users    map[int]struct{}
-	apiKeys  map[int]struct{}
-	members  map[int]struct{}
-	accounts map[int]struct{}
-	groups   map[int]struct{}
+	users       map[int]struct{}
+	apiKeys     map[int]struct{}
+	members     map[int]struct{}
+	departments map[int]struct{}
+	accounts    map[int]struct{}
+	groups      map[int]struct{}
 }
 
 func loadUsageLogRefs(ctx context.Context, tx *ent.Tx, batch []UsageRecord) (*usageLogRefs, error) {
@@ -507,6 +510,12 @@ func loadUsageLogRefs(ctx context.Context, tx *ent.Tx, batch []UsageRecord) (*us
 		return nil, fmt.Errorf("查询 UsageLog 成员关联失败: %w", err)
 	}
 	refs.members = mapUsageIDs(memberIDs)
+
+	departmentIDs, err := existingDepartmentIDs(ctx, tx, collectUsageIDs(batch, func(rec UsageRecord) int { return rec.DepartmentID }))
+	if err != nil {
+		return nil, fmt.Errorf("查询 UsageLog 部门关联失败: %w", err)
+	}
+	refs.departments = mapUsageIDs(departmentIDs)
 
 	accountIDs, err := existingAccountIDs(ctx, tx, collectUsageIDs(batch, func(rec UsageRecord) int { return rec.AccountID }))
 	if err != nil {
@@ -542,6 +551,13 @@ func existingMemberIDs(ctx context.Context, tx *ent.Tx, ids []int) ([]int, error
 		return nil, nil
 	}
 	return tx.Member.Query().Where(entmember.IDIn(ids...)).IDs(ctx)
+}
+
+func existingDepartmentIDs(ctx context.Context, tx *ent.Tx, ids []int) ([]int, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	return tx.Department.Query().Where(entdepartment.IDIn(ids...)).IDs(ctx)
 }
 
 func existingAccountIDs(ctx context.Context, tx *ent.Tx, ids []int) ([]int, error) {
@@ -602,6 +618,13 @@ func (r *usageLogRefs) hasMember(id int) bool {
 		return id > 0
 	}
 	return hasUsageID(r.members, id)
+}
+
+func (r *usageLogRefs) hasDepartment(id int) bool {
+	if r == nil {
+		return id > 0
+	}
+	return hasUsageID(r.departments, id)
 }
 
 func (r *usageLogRefs) hasAccount(id int) bool {
@@ -670,6 +693,7 @@ func usageLogCreate(tx *ent.Tx, rec UsageRecord, refs *usageLogRefs) *ent.UsageL
 		SetUserIDSnapshot(rec.UserID).
 		SetUserEmailSnapshot(rec.UserEmail).
 		SetMemberID(rec.MemberID).
+		SetDepartmentID(rec.DepartmentID).
 		SetStatus(rec.normalizedStatus()).
 		SetErrorCode(truncateBytesUTF8(rec.ErrorCode, usageErrorCodeMaxLen)).
 		SetErrorStatus(rec.ErrorStatus).
@@ -931,6 +955,9 @@ func applyUsageCharges(ctx context.Context, tx *ent.Tx, batch []UsageRecord, ref
 	keyActualCosts := make(map[int]float64)
 	memberBilledCosts := make(map[int]float64)
 	memberActualCosts := make(map[int]float64)
+	// Department.used_quota / used_quota_actual：与成员同口径累加到请求当时的有效部门。
+	deptBilledCosts := make(map[int]float64)
+	deptActualCosts := make(map[int]float64)
 
 	for _, rec := range batch {
 		if rec.ActualCost > 0 && refs.hasUser(rec.UserID) {
@@ -941,12 +968,18 @@ func applyUsageCharges(ctx context.Context, tx *ent.Tx, batch []UsageRecord, ref
 			if refs.hasMember(rec.MemberID) {
 				memberActualCosts[rec.MemberID] += rec.ActualCost
 			}
+			if refs.hasDepartment(rec.DepartmentID) {
+				deptActualCosts[rec.DepartmentID] += rec.ActualCost
+			}
 		}
 		if refs.hasAPIKey(rec.APIKeyID) && rec.BilledCost > 0 {
 			keyBilledCosts[rec.APIKeyID] += rec.BilledCost
 		}
 		if refs.hasMember(rec.MemberID) && rec.BilledCost > 0 {
 			memberBilledCosts[rec.MemberID] += rec.BilledCost
+		}
+		if refs.hasDepartment(rec.DepartmentID) && rec.BilledCost > 0 {
+			deptBilledCosts[rec.DepartmentID] += rec.BilledCost
 		}
 	}
 
@@ -1000,6 +1033,26 @@ func applyUsageCharges(ctx context.Context, tx *ent.Tx, batch []UsageRecord, ref
 		}
 		if err := update.Exec(ctx); err != nil {
 			return fmt.Errorf("更新团队成员用量失败 member_id=%d: %w", memberID, err)
+		}
+	}
+
+	deptIDs := make(map[int]struct{}, len(deptBilledCosts))
+	for k := range deptBilledCosts {
+		deptIDs[k] = struct{}{}
+	}
+	for k := range deptActualCosts {
+		deptIDs[k] = struct{}{}
+	}
+	for deptID := range deptIDs {
+		update := tx.Department.UpdateOneID(deptID)
+		if billed := deptBilledCosts[deptID]; billed > 0 {
+			update = update.AddUsedQuota(billed)
+		}
+		if actual := deptActualCosts[deptID]; actual > 0 {
+			update = update.AddUsedQuotaActual(actual)
+		}
+		if err := update.Exec(ctx); err != nil {
+			return fmt.Errorf("更新部门用量失败 department_id=%d: %w", deptID, err)
 		}
 	}
 	return nil

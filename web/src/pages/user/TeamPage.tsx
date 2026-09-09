@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, AlertDialog, Button, Dropdown, EmptyState, Spinner } from '@heroui/react';
+import { Alert, AlertDialog, Button, Dropdown, EmptyState, ListBox, Select, Spinner, Tabs } from '@heroui/react';
 import { DialogTriggerShim } from '../../shared/components/DialogTriggerShim';
 import { membersApi } from '../../shared/api/members';
+import { departmentsApi } from '../../shared/api/departments';
+import { FETCH_ALL_PARAMS } from '../../shared/constants';
 import { usePagination } from '../../shared/hooks/usePagination';
 import { useCrudMutation } from '../../shared/hooks/useCrudMutation';
 import { useToast, StatusChip } from '../../shared/ui';
@@ -16,7 +18,9 @@ import { TableLoadingRow } from '../../shared/components/TableLoadingRow';
 import { CommonTable } from '../../shared/components/CommonTable';
 import {
   Ban,
+  Building2,
   CheckCircle,
+  History,
   Info,
   KeyRound,
   MoreHorizontal,
@@ -26,20 +30,31 @@ import {
   RefreshCw,
   RotateCcw,
   Trash2,
+  UsersRound,
 } from 'lucide-react';
 import type { CreateMemberReq, MemberResp, UpdateMemberReq } from '../../shared/types';
 import { EditMemberModal } from './team/EditMemberModal';
+import { DepartmentsTab } from './team/DepartmentsTab';
+import { AuditTab } from './team/AuditTab';
+import { TeamOverviewBar } from './team/TeamOverviewBar';
 import { type MemberForm, emptyMemberForm } from './team/types';
 
-// 团队成员（企业子账号）：企业主侧的花名册——给成员开登录账号（邮箱+密码）、分配额度与
-// 可用分组、看本期用量、管理密钥、停用/删除。成员用自己的账号正常登录、功能与普通用户一致，
-// 只是消耗从企业主余额扣、用量归属到成员。
+type TeamTab = 'members' | 'departments' | 'audit';
+const UNASSIGNED_DEPARTMENT_FILTER = '__unassigned__';
+
+// 团队管理：「组织 + 成员」二级结构——企业主充值 → 划额度给部门 → 部门划给成员，
+// 三层的额度 / 已用 / 剩余 / 使用率 / 周期全部可见可下钻；组织调整、成员变更、额度调整、
+// 密钥操作全程进操作记录。成员用自己的账号正常登录、功能与普通用户一致，只是消耗从企业主余额扣、
+// 用量归属到成员与部门。
 export default function TeamPage() {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
+  const [tab, setTab] = useState<TeamTab>('members');
+  const [departmentFilter, setDepartmentFilter] = useState('');
+  const [deptCreateOpen, setDeptCreateOpen] = useState(false);
   const { page, setPage, pageSize, setPageSize } = usePagination(DEFAULT_PAGE_SIZE, 'user.team');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<MemberResp | null>(null);
@@ -47,15 +62,41 @@ export default function TeamPage() {
   const [deleteTarget, setDeleteTarget] = useState<MemberResp | null>(null);
   const [resetTarget, setResetTarget] = useState<MemberResp | null>(null);
 
+  const departmentFilterID = departmentFilter === UNASSIGNED_DEPARTMENT_FILTER ? 0 : departmentFilter ? Number(departmentFilter) : undefined;
   const { data, isLoading, refetch } = useQuery({
-    queryKey: queryKeys.members(page, pageSize),
-    queryFn: () => membersApi.list({ page, page_size: pageSize }),
+    queryKey: queryKeys.members(page, pageSize, departmentFilter),
+    queryFn: () => membersApi.list({ page, page_size: pageSize, department_id: departmentFilterID }),
     placeholderData: keepPreviousData,
   });
+  // 部门下拉：成员表单归属 + 成员列表筛选共用；没建过部门的企业主看不到这些控件。
+  const { data: departmentsData } = useQuery({
+    queryKey: queryKeys.departmentsAll(),
+    queryFn: () => departmentsApi.list(FETCH_ALL_PARAMS),
+    staleTime: 60_000,
+  });
+  const departmentOptions = useMemo(
+    () => (departmentsData?.list ?? []).map((dept) => ({ id: String(dept.id), label: dept.name })),
+    [departmentsData?.list],
+  );
+  const hasDepartments = departmentOptions.length > 0;
+  const departmentFilterOptions = useMemo(() => ([
+    { id: '', label: t('common.all') },
+    ...departmentOptions,
+    { id: UNASSIGNED_DEPARTMENT_FILTER, label: t('team.department_none') },
+  ]), [departmentOptions, t]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.members() });
     queryClient.invalidateQueries({ queryKey: queryKeys.membersForKeys() });
+    queryClient.invalidateQueries({ queryKey: queryKeys.departments() });
+    queryClient.invalidateQueries({ queryKey: queryKeys.departmentsAll() });
+    queryClient.invalidateQueries({ queryKey: queryKeys.teamOverview() });
+    queryClient.invalidateQueries({ queryKey: queryKeys.teamAuditLogs() });
+  };
+  const showMembersOfDepartment = (departmentId: number) => {
+    setDepartmentFilter(String(departmentId));
+    setPage(1);
+    setTab('members');
   };
 
   const createMutation = useCrudMutation<MemberResp, CreateMemberReq>({
@@ -104,7 +145,8 @@ export default function TeamPage() {
 
   function openCreate() {
     setEditing(null);
-    setForm(emptyMemberForm);
+    // 正在按某个部门筛选时，新建成员默认归到该部门
+    setForm({ ...emptyMemberForm, department_id: departmentFilterID && departmentFilterID > 0 ? String(departmentFilterID) : '' });
     setModalOpen(true);
   }
 
@@ -118,6 +160,7 @@ export default function TeamPage() {
       quota_usd: member.quota_usd > 0 ? String(member.quota_usd) : '',
       quota_period: member.quota_period,
       allowed_group_ids: member.allowed_group_ids ?? [],
+      department_id: member.department_id > 0 ? String(member.department_id) : '',
     });
     setModalOpen(true);
   }
@@ -162,6 +205,8 @@ export default function TeamPage() {
       toast('error', t('team.password_hint'));
       return;
     }
+    // 0 = 调出部门（未分配）；只有建过部门时表单才出现这一项
+    const departmentPayload = hasDepartments ? { department_id: form.department_id ? Number(form.department_id) : 0 } : {};
     if (editing) {
       updateMutation.mutate({
         id: editing.id,
@@ -173,6 +218,7 @@ export default function TeamPage() {
           quota_usd: quota,
           quota_period: form.quota_period,
           allowed_group_ids: form.allowed_group_ids,
+          ...departmentPayload,
         },
       });
     } else {
@@ -184,6 +230,7 @@ export default function TeamPage() {
         quota_usd: quota,
         quota_period: form.quota_period,
         allowed_group_ids: form.allowed_group_ids,
+        ...departmentPayload,
       });
     }
   }
@@ -193,6 +240,12 @@ export default function TeamPage() {
   const total = data?.total ?? 0;
   const totalPages = getTotalPages(total, pageSize);
   const formatDate = (value?: string) => (value ? new Date(value).toLocaleDateString(i18n.language) : '');
+  const tabs: Array<{ key: TeamTab; label: string; icon: typeof UsersRound }> = [
+    { key: 'members', label: t('team.members_tab'), icon: UsersRound },
+    { key: 'departments', label: t('team.departments_tab'), icon: Building2 },
+    { key: 'audit', label: t('team.audit_tab'), icon: History },
+  ];
+  const membersColSpan = hasDepartments ? 10 : 9;
 
   return (
     <div className="p-6">
@@ -209,24 +262,85 @@ export default function TeamPage() {
         </Alert.Content>
       </Alert>
 
-      <div className="mb-5 flex justify-end">
-        <div className="ml-auto flex items-center gap-2">
-          <Button
-            isIconOnly
-            aria-label={t('common.refresh', 'Refresh')}
-            size="md"
-            variant="ghost"
-            onPress={() => refetch()}
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-          <Button variant="primary" onPress={openCreate}>
-            <Plus className="h-4 w-4" />
-            {t('team.create')}
-          </Button>
+      <TeamOverviewBar />
+
+      {/* Tabs 只做页签切换：HeroUI 的 Select 放进 Tabs 内会拿不到 listbox 状态而崩，
+          筛选控件与各面板内容一律放在 Tabs 之外按 tab 条件渲染 */}
+      <div className="ag-page-toolbar mb-5">
+        <Tabs className="ag-team-tabs" selectedKey={tab} onSelectionChange={(key) => setTab(key as TeamTab)}>
+          <Tabs.ListContainer className="ag-page-tabs w-full sm:w-auto">
+            <Tabs.List>
+              {tabs.map((item, index) => {
+                const Icon = item.icon;
+                return (
+                  <Tabs.Tab key={item.key} id={item.key}>
+                    {index > 0 ? <Tabs.Separator /> : null}
+                    <Tabs.Indicator />
+                    <Icon className="w-4 h-4" />
+                    {item.label}
+                  </Tabs.Tab>
+                );
+              })}
+            </Tabs.List>
+          </Tabs.ListContainer>
+        </Tabs>
+        <div className="flex items-center gap-2 sm:ml-auto">
+            {tab === 'members' && hasDepartments ? (
+              <div className="w-44">
+                <Select
+                  aria-label={t('team.filter_department')}
+                  fullWidth
+                  selectedKey={departmentFilter}
+                  onSelectionChange={(key) => { setDepartmentFilter(key == null ? '' : String(key)); setPage(1); }}
+                >
+                  <Select.Trigger>
+                    <Select.Value>
+                      {departmentFilter
+                        ? departmentFilterOptions.find((item) => item.id === departmentFilter)?.label ?? departmentFilter
+                        : <span className="text-text-tertiary">{t('team.filter_department')}</span>}
+                    </Select.Value>
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover className="w-[var(--trigger-width)]">
+                    <ListBox items={departmentFilterOptions}>
+                      {(item) => (
+                        <ListBox.Item id={item.id} textValue={item.label}>
+                          <span className="block truncate">{item.label}</span>
+                        </ListBox.Item>
+                      )}
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+              </div>
+            ) : null}
+            <Button
+              isIconOnly
+              aria-label={t('common.refresh', 'Refresh')}
+              size="md"
+              variant="ghost"
+              onPress={() => { refetch(); invalidate(); }}
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+            {tab === 'members' ? (
+              <Button variant="primary" onPress={openCreate}>
+                <Plus className="h-4 w-4" />
+                {t('team.create')}
+              </Button>
+            ) : tab === 'departments' ? (
+              <Button variant="primary" onPress={() => setDeptCreateOpen(true)}>
+                <Plus className="h-4 w-4" />
+                {t('team.dept_create')}
+              </Button>
+            ) : null}
         </div>
       </div>
 
+      {tab === 'departments' ? (
+        <DepartmentsTab createOpen={deptCreateOpen} onCreateClose={() => setDeptCreateOpen(false)} onViewMembers={showMembersOfDepartment} />
+      ) : null}
+      {tab === 'audit' ? <AuditTab /> : null}
+      {tab === 'members' ? (
       <CommonTable
         ariaLabel={t('team.title')}
         footer={(
@@ -243,6 +357,7 @@ export default function TeamPage() {
       >
         <CommonTable.Header>
           <CommonTable.Column id="name">{t('team.name')}</CommonTable.Column>
+          {...(hasDepartments ? [<CommonTable.Column id="department" key="department" style={{ width: '8rem' }}>{t('team.department')}</CommonTable.Column>] : [])}
           <CommonTable.Column id="status">{t('common.status')}</CommonTable.Column>
           <CommonTable.Column id="account" style={{ width: '7rem' }}>{t('team.account_col', '登录账号')}</CommonTable.Column>
           <CommonTable.Column id="quota" style={{ width: '15rem' }}>{t('team.quota_label')}</CommonTable.Column>
@@ -254,10 +369,10 @@ export default function TeamPage() {
         </CommonTable.Header>
         <CommonTable.Body>
           {isLoading ? (
-            <TableLoadingRow colSpan={9} />
+            <TableLoadingRow colSpan={membersColSpan} />
           ) : rows.length === 0 ? (
             <CommonTable.Row id="empty">
-              <CommonTable.Cell colSpan={9}>
+              <CommonTable.Cell colSpan={membersColSpan}>
                 <EmptyState>
                   <div className="text-sm text-default-500">{t('team.empty_hint')}</div>
                 </EmptyState>
@@ -280,6 +395,13 @@ export default function TeamPage() {
                       ) : null}
                     </div>
                   </CommonTable.Cell>
+                  {...(hasDepartments ? [(
+                    <CommonTable.Cell key="department">
+                      <span className="truncate text-xs text-text-secondary" title={row.department_name}>
+                        {row.department_id > 0 ? row.department_name || t('team.department_deleted') : t('team.department_none')}
+                      </span>
+                    </CommonTable.Cell>
+                  )] : [])}
                   <CommonTable.Cell>
                     <StatusChip status={row.status} />
                   </CommonTable.Cell>
@@ -393,6 +515,7 @@ export default function TeamPage() {
           )}
         </CommonTable.Body>
       </CommonTable>
+      ) : null}
 
       <EditMemberModal
         open={modalOpen}
@@ -403,6 +526,7 @@ export default function TeamPage() {
         onClose={closeModal}
         onSubmit={handleSubmit}
         loading={saving}
+        departmentOptions={departmentOptions}
       />
 
       {/* 重置本期确认 */}

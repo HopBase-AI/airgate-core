@@ -20,6 +20,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
 	"github.com/DouDOU-start/airgate-core/ent/blogpost"
+	"github.com/DouDOU-start/airgate-core/ent/department"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/plugin"
@@ -28,6 +29,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/referralcommission"
 	"github.com/DouDOU-start/airgate-core/ent/setting"
 	"github.com/DouDOU-start/airgate-core/ent/task"
+	"github.com/DouDOU-start/airgate-core/ent/teamauditlog"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 	"github.com/DouDOU-start/airgate-core/ent/useridentity"
@@ -49,6 +51,8 @@ type Client struct {
 	BalanceLog *BalanceLogClient
 	// BlogPost is the client for interacting with the BlogPost builders.
 	BlogPost *BlogPostClient
+	// Department is the client for interacting with the Department builders.
+	Department *DepartmentClient
 	// Group is the client for interacting with the Group builders.
 	Group *GroupClient
 	// Member is the client for interacting with the Member builders.
@@ -65,6 +69,8 @@ type Client struct {
 	Setting *SettingClient
 	// Task is the client for interacting with the Task builders.
 	Task *TaskClient
+	// TeamAuditLog is the client for interacting with the TeamAuditLog builders.
+	TeamAuditLog *TeamAuditLogClient
 	// UsageLog is the client for interacting with the UsageLog builders.
 	UsageLog *UsageLogClient
 	// User is the client for interacting with the User builders.
@@ -89,6 +95,7 @@ func (c *Client) init() {
 	c.AccountEvent = NewAccountEventClient(c.config)
 	c.BalanceLog = NewBalanceLogClient(c.config)
 	c.BlogPost = NewBlogPostClient(c.config)
+	c.Department = NewDepartmentClient(c.config)
 	c.Group = NewGroupClient(c.config)
 	c.Member = NewMemberClient(c.config)
 	c.Plugin = NewPluginClient(c.config)
@@ -97,6 +104,7 @@ func (c *Client) init() {
 	c.ReferralCommission = NewReferralCommissionClient(c.config)
 	c.Setting = NewSettingClient(c.config)
 	c.Task = NewTaskClient(c.config)
+	c.TeamAuditLog = NewTeamAuditLogClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
 	c.User = NewUserClient(c.config)
 	c.UserIdentity = NewUserIdentityClient(c.config)
@@ -198,6 +206,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		AccountEvent:       NewAccountEventClient(cfg),
 		BalanceLog:         NewBalanceLogClient(cfg),
 		BlogPost:           NewBlogPostClient(cfg),
+		Department:         NewDepartmentClient(cfg),
 		Group:              NewGroupClient(cfg),
 		Member:             NewMemberClient(cfg),
 		Plugin:             NewPluginClient(cfg),
@@ -206,6 +215,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ReferralCommission: NewReferralCommissionClient(cfg),
 		Setting:            NewSettingClient(cfg),
 		Task:               NewTaskClient(cfg),
+		TeamAuditLog:       NewTeamAuditLogClient(cfg),
 		UsageLog:           NewUsageLogClient(cfg),
 		User:               NewUserClient(cfg),
 		UserIdentity:       NewUserIdentityClient(cfg),
@@ -234,6 +244,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		AccountEvent:       NewAccountEventClient(cfg),
 		BalanceLog:         NewBalanceLogClient(cfg),
 		BlogPost:           NewBlogPostClient(cfg),
+		Department:         NewDepartmentClient(cfg),
 		Group:              NewGroupClient(cfg),
 		Member:             NewMemberClient(cfg),
 		Plugin:             NewPluginClient(cfg),
@@ -242,6 +253,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ReferralCommission: NewReferralCommissionClient(cfg),
 		Setting:            NewSettingClient(cfg),
 		Task:               NewTaskClient(cfg),
+		TeamAuditLog:       NewTeamAuditLogClient(cfg),
 		UsageLog:           NewUsageLogClient(cfg),
 		User:               NewUserClient(cfg),
 		UserIdentity:       NewUserIdentityClient(cfg),
@@ -275,9 +287,10 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.APIKey, c.Account, c.AccountEvent, c.BalanceLog, c.BlogPost, c.Group,
-		c.Member, c.Plugin, c.PluginSource, c.Proxy, c.ReferralCommission, c.Setting,
-		c.Task, c.UsageLog, c.User, c.UserIdentity, c.UserSubscription,
+		c.APIKey, c.Account, c.AccountEvent, c.BalanceLog, c.BlogPost, c.Department,
+		c.Group, c.Member, c.Plugin, c.PluginSource, c.Proxy, c.ReferralCommission,
+		c.Setting, c.Task, c.TeamAuditLog, c.UsageLog, c.User, c.UserIdentity,
+		c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -287,9 +300,10 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.APIKey, c.Account, c.AccountEvent, c.BalanceLog, c.BlogPost, c.Group,
-		c.Member, c.Plugin, c.PluginSource, c.Proxy, c.ReferralCommission, c.Setting,
-		c.Task, c.UsageLog, c.User, c.UserIdentity, c.UserSubscription,
+		c.APIKey, c.Account, c.AccountEvent, c.BalanceLog, c.BlogPost, c.Department,
+		c.Group, c.Member, c.Plugin, c.PluginSource, c.Proxy, c.ReferralCommission,
+		c.Setting, c.Task, c.TeamAuditLog, c.UsageLog, c.User, c.UserIdentity,
+		c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -308,6 +322,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.BalanceLog.mutate(ctx, m)
 	case *BlogPostMutation:
 		return c.BlogPost.mutate(ctx, m)
+	case *DepartmentMutation:
+		return c.Department.mutate(ctx, m)
 	case *GroupMutation:
 		return c.Group.mutate(ctx, m)
 	case *MemberMutation:
@@ -324,6 +340,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Setting.mutate(ctx, m)
 	case *TaskMutation:
 		return c.Task.mutate(ctx, m)
+	case *TeamAuditLogMutation:
+		return c.TeamAuditLog.mutate(ctx, m)
 	case *UsageLogMutation:
 		return c.UsageLog.mutate(ctx, m)
 	case *UserMutation:
@@ -486,6 +504,22 @@ func (c *APIKeyClient) QueryMember(ak *APIKey) *MemberQuery {
 			sqlgraph.From(apikey.Table, apikey.FieldID, id),
 			sqlgraph.To(member.Table, member.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, apikey.MemberTable, apikey.MemberColumn),
+		)
+		fromV = sqlgraph.Neighbors(ak.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryDepartment queries the department edge of a APIKey.
+func (c *APIKeyClient) QueryDepartment(ak *APIKey) *DepartmentQuery {
+	query := (&DepartmentClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := ak.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(apikey.Table, apikey.FieldID, id),
+			sqlgraph.To(department.Table, department.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, apikey.DepartmentTable, apikey.DepartmentColumn),
 		)
 		fromV = sqlgraph.Neighbors(ak.driver.Dialect(), step)
 		return fromV, nil
@@ -1162,6 +1196,187 @@ func (c *BlogPostClient) mutate(ctx context.Context, m *BlogPostMutation) (Value
 	}
 }
 
+// DepartmentClient is a client for the Department schema.
+type DepartmentClient struct {
+	config
+}
+
+// NewDepartmentClient returns a client for the Department from the given config.
+func NewDepartmentClient(c config) *DepartmentClient {
+	return &DepartmentClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `department.Hooks(f(g(h())))`.
+func (c *DepartmentClient) Use(hooks ...Hook) {
+	c.hooks.Department = append(c.hooks.Department, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `department.Intercept(f(g(h())))`.
+func (c *DepartmentClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Department = append(c.inters.Department, interceptors...)
+}
+
+// Create returns a builder for creating a Department entity.
+func (c *DepartmentClient) Create() *DepartmentCreate {
+	mutation := newDepartmentMutation(c.config, OpCreate)
+	return &DepartmentCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Department entities.
+func (c *DepartmentClient) CreateBulk(builders ...*DepartmentCreate) *DepartmentCreateBulk {
+	return &DepartmentCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *DepartmentClient) MapCreateBulk(slice any, setFunc func(*DepartmentCreate, int)) *DepartmentCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &DepartmentCreateBulk{err: fmt.Errorf("calling to DepartmentClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*DepartmentCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &DepartmentCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Department.
+func (c *DepartmentClient) Update() *DepartmentUpdate {
+	mutation := newDepartmentMutation(c.config, OpUpdate)
+	return &DepartmentUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *DepartmentClient) UpdateOne(d *Department) *DepartmentUpdateOne {
+	mutation := newDepartmentMutation(c.config, OpUpdateOne, withDepartment(d))
+	return &DepartmentUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *DepartmentClient) UpdateOneID(id int) *DepartmentUpdateOne {
+	mutation := newDepartmentMutation(c.config, OpUpdateOne, withDepartmentID(id))
+	return &DepartmentUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Department.
+func (c *DepartmentClient) Delete() *DepartmentDelete {
+	mutation := newDepartmentMutation(c.config, OpDelete)
+	return &DepartmentDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *DepartmentClient) DeleteOne(d *Department) *DepartmentDeleteOne {
+	return c.DeleteOneID(d.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *DepartmentClient) DeleteOneID(id int) *DepartmentDeleteOne {
+	builder := c.Delete().Where(department.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &DepartmentDeleteOne{builder}
+}
+
+// Query returns a query builder for Department.
+func (c *DepartmentClient) Query() *DepartmentQuery {
+	return &DepartmentQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeDepartment},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Department entity by its id.
+func (c *DepartmentClient) Get(ctx context.Context, id int) (*Department, error) {
+	return c.Query().Where(department.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *DepartmentClient) GetX(ctx context.Context, id int) *Department {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryOwner queries the owner edge of a Department.
+func (c *DepartmentClient) QueryOwner(d *Department) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := d.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(department.Table, department.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, department.OwnerTable, department.OwnerColumn),
+		)
+		fromV = sqlgraph.Neighbors(d.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryMembers queries the members edge of a Department.
+func (c *DepartmentClient) QueryMembers(d *Department) *MemberQuery {
+	query := (&MemberClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := d.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(department.Table, department.FieldID, id),
+			sqlgraph.To(member.Table, member.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, department.MembersTable, department.MembersColumn),
+		)
+		fromV = sqlgraph.Neighbors(d.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryAPIKeys queries the api_keys edge of a Department.
+func (c *DepartmentClient) QueryAPIKeys(d *Department) *APIKeyQuery {
+	query := (&APIKeyClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := d.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(department.Table, department.FieldID, id),
+			sqlgraph.To(apikey.Table, apikey.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, department.APIKeysTable, department.APIKeysColumn),
+		)
+		fromV = sqlgraph.Neighbors(d.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *DepartmentClient) Hooks() []Hook {
+	return c.hooks.Department
+}
+
+// Interceptors returns the client interceptors.
+func (c *DepartmentClient) Interceptors() []Interceptor {
+	return c.inters.Department
+}
+
+func (c *DepartmentClient) mutate(ctx context.Context, m *DepartmentMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&DepartmentCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&DepartmentUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&DepartmentUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&DepartmentDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Department mutation op: %q", m.Op())
+	}
+}
+
 // GroupClient is a client for the Group schema.
 type GroupClient struct {
 	config
@@ -1524,6 +1739,22 @@ func (c *MemberClient) QueryAccount(m *Member) *UserQuery {
 			sqlgraph.From(member.Table, member.FieldID, id),
 			sqlgraph.To(user.Table, user.FieldID),
 			sqlgraph.Edge(sqlgraph.O2O, false, member.AccountTable, member.AccountColumn),
+		)
+		fromV = sqlgraph.Neighbors(m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryDepartment queries the department edge of a Member.
+func (c *MemberClient) QueryDepartment(m *Member) *DepartmentQuery {
+	query := (&DepartmentClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(member.Table, member.FieldID, id),
+			sqlgraph.To(department.Table, department.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, member.DepartmentTable, member.DepartmentColumn),
 		)
 		fromV = sqlgraph.Neighbors(m.driver.Dialect(), step)
 		return fromV, nil
@@ -2370,6 +2601,139 @@ func (c *TaskClient) mutate(ctx context.Context, m *TaskMutation) (Value, error)
 	}
 }
 
+// TeamAuditLogClient is a client for the TeamAuditLog schema.
+type TeamAuditLogClient struct {
+	config
+}
+
+// NewTeamAuditLogClient returns a client for the TeamAuditLog from the given config.
+func NewTeamAuditLogClient(c config) *TeamAuditLogClient {
+	return &TeamAuditLogClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `teamauditlog.Hooks(f(g(h())))`.
+func (c *TeamAuditLogClient) Use(hooks ...Hook) {
+	c.hooks.TeamAuditLog = append(c.hooks.TeamAuditLog, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `teamauditlog.Intercept(f(g(h())))`.
+func (c *TeamAuditLogClient) Intercept(interceptors ...Interceptor) {
+	c.inters.TeamAuditLog = append(c.inters.TeamAuditLog, interceptors...)
+}
+
+// Create returns a builder for creating a TeamAuditLog entity.
+func (c *TeamAuditLogClient) Create() *TeamAuditLogCreate {
+	mutation := newTeamAuditLogMutation(c.config, OpCreate)
+	return &TeamAuditLogCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of TeamAuditLog entities.
+func (c *TeamAuditLogClient) CreateBulk(builders ...*TeamAuditLogCreate) *TeamAuditLogCreateBulk {
+	return &TeamAuditLogCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TeamAuditLogClient) MapCreateBulk(slice any, setFunc func(*TeamAuditLogCreate, int)) *TeamAuditLogCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TeamAuditLogCreateBulk{err: fmt.Errorf("calling to TeamAuditLogClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TeamAuditLogCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TeamAuditLogCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for TeamAuditLog.
+func (c *TeamAuditLogClient) Update() *TeamAuditLogUpdate {
+	mutation := newTeamAuditLogMutation(c.config, OpUpdate)
+	return &TeamAuditLogUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TeamAuditLogClient) UpdateOne(tal *TeamAuditLog) *TeamAuditLogUpdateOne {
+	mutation := newTeamAuditLogMutation(c.config, OpUpdateOne, withTeamAuditLog(tal))
+	return &TeamAuditLogUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TeamAuditLogClient) UpdateOneID(id int) *TeamAuditLogUpdateOne {
+	mutation := newTeamAuditLogMutation(c.config, OpUpdateOne, withTeamAuditLogID(id))
+	return &TeamAuditLogUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for TeamAuditLog.
+func (c *TeamAuditLogClient) Delete() *TeamAuditLogDelete {
+	mutation := newTeamAuditLogMutation(c.config, OpDelete)
+	return &TeamAuditLogDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TeamAuditLogClient) DeleteOne(tal *TeamAuditLog) *TeamAuditLogDeleteOne {
+	return c.DeleteOneID(tal.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TeamAuditLogClient) DeleteOneID(id int) *TeamAuditLogDeleteOne {
+	builder := c.Delete().Where(teamauditlog.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TeamAuditLogDeleteOne{builder}
+}
+
+// Query returns a query builder for TeamAuditLog.
+func (c *TeamAuditLogClient) Query() *TeamAuditLogQuery {
+	return &TeamAuditLogQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTeamAuditLog},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a TeamAuditLog entity by its id.
+func (c *TeamAuditLogClient) Get(ctx context.Context, id int) (*TeamAuditLog, error) {
+	return c.Query().Where(teamauditlog.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TeamAuditLogClient) GetX(ctx context.Context, id int) *TeamAuditLog {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *TeamAuditLogClient) Hooks() []Hook {
+	return c.hooks.TeamAuditLog
+}
+
+// Interceptors returns the client interceptors.
+func (c *TeamAuditLogClient) Interceptors() []Interceptor {
+	return c.inters.TeamAuditLog
+}
+
+func (c *TeamAuditLogClient) mutate(ctx context.Context, m *TeamAuditLogMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TeamAuditLogCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TeamAuditLogUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TeamAuditLogUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TeamAuditLogDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown TeamAuditLog mutation op: %q", m.Op())
+	}
+}
+
 // UsageLogClient is a client for the UsageLog schema.
 type UsageLogClient struct {
 	config
@@ -2700,6 +3064,22 @@ func (c *UserClient) QueryMembers(u *User) *MemberQuery {
 			sqlgraph.From(user.Table, user.FieldID, id),
 			sqlgraph.To(member.Table, member.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, user.MembersTable, user.MembersColumn),
+		)
+		fromV = sqlgraph.Neighbors(u.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryDepartments queries the departments edge of a User.
+func (c *UserClient) QueryDepartments(u *User) *DepartmentQuery {
+	query := (&DepartmentClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := u.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(department.Table, department.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.DepartmentsTable, user.DepartmentsColumn),
 		)
 		fromV = sqlgraph.Neighbors(u.driver.Dialect(), step)
 		return fromV, nil
@@ -3145,13 +3525,13 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		APIKey, Account, AccountEvent, BalanceLog, BlogPost, Group, Member, Plugin,
-		PluginSource, Proxy, ReferralCommission, Setting, Task, UsageLog, User,
-		UserIdentity, UserSubscription []ent.Hook
+		APIKey, Account, AccountEvent, BalanceLog, BlogPost, Department, Group, Member,
+		Plugin, PluginSource, Proxy, ReferralCommission, Setting, Task, TeamAuditLog,
+		UsageLog, User, UserIdentity, UserSubscription []ent.Hook
 	}
 	inters struct {
-		APIKey, Account, AccountEvent, BalanceLog, BlogPost, Group, Member, Plugin,
-		PluginSource, Proxy, ReferralCommission, Setting, Task, UsageLog, User,
-		UserIdentity, UserSubscription []ent.Interceptor
+		APIKey, Account, AccountEvent, BalanceLog, BlogPost, Department, Group, Member,
+		Plugin, PluginSource, Proxy, ReferralCommission, Setting, Task, TeamAuditLog,
+		UsageLog, User, UserIdentity, UserSubscription []ent.Interceptor
 	}
 )

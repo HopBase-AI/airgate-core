@@ -17,6 +17,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
 	"github.com/DouDOU-start/airgate-core/ent/blogpost"
+	"github.com/DouDOU-start/airgate-core/ent/department"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/plugin"
@@ -25,6 +26,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/referralcommission"
 	"github.com/DouDOU-start/airgate-core/ent/setting"
 	"github.com/DouDOU-start/airgate-core/ent/task"
+	"github.com/DouDOU-start/airgate-core/ent/teamauditlog"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 	"github.com/DouDOU-start/airgate-core/ent/useridentity"
@@ -94,6 +96,7 @@ func checkColumn(table, column string) error {
 			accountevent.Table:       accountevent.ValidColumn,
 			balancelog.Table:         balancelog.ValidColumn,
 			blogpost.Table:           blogpost.ValidColumn,
+			department.Table:         department.ValidColumn,
 			group.Table:              group.ValidColumn,
 			member.Table:             member.ValidColumn,
 			plugin.Table:             plugin.ValidColumn,
@@ -102,6 +105,7 @@ func checkColumn(table, column string) error {
 			referralcommission.Table: referralcommission.ValidColumn,
 			setting.Table:            setting.ValidColumn,
 			task.Table:               task.ValidColumn,
+			teamauditlog.Table:       teamauditlog.ValidColumn,
 			usagelog.Table:           usagelog.ValidColumn,
 			user.Table:               user.ValidColumn,
 			useridentity.Table:       useridentity.ValidColumn,

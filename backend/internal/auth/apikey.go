@@ -18,6 +18,7 @@ import (
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
+	entdepartment "github.com/DouDOU-start/airgate-core/ent/department"
 	entmember "github.com/DouDOU-start/airgate-core/ent/member"
 	entsetting "github.com/DouDOU-start/airgate-core/ent/setting"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
@@ -58,6 +59,8 @@ var (
 	// 团队成员准入：key 归属的成员被主账号停用 / 成员本期额度用尽。
 	ErrMemberDisabled = errors.New("所属团队成员已被停用")
 	ErrMemberQuota    = errors.New("团队成员额度已用尽")
+	// ErrDepartmentQuota 密钥所属部门（直挂或经成员）本期额度已用尽。
+	ErrDepartmentQuota = errors.New("所属部门额度已用尽")
 )
 
 const apiKeyPrefix = "sk-"
@@ -98,6 +101,13 @@ type APIKeyInfo struct {
 	MemberName      string
 	MemberQuotaUSD  float64
 	MemberUsedQuota float64
+
+	// 部门归属（key.department ?? member.department）。DepartmentID 为 0 表示未分配。
+	// 额度字段同样是部门「本期」口径；三层取小见 billing.CapByQuotas。
+	DepartmentID        int
+	DepartmentName      string
+	DepartmentQuotaUSD  float64
+	DepartmentUsedQuota float64
 
 	// KeyMaxConcurrency API Key 级并发上限，0 表示不限制。
 	// 在 forwarder 路径里会用 Redis 原子 SET 按 key_id 维度争抢槽位。
@@ -250,7 +260,8 @@ func ValidateAPIKey(ctx context.Context, db *ent.Client, key string) (*APIKeyInf
 		).
 		WithUser().
 		WithGroup().
-		WithMember(func(q *ent.MemberQuery) { q.WithOwner() }).
+		WithMember(func(q *ent.MemberQuery) { q.WithOwner().WithDepartment() }).
+		WithDepartment().
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -305,6 +316,12 @@ func ValidateAPIKey(ctx context.Context, db *ent.Client, key string) (*APIKeyInf
 		cacheAPIKeyResult(hash, nil, ErrMemberQuota)
 		return nil, ErrMemberQuota
 	}
+	// 部门闸门：有效部门本期额度用尽即拒（三层判定顺序固定为成员 → 部门 → 企业余额）。
+	dv := evaluateDepartment(ctx, db, effectiveDepartment(ak), time.Now(), true)
+	if dv.exhausted() {
+		cacheAPIKeyResult(hash, nil, ErrDepartmentQuota)
+		return nil, ErrDepartmentQuota
+	}
 	g := ak.Edges.Group
 	if g == nil {
 		cacheAPIKeyResult(hash, nil, ErrAPIKeyGroupUnbound)
@@ -318,21 +335,25 @@ func ValidateAPIKey(ctx context.Context, db *ent.Client, key string) (*APIKeyInf
 	u = payer
 
 	info := &APIKeyInfo{
-		KeyID:              ak.ID,
-		KeyName:            ak.Name,
-		UserID:             u.ID,
-		UserEmail:          u.Email,
-		GroupID:            g.ID,
-		GroupPlatform:      g.Platform,
-		QuotaUSD:           ak.QuotaUsd,
-		UsedQuota:          ak.UsedQuota,
-		SellRate:           ak.SellRate,
-		KeyMaxConcurrency:  ak.MaxConcurrency,
-		UserMaxConcurrency: u.MaxConcurrency,
-		MemberID:           mv.ID,
-		MemberName:         mv.Name,
-		MemberQuotaUSD:     mv.QuotaUSD,
-		MemberUsedQuota:    mv.UsedQuota,
+		KeyID:               ak.ID,
+		KeyName:             ak.Name,
+		UserID:              u.ID,
+		UserEmail:           u.Email,
+		GroupID:             g.ID,
+		GroupPlatform:       g.Platform,
+		QuotaUSD:            ak.QuotaUsd,
+		UsedQuota:           ak.UsedQuota,
+		SellRate:            ak.SellRate,
+		KeyMaxConcurrency:   ak.MaxConcurrency,
+		UserMaxConcurrency:  u.MaxConcurrency,
+		MemberID:            mv.ID,
+		MemberName:          mv.Name,
+		MemberQuotaUSD:      mv.QuotaUSD,
+		MemberUsedQuota:     mv.UsedQuota,
+		DepartmentID:        dv.ID,
+		DepartmentName:      dv.Name,
+		DepartmentQuotaUSD:  dv.QuotaUSD,
+		DepartmentUsedQuota: dv.UsedQuota,
 
 		UserBalance:             u.Balance,
 		UserGroupRates:          u.GroupRates,
@@ -431,6 +452,8 @@ func apiKeyCacheErrorCode(err error) string {
 		return "member_quota"
 	case ErrMemberGroupForbidden:
 		return "member_group_forbidden"
+	case ErrDepartmentQuota:
+		return "department_quota"
 	default:
 		return ""
 	}
@@ -454,6 +477,8 @@ func apiKeyCacheErrorFromCode(code string) error {
 		return ErrMemberQuota
 	case "member_group_forbidden":
 		return ErrMemberGroupForbidden
+	case "department_quota":
+		return ErrDepartmentQuota
 	default:
 		return nil
 	}
@@ -561,7 +586,8 @@ func ValidateAPIKeyForManagement(ctx context.Context, db *ent.Client, key string
 		).
 		WithUser().
 		WithGroup().
-		WithMember(func(q *ent.MemberQuery) { q.WithOwner() }).
+		WithMember(func(q *ent.MemberQuery) { q.WithOwner().WithDepartment() }).
+		WithDepartment().
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -598,25 +624,30 @@ func ValidateAPIKeyForManagement(ctx context.Context, db *ent.Client, key string
 		storeAPIKeyLocalCache(cacheKey, nil, err)
 		return nil, err
 	}
+	dv := evaluateDepartment(ctx, db, effectiveDepartment(ak), time.Now(), false)
 
 	info := &APIKeyInfo{
-		KeyID:             ak.ID,
-		KeyName:           ak.Name,
-		KeyHint:           ak.KeyHint,
-		KeyStatus:         string(ak.Status),
-		KeyCreatedAt:      ak.CreatedAt,
-		KeyExpiresAt:      ak.ExpiresAt,
-		KeyMaxConcurrency: ak.MaxConcurrency,
-		UserID:            u.ID,
-		UserEmail:         u.Email,
-		QuotaUSD:          ak.QuotaUsd,
-		UsedQuota:         ak.UsedQuota,
-		SellRate:          ak.SellRate,
-		UserBalance:       u.Balance,
-		MemberID:          mv.ID,
-		MemberName:        mv.Name,
-		MemberQuotaUSD:    mv.QuotaUSD,
-		MemberUsedQuota:   mv.UsedQuota,
+		KeyID:               ak.ID,
+		KeyName:             ak.Name,
+		KeyHint:             ak.KeyHint,
+		KeyStatus:           string(ak.Status),
+		KeyCreatedAt:        ak.CreatedAt,
+		KeyExpiresAt:        ak.ExpiresAt,
+		KeyMaxConcurrency:   ak.MaxConcurrency,
+		UserID:              u.ID,
+		UserEmail:           u.Email,
+		QuotaUSD:            ak.QuotaUsd,
+		UsedQuota:           ak.UsedQuota,
+		SellRate:            ak.SellRate,
+		UserBalance:         u.Balance,
+		MemberID:            mv.ID,
+		MemberName:          mv.Name,
+		MemberQuotaUSD:      mv.QuotaUSD,
+		MemberUsedQuota:     mv.UsedQuota,
+		DepartmentID:        dv.ID,
+		DepartmentName:      dv.Name,
+		DepartmentQuotaUSD:  dv.QuotaUSD,
+		DepartmentUsedQuota: dv.UsedQuota,
 	}
 	if g := ak.Edges.Group; g != nil {
 		info.GroupID = g.ID
@@ -674,7 +705,7 @@ func evaluateMember(ctx context.Context, db *ent.Client, m *ent.Member, now time
 	}
 	base := m.PeriodUsedBase
 	if m.QuotaPeriod == entmember.QuotaPeriodMonthly {
-		if start, _ := period.Containing(m.PeriodAnchor, now); start.After(m.PeriodStart) {
+		if start, _, rolled := period.Window(m.PeriodAnchor, m.PeriodStart, now); rolled {
 			base = m.UsedQuota
 			if rollover {
 				if err := db.Member.Update().
@@ -692,4 +723,60 @@ func evaluateMember(ctx context.Context, db *ent.Client, m *ent.Member, now time
 		used = 0
 	}
 	return memberView{ID: m.ID, Name: m.Name, QuotaUSD: m.QuotaUsd, UsedQuota: used}, nil
+}
+
+// departmentView 部门的本期口径投影：鉴权预载与管理面共用。
+type departmentView struct {
+	ID        int
+	Name      string
+	QuotaUSD  float64 // 0 表示不限
+	UsedQuota float64 // 本期已用 = used_quota − period_used_base
+}
+
+// exhausted 部门设了额度且本期已用达到额度。
+func (v departmentView) exhausted() bool {
+	return v.ID > 0 && v.QuotaUSD > 0 && v.UsedQuota >= v.QuotaUSD
+}
+
+// evaluateDepartment 部门额度判定与本期口径推算，规则与 evaluateMember 完全同款
+// （monthly 惰性换期 + 旧 period_start CAS）；部门没有停用态，只有额度。
+func evaluateDepartment(ctx context.Context, db *ent.Client, d *ent.Department, now time.Time, rollover bool) departmentView {
+	if d == nil {
+		return departmentView{}
+	}
+	base := d.PeriodUsedBase
+	if d.QuotaPeriod == entdepartment.QuotaPeriodMonthly {
+		if start, _, rolled := period.Window(d.PeriodAnchor, d.PeriodStart, now); rolled {
+			base = d.UsedQuota
+			if rollover {
+				if err := db.Department.Update().
+					Where(entdepartment.IDEQ(d.ID), entdepartment.PeriodStartEQ(d.PeriodStart)).
+					SetPeriodStart(start).
+					SetPeriodUsedBase(d.UsedQuota).
+					Exec(ctx); err != nil {
+					slog.Warn("department_period_rollover_failed", "department_id", d.ID, sdk.LogFieldError, err)
+				}
+			}
+		}
+	}
+	used := d.UsedQuota - base
+	if used < 0 {
+		used = 0
+	}
+	return departmentView{ID: d.ID, Name: d.Name, QuotaUSD: d.QuotaUsd, UsedQuota: used}
+}
+
+// effectiveDepartment 密钥的有效部门：直挂部门优先，否则取所属成员的部门。
+// 调用方须预载 key.Edges.Department 与 key.Edges.Member.Edges.Department。
+func effectiveDepartment(ak *ent.APIKey) *ent.Department {
+	if ak == nil {
+		return nil
+	}
+	if ak.Edges.Department != nil {
+		return ak.Edges.Department
+	}
+	if ak.Edges.Member != nil {
+		return ak.Edges.Member.Edges.Department
+	}
+	return nil
 }

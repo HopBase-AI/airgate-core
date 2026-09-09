@@ -36,6 +36,12 @@ func toAPIKeyResp(item appapikey.Key) dto.APIKeyResp {
 		resp.MemberID = &memberID
 		resp.MemberName = item.MemberName
 	}
+	if item.DepartmentID != nil {
+		departmentID := int64(*item.DepartmentID)
+		resp.DepartmentID = &departmentID
+		resp.DepartmentName = item.DepartmentName
+		resp.DepartmentDirect = item.DepartmentDirect
+	}
 	if item.ExpiresAt != nil {
 		expiresAt := item.ExpiresAt.Format("2006-01-02T15:04:05Z07:00")
 		resp.ExpiresAt = &expiresAt

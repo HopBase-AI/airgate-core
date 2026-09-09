@@ -37,8 +37,11 @@ type Member struct {
 	// AccountUserID 成员自己的登录账号（users.id）；0 表示 2026-09-03 老模型成员（无账号，只作 owner 密钥归属）。
 	AccountUserID int
 	AccountEmail  string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// DepartmentID 所属部门；0 表示未分配。DepartmentName 仅列表展示用。
+	DepartmentID   int
+	DepartmentName string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 
 	// 派生字段
 	PeriodUsed    float64    // 本期已用；monthly 跨期后按 0 起算
@@ -54,6 +57,8 @@ type ListFilter struct {
 	PageSize int
 	Keyword  string // 按名称 / 邮箱模糊
 	Status   string // 空 = 全部
+	// DepartmentID 按部门筛选；nil = 全部，指向 0 = 只看未分配部门的成员。
+	DepartmentID *int
 }
 
 // ListResult 成员列表结果。
@@ -76,6 +81,8 @@ type CreateInput struct {
 	QuotaUSD        float64
 	QuotaPeriod     string // 空 = monthly
 	AllowedGroupIDs []int64
+	// DepartmentID 所属部门；nil / 0 表示未分配。
+	DepartmentID *int64
 }
 
 // UpdateInput 更新成员输入；nil 表示不改动。
@@ -89,6 +96,8 @@ type UpdateInput struct {
 	Status      *string
 	// AllowedGroupIDs 非 nil 即整体替换白名单；传空切片 = 清空（继承企业主全部可见分组）。
 	AllowedGroupIDs *[]int64
+	// DepartmentID nil 不改动；指向 0 = 调出部门（未分配）。调岗不动历史用量快照。
+	DepartmentID *int64
 }
 
 // Mutation 持久化写入；nil 表示不改动。
@@ -105,6 +114,9 @@ type Mutation struct {
 	PeriodAnchor       *time.Time
 	PeriodStart        *time.Time
 	PeriodUsedBase     *float64
+	// DepartmentID 配合 HasDepartmentID：nil 表示调出部门。
+	DepartmentID    *int
+	HasDepartmentID bool
 }
 
 // AccountInput 随成员一起创建的登录账号。
@@ -147,4 +159,8 @@ type Repository interface {
 	// OwnerVisibleGroupIDs 企业主当前可见的分组 ID 集合（未下架且（非专属或已授权）），
 	// 用于校验分组白名单只能在其中选。
 	OwnerVisibleGroupIDs(ctx context.Context, ownerID int) ([]int64, error)
+	// DepartmentOwnedBy 部门是否存在且属于该企业主。
+	DepartmentOwnedBy(ctx context.Context, ownerID, departmentID int) (bool, error)
+	// OwnerBillingAnchor 企业账期锚点（users.billing_period_anchor ?? created_at），成员创建时继承。
+	OwnerBillingAnchor(ctx context.Context, ownerID int) (time.Time, error)
 }

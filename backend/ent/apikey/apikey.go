@@ -51,6 +51,8 @@ const (
 	EdgeGroup = "group"
 	// EdgeMember holds the string denoting the member edge name in mutations.
 	EdgeMember = "member"
+	// EdgeDepartment holds the string denoting the department edge name in mutations.
+	EdgeDepartment = "department"
 	// EdgeUsageLogs holds the string denoting the usage_logs edge name in mutations.
 	EdgeUsageLogs = "usage_logs"
 	// Table holds the table name of the apikey in the database.
@@ -76,6 +78,13 @@ const (
 	MemberInverseTable = "members"
 	// MemberColumn is the table column denoting the member relation/edge.
 	MemberColumn = "member_api_keys"
+	// DepartmentTable is the table that holds the department relation/edge.
+	DepartmentTable = "api_keys"
+	// DepartmentInverseTable is the table name for the Department entity.
+	// It exists in this package in order to avoid circular dependency with the "department" package.
+	DepartmentInverseTable = "departments"
+	// DepartmentColumn is the table column denoting the department relation/edge.
+	DepartmentColumn = "department_api_keys"
 	// UsageLogsTable is the table that holds the usage_logs relation/edge.
 	UsageLogsTable = "usage_logs"
 	// UsageLogsInverseTable is the table name for the UsageLog entity.
@@ -108,6 +117,7 @@ var Columns = []string{
 // ForeignKeys holds the SQL foreign-keys that are owned by the "api_keys"
 // table and are not defined as standalone fields in the schema.
 var ForeignKeys = []string{
+	"department_api_keys",
 	"group_api_keys",
 	"member_api_keys",
 	"user_api_keys",
@@ -277,6 +287,13 @@ func ByMemberField(field string, opts ...sql.OrderTermOption) OrderOption {
 	}
 }
 
+// ByDepartmentField orders the results by department field.
+func ByDepartmentField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newDepartmentStep(), sql.OrderByField(field, opts...))
+	}
+}
+
 // ByUsageLogsCount orders the results by usage_logs count.
 func ByUsageLogsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -309,6 +326,13 @@ func newMemberStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(MemberInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, MemberTable, MemberColumn),
+	)
+}
+func newDepartmentStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(DepartmentInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, DepartmentTable, DepartmentColumn),
 	)
 }
 func newUsageLogsStep() *sqlgraph.Step {

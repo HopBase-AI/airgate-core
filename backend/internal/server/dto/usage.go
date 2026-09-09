@@ -15,6 +15,8 @@ type UsageLogResp struct {
 	APIKeyDeleted         bool                  `json:"api_key_deleted"`
 	MemberID              int64                 `json:"member_id,omitempty"`
 	MemberName            string                `json:"member_name,omitempty"`
+	DepartmentID          int64                 `json:"department_id,omitempty"`
+	DepartmentName        string                `json:"department_name,omitempty"`
 	AccountID             int64                 `json:"account_id"`
 	AccountName           string                `json:"account_name,omitempty"`
 	AccountEmail          string                `json:"account_email,omitempty"`
@@ -84,6 +86,8 @@ type UserUsageLogResp struct {
 	APIKeyDeleted         bool                  `json:"api_key_deleted"`
 	MemberID              int64                 `json:"member_id,omitempty"`
 	MemberName            string                `json:"member_name,omitempty"`
+	DepartmentID          int64                 `json:"department_id,omitempty"`
+	DepartmentName        string                `json:"department_name,omitempty"`
 	GroupID               int64                 `json:"group_id"`
 	Platform              string                `json:"platform"`
 	Model                 string                `json:"model"`
@@ -165,27 +169,31 @@ type CustomerUsageLogResp struct {
 // UsageQuery 使用记录查询参数
 type UsageQuery struct {
 	PageReq
-	UserID    *int64 `form:"user_id"`
-	APIKeyID  *int64 `form:"api_key_id"`
-	MemberID  *int64 `form:"member_id"` // 按团队成员筛选
-	AccountID *int64 `form:"account_id"`
-	GroupID   *int64 `form:"group_id"`
-	Platform  string `form:"platform"`
-	Model     string `form:"model"`
-	StartDate string `form:"start_date"`
-	EndDate   string `form:"end_date"`
+	UserID       *int64 `form:"user_id"`
+	APIKeyID     *int64 `form:"api_key_id"`
+	MemberID     *int64 `form:"member_id"`     // 按团队成员筛选
+	DepartmentID *int64 `form:"department_id"` // 按部门筛选；0 = 未分配
+	AccountID    *int64 `form:"account_id"`
+	GroupID      *int64 `form:"group_id"`
+	Platform     string `form:"platform"`
+	Model        string `form:"model"`
+	StartDate    string `form:"start_date"`
+	EndDate      string `form:"end_date"`
 	// Result 请求结果筛选：空 = 全部，success = 只看成功，error = 只看失败。
 	Result string `form:"result" binding:"omitempty,oneof=success error"`
 }
 
 // UsageFilterQuery 使用记录筛选参数（不含分页，用于聚合统计）
 type UsageFilterQuery struct {
-	APIKeyID  *int64 `form:"api_key_id"`
-	MemberID  *int64 `form:"member_id"` // 按团队成员筛选
-	Platform  string `form:"platform"`
-	Model     string `form:"model"`
-	StartDate string `form:"start_date"`
-	EndDate   string `form:"end_date"`
+	APIKeyID     *int64 `form:"api_key_id"`
+	MemberID     *int64 `form:"member_id"`     // 按团队成员筛选
+	DepartmentID *int64 `form:"department_id"` // 按部门筛选；0 = 未分配
+	Platform     string `form:"platform"`
+	Model        string `form:"model"`
+	StartDate    string `form:"start_date"`
+	EndDate      string `form:"end_date"`
+	// Breakdown 分层聚合维度，逗号分隔：department / member / key / group（企业主下钻用；客户视角忽略）。
+	Breakdown string `form:"breakdown"`
 }
 
 // UsageStatsResp 聚合统计响应
@@ -200,6 +208,45 @@ type UsageStatsResp struct {
 	ByUser          []UserStats    `json:"by_user,omitempty"`
 	ByAccount       []AccountStats `json:"by_account,omitempty"`
 	ByGroup         []GroupStats   `json:"by_group,omitempty"`
+	// 企业主分层下钻（按 breakdown 参数按需返回）。
+	ByDepartment []DepartmentStats `json:"by_department,omitempty"`
+	ByMember     []MemberStats     `json:"by_member,omitempty"`
+	ByKey        []APIKeyStats     `json:"by_key,omitempty"`
+}
+
+// DepartmentStats 按部门统计；department_id=0 为「未分配」。
+type DepartmentStats struct {
+	DepartmentID int64   `json:"department_id"`
+	Name         string  `json:"name"`
+	Requests     int64   `json:"requests"`
+	Tokens       int64   `json:"tokens"`
+	TotalCost    float64 `json:"total_cost"`
+	ActualCost   float64 `json:"actual_cost"`
+	BilledCost   float64 `json:"billed_cost,omitempty"`
+}
+
+// MemberStats 按成员统计；member_id=0 为企业主本人 / 未归属。
+type MemberStats struct {
+	MemberID     int64   `json:"member_id"`
+	Name         string  `json:"name"`
+	DepartmentID int64   `json:"department_id"`
+	Requests     int64   `json:"requests"`
+	Tokens       int64   `json:"tokens"`
+	TotalCost    float64 `json:"total_cost"`
+	ActualCost   float64 `json:"actual_cost"`
+	BilledCost   float64 `json:"billed_cost,omitempty"`
+}
+
+// APIKeyStats 按密钥统计；api_key_id=0 为无密钥（AI Chat / 工作台）的消耗。
+type APIKeyStats struct {
+	APIKeyID   int64   `json:"api_key_id"`
+	Name       string  `json:"name"`
+	MemberID   int64   `json:"member_id"`
+	Requests   int64   `json:"requests"`
+	Tokens     int64   `json:"tokens"`
+	TotalCost  float64 `json:"total_cost"`
+	ActualCost float64 `json:"actual_cost"`
+	BilledCost float64 `json:"billed_cost,omitempty"`
 }
 
 // ModelStats 按模型统计
@@ -267,8 +314,9 @@ type UsageStatsQuery struct {
 // UsageExportFilterQuery 导出的筛选参数（时间区间另经 parseExportRange 解析）。
 // 与列表页同名参数同义，让「页面上筛什么就导出什么」成立。
 type UsageExportFilterQuery struct {
-	APIKeyID *int64 `form:"api_key_id"`
-	MemberID *int64 `form:"member_id"`
+	APIKeyID     *int64 `form:"api_key_id"`
+	MemberID     *int64 `form:"member_id"`
+	DepartmentID *int64 `form:"department_id"`
 }
 
 // UsageTrendQuery Token 趋势查询参数

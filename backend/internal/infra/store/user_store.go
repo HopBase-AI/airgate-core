@@ -13,6 +13,7 @@ import (
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
 	entusersubscription "github.com/DouDOU-start/airgate-core/ent/usersubscription"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
+	"github.com/DouDOU-start/airgate-core/internal/auth"
 )
 
 // UserStore 使用 Ent 实现用户仓储。
@@ -637,6 +638,7 @@ func (s *UserStore) MembershipBrief(ctx context.Context, userID int) (appuser.Me
 	m, err := s.db.Member.Query().
 		Where(entmember.HasAccountWith(entuser.IDEQ(userID))).
 		WithOwner().
+		WithDepartment().
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -644,7 +646,8 @@ func (s *UserStore) MembershipBrief(ctx context.Context, userID int) (appuser.Me
 		}
 		return appuser.MembershipBrief{}, false, err
 	}
-	used, end := memberPeriodView(m, time.Now())
+	now := time.Now()
+	used, end := memberPeriodView(m, now)
 	brief := appuser.MembershipBrief{
 		MemberID:        m.ID,
 		MemberName:      m.Name,
@@ -659,5 +662,16 @@ func (s *UserStore) MembershipBrief(ctx context.Context, userID int) (appuser.Me
 		brief.OwnerBalance = o.Balance
 		brief.OwnerMaxConc = o.MaxConcurrency
 	}
+	if d := m.Edges.Department; d != nil {
+		brief.DepartmentID = d.ID
+		brief.DepartmentName = d.Name
+		brief.DepartmentQuotaUSD = d.QuotaUsd
+		if remaining, limited := auth.DepartmentRemainingQuota(d, now); limited {
+			brief.DepartmentLimited = true
+			brief.DepartmentUsedQuota = d.QuotaUsd - remaining
+		}
+	}
+	identity := auth.TeamIdentity{Member: m, Owner: m.Edges.Owner, Department: m.Edges.Department}
+	brief.EffectiveRemaining, brief.EffectiveLimited = identity.EffectiveRemaining(now)
 	return brief, true, nil
 }

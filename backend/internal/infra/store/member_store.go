@@ -7,6 +7,7 @@ import (
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	entapikey "github.com/DouDOU-start/airgate-core/ent/apikey"
+	entdepartment "github.com/DouDOU-start/airgate-core/ent/department"
 	entgroup "github.com/DouDOU-start/airgate-core/ent/group"
 	entmember "github.com/DouDOU-start/airgate-core/ent/member"
 	entusagelog "github.com/DouDOU-start/airgate-core/ent/usagelog"
@@ -29,7 +30,15 @@ func (s *MemberStore) ListByOwner(ctx context.Context, ownerID int, filter appme
 	query := s.db.Member.Query().
 		Where(entmember.HasOwnerWith(entuser.IDEQ(ownerID))).
 		WithOwner().
-		WithAccount()
+		WithAccount().
+		WithDepartment()
+	if filter.DepartmentID != nil {
+		if *filter.DepartmentID > 0 {
+			query = query.Where(entmember.HasDepartmentWith(entdepartment.IDEQ(*filter.DepartmentID)))
+		} else {
+			query = query.Where(entmember.Not(entmember.HasDepartment()))
+		}
+	}
 	if keyword := strings.TrimSpace(filter.Keyword); keyword != "" {
 		query = query.Where(entmember.Or(
 			entmember.NameContainsFold(keyword),
@@ -64,6 +73,8 @@ func (s *MemberStore) FindOwned(ctx context.Context, ownerID, id int) (appmember
 	item, err := s.db.Member.Query().
 		Where(entmember.IDEQ(id), entmember.HasOwnerWith(entuser.IDEQ(ownerID))).
 		WithOwner().
+		WithAccount().
+		WithDepartment().
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -72,6 +83,18 @@ func (s *MemberStore) FindOwned(ctx context.Context, ownerID, id int) (appmember
 		return appmember.Member{}, err
 	}
 	return mapMember(item), nil
+}
+
+// DepartmentOwnedBy 部门是否存在且属于该企业主。
+func (s *MemberStore) DepartmentOwnedBy(ctx context.Context, ownerID, departmentID int) (bool, error) {
+	return s.db.Department.Query().
+		Where(entdepartment.IDEQ(departmentID), entdepartment.HasOwnerWith(entuser.IDEQ(ownerID))).
+		Exist(ctx)
+}
+
+// OwnerBillingAnchor 企业账期锚点。
+func (s *MemberStore) OwnerBillingAnchor(ctx context.Context, ownerID int) (time.Time, error) {
+	return ownerBillingAnchor(ctx, s.db, ownerID)
 }
 
 // Create 创建成员。
@@ -355,7 +378,7 @@ func (s *MemberStore) ensureOwned(ctx context.Context, ownerID, id int) error {
 }
 
 func (s *MemberStore) loadByID(ctx context.Context, id int) (appmember.Member, error) {
-	item, err := s.db.Member.Query().Where(entmember.IDEQ(id)).WithOwner().WithAccount().Only(ctx)
+	item, err := s.db.Member.Query().Where(entmember.IDEQ(id)).WithOwner().WithAccount().WithDepartment().Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			return appmember.Member{}, appmember.ErrMemberNotFound
@@ -396,6 +419,13 @@ func applyMemberMutation(m *ent.MemberMutation, mutation appmember.Mutation) {
 	if mutation.PeriodUsedBase != nil {
 		m.SetPeriodUsedBase(*mutation.PeriodUsedBase)
 	}
+	if mutation.HasDepartmentID {
+		if mutation.DepartmentID != nil {
+			m.SetDepartmentID(*mutation.DepartmentID)
+		} else {
+			m.ClearDepartment()
+		}
+	}
 }
 
 func mapMember(item *ent.Member) appmember.Member {
@@ -421,6 +451,10 @@ func mapMember(item *ent.Member) appmember.Member {
 	if item.Edges.Account != nil {
 		result.AccountUserID = item.Edges.Account.ID
 		result.AccountEmail = item.Edges.Account.Email
+	}
+	if item.Edges.Department != nil {
+		result.DepartmentID = item.Edges.Department.ID
+		result.DepartmentName = item.Edges.Department.Name
 	}
 	result.AllowedGroupIDs = append([]int64{}, item.AllowedGroupIds...)
 	return result

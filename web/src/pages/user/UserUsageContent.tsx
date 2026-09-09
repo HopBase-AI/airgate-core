@@ -6,12 +6,14 @@ import { Button, Card, ListBox, Meter, Select } from '@heroui/react';
 import { usageApi } from '../../shared/api/usage';
 import { apikeysApi } from '../../shared/api/apikeys';
 import { membersApi } from '../../shared/api/members';
+import { departmentsApi } from '../../shared/api/departments';
+import { UsageBreakdownPanel, type BreakdownDimension } from './UsageBreakdownPanel';
 import { queryKeys } from '../../shared/queryKeys';
 import { usePagination } from '../../shared/hooks/usePagination';
 import { usePlatforms } from '../../shared/hooks/usePlatforms';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { useToast } from '../../shared/ui';
-import { Clock, Download, Gauge, Percent, Upload, UsersRound } from 'lucide-react';
+import { Building2, Clock, Download, Gauge, Percent, Upload, UsersRound } from 'lucide-react';
 import type { UsageQuery } from '../../shared/types';
 import { useUsageColumns, fmtNum, type UsageColumnConfig, type UsageRow } from '../../shared/columns/usageColumns';
 import { getSessionAPIKey } from '../../shared/api/client';
@@ -47,6 +49,11 @@ function APIKeyInfoBar() {
   const memberUsed = user.member_used_quota ?? 0;
   const memberPct = memberQuota > 0 ? Math.min((memberUsed / memberQuota) * 100, 100) : 0;
   const memberPeriodEnd = user.member_period_end ? new Date(user.member_period_end).toLocaleDateString() : '';
+  // 部门层（成员账号）：所属部门与部门本期额度；部门不限额时只显示归属
+  const departmentName = user.member_department_name || '';
+  const departmentQuota = user.department_quota_usd ?? 0;
+  const departmentUsed = user.department_used_quota ?? 0;
+  const departmentPct = departmentQuota > 0 ? Math.min((departmentUsed / departmentQuota) * 100, 100) : 0;
 
   // 原文 Key 仅在 API Key 登录当次会话内通过 sessionStorage 暂存；刷新页面后丢失，
   // 此时按钮会提示用户重新登录。
@@ -109,6 +116,33 @@ function APIKeyInfoBar() {
             </Meter>
             {memberPeriodEnd ? (
               <span className="text-xs text-text-tertiary">{t('auth.member_period_end')} {memberPeriodEnd}</span>
+            ) : null}
+          </div>
+        )}
+        {departmentName && (
+          <div className="flex items-center gap-2">
+            <Building2 className="w-3.5 h-3.5 text-text-tertiary" />
+            <span className="text-text-tertiary">{t('team.department')}:</span>
+            <span className="font-medium text-text">{departmentName}</span>
+            {departmentQuota > 0 ? (
+              <>
+                <span className={departmentPct >= 90 ? 'text-danger font-medium' : 'text-text-secondary'}>
+                  ${departmentUsed.toFixed(4)} / ${departmentQuota.toFixed(2)}
+                </span>
+                <Meter
+                  aria-label={t('team.department')}
+                  className="w-20"
+                  color={departmentPct >= 90 ? 'danger' : departmentPct >= 70 ? 'warning' : 'accent'}
+                  maxValue={100}
+                  minValue={0}
+                  size="sm"
+                  value={departmentPct}
+                >
+                  <Meter.Track>
+                    <Meter.Fill />
+                  </Meter.Track>
+                </Meter>
+              </>
             ) : null}
           </div>
         )}
@@ -200,10 +234,15 @@ export default function UserUsageContent() {
   // 成员筛选只有企业主/管理员才有数据；成员账号本人调 /members 会被 403，直接不请求
   const canListMembers = !customerScope && (user?.role === 'admin' || !!user?.is_enterprise_owner) && !((user?.member_id ?? 0) > 0);
   const { page, setPage, pageSize, setPageSize } = usePagination(20, 'user.usage');
-  // 团队成员页「查看用量」经 ?member_id= 跳入：预置成员筛选
-  const search: { member_id?: number | string } = useSearch({ strict: false });
+  // 团队成员页「查看用量」经 ?member_id= 跳入、部门 Tab 经 ?department_id= 跳入：预置对应筛选
+  const search: { member_id?: number | string; department_id?: number | string } = useSearch({ strict: false });
   const initialMemberID = search.member_id != null && Number(search.member_id) > 0 ? Number(search.member_id) : undefined;
-  const [filters, setFilters] = useState<Partial<UsageQuery>>(initialMemberID ? { member_id: initialMemberID } : {});
+  const initialDepartmentID = search.department_id != null && Number(search.department_id) >= 0 && search.department_id !== '' ? Number(search.department_id) : undefined;
+  const [filters, setFilters] = useState<Partial<UsageQuery>>({
+    ...(initialMemberID ? { member_id: initialMemberID } : {}),
+    ...(initialDepartmentID != null ? { department_id: initialDepartmentID } : {}),
+  });
+  const [breakdown, setBreakdown] = useState<BreakdownDimension>('key');
   const [autoRefresh, setAutoRefresh] = usePersistentAutoRefresh(USER_USAGE_AUTO_UPDATE_STORAGE_KEY, 0, USER_AUTO_REFRESH_OPTIONS);
   const autoRefreshEnabled = autoRefresh > 0;
   const autoRefreshLabel = `${t('usage.auto_update')} `;
@@ -258,6 +297,24 @@ export default function UserUsageContent() {
   const hasMembers = (membersData?.list?.length ?? 0) > 0;
   const selectedMemberLabel = memberOptions.find((item) => item.id === String(filters.member_id ?? ''))?.label ?? t('common.all');
 
+  const { data: departmentsData } = useQuery({
+    queryKey: queryKeys.departmentsAll(),
+    queryFn: () => departmentsApi.list(FETCH_ALL_PARAMS),
+    enabled: canListMembers,
+    staleTime: 60_000,
+  });
+  const departmentOptions = [
+    { id: '', label: t('common.all') },
+    ...(departmentsData?.list ?? []).map((dept) => ({ id: String(dept.id), label: dept.name })),
+    { id: '0', label: t('usage.unassigned') },
+  ];
+  const hasDepartments = (departmentsData?.list?.length ?? 0) > 0;
+  const selectedDepartmentLabel = departmentOptions.find((item) => item.id === String(filters.department_id ?? ''))?.label ?? t('common.all');
+  // 分层下钻只对企业主（能列成员的完整视角）开放；默认按密钥，有部门时按部门起步
+  const [breakdownTouched, setBreakdownTouched] = useState(false);
+  const effectiveBreakdown: BreakdownDimension = breakdownTouched ? breakdown : hasDepartments ? 'department' : hasMembers ? 'member' : 'key';
+  const breakdownParam = canListMembers ? effectiveBreakdown : undefined;
+
   const {
     data,
     dataUpdatedAt,
@@ -276,8 +333,8 @@ export default function UserUsageContent() {
 
   // 聚合统计（跟随筛选条件，独立于分页）
   const { data: stats, isFetching: isStatsFetching, refetch: refetchStats } = useQuery({
-    queryKey: queryKeys.userUsageStats(filters),
-    queryFn: ({ signal }) => usageApi.userStats(filters, { signal }),
+    queryKey: queryKeys.userUsageStats(filters, breakdownParam),
+    queryFn: ({ signal }) => usageApi.userStats({ ...filters, breakdown: breakdownParam }, { signal }),
     meta: { globalLoading: false },
     refetchOnReconnect: false,
     refetchOnWindowFocus: false,
@@ -305,6 +362,7 @@ export default function UserUsageContent() {
         start_time: startTime,
         end_time: toRFC3339(filters.end_date, true),
         member_id: filters.member_id,
+        department_id: filters.department_id,
         api_key_id: filters.api_key_id,
         tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
@@ -319,7 +377,7 @@ export default function UserUsageContent() {
     } finally {
       setExporting(false);
     }
-  }, [filters.api_key_id, filters.end_date, filters.member_id, filters.start_date, t, toast]);
+  }, [filters.api_key_id, filters.department_id, filters.end_date, filters.member_id, filters.start_date, t, toast]);
 
   const handleManualRefresh = useCallback(() => {
     void refetchUsage({ cancelRefetch: false });
@@ -331,10 +389,20 @@ export default function UserUsageContent() {
   }, [refetchUsage]);
 
   function updateFilter(key: string, value: string) {
-    const nextValue = (key === 'api_key_id' || key === 'member_id') && value ? Number(value) : value || undefined;
+    // department_id 的 "0" 是「未分配」这一有效取值，不能当空处理
+    const numeric = key === 'api_key_id' || key === 'member_id' || key === 'department_id';
+    const nextValue = numeric ? (value === '' ? undefined : Number(value)) : value || undefined;
     setFilters((prev) => ({ ...prev, [key]: nextValue }));
     setPage(1);
   }
+  const drillInto = (next: { department_id?: number; member_id?: number; api_key_id?: number; group_id?: number }) => {
+    setFilters((prev) => ({ ...prev, ...next }));
+    setPage(1);
+    // 下钻一层后自动切到下一维度：部门 → 成员 → 密钥 → 分组
+    if (next.department_id != null) { setBreakdown(hasMembers ? 'member' : 'key'); setBreakdownTouched(true); }
+    else if (next.member_id != null) { setBreakdown('key'); setBreakdownTouched(true); }
+    else if (next.api_key_id != null) { setBreakdown('group'); setBreakdownTouched(true); }
+  };
 
   const list = data?.list ?? [];
   const total = data?.total ?? 0;
@@ -380,6 +448,20 @@ export default function UserUsageContent() {
       );
     },
   };
+  const departmentColumn: UsageColumnConfig<UsageRow> = {
+    key: 'department',
+    title: t('team.department'),
+    width: '88px',
+    hideOnMobile: true,
+    render: (row) => {
+      const departmentID = 'department_id' in row && row.department_id ? row.department_id : 0;
+      if (!departmentID) return <span className="block text-xs text-text-tertiary">-</span>;
+      const name = 'department_name' in row && row.department_name ? row.department_name : t('team.department_deleted');
+      return (
+        <span className="block max-w-full truncate text-xs text-text-secondary" title={name}>{name}</span>
+      );
+    },
+  };
   const memberColumn: UsageColumnConfig<UsageRow> = {
     key: 'member',
     title: t('usage.member'),
@@ -395,7 +477,9 @@ export default function UserUsageContent() {
     },
   };
   // 有团队成员时才多一列，普通用户的表格保持原样
-  const ownerExtraColumns = customerScope ? [] : hasMembers ? [apiKeyColumn, memberColumn] : [apiKeyColumn];
+  const ownerExtraColumns = customerScope
+    ? []
+    : [apiKeyColumn, ...(hasMembers ? [memberColumn] : []), ...(hasDepartments ? [departmentColumn] : [])];
   const columns = modelColumnIndex >= 0
     ? [
         ...sharedColumns.slice(0, timeColumnIndex + 1),
@@ -428,6 +512,19 @@ export default function UserUsageContent() {
         <span>{t('usage.actual_cost')}</span>
         <b><CostValue value={visibleActualCost} decimals={4} tone="actual" /></b>
       </p>
+
+      {/* 分层下钻：企业主视角才有 */}
+      {canListMembers ? (
+        <UsageBreakdownPanel
+          stats={stats}
+          dimension={effectiveBreakdown}
+          onDimensionChange={(next) => { setBreakdown(next); setBreakdownTouched(true); }}
+          hasDepartments={hasDepartments}
+          hasMembers={hasMembers}
+          totalActualCost={stats?.total_actual_cost ?? 0}
+          onDrill={drillInto}
+        />
+      ) : null}
 
       {/* 筛选栏 */}
       <div className="ag-filter-bar flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-5 flex-wrap">
@@ -515,6 +612,34 @@ export default function UserUsageContent() {
               </Select.Trigger>
               <Select.Popover>
                 <ListBox items={apiKeyOptions}>
+                  {(item) => (
+                    <ListBox.Item id={item.id} textValue={item.label}>
+                      {item.label}
+                    </ListBox.Item>
+                  )}
+                </ListBox>
+              </Select.Popover>
+            </Select>
+          </div>
+        )}
+        {!customerScope && hasDepartments && (
+          <div className="w-full sm:w-44">
+            <Select
+              aria-label={t('team.filter_department')}
+              fullWidth
+              selectedKey={filters.department_id != null ? String(filters.department_id) : ''}
+              onSelectionChange={(key) => updateFilter('department_id', key == null ? '' : String(key))}
+            >
+              <Select.Trigger>
+                <Select.Value>
+                  {filters.department_id != null ? selectedDepartmentLabel : (
+                    <span className="text-text-tertiary">{t('team.filter_department')}</span>
+                  )}
+                </Select.Value>
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox items={departmentOptions}>
                   {(item) => (
                     <ListBox.Item id={item.id} textValue={item.label}>
                       {item.label}

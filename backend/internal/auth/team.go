@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/DouDOU-start/airgate-core/ent"
+	entdepartment "github.com/DouDOU-start/airgate-core/ent/department"
 	entmember "github.com/DouDOU-start/airgate-core/ent/member"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
 	"github.com/DouDOU-start/airgate-core/internal/pkg/period"
@@ -24,6 +25,8 @@ var ErrMemberGroupForbidden = errors.New("所属团队成员无权使用该分�
 type TeamIdentity struct {
 	Member *ent.Member // 非 nil 表示该用户是团队成员账号
 	Owner  *ent.User   // 成员所属企业主；Member 为 nil 时为 nil
+	// Department 成员所属部门；未分配或不是成员时为 nil。
+	Department *ent.Department
 }
 
 // IsMember 是否成员账号。
@@ -76,6 +79,7 @@ func ResolveTeamIdentity(ctx context.Context, db *ent.Client, userID int) (TeamI
 	m, err := db.Member.Query().
 		Where(entmember.HasAccountWith(entuser.IDEQ(userID))).
 		WithOwner().
+		WithDepartment().
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -88,7 +92,7 @@ func ResolveTeamIdentity(ctx context.Context, db *ent.Client, userID int) (TeamI
 	if err != nil {
 		return TeamIdentity{}, err
 	}
-	identity := TeamIdentity{Member: m, Owner: owner}
+	identity := TeamIdentity{Member: m, Owner: owner, Department: m.Edges.Department}
 	teamIdentityCache.Store(userID, teamIdentityEntry{identity: identity, expiresAt: time.Now().Add(teamIdentityCacheTTL)})
 	return identity, nil
 }
@@ -98,6 +102,82 @@ func InvalidateTeamIdentity(userID int) {
 	if userID > 0 {
 		teamIdentityCache.Delete(userID)
 	}
+}
+
+// InvalidateAllTeamIdentities 清空全部归属缓存：部门改额度/删除会影响其下所有成员账号，
+// 逐个失效要先查一遍成员，直接清空更省事（5s 内本就会自然过期）。
+func InvalidateAllTeamIdentities() {
+	teamIdentityCache.Range(func(key, _ any) bool {
+		teamIdentityCache.Delete(key)
+		return true
+	})
+}
+
+// DepartmentGate 部门闸门结果：本期已用与额度，供 Host 转发等非 key 路径复用。
+type DepartmentGate struct {
+	ID        int
+	Name      string
+	QuotaUSD  float64
+	UsedQuota float64
+}
+
+// Exhausted 本期额度是否用尽（0 表示不限）。
+func (g DepartmentGate) Exhausted() bool { return g.QuotaUSD > 0 && g.UsedQuota >= g.QuotaUSD }
+
+// EvaluateDepartmentGate 部门额度判定（monthly 跨期惰性换期），与 ValidateAPIKey 内的闸门同口径。
+// d 为 nil 返回零值。
+func EvaluateDepartmentGate(ctx context.Context, db *ent.Client, d *ent.Department, now time.Time) DepartmentGate {
+	return DepartmentGate(evaluateDepartment(ctx, db, d, now, true))
+}
+
+// DepartmentRemainingQuota 部门本期剩余额度（纯计算，不推进换期、不落库）；0=不限返回 limited=false。
+func DepartmentRemainingQuota(d *ent.Department, now time.Time) (remaining float64, limited bool) {
+	if d == nil || d.QuotaUsd <= 0 {
+		return 0, false
+	}
+	remaining = d.QuotaUsd - departmentPeriodUsed(d, now)
+	if remaining < 0 {
+		remaining = 0
+	}
+	return remaining, true
+}
+
+// departmentPeriodUsed 部门本期已用，规则同 memberPeriodUsed。
+func departmentPeriodUsed(d *ent.Department, now time.Time) float64 {
+	base := d.PeriodUsedBase
+	if d.QuotaPeriod == entdepartment.QuotaPeriodMonthly {
+		if _, _, rolled := period.Window(d.PeriodAnchor, d.PeriodStart, now); rolled {
+			base = d.UsedQuota
+		}
+	}
+	used := d.UsedQuota - base
+	if used < 0 {
+		used = 0
+	}
+	return used
+}
+
+// EffectiveRemaining 成员账号视角的可用额度：三层取小（成员本期剩余、部门本期剩余、企业主余额）。
+//
+// 展示口径红线：每一层看到的「剩余」都必须是三层取小，否则会出现成员看到自己还有 $100、
+// 一发请求就 402 的「看得到花不动」。limited=false 表示三层都不限（只剩企业主余额）。
+func (t TeamIdentity) EffectiveRemaining(now time.Time) (remaining float64, limited bool) {
+	if !t.IsMember() {
+		return 0, false
+	}
+	remaining = t.Owner.Balance
+	if remaining < 0 {
+		remaining = 0
+	}
+	if r, ok := MemberRemainingQuota(t.Member, now); ok {
+		limited = true
+		remaining = min(remaining, r)
+	}
+	if r, ok := DepartmentRemainingQuota(t.Department, now); ok {
+		limited = true
+		remaining = min(remaining, r)
+	}
+	return remaining, limited
 }
 
 // MemberGate 成员闸门的对外结果：本期已用与额度，供 Host 转发等非 key 路径复用。

@@ -15,9 +15,11 @@ import (
 	appaccount "github.com/DouDOU-start/airgate-core/internal/app/account"
 	appaccountevent "github.com/DouDOU-start/airgate-core/internal/app/accountevent"
 	appapikey "github.com/DouDOU-start/airgate-core/internal/app/apikey"
+	appaudit "github.com/DouDOU-start/airgate-core/internal/app/audit"
 	appauth "github.com/DouDOU-start/airgate-core/internal/app/auth"
 	appblog "github.com/DouDOU-start/airgate-core/internal/app/blog"
 	appdashboard "github.com/DouDOU-start/airgate-core/internal/app/dashboard"
+	appdepartment "github.com/DouDOU-start/airgate-core/internal/app/department"
 	appentrycode "github.com/DouDOU-start/airgate-core/internal/app/entrycode"
 	appgenerationtask "github.com/DouDOU-start/airgate-core/internal/app/generationtask"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
@@ -64,6 +66,7 @@ type HTTPHandlers struct {
 	Group          *handler.GroupHandler
 	APIKey         *handler.APIKeyHandler
 	Member         *handler.MemberHandler
+	Department     *handler.DepartmentHandler
 	Subscription   *handler.SubscriptionHandler
 	Usage          *handler.UsageHandler
 	Proxy          *handler.ProxyHandler
@@ -92,10 +95,13 @@ type HTTPHandlers struct {
 
 // NewHTTPHandlers 统一构造 HTTP 处理器。
 func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
+	auditService := appaudit.NewService(store.NewTeamAuditStore(dep.DB))
 	apiKeyStore := store.NewAPIKeyStore(dep.DB)
 	apiKeyService := appapikey.NewService(apiKeyStore, dep.Config.APIKeySecret())
+	apiKeyService.SetAudit(auditService)
 	memberStore := store.NewMemberStore(dep.DB)
-	memberService := appmember.NewService(memberStore)
+	memberService := appmember.NewService(memberStore, auditService)
+	departmentService := appdepartment.NewService(store.NewDepartmentStore(dep.DB), auditService)
 	authStore := store.NewAuthStore(dep.DB)
 	auth.SetAPIKeyCacheRedis(dep.Redis)
 	authService := appauth.NewService(authStore, dep.JWTMgr)
@@ -175,6 +181,7 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 		Pricing:        handler.NewPricingHandler(groupService, userService, accountService),
 		APIKey:         handler.NewAPIKeyHandler(apiKeyService),
 		Member:         handler.NewMemberHandler(memberService),
+		Department:     handler.NewDepartmentHandler(departmentService, auditService),
 		Subscription:   handler.NewSubscriptionHandler(subscriptionService),
 		Usage:          handler.NewUsageHandler(usageService),
 		Proxy:          handler.NewProxyHandler(proxyService),

@@ -6,7 +6,7 @@ import { groupsApi } from '../../../shared/api/groups';
 import { queryKeys } from '../../../shared/queryKeys';
 import { FETCH_ALL_PARAMS } from '../../../shared/constants';
 import { localizedGroupText } from '../../../shared/groupText';
-import type { MemberForm } from './types';
+import type { DepartmentOption, MemberForm } from './types';
 
 // 成员表单：成员是真实登录账号——新建时邮箱+密码必填；编辑时邮箱可改、密码留空不动。
 // 分组白名单从企业主自己可见的分组里勾选，一个都不勾 = 继承全部。
@@ -19,6 +19,7 @@ export function EditMemberModal({
   onClose,
   onSubmit,
   loading,
+  departmentOptions = [],
 }: {
   open: boolean;
   isEdit: boolean;
@@ -29,6 +30,8 @@ export function EditMemberModal({
   onClose: () => void;
   onSubmit: () => void;
   loading: boolean;
+  /** 企业主的部门列表；没建过部门时不展示所属部门一栏 */
+  departmentOptions?: DepartmentOption[];
 }) {
   const { t, i18n } = useTranslation();
   const modalState = useOverlayState({
@@ -148,6 +151,32 @@ export function EditMemberModal({
           </Select.Popover>
         </Select>
         <p className="-mt-2 text-xs leading-5 text-text-tertiary">{selectedPeriod.hint}</p>
+
+        {departmentOptions.length > 0 ? (
+          <Select
+            fullWidth
+            selectedKey={form.department_id || ''}
+            onSelectionChange={(key) => setForm({ ...form, department_id: key == null || key === '' ? '' : String(key) })}
+          >
+            <Label>{t('team.department')}</Label>
+            <Select.Trigger>
+              <Select.Value>
+                {departmentOptions.find((option) => option.id === form.department_id)?.label ?? t('team.department_none')}
+              </Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover className="w-[var(--trigger-width)]">
+              <ListBox items={[{ id: '', label: t('team.department_none') }, ...departmentOptions]}>
+                {(item) => (
+                  <ListBox.Item id={item.id} textValue={item.label}>
+                    {item.label}
+                  </ListBox.Item>
+                )}
+              </ListBox>
+            </Select.Popover>
+            <Description>{t('team.department_hint')}</Description>
+          </Select>
+        ) : null}
 
         <div>
           <p className="mb-1 text-sm font-medium text-text">{t('team.groups')}</p>

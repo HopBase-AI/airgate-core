@@ -41,6 +41,7 @@ func (APIKey) Indexes() []ent.Index {
 		index.Fields("key_hash").Unique(),
 		index.Fields("status", "created_at"),
 		index.Edges("member"),
+		index.Edges("department"),
 	}
 }
 
@@ -51,6 +52,9 @@ func (APIKey) Edges() []ent.Edge {
 		// 归属的团队成员（可空）。有成员时鉴权额外校验成员状态与成员额度，
 		// 计费同时累加到成员；owner 仍是 user 边，扣费永远落主账号余额。
 		edge.From("member", Member.Type).Ref("api_keys").Unique(),
+		// 直挂的部门（可空）。有效部门 = 本边 ?? member.department：现有客户本来就用多把 key
+		// 做分摊，不必先建成员账号也能按部门管控额度与看账。
+		edge.From("department", Department.Type).Ref("api_keys").Unique(),
 		edge.To("usage_logs", UsageLog.Type),
 	}
 }

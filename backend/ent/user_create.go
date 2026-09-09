@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
+	"github.com/DouDOU-start/airgate-core/ent/department"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
@@ -119,6 +120,20 @@ func (uc *UserCreate) SetIsEnterpriseOwner(b bool) *UserCreate {
 func (uc *UserCreate) SetNillableIsEnterpriseOwner(b *bool) *UserCreate {
 	if b != nil {
 		uc.SetIsEnterpriseOwner(*b)
+	}
+	return uc
+}
+
+// SetBillingPeriodAnchor sets the "billing_period_anchor" field.
+func (uc *UserCreate) SetBillingPeriodAnchor(t time.Time) *UserCreate {
+	uc.mutation.SetBillingPeriodAnchor(t)
+	return uc
+}
+
+// SetNillableBillingPeriodAnchor sets the "billing_period_anchor" field if the given value is not nil.
+func (uc *UserCreate) SetNillableBillingPeriodAnchor(t *time.Time) *UserCreate {
+	if t != nil {
+		uc.SetBillingPeriodAnchor(*t)
 	}
 	return uc
 }
@@ -359,6 +374,21 @@ func (uc *UserCreate) AddMembers(m ...*Member) *UserCreate {
 		ids[i] = m[i].ID
 	}
 	return uc.AddMemberIDs(ids...)
+}
+
+// AddDepartmentIDs adds the "departments" edge to the Department entity by IDs.
+func (uc *UserCreate) AddDepartmentIDs(ids ...int) *UserCreate {
+	uc.mutation.AddDepartmentIDs(ids...)
+	return uc
+}
+
+// AddDepartments adds the "departments" edges to the Department entity.
+func (uc *UserCreate) AddDepartments(d ...*Department) *UserCreate {
+	ids := make([]int, len(d))
+	for i := range d {
+		ids[i] = d[i].ID
+	}
+	return uc.AddDepartmentIDs(ids...)
 }
 
 // SetMembershipID sets the "membership" edge to the Member entity by ID.
@@ -725,6 +755,10 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 		_spec.SetField(user.FieldIsEnterpriseOwner, field.TypeBool, value)
 		_node.IsEnterpriseOwner = value
 	}
+	if value, ok := uc.mutation.BillingPeriodAnchor(); ok {
+		_spec.SetField(user.FieldBillingPeriodAnchor, field.TypeTime, value)
+		_node.BillingPeriodAnchor = &value
+	}
 	if value, ok := uc.mutation.MaxConcurrency(); ok {
 		_spec.SetField(user.FieldMaxConcurrency, field.TypeInt, value)
 		_node.MaxConcurrency = value
@@ -814,6 +848,22 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := uc.mutation.DepartmentsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.DepartmentsTable,
+			Columns: []string{user.DepartmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

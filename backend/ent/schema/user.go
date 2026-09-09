@@ -28,6 +28,9 @@ func (User) Fields() []ent.Field {
 		field.Bool("is_enterprise_owner").Default(false).
 			Comment("是否为企业主:可在控制台创建团队成员并分配额度(成员消耗统一从本账号余额扣)。" +
 				"管理员天然拥有该能力;普通用户须由管理员在后台授予。"),
+		field.Time("billing_period_anchor").Optional().Nillable().
+			Comment("企业账期锚点：部门与团队成员的月度额度周期一律以它对齐（NULL 取账号创建时刻）。" +
+				"企业主可改成每月固定日，改动自下一个账期日起生效，当前期延续到该日。"),
 		field.Int("max_concurrency").Default(0).Min(0).
 			Comment("用户级并发上限：同一 user 所有 API Key 加起来同时在途的请求数。0 表示不限制（默认）。与 api_key.max_concurrency 是 AND 关系，两者都会检查。"),
 		field.String("totp_secret").Optional().Nillable().Sensitive(),
@@ -68,6 +71,8 @@ func (User) Edges() []ent.Edge {
 		edge.To("api_keys", APIKey.Type),
 		// 团队成员（企业子账号）：本账号作为企业主名下的成员花名册
 		edge.To("members", Member.Type),
+		// 企业组织（部门）：本账号作为企业主名下的部门
+		edge.To("departments", Department.Type),
 		// 本账号自己是哪个团队的成员账号（members.account 反向边）；nil 表示不是成员账号。
 		edge.From("membership", Member.Type).Ref("account").Unique(),
 		edge.To("subscriptions", UserSubscription.Type),

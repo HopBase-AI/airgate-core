@@ -23,6 +23,29 @@ func TestAvailableBalanceNeverRevealsOwnerBalanceWhenKeyHasQuota(t *testing.T) {
 	}
 }
 
+func TestCapByQuotas(t *testing.T) {
+	cases := []struct {
+		name                                    string
+		available, mQuota, mUsed, dQuota, dUsed float64
+		want                                    float64
+	}{
+		{"both unlimited", 100, 0, 0, 0, 0, 100},
+		{"member caps", 100, 30, 10, 0, 0, 20},
+		{"department caps", 100, 0, 0, 50, 45, 5},
+		{"department tighter than member", 100, 30, 10, 50, 45, 5},
+		{"member tighter than department", 100, 30, 25, 50, 10, 5},
+		{"department exhausted", 100, 30, 10, 50, 60, 0},
+		{"available tighter", 3, 30, 10, 50, 10, 3},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := CapByQuotas(tc.available, tc.mQuota, tc.mUsed, tc.dQuota, tc.dUsed); got != tc.want {
+				t.Fatalf("CapByQuotas = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestCapByMemberQuota(t *testing.T) {
 	cases := []struct {
 		name                     string
@@ -36,8 +59,8 @@ func TestCapByMemberQuota(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := CapByMemberQuota(tc.available, tc.mQuota, tc.mUsed); got != tc.want {
-				t.Fatalf("CapByMemberQuota(%v,%v,%v) = %v, want %v", tc.available, tc.mQuota, tc.mUsed, got, tc.want)
+			if got := CapByQuotas(tc.available, tc.mQuota, tc.mUsed, 0, 0); got != tc.want {
+				t.Fatalf("CapByQuotas(%v,%v,%v,0,0) = %v, want %v", tc.available, tc.mQuota, tc.mUsed, got, tc.want)
 			}
 		})
 	}

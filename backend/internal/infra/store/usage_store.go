@@ -8,6 +8,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent"
 	entaccount "github.com/DouDOU-start/airgate-core/ent/account"
 	entapikey "github.com/DouDOU-start/airgate-core/ent/apikey"
+	entdepartment "github.com/DouDOU-start/airgate-core/ent/department"
 	entgroup "github.com/DouDOU-start/airgate-core/ent/group"
 	entmember "github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
@@ -131,7 +132,265 @@ func (s *UsageStore) attachMemberNames(ctx context.Context, records []appusage.L
 			records[i].MemberName = names[records[i].MemberID]
 		}
 	}
+	return s.attachDepartmentNames(ctx, records)
+}
+
+// attachDepartmentNames 按 department_id 快照列回填部门名；已删除的部门查不到名字，
+// 前端按 department_id>0 且无名展示为「已删除部门」。
+func (s *UsageStore) attachDepartmentNames(ctx context.Context, records []appusage.LogRecord) error {
+	ids := make([]int, 0, 8)
+	seen := make(map[int64]struct{}, 8)
+	for _, record := range records {
+		if record.DepartmentID <= 0 {
+			continue
+		}
+		if _, ok := seen[record.DepartmentID]; ok {
+			continue
+		}
+		seen[record.DepartmentID] = struct{}{}
+		ids = append(ids, int(record.DepartmentID))
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	names, err := s.departmentNames(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for i := range records {
+		if records[i].DepartmentID > 0 {
+			records[i].DepartmentName = names[records[i].DepartmentID]
+		}
+	}
 	return nil
+}
+
+func (s *UsageStore) departmentNames(ctx context.Context, ids []int) (map[int64]string, error) {
+	names := make(map[int64]string, len(ids))
+	if len(ids) == 0 {
+		return names, nil
+	}
+	rows, err := s.db.Department.Query().
+		Where(entdepartment.IDIn(ids...)).
+		Select(entdepartment.FieldID, entdepartment.FieldName).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range rows {
+		names[int64(d.ID)] = d.Name
+	}
+	return names, nil
+}
+
+// StatsByDepartment 按部门快照聚合；department_id=0 的「未分配」单列。
+func (s *UsageStore) StatsByDepartment(ctx context.Context, filter appusage.StatsFilter) ([]appusage.DepartmentStats, error) {
+	// GroupBy 的扫描列名就是字段名，这里借 json tag "id" 对不上，故用别名查询。
+	var rows []struct {
+		DepartmentID int     `json:"department_id"`
+		Count        int     `json:"count"`
+		InputTokens  int64   `json:"input_tokens"`
+		OutputTokens int64   `json:"output_tokens"`
+		TotalCost    float64 `json:"total_cost"`
+		ActualCost   float64 `json:"actual_cost"`
+		BilledCost   float64 `json:"billed_cost"`
+	}
+	query := s.db.UsageLog.Query()
+	if filter.UserID != nil {
+		query = query.Where(usageUserPredicate(*filter.UserID))
+	}
+	query = excludeFailedUsage(applyUsageStatsFilter(query, filter))
+	if err := query.GroupBy(entusagelog.FieldDepartmentID).
+		Aggregate(
+			ent.Count(),
+			ent.As(ent.Sum(entusagelog.FieldInputTokens), "input_tokens"),
+			ent.As(ent.Sum(entusagelog.FieldOutputTokens), "output_tokens"),
+			ent.As(ent.Sum(entusagelog.FieldTotalCost), "total_cost"),
+			ent.As(ent.Sum(entusagelog.FieldActualCost), "actual_cost"),
+			ent.As(ent.Sum(entusagelog.FieldBilledCost), "billed_cost"),
+		).
+		Scan(ctx, &rows); err != nil {
+		return nil, err
+	}
+	ids := make([]int, 0, len(rows))
+	for _, row := range rows {
+		if row.DepartmentID > 0 {
+			ids = append(ids, row.DepartmentID)
+		}
+	}
+	names, err := s.departmentNames(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]appusage.DepartmentStats, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, appusage.DepartmentStats{
+			DepartmentID: int64(row.DepartmentID),
+			Name:         names[int64(row.DepartmentID)],
+			Requests:     int64(row.Count),
+			Tokens:       row.InputTokens + row.OutputTokens,
+			TotalCost:    row.TotalCost,
+			ActualCost:   row.ActualCost,
+			BilledCost:   row.BilledCost,
+		})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].ActualCost == result[j].ActualCost {
+			return result[i].DepartmentID < result[j].DepartmentID
+		}
+		return result[i].ActualCost > result[j].ActualCost
+	})
+	return result, nil
+}
+
+// StatsByMember 按成员快照聚合；member_id=0 的一行是企业主本人 / 未归属的消耗。
+func (s *UsageStore) StatsByMember(ctx context.Context, filter appusage.StatsFilter) ([]appusage.MemberStats, error) {
+	var rows []struct {
+		MemberID     int     `json:"member_id"`
+		Count        int     `json:"count"`
+		InputTokens  int64   `json:"input_tokens"`
+		OutputTokens int64   `json:"output_tokens"`
+		TotalCost    float64 `json:"total_cost"`
+		ActualCost   float64 `json:"actual_cost"`
+		BilledCost   float64 `json:"billed_cost"`
+	}
+	query := s.db.UsageLog.Query()
+	if filter.UserID != nil {
+		query = query.Where(usageUserPredicate(*filter.UserID))
+	}
+	query = excludeFailedUsage(applyUsageStatsFilter(query, filter))
+	if err := query.GroupBy(entusagelog.FieldMemberID).
+		Aggregate(
+			ent.Count(),
+			ent.As(ent.Sum(entusagelog.FieldInputTokens), "input_tokens"),
+			ent.As(ent.Sum(entusagelog.FieldOutputTokens), "output_tokens"),
+			ent.As(ent.Sum(entusagelog.FieldTotalCost), "total_cost"),
+			ent.As(ent.Sum(entusagelog.FieldActualCost), "actual_cost"),
+			ent.As(ent.Sum(entusagelog.FieldBilledCost), "billed_cost"),
+		).
+		Scan(ctx, &rows); err != nil {
+		return nil, err
+	}
+	ids := make([]int, 0, len(rows))
+	for _, row := range rows {
+		if row.MemberID > 0 {
+			ids = append(ids, row.MemberID)
+		}
+	}
+	type memberBrief struct {
+		name string
+		dept int64
+	}
+	briefs := make(map[int64]memberBrief, len(ids))
+	if len(ids) > 0 {
+		members, err := s.db.Member.Query().Where(entmember.IDIn(ids...)).WithDepartment().All(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range members {
+			b := memberBrief{name: m.Name}
+			if m.Edges.Department != nil {
+				b.dept = int64(m.Edges.Department.ID)
+			}
+			briefs[int64(m.ID)] = b
+		}
+	}
+	result := make([]appusage.MemberStats, 0, len(rows))
+	for _, row := range rows {
+		brief := briefs[int64(row.MemberID)]
+		result = append(result, appusage.MemberStats{
+			MemberID:     int64(row.MemberID),
+			Name:         brief.name,
+			DepartmentID: brief.dept,
+			Requests:     int64(row.Count),
+			Tokens:       row.InputTokens + row.OutputTokens,
+			TotalCost:    row.TotalCost,
+			ActualCost:   row.ActualCost,
+			BilledCost:   row.BilledCost,
+		})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].ActualCost == result[j].ActualCost {
+			return result[i].MemberID < result[j].MemberID
+		}
+		return result[i].ActualCost > result[j].ActualCost
+	})
+	return result, nil
+}
+
+// StatsByAPIKey 按密钥聚合（api_key 边；已删除密钥的记录边已置空，归入 0 行）。
+func (s *UsageStore) StatsByAPIKey(ctx context.Context, filter appusage.StatsFilter) ([]appusage.APIKeyStats, error) {
+	var rows []struct {
+		APIKeyID     int     `json:"api_key_usage_logs"`
+		Count        int     `json:"count"`
+		InputTokens  int64   `json:"input_tokens"`
+		OutputTokens int64   `json:"output_tokens"`
+		TotalCost    float64 `json:"total_cost"`
+		ActualCost   float64 `json:"actual_cost"`
+		BilledCost   float64 `json:"billed_cost"`
+	}
+	query := s.db.UsageLog.Query()
+	if filter.UserID != nil {
+		query = query.Where(usageUserPredicate(*filter.UserID))
+	}
+	query = excludeFailedUsage(applyUsageStatsFilter(query, filter))
+	if err := query.GroupBy("api_key_usage_logs").
+		Aggregate(
+			ent.Count(),
+			ent.As(ent.Sum(entusagelog.FieldInputTokens), "input_tokens"),
+			ent.As(ent.Sum(entusagelog.FieldOutputTokens), "output_tokens"),
+			ent.As(ent.Sum(entusagelog.FieldTotalCost), "total_cost"),
+			ent.As(ent.Sum(entusagelog.FieldActualCost), "actual_cost"),
+			ent.As(ent.Sum(entusagelog.FieldBilledCost), "billed_cost"),
+		).
+		Scan(ctx, &rows); err != nil {
+		return nil, err
+	}
+	ids := make([]int, 0, len(rows))
+	for _, row := range rows {
+		if row.APIKeyID > 0 {
+			ids = append(ids, row.APIKeyID)
+		}
+	}
+	type keyBrief struct {
+		name   string
+		member int64
+	}
+	briefs := make(map[int64]keyBrief, len(ids))
+	if len(ids) > 0 {
+		keys, err := s.db.APIKey.Query().Where(entapikey.IDIn(ids...)).WithMember().All(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, k := range keys {
+			b := keyBrief{name: k.Name}
+			if k.Edges.Member != nil {
+				b.member = int64(k.Edges.Member.ID)
+			}
+			briefs[int64(k.ID)] = b
+		}
+	}
+	result := make([]appusage.APIKeyStats, 0, len(rows))
+	for _, row := range rows {
+		brief := briefs[int64(row.APIKeyID)]
+		result = append(result, appusage.APIKeyStats{
+			APIKeyID:   int64(row.APIKeyID),
+			Name:       brief.name,
+			MemberID:   brief.member,
+			Requests:   int64(row.Count),
+			Tokens:     row.InputTokens + row.OutputTokens,
+			TotalCost:  row.TotalCost,
+			ActualCost: row.ActualCost,
+			BilledCost: row.BilledCost,
+		})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].ActualCost == result[j].ActualCost {
+			return result[i].APIKeyID < result[j].APIKeyID
+		}
+		return result[i].ActualCost > result[j].ActualCost
+	})
+	return result, nil
 }
 
 // SummaryUser 查询用户汇总统计。
@@ -516,6 +775,9 @@ func applyUsageListFilter(query *ent.UsageLogQuery, filter appusage.ListFilter) 
 	if filter.MemberID != nil {
 		query = query.Where(entusagelog.MemberIDEQ(int(*filter.MemberID)))
 	}
+	if filter.DepartmentID != nil {
+		query = query.Where(entusagelog.DepartmentIDEQ(int(*filter.DepartmentID)))
+	}
 	if filter.AccountID != nil {
 		query = query.Where(entusagelog.HasAccountWith(entaccount.IDEQ(int(*filter.AccountID))))
 	}
@@ -562,6 +824,9 @@ func applyUsageStatsFilter(query *ent.UsageLogQuery, filter appusage.StatsFilter
 	}
 	if filter.MemberID != nil {
 		query = query.Where(entusagelog.MemberIDEQ(int(*filter.MemberID)))
+	}
+	if filter.DepartmentID != nil {
+		query = query.Where(entusagelog.DepartmentIDEQ(int(*filter.DepartmentID)))
 	}
 	if filter.Platform != "" {
 		query = query.Where(entusagelog.PlatformEQ(filter.Platform))
@@ -699,6 +964,7 @@ func mapUsageLog(item *ent.UsageLog) appusage.LogRecord {
 		record.UserDeleted = record.UserID > 0
 	}
 	record.MemberID = int64(item.MemberID)
+	record.DepartmentID = int64(item.DepartmentID)
 	record.APIKeyDeleted = item.Edges.APIKey == nil
 	if item.Edges.APIKey != nil {
 		record.APIKeyID = int64(item.Edges.APIKey.ID)

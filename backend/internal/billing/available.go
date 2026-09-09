@@ -23,13 +23,19 @@ func AvailableBalance(userBalance, quotaUSD, usedQuota float64) (available, keyR
 	return keyRemaining, keyRemaining
 }
 
-// CapByMemberQuota 团队成员设有额度时,把可用额度再压到成员本期剩余(两者取小);
-// 成员不限额(memberQuota<=0)时原样返回。
-func CapByMemberQuota(available, memberQuota, memberUsed float64) float64 {
-	if memberQuota <= 0 {
+// CapByQuotas 三层取小：在 Key/余额口径的可用额度之上，再按团队成员本期剩余与部门本期剩余
+// 各压一层（额度为 0 表示该层不限）。一次请求的可用额度 = min(余额/Key, 成员剩余, 部门剩余)，
+// 任何展示与拦截都走这一个函数，不允许各页自己算。
+func CapByQuotas(available, memberQuota, memberUsed, deptQuota, deptUsed float64) float64 {
+	available = capByQuota(available, memberQuota, memberUsed)
+	return capByQuota(available, deptQuota, deptUsed)
+}
+
+func capByQuota(available, quota, used float64) float64 {
+	if quota <= 0 {
 		return available
 	}
-	remaining := memberQuota - memberUsed
+	remaining := quota - used
 	if remaining < 0 {
 		remaining = 0
 	}

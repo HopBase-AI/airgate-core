@@ -2,6 +2,9 @@ package apikey
 
 import "errors"
 
+// ErrDepartmentNotFound 指定的部门不存在或不属于当前用户。
+var ErrDepartmentNotFound = errors.New("部门不存在")
+
 var (
 	// ErrKeyNotFound API Key 不存在。
 	ErrKeyNotFound = errors.New("密钥不存在")

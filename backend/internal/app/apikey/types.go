@@ -17,29 +17,33 @@ const (
 
 // Key API Key 领域对象。
 type Key struct {
-	ID              int
-	Name            string
-	KeyHint         string
-	KeyHash         string
-	KeyEncrypted    string
-	PlainKey        string
-	UserID          int
-	GroupID         *int
-	MemberID        *int   // 所属团队成员；nil 表示不属于任何成员
-	MemberName      string // 成员名（仅 fetch 时填充，供列表展示）
-	IPWhitelist     []string
-	IPBlacklist     []string
-	QuotaUSD        float64
-	UsedQuota       float64 // 账面已用（含 sell_rate markup）
-	UsedQuotaActual float64 // 真实成本已用（聚合 sum(usage_log.actual_cost)，仅在 fetch 时填充）
-	SellRate        float64 // 销售倍率，0 表示未启用
-	MaxConcurrency  int     // API Key 级并发上限，0 表示不限制
-	TodayCost       float64
-	ThirtyDayCost   float64
-	Status          string
-	ExpiresAt       *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID           int
+	Name         string
+	KeyHint      string
+	KeyHash      string
+	KeyEncrypted string
+	PlainKey     string
+	UserID       int
+	GroupID      *int
+	MemberID     *int   // 所属团队成员；nil 表示不属于任何成员
+	MemberName   string // 成员名（仅 fetch 时填充，供列表展示）
+	// DepartmentID 有效部门（直挂 ?? 成员所属）；nil 表示未分配。DepartmentDirect 表示直挂而非经成员。
+	DepartmentID     *int
+	DepartmentName   string
+	DepartmentDirect bool
+	IPWhitelist      []string
+	IPBlacklist      []string
+	QuotaUSD         float64
+	UsedQuota        float64 // 账面已用（含 sell_rate markup）
+	UsedQuotaActual  float64 // 真实成本已用（聚合 sum(usage_log.actual_cost)，仅在 fetch 时填充）
+	SellRate         float64 // 销售倍率，0 表示未启用
+	MaxConcurrency   int     // API Key 级并发上限，0 表示不限制
+	TodayCost        float64
+	ThirtyDayCost    float64
+	Status           string
+	ExpiresAt        *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 // ListFilter API Key 列表查询参数。
@@ -52,8 +56,10 @@ type ListFilter struct {
 	// MemberUnassigned 只看未归属任何团队成员的 key。与 MemberID 互斥，
 	// 同时给出时以 MemberID 为准（不可能既属于某成员又未归属）。
 	MemberUnassigned bool
-	GroupID          *int   // 只看绑定到某分组的 key
-	Status           string // 空 = 全部；active / disabled / expired（见 StatusFilter*）
+	// DepartmentID 按有效部门筛选（直挂 ?? 成员所属）；指向 0 = 只看未分配部门的 key。
+	DepartmentID *int
+	GroupID      *int   // 只看绑定到某分组的 key
+	Status       string // 空 = 全部；active / disabled / expired（见 StatusFilter*）
 }
 
 // ListResult API Key 列表结果。
@@ -69,6 +75,7 @@ type CreateInput struct {
 	Name           string
 	GroupID        int64
 	MemberID       *int64 // 归属团队成员；nil / 0 表示不归属
+	DepartmentID   *int64 // 直挂部门；nil / 0 表示不直挂（有成员时跟随成员的部门）
 	IPWhitelist    []string
 	IPBlacklist    []string
 	QuotaUSD       float64
@@ -82,6 +89,7 @@ type UpdateInput struct {
 	Name           *string
 	GroupID        *int64
 	MemberID       *int64 // nil 不改动；指向 0 表示解除成员归属
+	DepartmentID   *int64 // nil 不改动；指向 0 表示解除直挂部门
 	IPWhitelist    []string
 	HasIPWhitelist bool
 	IPBlacklist    []string
@@ -101,24 +109,26 @@ type GroupAccess struct {
 
 // Mutation 创建/更新持久化输入。
 type Mutation struct {
-	Name           *string
-	KeyHint        *string
-	KeyHash        *string
-	KeyEncrypted   *string
-	UserID         *int
-	GroupID        *int
-	MemberID       *int // 配合 HasMemberID：nil 表示清除归属
-	HasMemberID    bool
-	IPWhitelist    []string
-	HasIPWhitelist bool
-	IPBlacklist    []string
-	HasIPBlacklist bool
-	QuotaUSD       *float64
-	SellRate       *float64
-	MaxConcurrency *int
-	ExpiresAt      *time.Time
-	HasExpiresAt   bool
-	Status         *string
+	Name            *string
+	KeyHint         *string
+	KeyHash         *string
+	KeyEncrypted    *string
+	UserID          *int
+	GroupID         *int
+	MemberID        *int // 配合 HasMemberID：nil 表示清除归属
+	HasMemberID     bool
+	DepartmentID    *int // 配合 HasDepartmentID：nil 表示解除直挂部门
+	HasDepartmentID bool
+	IPWhitelist     []string
+	HasIPWhitelist  bool
+	IPBlacklist     []string
+	HasIPBlacklist  bool
+	QuotaUSD        *float64
+	SellRate        *float64
+	MaxConcurrency  *int
+	ExpiresAt       *time.Time
+	HasExpiresAt    bool
+	Status          *string
 }
 
 // Repository API Key 持久化接口。
@@ -131,6 +141,8 @@ type Repository interface {
 	GetGroupAccess(context.Context, int, int) (GroupAccess, error)
 	// MemberOwnedBy 团队成员是否存在且归属该用户。
 	MemberOwnedBy(ctx context.Context, userID, memberID int) (bool, error)
+	// DepartmentOwnedBy 部门是否存在且归属该用户（企业主）。
+	DepartmentOwnedBy(ctx context.Context, userID, departmentID int) (bool, error)
 	// TeamIdentity 该用户是否团队成员账号：是则返回企业主 id、成员 id 与分组白名单（空=不限）；
 	// 不是则 memberID=0、ownerID=userID。
 	TeamIdentity(ctx context.Context, userID int) (TeamIdentity, error)

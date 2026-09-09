@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
+	"github.com/DouDOU-start/airgate-core/ent/department"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
@@ -249,6 +250,25 @@ func (akc *APIKeyCreate) SetNillableMemberID(id *int) *APIKeyCreate {
 // SetMember sets the "member" edge to the Member entity.
 func (akc *APIKeyCreate) SetMember(m *Member) *APIKeyCreate {
 	return akc.SetMemberID(m.ID)
+}
+
+// SetDepartmentID sets the "department" edge to the Department entity by ID.
+func (akc *APIKeyCreate) SetDepartmentID(id int) *APIKeyCreate {
+	akc.mutation.SetDepartmentID(id)
+	return akc
+}
+
+// SetNillableDepartmentID sets the "department" edge to the Department entity by ID if the given value is not nil.
+func (akc *APIKeyCreate) SetNillableDepartmentID(id *int) *APIKeyCreate {
+	if id != nil {
+		akc = akc.SetDepartmentID(*id)
+	}
+	return akc
+}
+
+// SetDepartment sets the "department" edge to the Department entity.
+func (akc *APIKeyCreate) SetDepartment(d *Department) *APIKeyCreate {
+	return akc.SetDepartmentID(d.ID)
 }
 
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
@@ -537,6 +557,23 @@ func (akc *APIKeyCreate) createSpec() (*APIKey, *sqlgraph.CreateSpec) {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.member_api_keys = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := akc.mutation.DepartmentIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.DepartmentTable,
+			Columns: []string{apikey.DepartmentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.department_api_keys = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	if nodes := akc.mutation.UsageLogsIDs(); len(nodes) > 0 {

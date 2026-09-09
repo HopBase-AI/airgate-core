@@ -53,7 +53,7 @@ type BalanceResult struct {
 
 func (s *Service) Balance(info *auth.APIKeyInfo) BalanceResult {
 	available, keyRemaining := billing.AvailableBalance(info.UserBalance, info.QuotaUSD, info.UsedQuota)
-	available = billing.CapByMemberQuota(available, info.MemberQuotaUSD, info.MemberUsedQuota)
+	available = billing.CapByQuotas(available, info.MemberQuotaUSD, info.MemberUsedQuota, info.DepartmentQuotaUSD, info.DepartmentUsedQuota)
 	balance := info.UserBalance
 	if balance < 0 {
 		balance = 0

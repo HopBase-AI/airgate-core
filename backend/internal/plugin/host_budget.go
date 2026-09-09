@@ -178,6 +178,14 @@ func (h *HostService) checkSubmissionBudget(ctx context.Context, req *hostForwar
 	if req.member != nil {
 		quotaRemaining, limited = auth.MemberRemainingQuota(req.member, time.Now())
 	}
+	// 部门层同样压一层：成员与部门都设了额度时取小。
+	if r, ok := auth.DepartmentRemainingQuota(req.department, time.Now()); ok {
+		if limited {
+			quotaRemaining = min(quotaRemaining, r)
+		} else {
+			quotaRemaining, limited = r, true
+		}
+	}
 
 	decision := evaluateBudget(u.Balance, reserved, limited, quotaRemaining, estimate)
 	if !decision.Sufficient {
@@ -241,6 +249,13 @@ func (h *HostService) billingBudget(ctx context.Context, req hostBillingBudgetRe
 		billingUserID = identity.Owner.ID
 		allowedGroups = identity.Member.AllowedGroupIds
 		quotaRemaining, limited = auth.MemberRemainingQuota(identity.Member, time.Now())
+		if r, ok := auth.DepartmentRemainingQuota(identity.Department, time.Now()); ok {
+			if limited {
+				quotaRemaining = min(quotaRemaining, r)
+			} else {
+				quotaRemaining, limited = r, true
+			}
+		}
 	}
 
 	u, err := h.db.User.Query().Where(user.IDEQ(billingUserID)).Only(ctx)
