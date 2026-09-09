@@ -493,11 +493,11 @@ func (h *HostService) resolveHostForwardIdentity(ctx context.Context, req *hostF
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
 	if gate.Exhausted() {
-		return hostForwardInsufficientQuotaError()
+		return hostForwardQuotaExhaustedError(hostErrMemberQuotaExhausted)
 	}
 	// 部门闸门：成员所属部门本期额度用尽同样按额度不足处理（成员 → 部门 → 企业余额）。
 	if deptGate := auth.EvaluateDepartmentGate(ctx, h.db, identity.Department, time.Now()); deptGate.Exhausted() {
-		return hostForwardInsufficientQuotaError()
+		return hostForwardQuotaExhaustedError(hostErrDepartmentQuotaExhausted)
 	}
 	if req.GroupID > 0 && !identity.AllowsGroup(int(req.GroupID)) {
 		slog.Warn("host_forward_member_group_forbidden",
@@ -3293,6 +3293,17 @@ func hostForwardPayload(outcome sdk.ForwardOutcome, scrubber *identityScrubber) 
 
 func hostForwardInsufficientQuotaError() error {
 	return status.Error(codes.ResourceExhausted, "余额不足")
+}
+
+// 成员 / 部门额度用尽的文案：插件（AI Chat / 工作台）把 Host 错误原文展示给用户，成员看到「余额不足」
+// 会去找充值入口，而他根本没有余额——要告诉他该找企业管理员。状态码同为 ResourceExhausted（402 语义）。
+const (
+	hostErrMemberQuotaExhausted     = "团队成员额度已用尽，请联系企业管理员"
+	hostErrDepartmentQuotaExhausted = "所属部门额度已用尽，请联系企业管理员"
+)
+
+func hostForwardQuotaExhaustedError(message string) error {
+	return status.Error(codes.ResourceExhausted, message)
 }
 
 func protoHeadersToHTTPHost(ph map[string]interface{}) http.Header {
