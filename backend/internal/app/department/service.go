@@ -61,6 +61,18 @@ func (s *Service) All(ctx context.Context, ownerID int, tz string) ([]Department
 	return list, nil
 }
 
+// decorateOne 单个部门补齐派生字段（成员数 / 密钥数 / 已分配 / 成本），供创建 / 更新 / 重置的响应使用：
+// 否则前端拿到的 member_count 是 0，与列表对不上。
+func (s *Service) decorateOne(ctx context.Context, item *Department) {
+	list := []Department{*item}
+	if err := s.decorateAll(ctx, list, ""); err != nil {
+		sdk.LoggerFromContext(ctx).Warn("department_decorate_failed", "department_id", item.ID, sdk.LogFieldError, err)
+		Decorate(item, s.now())
+		return
+	}
+	*item = list[0]
+}
+
 func (s *Service) decorateAll(ctx context.Context, list []Department, tz string) error {
 	ids := make([]int, 0, len(list))
 	for _, item := range list {
@@ -149,7 +161,7 @@ func (s *Service) Create(ctx context.Context, ownerID int, input CreateInput) (D
 		OwnerID: ownerID, Action: audit.ActionDepartmentCreate, TargetType: audit.TargetDepartment,
 		TargetID: item.ID, TargetName: item.Name, After: snapshot(item),
 	})
-	Decorate(&item, now)
+	s.decorateOne(ctx, &item)
 	return item, nil
 }
 
@@ -219,7 +231,7 @@ func (s *Service) Update(ctx context.Context, ownerID, id int, input UpdateInput
 		OwnerID: ownerID, Action: audit.ActionDepartmentUpdate, TargetType: audit.TargetDepartment,
 		TargetID: id, TargetName: updated.Name, Before: snapshot(current), After: snapshot(updated),
 	})
-	Decorate(&updated, s.now())
+	s.decorateOne(ctx, &updated)
 	return updated, nil
 }
 
@@ -266,7 +278,7 @@ func (s *Service) ResetPeriod(ctx context.Context, ownerID, id int) (Department,
 		OwnerID: ownerID, Action: audit.ActionDepartmentResetPeriod, TargetType: audit.TargetDepartment,
 		TargetID: id, TargetName: updated.Name,
 	})
-	Decorate(&updated, now)
+	s.decorateOne(ctx, &updated)
 	return updated, nil
 }
 
