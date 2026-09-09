@@ -9,9 +9,9 @@ export const usageApi = {
   // 用户接口
   list: (params: UsageQuery, options?: UsageRequestOptions) =>
     get<PagedData<UserUsageLogResp | CustomerUsageLogResp>>('/api/v1/usage', params, options),
-  userStats: (params: Omit<UsageQuery, 'page' | 'page_size'>, options?: UsageRequestOptions) =>
+  userStats: (params: Omit<UsageQuery, 'page' | 'page_size'> & { breakdown?: string }, options?: UsageRequestOptions) =>
     get<UsageStatsResp>('/api/v1/usage/stats', params, options),
-  userTrend: (params: { granularity: string; start_date?: string; end_date?: string; api_key_id?: number; member_id?: number }, options?: UsageRequestOptions) =>
+  userTrend: (params: { granularity: string; start_date?: string; end_date?: string; api_key_id?: number; member_id?: number; department_id?: number }, options?: UsageRequestOptions) =>
     get<UsageTrendBucket[]>('/api/v1/usage/trend', params, options),
 
   // 导出当前筛选范围内的使用明细 CSV。
@@ -23,6 +23,7 @@ export const usageApi = {
     end_time?: string;
     api_key_id?: number;
     member_id?: number;
+    department_id?: number;
     tz?: string;
   }): Promise<{ blob: Blob; filename: string }> => {
     const query = new URLSearchParams();

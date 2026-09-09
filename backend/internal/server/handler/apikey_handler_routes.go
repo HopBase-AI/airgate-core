@@ -76,6 +76,10 @@ func apiKeyListFilterFrom(query dto.APIKeyListQuery) appapikey.ListFilter {
 		groupID := int(*query.GroupID)
 		filter.GroupID = &groupID
 	}
+	if query.DepartmentID != nil && *query.DepartmentID >= 0 {
+		departmentID := int(*query.DepartmentID)
+		filter.DepartmentID = &departmentID
+	}
 	return filter
 }
 
@@ -93,10 +97,11 @@ func (h *APIKeyHandler) CreateKey(c *gin.Context) {
 		return
 	}
 
-	item, err := h.service.CreateOwned(c.Request.Context(), userID, appapikey.CreateInput{
+	item, err := h.service.CreateOwned(auditContext(c).Request.Context(), userID, appapikey.CreateInput{
 		Name:           req.Name,
 		GroupID:        req.GroupID,
 		MemberID:       req.MemberID,
+		DepartmentID:   req.DepartmentID,
 		IPWhitelist:    req.IPWhitelist,
 		IPBlacklist:    req.IPBlacklist,
 		QuotaUSD:       req.QuotaUSD,
@@ -133,10 +138,11 @@ func (h *APIKeyHandler) UpdateKey(c *gin.Context) {
 		return
 	}
 
-	item, err := h.service.UpdateOwned(c.Request.Context(), userID, id, appapikey.UpdateInput{
+	item, err := h.service.UpdateOwned(auditContext(c).Request.Context(), userID, id, appapikey.UpdateInput{
 		Name:           req.Name,
 		GroupID:        req.GroupID,
 		MemberID:       req.MemberID,
+		DepartmentID:   req.DepartmentID,
 		IPWhitelist:    req.IPWhitelist,
 		HasIPWhitelist: req.IPWhitelist != nil,
 		IPBlacklist:    req.IPBlacklist,
@@ -170,7 +176,7 @@ func (h *APIKeyHandler) DeleteKey(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.DeleteOwned(c.Request.Context(), userID, id); err != nil {
+	if err := h.service.DeleteOwned(auditContext(c).Request.Context(), userID, id); err != nil {
 		httpCode, message := h.handleError("删除 API 密钥失败", "删除失败", err)
 		response.Error(c, httpCode, httpCode, message)
 		return

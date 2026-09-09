@@ -171,6 +171,7 @@ func NewServer(cfg *config.Config, db *ent.Client, rdb *redis.Client) *Server {
 		Marketplace: marketplace,
 		Concurrency: concurrency,
 		Scheduler:   sched,
+		Recorder:    recorder,
 	})
 
 	// 可信代理/真实客户端 IP —— 必须在注册路由前生效，否则按 IP 的限流拿到的是代理地址。

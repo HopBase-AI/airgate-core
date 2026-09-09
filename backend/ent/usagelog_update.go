@@ -847,6 +847,27 @@ func (ulu *UsageLogUpdate) AddMemberID(i int) *UsageLogUpdate {
 	return ulu
 }
 
+// SetDepartmentID sets the "department_id" field.
+func (ulu *UsageLogUpdate) SetDepartmentID(i int) *UsageLogUpdate {
+	ulu.mutation.ResetDepartmentID()
+	ulu.mutation.SetDepartmentID(i)
+	return ulu
+}
+
+// SetNillableDepartmentID sets the "department_id" field if the given value is not nil.
+func (ulu *UsageLogUpdate) SetNillableDepartmentID(i *int) *UsageLogUpdate {
+	if i != nil {
+		ulu.SetDepartmentID(*i)
+	}
+	return ulu
+}
+
+// AddDepartmentID adds i to the "department_id" field.
+func (ulu *UsageLogUpdate) AddDepartmentID(i int) *UsageLogUpdate {
+	ulu.mutation.AddDepartmentID(i)
+	return ulu
+}
+
 // SetStatus sets the "status" field.
 func (ulu *UsageLogUpdate) SetStatus(s string) *UsageLogUpdate {
 	ulu.mutation.SetStatus(s)
@@ -1311,6 +1332,12 @@ func (ulu *UsageLogUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := ulu.mutation.AddedMemberID(); ok {
 		_spec.AddField(usagelog.FieldMemberID, field.TypeInt, value)
+	}
+	if value, ok := ulu.mutation.DepartmentID(); ok {
+		_spec.SetField(usagelog.FieldDepartmentID, field.TypeInt, value)
+	}
+	if value, ok := ulu.mutation.AddedDepartmentID(); ok {
+		_spec.AddField(usagelog.FieldDepartmentID, field.TypeInt, value)
 	}
 	if value, ok := ulu.mutation.Status(); ok {
 		_spec.SetField(usagelog.FieldStatus, field.TypeString, value)
@@ -2277,6 +2304,27 @@ func (uluo *UsageLogUpdateOne) AddMemberID(i int) *UsageLogUpdateOne {
 	return uluo
 }
 
+// SetDepartmentID sets the "department_id" field.
+func (uluo *UsageLogUpdateOne) SetDepartmentID(i int) *UsageLogUpdateOne {
+	uluo.mutation.ResetDepartmentID()
+	uluo.mutation.SetDepartmentID(i)
+	return uluo
+}
+
+// SetNillableDepartmentID sets the "department_id" field if the given value is not nil.
+func (uluo *UsageLogUpdateOne) SetNillableDepartmentID(i *int) *UsageLogUpdateOne {
+	if i != nil {
+		uluo.SetDepartmentID(*i)
+	}
+	return uluo
+}
+
+// AddDepartmentID adds i to the "department_id" field.
+func (uluo *UsageLogUpdateOne) AddDepartmentID(i int) *UsageLogUpdateOne {
+	uluo.mutation.AddDepartmentID(i)
+	return uluo
+}
+
 // SetStatus sets the "status" field.
 func (uluo *UsageLogUpdateOne) SetStatus(s string) *UsageLogUpdateOne {
 	uluo.mutation.SetStatus(s)
@@ -2771,6 +2819,12 @@ func (uluo *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, er
 	}
 	if value, ok := uluo.mutation.AddedMemberID(); ok {
 		_spec.AddField(usagelog.FieldMemberID, field.TypeInt, value)
+	}
+	if value, ok := uluo.mutation.DepartmentID(); ok {
+		_spec.SetField(usagelog.FieldDepartmentID, field.TypeInt, value)
+	}
+	if value, ok := uluo.mutation.AddedDepartmentID(); ok {
+		_spec.AddField(usagelog.FieldDepartmentID, field.TypeInt, value)
 	}
 	if value, ok := uluo.mutation.Status(); ok {
 		_spec.SetField(usagelog.FieldStatus, field.TypeString, value)

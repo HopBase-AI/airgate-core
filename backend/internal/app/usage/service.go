@@ -85,11 +85,16 @@ func (s *Service) UserStats(ctx context.Context, userID int64, filter StatsFilte
 }
 
 // UserStatsWithModels 查询当前用户统计页的完整数据，并用 Redis 短 TTL 缓存热点筛选结果。
-func (s *Service) UserStatsWithModels(ctx context.Context, userID int64, filter StatsFilter) (UserStatsResult, error) {
+func (s *Service) UserStatsWithModels(ctx context.Context, userID int64, filter StatsFilter, breakdowns ...string) (UserStatsResult, error) {
 	key := usageCacheKey("user-stats", struct {
-		UserID int64
-		Filter StatsFilter
-	}{UserID: userID, Filter: filter})
+		UserID     int64
+		Filter     StatsFilter
+		Breakdowns []string
+	}{UserID: userID, Filter: filter, Breakdowns: breakdowns})
+	wantBreakdown := make(map[string]bool, len(breakdowns))
+	for _, b := range breakdowns {
+		wantBreakdown[b] = true
+	}
 
 	return usageCachedResult(ctx, s.rdb, key, usageStatsCacheTTL, func(loadCtx context.Context) (UserStatsResult, error) {
 		summary, err := s.repo.SummaryUser(loadCtx, userID, filter)
@@ -111,7 +116,35 @@ func (s *Service) UserStatsWithModels(ctx context.Context, userID int64, filter 
 				sdk.LogFieldError, err)
 			return UserStatsResult{}, err
 		}
-		return UserStatsResult{Summary: summary, ByModel: modelStats}, nil
+		result := UserStatsResult{Summary: summary, ByModel: modelStats}
+		logQueryErr := func(scope string, err error) {
+			sdk.LoggerFromContext(loadCtx).Error("usage_query_failed", "scope", scope, sdk.LogFieldUserID, userID, sdk.LogFieldError, err)
+		}
+		if wantBreakdown[BreakdownDepartment] {
+			if result.ByDepartment, err = s.repo.StatsByDepartment(loadCtx, modelFilter); err != nil {
+				logQueryErr("user_stats_by_department", err)
+				return UserStatsResult{}, err
+			}
+		}
+		if wantBreakdown[BreakdownMember] {
+			if result.ByMember, err = s.repo.StatsByMember(loadCtx, modelFilter); err != nil {
+				logQueryErr("user_stats_by_member", err)
+				return UserStatsResult{}, err
+			}
+		}
+		if wantBreakdown[BreakdownKey] {
+			if result.ByKey, err = s.repo.StatsByAPIKey(loadCtx, modelFilter); err != nil {
+				logQueryErr("user_stats_by_key", err)
+				return UserStatsResult{}, err
+			}
+		}
+		if wantBreakdown[BreakdownGroup] {
+			if result.ByGroup, err = s.repo.StatsByGroup(loadCtx, modelFilter); err != nil {
+				logQueryErr("user_stats_by_group", err)
+				return UserStatsResult{}, err
+			}
+		}
+		return result, nil
 	})
 }
 

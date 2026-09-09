@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strings"
+
 	"github.com/gin-gonic/gin"
 
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
@@ -29,18 +31,19 @@ func (h *UsageHandler) UserUsage(c *gin.Context) {
 	// account_id 不接受用户侧筛选：响应体已不含上游账号身份，若还留着这个筛选，
 	// 用户可以按 ID 逐个试出「哪条请求由哪个上游账号供货」，等于换个姿势拿回同样的信息。
 	result, err := h.service.ListUser(c.Request.Context(), int64(userID), appusage.ListFilter{
-		Page:        query.Page,
-		PageSize:    query.PageSize,
-		APIKeyID:    apiKeyFilter,
-		MemberID:    memberFilter,
-		GroupID:     query.GroupID,
-		Platform:    query.Platform,
-		Model:       query.Model,
-		StartDate:   query.StartDate,
-		EndDate:     query.EndDate,
-		Result:      query.Result,
-		TZ:          c.Query("tz"),
-		ScopedToKey: scoped,
+		Page:         query.Page,
+		PageSize:     query.PageSize,
+		APIKeyID:     apiKeyFilter,
+		MemberID:     memberFilter,
+		DepartmentID: sessionDepartmentFilter(scoped, query.DepartmentID),
+		GroupID:      query.GroupID,
+		Platform:     query.Platform,
+		Model:        query.Model,
+		StartDate:    query.StartDate,
+		EndDate:      query.EndDate,
+		Result:       query.Result,
+		TZ:           c.Query("tz"),
+		ScopedToKey:  scoped,
 	})
 	if err != nil {
 		handleUsageError("查询用户使用记录失败", err)
@@ -84,16 +87,22 @@ func (h *UsageHandler) UserUsageStats(c *gin.Context) {
 	apiKeyFilter, memberFilter, scoped := sessionUsageScope(c, query.APIKeyID, query.MemberID)
 
 	tz := c.Query("tz")
+	// 分层下钻只对完整用户视角开放；客户视角（key 登录）与成员会话不返回。
+	var breakdowns []string
+	if !scoped && middleware.TeamOwnerID(c) == 0 {
+		breakdowns = parseUsageBreakdown(query.Breakdown)
+	}
 	result, err := h.service.UserStatsWithModels(c.Request.Context(), int64(userID), appusage.StatsFilter{
-		APIKeyID:    apiKeyFilter,
-		MemberID:    memberFilter,
-		Platform:    query.Platform,
-		Model:       query.Model,
-		StartDate:   query.StartDate,
-		EndDate:     query.EndDate,
-		TZ:          tz,
-		ScopedToKey: scoped,
-	})
+		APIKeyID:     apiKeyFilter,
+		MemberID:     memberFilter,
+		DepartmentID: sessionDepartmentFilter(scoped, query.DepartmentID),
+		Platform:     query.Platform,
+		Model:        query.Model,
+		StartDate:    query.StartDate,
+		EndDate:      query.EndDate,
+		TZ:           tz,
+		ScopedToKey:  scoped,
+	}, breakdowns...)
 	if err != nil {
 		handleUsageError("统计用户使用记录失败", err)
 		response.InternalError(c, "统计失败")
@@ -141,7 +150,61 @@ func (h *UsageHandler) UserUsageStats(c *gin.Context) {
 			BilledCost: m.BilledCost,
 		})
 	}
+	for _, d := range result.ByDepartment {
+		resp.ByDepartment = append(resp.ByDepartment, dto.DepartmentStats{
+			DepartmentID: d.DepartmentID, Name: d.Name, Requests: d.Requests, Tokens: d.Tokens,
+			TotalCost: d.TotalCost, ActualCost: d.ActualCost, BilledCost: d.BilledCost,
+		})
+	}
+	for _, m := range result.ByMember {
+		resp.ByMember = append(resp.ByMember, dto.MemberStats{
+			MemberID: m.MemberID, Name: m.Name, DepartmentID: m.DepartmentID, Requests: m.Requests, Tokens: m.Tokens,
+			TotalCost: m.TotalCost, ActualCost: m.ActualCost, BilledCost: m.BilledCost,
+		})
+	}
+	for _, k := range result.ByKey {
+		resp.ByKey = append(resp.ByKey, dto.APIKeyStats{
+			APIKeyID: k.APIKeyID, Name: k.Name, MemberID: k.MemberID, Requests: k.Requests, Tokens: k.Tokens,
+			TotalCost: k.TotalCost, ActualCost: k.ActualCost, BilledCost: k.BilledCost,
+		})
+	}
+	for _, g := range result.ByGroup {
+		resp.ByGroup = append(resp.ByGroup, dto.GroupStats{
+			GroupID: g.GroupID, Name: g.Name, Requests: g.Requests, Tokens: g.Tokens,
+			TotalCost: g.TotalCost, ActualCost: g.ActualCost, BilledCost: g.BilledCost,
+		})
+	}
 	response.Success(c, resp)
+}
+
+// parseUsageBreakdown 解析 breakdown 逗号列表，只保留已知维度。
+func parseUsageBreakdown(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	known := map[string]bool{
+		appusage.BreakdownDepartment: true,
+		appusage.BreakdownMember:     true,
+		appusage.BreakdownKey:        true,
+		appusage.BreakdownGroup:      true,
+	}
+	out := make([]string, 0, 4)
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if known[part] {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+// sessionDepartmentFilter 部门筛选只在完整用户视角生效：key 登录（客户视角）的会话已被收敛到
+// 该 key / 成员，部门筛选没有意义也不该暴露。
+func sessionDepartmentFilter(scoped bool, requested *int64) *int64 {
+	if scoped {
+		return nil
+	}
+	return requested
 }
 
 // UserUsageTrend 用户 Token 使用趋势。
@@ -166,15 +229,16 @@ func (h *UsageHandler) UserUsageTrend(c *gin.Context) {
 
 	result, err := h.service.AdminTrend(c.Request.Context(), appusage.TrendFilter{
 		StatsFilter: appusage.StatsFilter{
-			UserID:      &uid64,
-			APIKeyID:    scopedKeyTrend,
-			MemberID:    scopedMemberTrend,
-			Platform:    query.Platform,
-			Model:       query.Model,
-			StartDate:   query.StartDate,
-			EndDate:     query.EndDate,
-			TZ:          c.Query("tz"),
-			ScopedToKey: scoped,
+			UserID:       &uid64,
+			APIKeyID:     scopedKeyTrend,
+			MemberID:     scopedMemberTrend,
+			DepartmentID: sessionDepartmentFilter(scoped, query.DepartmentID),
+			Platform:     query.Platform,
+			Model:        query.Model,
+			StartDate:    query.StartDate,
+			EndDate:      query.EndDate,
+			TZ:           c.Query("tz"),
+			ScopedToKey:  scoped,
 		},
 		Granularity: granularity,
 	})
@@ -214,19 +278,20 @@ func (h *UsageHandler) AdminUsage(c *gin.Context) {
 	}
 
 	result, err := h.service.ListAdmin(c.Request.Context(), appusage.ListFilter{
-		Page:      query.Page,
-		PageSize:  query.PageSize,
-		UserID:    query.UserID,
-		APIKeyID:  query.APIKeyID,
-		MemberID:  query.MemberID,
-		AccountID: query.AccountID,
-		GroupID:   query.GroupID,
-		Platform:  query.Platform,
-		Model:     query.Model,
-		StartDate: query.StartDate,
-		EndDate:   query.EndDate,
-		Result:    query.Result,
-		TZ:        c.Query("tz"),
+		Page:         query.Page,
+		PageSize:     query.PageSize,
+		UserID:       query.UserID,
+		APIKeyID:     query.APIKeyID,
+		MemberID:     query.MemberID,
+		DepartmentID: query.DepartmentID,
+		AccountID:    query.AccountID,
+		GroupID:      query.GroupID,
+		Platform:     query.Platform,
+		Model:        query.Model,
+		StartDate:    query.StartDate,
+		EndDate:      query.EndDate,
+		Result:       query.Result,
+		TZ:           c.Query("tz"),
 	})
 	if err != nil {
 		handleUsageError("查询管理员使用记录失败", err)

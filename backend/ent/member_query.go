@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
+	"github.com/DouDOU-start/airgate-core/ent/department"
 	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
 	"github.com/DouDOU-start/airgate-core/ent/user"
@@ -20,14 +21,15 @@ import (
 // MemberQuery is the builder for querying Member entities.
 type MemberQuery struct {
 	config
-	ctx         *QueryContext
-	order       []member.OrderOption
-	inters      []Interceptor
-	predicates  []predicate.Member
-	withOwner   *UserQuery
-	withAPIKeys *APIKeyQuery
-	withAccount *UserQuery
-	withFKs     bool
+	ctx            *QueryContext
+	order          []member.OrderOption
+	inters         []Interceptor
+	predicates     []predicate.Member
+	withOwner      *UserQuery
+	withAPIKeys    *APIKeyQuery
+	withAccount    *UserQuery
+	withDepartment *DepartmentQuery
+	withFKs        bool
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -123,6 +125,28 @@ func (mq *MemberQuery) QueryAccount() *UserQuery {
 			sqlgraph.From(member.Table, member.FieldID, selector),
 			sqlgraph.To(user.Table, user.FieldID),
 			sqlgraph.Edge(sqlgraph.O2O, false, member.AccountTable, member.AccountColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(mq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryDepartment chains the current query on the "department" edge.
+func (mq *MemberQuery) QueryDepartment() *DepartmentQuery {
+	query := (&DepartmentClient{config: mq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := mq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := mq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(member.Table, member.FieldID, selector),
+			sqlgraph.To(department.Table, department.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, member.DepartmentTable, member.DepartmentColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(mq.driver.Dialect(), step)
 		return fromU, nil
@@ -317,14 +341,15 @@ func (mq *MemberQuery) Clone() *MemberQuery {
 		return nil
 	}
 	return &MemberQuery{
-		config:      mq.config,
-		ctx:         mq.ctx.Clone(),
-		order:       append([]member.OrderOption{}, mq.order...),
-		inters:      append([]Interceptor{}, mq.inters...),
-		predicates:  append([]predicate.Member{}, mq.predicates...),
-		withOwner:   mq.withOwner.Clone(),
-		withAPIKeys: mq.withAPIKeys.Clone(),
-		withAccount: mq.withAccount.Clone(),
+		config:         mq.config,
+		ctx:            mq.ctx.Clone(),
+		order:          append([]member.OrderOption{}, mq.order...),
+		inters:         append([]Interceptor{}, mq.inters...),
+		predicates:     append([]predicate.Member{}, mq.predicates...),
+		withOwner:      mq.withOwner.Clone(),
+		withAPIKeys:    mq.withAPIKeys.Clone(),
+		withAccount:    mq.withAccount.Clone(),
+		withDepartment: mq.withDepartment.Clone(),
 		// clone intermediate query.
 		sql:  mq.sql.Clone(),
 		path: mq.path,
@@ -361,6 +386,17 @@ func (mq *MemberQuery) WithAccount(opts ...func(*UserQuery)) *MemberQuery {
 		opt(query)
 	}
 	mq.withAccount = query
+	return mq
+}
+
+// WithDepartment tells the query-builder to eager-load the nodes that are connected to
+// the "department" edge. The optional arguments are used to configure the query builder of the edge.
+func (mq *MemberQuery) WithDepartment(opts ...func(*DepartmentQuery)) *MemberQuery {
+	query := (&DepartmentClient{config: mq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	mq.withDepartment = query
 	return mq
 }
 
@@ -443,13 +479,14 @@ func (mq *MemberQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Membe
 		nodes       = []*Member{}
 		withFKs     = mq.withFKs
 		_spec       = mq.querySpec()
-		loadedTypes = [3]bool{
+		loadedTypes = [4]bool{
 			mq.withOwner != nil,
 			mq.withAPIKeys != nil,
 			mq.withAccount != nil,
+			mq.withDepartment != nil,
 		}
 	)
-	if mq.withOwner != nil {
+	if mq.withOwner != nil || mq.withDepartment != nil {
 		withFKs = true
 	}
 	if withFKs {
@@ -489,6 +526,12 @@ func (mq *MemberQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Membe
 	if query := mq.withAccount; query != nil {
 		if err := mq.loadAccount(ctx, query, nodes, nil,
 			func(n *Member, e *User) { n.Edges.Account = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := mq.withDepartment; query != nil {
+		if err := mq.loadDepartment(ctx, query, nodes, nil,
+			func(n *Member, e *Department) { n.Edges.Department = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -583,6 +626,38 @@ func (mq *MemberQuery) loadAccount(ctx context.Context, query *UserQuery, nodes 
 			return fmt.Errorf(`unexpected referenced foreign-key "member_account" returned %v for node %v`, *fk, n.ID)
 		}
 		assign(node, n)
+	}
+	return nil
+}
+func (mq *MemberQuery) loadDepartment(ctx context.Context, query *DepartmentQuery, nodes []*Member, init func(*Member), assign func(*Member, *Department)) error {
+	ids := make([]int, 0, len(nodes))
+	nodeids := make(map[int][]*Member)
+	for i := range nodes {
+		if nodes[i].department_members == nil {
+			continue
+		}
+		fk := *nodes[i].department_members
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(department.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "department_members" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
 	}
 	return nil
 }

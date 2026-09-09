@@ -579,6 +579,20 @@ func (ulc *UsageLogCreate) SetNillableMemberID(i *int) *UsageLogCreate {
 	return ulc
 }
 
+// SetDepartmentID sets the "department_id" field.
+func (ulc *UsageLogCreate) SetDepartmentID(i int) *UsageLogCreate {
+	ulc.mutation.SetDepartmentID(i)
+	return ulc
+}
+
+// SetNillableDepartmentID sets the "department_id" field if the given value is not nil.
+func (ulc *UsageLogCreate) SetNillableDepartmentID(i *int) *UsageLogCreate {
+	if i != nil {
+		ulc.SetDepartmentID(*i)
+	}
+	return ulc
+}
+
 // SetStatus sets the "status" field.
 func (ulc *UsageLogCreate) SetStatus(s string) *UsageLogCreate {
 	ulc.mutation.SetStatus(s)
@@ -904,6 +918,10 @@ func (ulc *UsageLogCreate) defaults() {
 		v := usagelog.DefaultMemberID
 		ulc.mutation.SetMemberID(v)
 	}
+	if _, ok := ulc.mutation.DepartmentID(); !ok {
+		v := usagelog.DefaultDepartmentID
+		ulc.mutation.SetDepartmentID(v)
+	}
 	if _, ok := ulc.mutation.Status(); !ok {
 		v := usagelog.DefaultStatus
 		ulc.mutation.SetStatus(v)
@@ -1051,6 +1069,9 @@ func (ulc *UsageLogCreate) check() error {
 	}
 	if _, ok := ulc.mutation.MemberID(); !ok {
 		return &ValidationError{Name: "member_id", err: errors.New(`ent: missing required field "UsageLog.member_id"`)}
+	}
+	if _, ok := ulc.mutation.DepartmentID(); !ok {
+		return &ValidationError{Name: "department_id", err: errors.New(`ent: missing required field "UsageLog.department_id"`)}
 	}
 	if _, ok := ulc.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "UsageLog.status"`)}
@@ -1264,6 +1285,10 @@ func (ulc *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := ulc.mutation.MemberID(); ok {
 		_spec.SetField(usagelog.FieldMemberID, field.TypeInt, value)
 		_node.MemberID = value
+	}
+	if value, ok := ulc.mutation.DepartmentID(); ok {
+		_spec.SetField(usagelog.FieldDepartmentID, field.TypeInt, value)
+		_node.DepartmentID = value
 	}
 	if value, ok := ulc.mutation.Status(); ok {
 		_spec.SetField(usagelog.FieldStatus, field.TypeString, value)

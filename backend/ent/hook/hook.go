@@ -69,6 +69,18 @@ func (f BlogPostFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, er
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BlogPostMutation", m)
 }
 
+// The DepartmentFunc type is an adapter to allow the use of ordinary
+// function as Department mutator.
+type DepartmentFunc func(context.Context, *ent.DepartmentMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f DepartmentFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.DepartmentMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.DepartmentMutation", m)
+}
+
 // The GroupFunc type is an adapter to allow the use of ordinary
 // function as Group mutator.
 type GroupFunc func(context.Context, *ent.GroupMutation) (ent.Value, error)
@@ -165,6 +177,18 @@ func (f TaskFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error)
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TaskMutation", m)
 }
 
+// The TeamAuditLogFunc type is an adapter to allow the use of ordinary
+// function as TeamAuditLog mutator.
+type TeamAuditLogFunc func(context.Context, *ent.TeamAuditLogMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TeamAuditLogFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TeamAuditLogMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TeamAuditLogMutation", m)
+}
+
 // The UsageLogFunc type is an adapter to allow the use of ordinary
 // function as UsageLog mutator.
 type UsageLogFunc func(context.Context, *ent.UsageLogMutation) (ent.Value, error)
@@ -199,6 +223,18 @@ func (f UserIdentityFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserIdentityMutation", m)
+}
+
+// The UserNotificationFunc type is an adapter to allow the use of ordinary
+// function as UserNotification mutator.
+type UserNotificationFunc func(context.Context, *ent.UserNotificationMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f UserNotificationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.UserNotificationMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserNotificationMutation", m)
 }
 
 // The UserSubscriptionFunc type is an adapter to allow the use of ordinary

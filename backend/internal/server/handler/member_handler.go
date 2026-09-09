@@ -35,6 +35,7 @@ func (h *MemberHandler) handleError(logMessage, publicMessage string, err error)
 		errors.Is(err, appmember.ErrInvalidEmail),
 		errors.Is(err, appmember.ErrPasswordTooShort),
 		errors.Is(err, appmember.ErrGroupNotAllowed),
+		errors.Is(err, appmember.ErrDepartmentNotFound),
 		errors.Is(err, appmember.ErrMemberNoAccount):
 		return 400, err.Error()
 	default:

@@ -824,6 +824,29 @@ func HasMemberWith(preds ...predicate.Member) predicate.APIKey {
 	})
 }
 
+// HasDepartment applies the HasEdge predicate on the "department" edge.
+func HasDepartment() predicate.APIKey {
+	return predicate.APIKey(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, DepartmentTable, DepartmentColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasDepartmentWith applies the HasEdge predicate on the "department" edge with a given conditions (other predicates).
+func HasDepartmentWith(preds ...predicate.Department) predicate.APIKey {
+	return predicate.APIKey(func(s *sql.Selector) {
+		step := newDepartmentStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasUsageLogs applies the HasEdge predicate on the "usage_logs" edge.
 func HasUsageLogs() predicate.APIKey {
 	return predicate.APIKey(func(s *sql.Selector) {

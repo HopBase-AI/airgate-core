@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
+	"github.com/DouDOU-start/airgate-core/ent/department"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
@@ -151,6 +152,26 @@ func (uu *UserUpdate) SetNillableIsEnterpriseOwner(b *bool) *UserUpdate {
 	if b != nil {
 		uu.SetIsEnterpriseOwner(*b)
 	}
+	return uu
+}
+
+// SetBillingPeriodAnchor sets the "billing_period_anchor" field.
+func (uu *UserUpdate) SetBillingPeriodAnchor(t time.Time) *UserUpdate {
+	uu.mutation.SetBillingPeriodAnchor(t)
+	return uu
+}
+
+// SetNillableBillingPeriodAnchor sets the "billing_period_anchor" field if the given value is not nil.
+func (uu *UserUpdate) SetNillableBillingPeriodAnchor(t *time.Time) *UserUpdate {
+	if t != nil {
+		uu.SetBillingPeriodAnchor(*t)
+	}
+	return uu
+}
+
+// ClearBillingPeriodAnchor clears the value of the "billing_period_anchor" field.
+func (uu *UserUpdate) ClearBillingPeriodAnchor() *UserUpdate {
+	uu.mutation.ClearBillingPeriodAnchor()
 	return uu
 }
 
@@ -407,6 +428,21 @@ func (uu *UserUpdate) AddMembers(m ...*Member) *UserUpdate {
 	return uu.AddMemberIDs(ids...)
 }
 
+// AddDepartmentIDs adds the "departments" edge to the Department entity by IDs.
+func (uu *UserUpdate) AddDepartmentIDs(ids ...int) *UserUpdate {
+	uu.mutation.AddDepartmentIDs(ids...)
+	return uu
+}
+
+// AddDepartments adds the "departments" edges to the Department entity.
+func (uu *UserUpdate) AddDepartments(d ...*Department) *UserUpdate {
+	ids := make([]int, len(d))
+	for i := range d {
+		ids[i] = d[i].ID
+	}
+	return uu.AddDepartmentIDs(ids...)
+}
+
 // SetMembershipID sets the "membership" edge to the Member entity by ID.
 func (uu *UserUpdate) SetMembershipID(id int) *UserUpdate {
 	uu.mutation.SetMembershipID(id)
@@ -546,6 +582,27 @@ func (uu *UserUpdate) RemoveMembers(m ...*Member) *UserUpdate {
 		ids[i] = m[i].ID
 	}
 	return uu.RemoveMemberIDs(ids...)
+}
+
+// ClearDepartments clears all "departments" edges to the Department entity.
+func (uu *UserUpdate) ClearDepartments() *UserUpdate {
+	uu.mutation.ClearDepartments()
+	return uu
+}
+
+// RemoveDepartmentIDs removes the "departments" edge to Department entities by IDs.
+func (uu *UserUpdate) RemoveDepartmentIDs(ids ...int) *UserUpdate {
+	uu.mutation.RemoveDepartmentIDs(ids...)
+	return uu
+}
+
+// RemoveDepartments removes "departments" edges to Department entities.
+func (uu *UserUpdate) RemoveDepartments(d ...*Department) *UserUpdate {
+	ids := make([]int, len(d))
+	for i := range d {
+		ids[i] = d[i].ID
+	}
+	return uu.RemoveDepartmentIDs(ids...)
 }
 
 // ClearMembership clears the "membership" edge to the Member entity.
@@ -794,6 +851,12 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := uu.mutation.IsEnterpriseOwner(); ok {
 		_spec.SetField(user.FieldIsEnterpriseOwner, field.TypeBool, value)
 	}
+	if value, ok := uu.mutation.BillingPeriodAnchor(); ok {
+		_spec.SetField(user.FieldBillingPeriodAnchor, field.TypeTime, value)
+	}
+	if uu.mutation.BillingPeriodAnchorCleared() {
+		_spec.ClearField(user.FieldBillingPeriodAnchor, field.TypeTime)
+	}
 	if value, ok := uu.mutation.MaxConcurrency(); ok {
 		_spec.SetField(user.FieldMaxConcurrency, field.TypeInt, value)
 	}
@@ -946,6 +1009,51 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if uu.mutation.DepartmentsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.DepartmentsTable,
+			Columns: []string{user.DepartmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.RemovedDepartmentsIDs(); len(nodes) > 0 && !uu.mutation.DepartmentsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.DepartmentsTable,
+			Columns: []string{user.DepartmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.DepartmentsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.DepartmentsTable,
+			Columns: []string{user.DepartmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -1346,6 +1454,26 @@ func (uuo *UserUpdateOne) SetNillableIsEnterpriseOwner(b *bool) *UserUpdateOne {
 	return uuo
 }
 
+// SetBillingPeriodAnchor sets the "billing_period_anchor" field.
+func (uuo *UserUpdateOne) SetBillingPeriodAnchor(t time.Time) *UserUpdateOne {
+	uuo.mutation.SetBillingPeriodAnchor(t)
+	return uuo
+}
+
+// SetNillableBillingPeriodAnchor sets the "billing_period_anchor" field if the given value is not nil.
+func (uuo *UserUpdateOne) SetNillableBillingPeriodAnchor(t *time.Time) *UserUpdateOne {
+	if t != nil {
+		uuo.SetBillingPeriodAnchor(*t)
+	}
+	return uuo
+}
+
+// ClearBillingPeriodAnchor clears the value of the "billing_period_anchor" field.
+func (uuo *UserUpdateOne) ClearBillingPeriodAnchor() *UserUpdateOne {
+	uuo.mutation.ClearBillingPeriodAnchor()
+	return uuo
+}
+
 // SetMaxConcurrency sets the "max_concurrency" field.
 func (uuo *UserUpdateOne) SetMaxConcurrency(i int) *UserUpdateOne {
 	uuo.mutation.ResetMaxConcurrency()
@@ -1599,6 +1727,21 @@ func (uuo *UserUpdateOne) AddMembers(m ...*Member) *UserUpdateOne {
 	return uuo.AddMemberIDs(ids...)
 }
 
+// AddDepartmentIDs adds the "departments" edge to the Department entity by IDs.
+func (uuo *UserUpdateOne) AddDepartmentIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.AddDepartmentIDs(ids...)
+	return uuo
+}
+
+// AddDepartments adds the "departments" edges to the Department entity.
+func (uuo *UserUpdateOne) AddDepartments(d ...*Department) *UserUpdateOne {
+	ids := make([]int, len(d))
+	for i := range d {
+		ids[i] = d[i].ID
+	}
+	return uuo.AddDepartmentIDs(ids...)
+}
+
 // SetMembershipID sets the "membership" edge to the Member entity by ID.
 func (uuo *UserUpdateOne) SetMembershipID(id int) *UserUpdateOne {
 	uuo.mutation.SetMembershipID(id)
@@ -1738,6 +1881,27 @@ func (uuo *UserUpdateOne) RemoveMembers(m ...*Member) *UserUpdateOne {
 		ids[i] = m[i].ID
 	}
 	return uuo.RemoveMemberIDs(ids...)
+}
+
+// ClearDepartments clears all "departments" edges to the Department entity.
+func (uuo *UserUpdateOne) ClearDepartments() *UserUpdateOne {
+	uuo.mutation.ClearDepartments()
+	return uuo
+}
+
+// RemoveDepartmentIDs removes the "departments" edge to Department entities by IDs.
+func (uuo *UserUpdateOne) RemoveDepartmentIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.RemoveDepartmentIDs(ids...)
+	return uuo
+}
+
+// RemoveDepartments removes "departments" edges to Department entities.
+func (uuo *UserUpdateOne) RemoveDepartments(d ...*Department) *UserUpdateOne {
+	ids := make([]int, len(d))
+	for i := range d {
+		ids[i] = d[i].ID
+	}
+	return uuo.RemoveDepartmentIDs(ids...)
 }
 
 // ClearMembership clears the "membership" edge to the Member entity.
@@ -2016,6 +2180,12 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 	if value, ok := uuo.mutation.IsEnterpriseOwner(); ok {
 		_spec.SetField(user.FieldIsEnterpriseOwner, field.TypeBool, value)
 	}
+	if value, ok := uuo.mutation.BillingPeriodAnchor(); ok {
+		_spec.SetField(user.FieldBillingPeriodAnchor, field.TypeTime, value)
+	}
+	if uuo.mutation.BillingPeriodAnchorCleared() {
+		_spec.ClearField(user.FieldBillingPeriodAnchor, field.TypeTime)
+	}
 	if value, ok := uuo.mutation.MaxConcurrency(); ok {
 		_spec.SetField(user.FieldMaxConcurrency, field.TypeInt, value)
 	}
@@ -2168,6 +2338,51 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if uuo.mutation.DepartmentsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.DepartmentsTable,
+			Columns: []string{user.DepartmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.RemovedDepartmentsIDs(); len(nodes) > 0 && !uuo.mutation.DepartmentsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.DepartmentsTable,
+			Columns: []string{user.DepartmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.DepartmentsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.DepartmentsTable,
+			Columns: []string{user.DepartmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

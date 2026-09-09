@@ -19,18 +19,19 @@ const (
 
 // ListFilter 使用记录列表筛选。
 type ListFilter struct {
-	Page      int
-	PageSize  int
-	UserID    *int64
-	APIKeyID  *int64
-	MemberID  *int64 // 按团队成员筛选（usage_logs.member_id 快照列）
-	AccountID *int64
-	GroupID   *int64
-	Platform  string
-	Model     string
-	StartDate string
-	EndDate   string
-	TZ        string // IANA 时区名，用于解析 StartDate/EndDate
+	Page         int
+	PageSize     int
+	UserID       *int64
+	APIKeyID     *int64
+	MemberID     *int64 // 按团队成员筛选（usage_logs.member_id 快照列）
+	DepartmentID *int64 // 按部门筛选（usage_logs.department_id 快照列）；指向 0 = 只看未分配
+	AccountID    *int64
+	GroupID      *int64
+	Platform     string
+	Model        string
+	StartDate    string
+	EndDate      string
+	TZ           string // IANA 时区名，用于解析 StartDate/EndDate
 	// Result 按请求结果过滤：空 = 全部，ResultFilterSuccess = 只看成功，
 	// ResultFilterError = 只看失败。
 	Result string
@@ -42,16 +43,25 @@ type ListFilter struct {
 
 // StatsFilter 聚合统计筛选。
 type StatsFilter struct {
-	UserID      *int64
-	APIKeyID    *int64
-	MemberID    *int64 // 按团队成员筛选
-	Platform    string
-	Model       string
-	StartDate   string
-	EndDate     string
-	TZ          string // IANA 时区名，用于解析 StartDate/EndDate
-	ScopedToKey bool   // 与 ListFilter.ScopedToKey 同义
+	UserID       *int64
+	APIKeyID     *int64
+	MemberID     *int64 // 按团队成员筛选
+	DepartmentID *int64 // 按部门筛选；指向 0 = 只看未分配
+	Platform     string
+	Model        string
+	StartDate    string
+	EndDate      string
+	TZ           string // IANA 时区名，用于解析 StartDate/EndDate
+	ScopedToKey  bool   // 与 ListFilter.ScopedToKey 同义
 }
+
+// 分层聚合维度（用户侧 /usage/stats 的 breakdown 参数）。
+const (
+	BreakdownDepartment = "department"
+	BreakdownMember     = "member"
+	BreakdownKey        = "key"
+	BreakdownGroup      = "group"
+)
 
 // TrendFilter 趋势统计筛选。
 type TrendFilter struct {
@@ -73,6 +83,8 @@ type LogRecord struct {
 	APIKeyDeleted         bool
 	MemberID              int64  // 团队成员快照；0 表示无归属
 	MemberName            string // 成员名（成员已删除时为空）
+	DepartmentID          int64  // 部门快照；0 表示未分配
+	DepartmentName        string // 部门名（部门已删除时为空）
 	AccountID             int64
 	AccountName           string
 	AccountEmail          string
@@ -203,6 +215,42 @@ type GroupStats struct {
 	BilledCost float64
 }
 
+// DepartmentStats 按部门统计（企业主视角）。DepartmentID 为 0 的一行是「未分配」——
+// 企业主自己名下不挂部门的消耗必须单列，否则各部门加总 ≠ 企业总额。
+type DepartmentStats struct {
+	DepartmentID int64
+	Name         string // 已删除的部门为空
+	Requests     int64
+	Tokens       int64
+	TotalCost    float64
+	ActualCost   float64
+	BilledCost   float64
+}
+
+// MemberStats 按成员统计（企业主视角）。MemberID 为 0 的一行是企业主自己 / 未归属成员的消耗。
+type MemberStats struct {
+	MemberID     int64
+	Name         string
+	DepartmentID int64 // 成员当前所属部门（非快照）
+	Requests     int64
+	Tokens       int64
+	TotalCost    float64
+	ActualCost   float64
+	BilledCost   float64
+}
+
+// APIKeyStats 按密钥统计。APIKeyID 为 0 的一行是 Host 路径（AI Chat / 工作台）等无密钥的消耗。
+type APIKeyStats struct {
+	APIKeyID   int64
+	Name       string // 已删除的密钥为空
+	MemberID   int64  // 密钥当前所属成员（非快照）
+	Requests   int64
+	Tokens     int64
+	TotalCost  float64
+	ActualCost float64
+	BilledCost float64
+}
+
 // StatsResult 管理员统计结果。
 type StatsResult struct {
 	Summary
@@ -216,6 +264,11 @@ type StatsResult struct {
 type UserStatsResult struct {
 	Summary Summary
 	ByModel []ModelStats
+	// 分层下钻（按 breakdown 参数按需聚合）：企业 → 部门 → 成员 → 密钥 → 模型 / 分组。
+	ByDepartment []DepartmentStats
+	ByMember     []MemberStats
+	ByKey        []APIKeyStats
+	ByGroup      []GroupStats
 }
 
 // TrendEntry 趋势聚合的原始项。
@@ -252,6 +305,9 @@ type Repository interface {
 	StatsByUser(context.Context, StatsFilter) ([]UserStats, error)
 	StatsByAccount(context.Context, StatsFilter) ([]AccountStats, error)
 	StatsByGroup(context.Context, StatsFilter) ([]GroupStats, error)
+	StatsByDepartment(context.Context, StatsFilter) ([]DepartmentStats, error)
+	StatsByMember(context.Context, StatsFilter) ([]MemberStats, error)
+	StatsByAPIKey(context.Context, StatsFilter) ([]APIKeyStats, error)
 	TrendEntries(context.Context, TrendFilter) ([]TrendEntry, error)
 }
 

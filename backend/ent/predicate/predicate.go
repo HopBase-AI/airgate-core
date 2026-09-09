@@ -21,6 +21,9 @@ type BalanceLog func(*sql.Selector)
 // BlogPost is the predicate function for blogpost builders.
 type BlogPost func(*sql.Selector)
 
+// Department is the predicate function for department builders.
+type Department func(*sql.Selector)
+
 // Group is the predicate function for group builders.
 type Group func(*sql.Selector)
 
@@ -45,6 +48,9 @@ type Setting func(*sql.Selector)
 // Task is the predicate function for task builders.
 type Task func(*sql.Selector)
 
+// TeamAuditLog is the predicate function for teamauditlog builders.
+type TeamAuditLog func(*sql.Selector)
+
 // UsageLog is the predicate function for usagelog builders.
 type UsageLog func(*sql.Selector)
 
@@ -53,6 +59,9 @@ type User func(*sql.Selector)
 
 // UserIdentity is the predicate function for useridentity builders.
 type UserIdentity func(*sql.Selector)
+
+// UserNotification is the predicate function for usernotification builders.
+type UserNotification func(*sql.Selector)
 
 // UserSubscription is the predicate function for usersubscription builders.
 type UserSubscription func(*sql.Selector)

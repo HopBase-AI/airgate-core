@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
+	"github.com/DouDOU-start/airgate-core/ent/department"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
@@ -31,6 +32,7 @@ type UserQuery struct {
 	predicates        []predicate.User
 	withAPIKeys       *APIKeyQuery
 	withMembers       *MemberQuery
+	withDepartments   *DepartmentQuery
 	withMembership    *MemberQuery
 	withSubscriptions *UserSubscriptionQuery
 	withUsageLogs     *UsageLogQuery
@@ -111,6 +113,28 @@ func (uq *UserQuery) QueryMembers() *MemberQuery {
 			sqlgraph.From(user.Table, user.FieldID, selector),
 			sqlgraph.To(member.Table, member.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, user.MembersTable, user.MembersColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(uq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryDepartments chains the current query on the "departments" edge.
+func (uq *UserQuery) QueryDepartments() *DepartmentQuery {
+	query := (&DepartmentClient{config: uq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := uq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := uq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(department.Table, department.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.DepartmentsTable, user.DepartmentsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(uq.driver.Dialect(), step)
 		return fromU, nil
@@ -444,6 +468,7 @@ func (uq *UserQuery) Clone() *UserQuery {
 		predicates:        append([]predicate.User{}, uq.predicates...),
 		withAPIKeys:       uq.withAPIKeys.Clone(),
 		withMembers:       uq.withMembers.Clone(),
+		withDepartments:   uq.withDepartments.Clone(),
 		withMembership:    uq.withMembership.Clone(),
 		withSubscriptions: uq.withSubscriptions.Clone(),
 		withUsageLogs:     uq.withUsageLogs.Clone(),
@@ -475,6 +500,17 @@ func (uq *UserQuery) WithMembers(opts ...func(*MemberQuery)) *UserQuery {
 		opt(query)
 	}
 	uq.withMembers = query
+	return uq
+}
+
+// WithDepartments tells the query-builder to eager-load the nodes that are connected to
+// the "departments" edge. The optional arguments are used to configure the query builder of the edge.
+func (uq *UserQuery) WithDepartments(opts ...func(*DepartmentQuery)) *UserQuery {
+	query := (&DepartmentClient{config: uq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	uq.withDepartments = query
 	return uq
 }
 
@@ -623,9 +659,10 @@ func (uq *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 		nodes       = []*User{}
 		withFKs     = uq.withFKs
 		_spec       = uq.querySpec()
-		loadedTypes = [8]bool{
+		loadedTypes = [9]bool{
 			uq.withAPIKeys != nil,
 			uq.withMembers != nil,
+			uq.withDepartments != nil,
 			uq.withMembership != nil,
 			uq.withSubscriptions != nil,
 			uq.withUsageLogs != nil,
@@ -669,6 +706,13 @@ func (uq *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 		if err := uq.loadMembers(ctx, query, nodes,
 			func(n *User) { n.Edges.Members = []*Member{} },
 			func(n *User, e *Member) { n.Edges.Members = append(n.Edges.Members, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := uq.withDepartments; query != nil {
+		if err := uq.loadDepartments(ctx, query, nodes,
+			func(n *User) { n.Edges.Departments = []*Department{} },
+			func(n *User, e *Department) { n.Edges.Departments = append(n.Edges.Departments, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -773,6 +817,37 @@ func (uq *UserQuery) loadMembers(ctx context.Context, query *MemberQuery, nodes 
 		node, ok := nodeids[*fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "user_members" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (uq *UserQuery) loadDepartments(ctx context.Context, query *DepartmentQuery, nodes []*User, init func(*User), assign func(*User, *Department)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	query.withFKs = true
+	query.Where(predicate.Department(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.DepartmentsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.user_departments
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "user_departments" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_departments" returned %v for node %v`, *fk, n.ID)
 		}
 		assign(node, n)
 	}

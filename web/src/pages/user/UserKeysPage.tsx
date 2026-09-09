@@ -4,6 +4,8 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apikeysApi } from '../../shared/api/apikeys';
 import { membersApi } from '../../shared/api/members';
+import { departmentsApi } from '../../shared/api/departments';
+import { useAuth } from '../../app/providers/AuthProvider';
 import { usePagination } from '../../shared/hooks/usePagination';
 import { groupsApi } from '../../shared/api/groups';
 import { modelsApi } from '../../shared/api/models';
@@ -46,6 +48,7 @@ import {
   UsersRound,
   Search,
   X,
+  Building2,
 } from 'lucide-react';
 import type { APIKeyResp, CreateAPIKeyReq, UpdateAPIKeyReq, UserGroupResp } from '../../shared/types';
 import { EditKeyModal } from './userkeys/EditKeyModal';
@@ -57,12 +60,14 @@ import { GroupQuoteSuffix } from './userkeys/GroupQuoteSuffix';
 
 // 「未归属成员」筛选哨兵：与真实成员 ID 区分开，语义同账号页的 UNGROUPED_GROUP_FILTER。
 const UNASSIGNED_MEMBER_FILTER = '__unassigned__';
+const UNASSIGNED_DEPARTMENT_FILTER = '__unassigned__';
 
 export default function UserKeysPage() {
   const { t, i18n } = useTranslation();
   // 当前界面语言：分组名多语言覆盖按此精确匹配(en / zh-HK / ja),miss 回退基准文案
   const uiLang = i18n.language;
   const { toast } = useToast();
+  const { user } = useAuth();
   const copy = useClipboard();
   const queryClient = useQueryClient();
 
@@ -79,6 +84,7 @@ export default function UserKeysPage() {
     () => (searchMemberID != null && Number(searchMemberID) > 0 ? String(searchMemberID) : ''),
   );
   const [statusFilter, setStatusFilter] = useState('');
+  const [departmentFilterValue, setDepartmentFilterValue] = useState('');
 
   // 同路由下 URL 变化不会重挂组件（已在本页时从团队页再点一次「管理密钥」），
   // 惰性初始化只跑一次，须显式跟随 URL 同步，否则筛选会停在上一个成员。
@@ -93,13 +99,15 @@ export default function UserKeysPage() {
   const memberFilter = memberFilterValue && memberFilterValue !== UNASSIGNED_MEMBER_FILTER
     ? Number(memberFilterValue)
     : undefined;
-  const hasActiveFilters = !!(keyword || groupFilter || memberFilterValue || statusFilter);
+  const departmentFilter = departmentFilterValue === UNASSIGNED_DEPARTMENT_FILTER ? 0 : departmentFilterValue ? Number(departmentFilterValue) : undefined;
+  const hasActiveFilters = !!(keyword || groupFilter || memberFilterValue || statusFilter || departmentFilterValue);
   // 清除筛选同时把 URL 上的 ?member_id= 一并去掉，否则同步 effect 会把成员筛选装回来。
   const clearFilters = () => {
     setKeyword('');
     setGroupFilter('');
     setMemberFilterValue('');
     setStatusFilter('');
+    setDepartmentFilterValue('');
     setPage(1);
     if (searchMemberID != null) navigate({ to: '/keys' });
   };
@@ -119,7 +127,7 @@ export default function UserKeysPage() {
 
   // 密钥列表
   const { data, isLoading, refetch } = useQuery({
-    queryKey: queryKeys.userKeys(page, pageSize, debouncedKeyword, groupFilter, memberFilterValue, statusFilter),
+    queryKey: queryKeys.userKeys(page, pageSize, debouncedKeyword, groupFilter, memberFilterValue, statusFilter, departmentFilterValue),
     queryFn: () => apikeysApi.list({
       page,
       page_size: pageSize,
@@ -127,6 +135,7 @@ export default function UserKeysPage() {
       group_id: groupFilter ? Number(groupFilter) : undefined,
       member_id: memberFilter,
       member_unassigned: memberFilterValue === UNASSIGNED_MEMBER_FILTER ? true : undefined,
+      department_id: departmentFilter,
       status: (statusFilter || undefined) as 'active' | 'disabled' | 'expired' | undefined,
     }),
     placeholderData: keepPreviousData,
@@ -143,6 +152,21 @@ export default function UserKeysPage() {
   const memberNameOf = (id: number | null | undefined) => (id ? memberList.find((member) => member.id === id)?.name : undefined);
   const hasMembers = memberList.length > 0;
   // 成员筛选项：全部 / 各成员 / 未归属
+  // 部门：成员账号本人不是企业主，调 /departments 会被 403，只对企业主/管理员请求
+  const { data: departmentsData } = useQuery({
+    queryKey: queryKeys.departmentsAll(),
+    queryFn: () => departmentsApi.list(FETCH_ALL_PARAMS),
+    enabled: !!user && (user.role === 'admin' || !!user.is_enterprise_owner) && !((user.member_id ?? 0) > 0),
+    staleTime: 60_000,
+  });
+  const departmentList = useMemo(() => departmentsData?.list ?? [], [departmentsData?.list]);
+  const departmentOptions = useMemo(() => departmentList.map((dept) => ({ value: String(dept.id), label: dept.name })), [departmentList]);
+  const hasDepartments = departmentList.length > 0;
+  const departmentFilterOptions = useMemo(() => ([
+    { id: '', label: t('common.all') },
+    ...departmentList.map((dept) => ({ id: String(dept.id), label: dept.name })),
+    { id: UNASSIGNED_DEPARTMENT_FILTER, label: t('team.department_none') },
+  ]), [departmentList, t]);
   const memberFilterOptions = useMemo(() => ([
     { id: '', label: t('common.all') },
     ...memberList.map((member) => ({ id: String(member.id), label: member.name })),
@@ -236,6 +260,10 @@ export default function UserKeysPage() {
           : t('user_keys.disable_success'),
       );
       queryClient.invalidateQueries({ queryKey: queryKeys.userKeys() });
+      // 部门密钥数、企业总览、操作记录都随密钥增删改变化
+      queryClient.invalidateQueries({ queryKey: queryKeys.departments() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.teamOverview() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.teamAuditLogs() });
     },
     onError: (err: Error) => toast('error', err.message),
   });
@@ -260,6 +288,7 @@ export default function UserKeysPage() {
       max_concurrency: key.max_concurrency ? String(key.max_concurrency) : '',
       expires_at: key.expires_at ? key.expires_at.slice(0, 10) : '',
       member_id: key.member_id ? String(key.member_id) : '',
+      department_id: key.department_direct && key.department_id ? String(key.department_id) : '',
     });
     setModalOpen(true);
   }
@@ -295,6 +324,8 @@ export default function UserKeysPage() {
         expires_at: expiresAt,
         // 0 = 解除成员归属；只有主账号有成员时表单才会出现这一项
         ...(memberOptions.length > 0 ? { member_id: form.member_id ? Number(form.member_id) : 0 } : {}),
+        // 直挂部门同理；挂了成员的 key 跟随成员部门，直挂清 0
+        ...(departmentOptions.length > 0 ? { department_id: form.member_id ? 0 : form.department_id ? Number(form.department_id) : 0 } : {}),
       };
       updateMutation.mutate({ id: editingKey.id, data: payload });
     } else {
@@ -306,6 +337,7 @@ export default function UserKeysPage() {
         max_concurrency: form.max_concurrency ? Number(form.max_concurrency) : undefined,
         expires_at: expiresAt,
         member_id: form.member_id ? Number(form.member_id) : undefined,
+        department_id: !form.member_id && form.department_id ? Number(form.department_id) : undefined,
       };
       createMutation.mutate(payload);
     }
@@ -484,6 +516,34 @@ export default function UserKeysPage() {
                 </Select.Popover>
               </Select>
             </div>
+            {hasDepartments ? (
+              <div className="w-full sm:w-44">
+                <Select
+                  aria-label={t('team.filter_department')}
+                  fullWidth
+                  selectedKey={departmentFilterValue}
+                  onSelectionChange={(key) => { setDepartmentFilterValue(key == null ? '' : String(key)); setPage(1); }}
+                >
+                  <Select.Trigger>
+                    <Select.Value>
+                      {departmentFilterValue
+                        ? departmentFilterOptions.find((item) => item.id === departmentFilterValue)?.label ?? departmentFilterValue
+                        : <span className="text-text-tertiary">{t('team.filter_department')}</span>}
+                    </Select.Value>
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover className="w-[var(--trigger-width)]">
+                    <ListBox items={departmentFilterOptions}>
+                      {(item) => (
+                        <ListBox.Item id={item.id} textValue={item.label}>
+                          <span className="block truncate">{item.label}</span>
+                        </ListBox.Item>
+                      )}
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+              </div>
+            ) : null}
             {hasMembers ? (
               <div className="w-full sm:w-44">
                 <Select
@@ -645,6 +705,12 @@ export default function UserKeysPage() {
                         <div className="mt-0.5 flex items-center gap-1 text-xs text-text-tertiary" title={row.member_name || memberNameOf(row.member_id)}>
                           <UsersRound className="h-3 w-3 shrink-0" />
                           <span className="truncate">{row.member_name || memberNameOf(row.member_id) || t('team.member_deleted')}</span>
+                        </div>
+                      ) : null}
+                      {row.department_id ? (
+                        <div className="mt-0.5 flex items-center gap-1 text-xs text-text-tertiary" title={row.department_name}>
+                          <Building2 className="h-3 w-3" />
+                          <span className="truncate">{row.department_name || t('team.department_deleted')}</span>
                         </div>
                       ) : null}
                     </div>
@@ -883,6 +949,7 @@ export default function UserKeysPage() {
         setForm={setForm}
         groupOptions={groupOptions}
         memberOptions={memberOptions}
+        departmentOptions={departmentOptions}
         onClose={closeModal}
         onSubmit={handleSubmit}
         loading={saving}

@@ -22,6 +22,8 @@ type Tx struct {
 	BalanceLog *BalanceLogClient
 	// BlogPost is the client for interacting with the BlogPost builders.
 	BlogPost *BlogPostClient
+	// Department is the client for interacting with the Department builders.
+	Department *DepartmentClient
 	// Group is the client for interacting with the Group builders.
 	Group *GroupClient
 	// Member is the client for interacting with the Member builders.
@@ -38,12 +40,16 @@ type Tx struct {
 	Setting *SettingClient
 	// Task is the client for interacting with the Task builders.
 	Task *TaskClient
+	// TeamAuditLog is the client for interacting with the TeamAuditLog builders.
+	TeamAuditLog *TeamAuditLogClient
 	// UsageLog is the client for interacting with the UsageLog builders.
 	UsageLog *UsageLogClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 	// UserIdentity is the client for interacting with the UserIdentity builders.
 	UserIdentity *UserIdentityClient
+	// UserNotification is the client for interacting with the UserNotification builders.
+	UserNotification *UserNotificationClient
 	// UserSubscription is the client for interacting with the UserSubscription builders.
 	UserSubscription *UserSubscriptionClient
 
@@ -182,6 +188,7 @@ func (tx *Tx) init() {
 	tx.AccountEvent = NewAccountEventClient(tx.config)
 	tx.BalanceLog = NewBalanceLogClient(tx.config)
 	tx.BlogPost = NewBlogPostClient(tx.config)
+	tx.Department = NewDepartmentClient(tx.config)
 	tx.Group = NewGroupClient(tx.config)
 	tx.Member = NewMemberClient(tx.config)
 	tx.Plugin = NewPluginClient(tx.config)
@@ -190,9 +197,11 @@ func (tx *Tx) init() {
 	tx.ReferralCommission = NewReferralCommissionClient(tx.config)
 	tx.Setting = NewSettingClient(tx.config)
 	tx.Task = NewTaskClient(tx.config)
+	tx.TeamAuditLog = NewTeamAuditLogClient(tx.config)
 	tx.UsageLog = NewUsageLogClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 	tx.UserIdentity = NewUserIdentityClient(tx.config)
+	tx.UserNotification = NewUserNotificationClient(tx.config)
 	tx.UserSubscription = NewUserSubscriptionClient(tx.config)
 }
 

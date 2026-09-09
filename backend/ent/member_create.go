@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
+	"github.com/DouDOU-start/airgate-core/ent/department"
 	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 )
@@ -245,6 +246,25 @@ func (mc *MemberCreate) SetNillableAccountID(id *int) *MemberCreate {
 // SetAccount sets the "account" edge to the User entity.
 func (mc *MemberCreate) SetAccount(u *User) *MemberCreate {
 	return mc.SetAccountID(u.ID)
+}
+
+// SetDepartmentID sets the "department" edge to the Department entity by ID.
+func (mc *MemberCreate) SetDepartmentID(id int) *MemberCreate {
+	mc.mutation.SetDepartmentID(id)
+	return mc
+}
+
+// SetNillableDepartmentID sets the "department" edge to the Department entity by ID if the given value is not nil.
+func (mc *MemberCreate) SetNillableDepartmentID(id *int) *MemberCreate {
+	if id != nil {
+		mc = mc.SetDepartmentID(*id)
+	}
+	return mc
+}
+
+// SetDepartment sets the "department" edge to the Department entity.
+func (mc *MemberCreate) SetDepartment(d *Department) *MemberCreate {
+	return mc.SetDepartmentID(d.ID)
 }
 
 // Mutation returns the MemberMutation object of the builder.
@@ -535,6 +555,23 @@ func (mc *MemberCreate) createSpec() (*Member, *sqlgraph.CreateSpec) {
 		for _, k := range nodes {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := mc.mutation.DepartmentIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   member.DepartmentTable,
+			Columns: []string{member.DepartmentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.department_members = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

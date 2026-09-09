@@ -9,6 +9,8 @@ export interface KeyForm {
   expires_at: string;
   /** 归属团队成员 ID；空字符串表示不归属 */
   member_id: string;
+  /** 直挂部门 ID；空字符串表示不直挂（有成员时跟随成员的部门） */
+  department_id: string;
 }
 
 export const emptyForm: KeyForm = {
@@ -19,4 +21,5 @@ export const emptyForm: KeyForm = {
   max_concurrency: '',
   expires_at: '',
   member_id: '',
+  department_id: '',
 };

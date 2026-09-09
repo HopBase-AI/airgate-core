@@ -49,6 +49,8 @@ const (
 	EdgeAPIKeys = "api_keys"
 	// EdgeAccount holds the string denoting the account edge name in mutations.
 	EdgeAccount = "account"
+	// EdgeDepartment holds the string denoting the department edge name in mutations.
+	EdgeDepartment = "department"
 	// Table holds the table name of the member in the database.
 	Table = "members"
 	// OwnerTable is the table that holds the owner relation/edge.
@@ -72,6 +74,13 @@ const (
 	AccountInverseTable = "users"
 	// AccountColumn is the table column denoting the account relation/edge.
 	AccountColumn = "member_account"
+	// DepartmentTable is the table that holds the department relation/edge.
+	DepartmentTable = "members"
+	// DepartmentInverseTable is the table name for the Department entity.
+	// It exists in this package in order to avoid circular dependency with the "department" package.
+	DepartmentInverseTable = "departments"
+	// DepartmentColumn is the table column denoting the department relation/edge.
+	DepartmentColumn = "department_members"
 )
 
 // Columns holds all SQL columns for member fields.
@@ -96,6 +105,7 @@ var Columns = []string{
 // ForeignKeys holds the SQL foreign-keys that are owned by the "members"
 // table and are not defined as standalone fields in the schema.
 var ForeignKeys = []string{
+	"department_members",
 	"user_members",
 }
 
@@ -299,6 +309,13 @@ func ByAccountField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newAccountStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// ByDepartmentField orders the results by department field.
+func ByDepartmentField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newDepartmentStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newOwnerStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -318,5 +335,12 @@ func newAccountStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(AccountInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2O, false, AccountTable, AccountColumn),
+	)
+}
+func newDepartmentStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(DepartmentInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, DepartmentTable, DepartmentColumn),
 	)
 }

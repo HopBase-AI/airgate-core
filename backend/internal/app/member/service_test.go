@@ -57,10 +57,16 @@ func (s *stubRepo) MemberUsage(_ context.Context, ids []int, _ time.Time) (map[i
 	return today, thirty, nil
 }
 func (s *stubRepo) KeyHashesByMember(_ context.Context, _ int) ([]string, error) { return nil, nil }
+func (s *stubRepo) DepartmentOwnedBy(_ context.Context, _ int, id int) (bool, error) {
+	return id == 7, nil
+}
+func (s *stubRepo) OwnerBillingAnchor(_ context.Context, _ int) (time.Time, error) {
+	return time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC), nil
+}
 
 func TestCreateDefaultsToMonthlyAndTrimsName(t *testing.T) {
 	repo := &stubRepo{}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 	item, err := svc.Create(context.Background(), 7, CreateInput{Name: "  张三 ", Email: " a@b.c ", QuotaUSD: 50})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -71,8 +77,12 @@ func TestCreateDefaultsToMonthlyAndTrimsName(t *testing.T) {
 	if repo.created.OwnerID == nil || *repo.created.OwnerID != 7 {
 		t.Fatalf("owner not propagated: %+v", repo.created)
 	}
-	if repo.created.PeriodAnchor == nil || !repo.created.PeriodAnchor.Equal(*repo.created.PeriodStart) {
-		t.Fatalf("anchor and period start must both be set to now: %+v", repo.created)
+	// 锚点继承企业账期锚点（stub 固定 2026-08-20），本期起点按锚点逐月对齐且不晚于现在。
+	if repo.created.PeriodAnchor == nil || !repo.created.PeriodAnchor.Equal(time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC)) {
+		t.Fatalf("anchor must inherit the owner billing anchor: %+v", repo.created)
+	}
+	if repo.created.PeriodStart == nil || repo.created.PeriodStart.After(time.Now()) || repo.created.PeriodStart.Day() != 20 {
+		t.Fatalf("period start must align to the anchor day: %+v", repo.created.PeriodStart)
 	}
 	if item.PeriodEnd == nil {
 		t.Fatal("monthly member must expose period end")
@@ -80,7 +90,7 @@ func TestCreateDefaultsToMonthlyAndTrimsName(t *testing.T) {
 }
 
 func TestCreateAndUpdateValidation(t *testing.T) {
-	svc := NewService(&stubRepo{})
+	svc := NewService(&stubRepo{}, nil)
 	ctx := context.Background()
 	if _, err := svc.Create(ctx, 1, CreateInput{Name: "   "}); !errors.Is(err, ErrNameRequired) {
 		t.Fatalf("blank name error = %v", err)
@@ -112,7 +122,7 @@ func TestListDecoratesDerivedFields(t *testing.T) {
 		// 一次性：本期已用 = 累计 − 手动重置快照
 		{ID: 3, QuotaPeriod: QuotaPeriodNone, PeriodUsedBase: 5, UsedQuota: 8},
 	}}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 	svc.now = func() time.Time { return now }
 	result, err := svc.List(context.Background(), 1, ListFilter{}, "UTC")
 	if err != nil {

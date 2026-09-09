@@ -24,6 +24,9 @@ type MemberResp struct {
 	// HasAccount / AccountUserID 成员是否有自己的登录账号（2026-09-04 起新建成员都有）。
 	HasAccount    bool  `json:"has_account"`
 	AccountUserID int64 `json:"account_user_id,omitempty"`
+	// DepartmentID 所属部门；0 表示未分配。
+	DepartmentID   int64  `json:"department_id"`
+	DepartmentName string `json:"department_name,omitempty"`
 	TimeMixin
 }
 
@@ -31,6 +34,8 @@ type MemberResp struct {
 type MemberListQuery struct {
 	PageReq
 	Status string `form:"status" binding:"omitempty,oneof=active disabled"`
+	// DepartmentID 按部门筛选；传 0 只看未分配部门的成员。
+	DepartmentID *int64 `form:"department_id"`
 }
 
 // CreateMemberReq 创建成员请求。
@@ -44,6 +49,8 @@ type CreateMemberReq struct {
 	QuotaUSD        float64 `json:"quota_usd" binding:"gte=0"`
 	QuotaPeriod     string  `json:"quota_period" binding:"omitempty,oneof=none monthly"`
 	AllowedGroupIDs []int64 `json:"allowed_group_ids"`
+	// DepartmentID 所属部门；不传 / 0 表示未分配。
+	DepartmentID *int64 `json:"department_id"`
 }
 
 // UpdateMemberReq 更新成员请求；未传字段不改动。
@@ -57,4 +64,6 @@ type UpdateMemberReq struct {
 	Status      *string  `json:"status" binding:"omitempty,oneof=active disabled"`
 	// AllowedGroupIDs 传了即整体替换（空数组 = 清空白名单，继承企业主全部可见分组）。
 	AllowedGroupIDs *[]int64 `json:"allowed_group_ids"`
+	// DepartmentID 不传不改动；传 0 调出部门（未分配）。
+	DepartmentID *int64 `json:"department_id"`
 }

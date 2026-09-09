@@ -46,7 +46,38 @@ func Containing(anchor, now time.Time) (start, end time.Time) {
 
 // Window 返回 monthly 口径下包含 now 的计量期 [start, end)，以及相对已落库的
 // periodStart 是否已跨期（跨期意味着本期已用应从当前累计值重新起算）。
+//
+// 锚点晚于 now 是「企业主改了账期日」的过渡态：改动自新账期日起生效，当前期延续到那一天
+// ——此时返回 [periodStart, anchor) 且不算跨期，而不是把首期当成新期立刻清零。
 func Window(anchor, periodStart, now time.Time) (start, end time.Time, rolled bool) {
+	if now.Before(anchor) {
+		return periodStart, anchor, false
+	}
 	start, end = Containing(anchor, now)
 	return start, end, start.After(periodStart)
+}
+
+// AnchorForDay 返回以 dayOfMonth 为账期日、严格晚于 now 的下一个锚点时刻，取 now 所在时区的**零点**
+// （账期边界落在整日，而不是点按钮那一刻的随机时分），月份天数不足时夹紧到月末。
+// 企业主改账期日就用它：当前期延续到新锚点，之后按新账期日按月推进。
+func AnchorForDay(now time.Time, dayOfMonth int) time.Time {
+	if dayOfMonth < 1 {
+		dayOfMonth = 1
+	}
+	if dayOfMonth > 31 {
+		dayOfMonth = 31
+	}
+	candidate := func(year int, month time.Month) time.Time {
+		d := dayOfMonth
+		if last := daysIn(year, month); d > last {
+			d = last
+		}
+		return time.Date(year, month, d, 0, 0, 0, 0, now.Location())
+	}
+	next := candidate(now.Year(), now.Month())
+	if !next.After(now) {
+		first := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, now.Location())
+		next = candidate(first.Year(), first.Month())
+	}
+	return next
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
 	"github.com/DouDOU-start/airgate-core/ent/balancelog"
 	"github.com/DouDOU-start/airgate-core/ent/blogpost"
+	"github.com/DouDOU-start/airgate-core/ent/department"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/plugin"
@@ -19,9 +20,11 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/schema"
 	"github.com/DouDOU-start/airgate-core/ent/setting"
 	"github.com/DouDOU-start/airgate-core/ent/task"
+	"github.com/DouDOU-start/airgate-core/ent/teamauditlog"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 	"github.com/DouDOU-start/airgate-core/ent/useridentity"
+	"github.com/DouDOU-start/airgate-core/ent/usernotification"
 	"github.com/DouDOU-start/airgate-core/ent/usersubscription"
 )
 
@@ -291,6 +294,72 @@ func init() {
 	blogpost.DefaultUpdatedAt = blogpostDescUpdatedAt.Default.(func() time.Time)
 	// blogpost.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	blogpost.UpdateDefaultUpdatedAt = blogpostDescUpdatedAt.UpdateDefault.(func() time.Time)
+	departmentFields := schema.Department{}.Fields()
+	_ = departmentFields
+	// departmentDescName is the schema descriptor for name field.
+	departmentDescName := departmentFields[0].Descriptor()
+	// department.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	department.NameValidator = func() func(string) error {
+		validators := departmentDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// departmentDescNote is the schema descriptor for note field.
+	departmentDescNote := departmentFields[1].Descriptor()
+	// department.DefaultNote holds the default value on creation for the note field.
+	department.DefaultNote = departmentDescNote.Default.(string)
+	// department.NoteValidator is a validator for the "note" field. It is called by the builders before save.
+	department.NoteValidator = departmentDescNote.Validators[0].(func(string) error)
+	// departmentDescSort is the schema descriptor for sort field.
+	departmentDescSort := departmentFields[2].Descriptor()
+	// department.DefaultSort holds the default value on creation for the sort field.
+	department.DefaultSort = departmentDescSort.Default.(int)
+	// departmentDescQuotaUsd is the schema descriptor for quota_usd field.
+	departmentDescQuotaUsd := departmentFields[3].Descriptor()
+	// department.DefaultQuotaUsd holds the default value on creation for the quota_usd field.
+	department.DefaultQuotaUsd = departmentDescQuotaUsd.Default.(float64)
+	// department.QuotaUsdValidator is a validator for the "quota_usd" field. It is called by the builders before save.
+	department.QuotaUsdValidator = departmentDescQuotaUsd.Validators[0].(func(float64) error)
+	// departmentDescPeriodAnchor is the schema descriptor for period_anchor field.
+	departmentDescPeriodAnchor := departmentFields[5].Descriptor()
+	// department.DefaultPeriodAnchor holds the default value on creation for the period_anchor field.
+	department.DefaultPeriodAnchor = departmentDescPeriodAnchor.Default.(func() time.Time)
+	// departmentDescPeriodStart is the schema descriptor for period_start field.
+	departmentDescPeriodStart := departmentFields[6].Descriptor()
+	// department.DefaultPeriodStart holds the default value on creation for the period_start field.
+	department.DefaultPeriodStart = departmentDescPeriodStart.Default.(func() time.Time)
+	// departmentDescPeriodUsedBase is the schema descriptor for period_used_base field.
+	departmentDescPeriodUsedBase := departmentFields[7].Descriptor()
+	// department.DefaultPeriodUsedBase holds the default value on creation for the period_used_base field.
+	department.DefaultPeriodUsedBase = departmentDescPeriodUsedBase.Default.(float64)
+	// departmentDescUsedQuota is the schema descriptor for used_quota field.
+	departmentDescUsedQuota := departmentFields[8].Descriptor()
+	// department.DefaultUsedQuota holds the default value on creation for the used_quota field.
+	department.DefaultUsedQuota = departmentDescUsedQuota.Default.(float64)
+	// departmentDescUsedQuotaActual is the schema descriptor for used_quota_actual field.
+	departmentDescUsedQuotaActual := departmentFields[9].Descriptor()
+	// department.DefaultUsedQuotaActual holds the default value on creation for the used_quota_actual field.
+	department.DefaultUsedQuotaActual = departmentDescUsedQuotaActual.Default.(float64)
+	// departmentDescCreatedAt is the schema descriptor for created_at field.
+	departmentDescCreatedAt := departmentFields[10].Descriptor()
+	// department.DefaultCreatedAt holds the default value on creation for the created_at field.
+	department.DefaultCreatedAt = departmentDescCreatedAt.Default.(func() time.Time)
+	// departmentDescUpdatedAt is the schema descriptor for updated_at field.
+	departmentDescUpdatedAt := departmentFields[11].Descriptor()
+	// department.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	department.DefaultUpdatedAt = departmentDescUpdatedAt.Default.(func() time.Time)
+	// department.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	department.UpdateDefaultUpdatedAt = departmentDescUpdatedAt.UpdateDefault.(func() time.Time)
 	groupFields := schema.Group{}.Fields()
 	_ = groupFields
 	// groupDescName is the schema descriptor for name field.
@@ -625,6 +694,80 @@ func init() {
 	task.DefaultUpdatedAt = taskDescUpdatedAt.Default.(func() time.Time)
 	// task.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	task.UpdateDefaultUpdatedAt = taskDescUpdatedAt.UpdateDefault.(func() time.Time)
+	teamauditlogFields := schema.TeamAuditLog{}.Fields()
+	_ = teamauditlogFields
+	// teamauditlogDescActorUserID is the schema descriptor for actor_user_id field.
+	teamauditlogDescActorUserID := teamauditlogFields[1].Descriptor()
+	// teamauditlog.DefaultActorUserID holds the default value on creation for the actor_user_id field.
+	teamauditlog.DefaultActorUserID = teamauditlogDescActorUserID.Default.(int)
+	// teamauditlogDescActorEmail is the schema descriptor for actor_email field.
+	teamauditlogDescActorEmail := teamauditlogFields[2].Descriptor()
+	// teamauditlog.DefaultActorEmail holds the default value on creation for the actor_email field.
+	teamauditlog.DefaultActorEmail = teamauditlogDescActorEmail.Default.(string)
+	// teamauditlog.ActorEmailValidator is a validator for the "actor_email" field. It is called by the builders before save.
+	teamauditlog.ActorEmailValidator = teamauditlogDescActorEmail.Validators[0].(func(string) error)
+	// teamauditlogDescAction is the schema descriptor for action field.
+	teamauditlogDescAction := teamauditlogFields[3].Descriptor()
+	// teamauditlog.ActionValidator is a validator for the "action" field. It is called by the builders before save.
+	teamauditlog.ActionValidator = func() func(string) error {
+		validators := teamauditlogDescAction.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(action string) error {
+			for _, fn := range fns {
+				if err := fn(action); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// teamauditlogDescTargetType is the schema descriptor for target_type field.
+	teamauditlogDescTargetType := teamauditlogFields[4].Descriptor()
+	// teamauditlog.TargetTypeValidator is a validator for the "target_type" field. It is called by the builders before save.
+	teamauditlog.TargetTypeValidator = func() func(string) error {
+		validators := teamauditlogDescTargetType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(target_type string) error {
+			for _, fn := range fns {
+				if err := fn(target_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// teamauditlogDescTargetID is the schema descriptor for target_id field.
+	teamauditlogDescTargetID := teamauditlogFields[5].Descriptor()
+	// teamauditlog.DefaultTargetID holds the default value on creation for the target_id field.
+	teamauditlog.DefaultTargetID = teamauditlogDescTargetID.Default.(int)
+	// teamauditlogDescTargetName is the schema descriptor for target_name field.
+	teamauditlogDescTargetName := teamauditlogFields[6].Descriptor()
+	// teamauditlog.DefaultTargetName holds the default value on creation for the target_name field.
+	teamauditlog.DefaultTargetName = teamauditlogDescTargetName.Default.(string)
+	// teamauditlog.TargetNameValidator is a validator for the "target_name" field. It is called by the builders before save.
+	teamauditlog.TargetNameValidator = teamauditlogDescTargetName.Validators[0].(func(string) error)
+	// teamauditlogDescIP is the schema descriptor for ip field.
+	teamauditlogDescIP := teamauditlogFields[9].Descriptor()
+	// teamauditlog.DefaultIP holds the default value on creation for the ip field.
+	teamauditlog.DefaultIP = teamauditlogDescIP.Default.(string)
+	// teamauditlog.IPValidator is a validator for the "ip" field. It is called by the builders before save.
+	teamauditlog.IPValidator = teamauditlogDescIP.Validators[0].(func(string) error)
+	// teamauditlogDescRequestID is the schema descriptor for request_id field.
+	teamauditlogDescRequestID := teamauditlogFields[10].Descriptor()
+	// teamauditlog.DefaultRequestID holds the default value on creation for the request_id field.
+	teamauditlog.DefaultRequestID = teamauditlogDescRequestID.Default.(string)
+	// teamauditlog.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	teamauditlog.RequestIDValidator = teamauditlogDescRequestID.Validators[0].(func(string) error)
+	// teamauditlogDescCreatedAt is the schema descriptor for created_at field.
+	teamauditlogDescCreatedAt := teamauditlogFields[11].Descriptor()
+	// teamauditlog.DefaultCreatedAt holds the default value on creation for the created_at field.
+	teamauditlog.DefaultCreatedAt = teamauditlogDescCreatedAt.Default.(func() time.Time)
 	usagelogFields := schema.UsageLog{}.Fields()
 	_ = usagelogFields
 	// usagelogDescPlatform is the schema descriptor for platform field.
@@ -779,24 +922,28 @@ func init() {
 	usagelogDescMemberID := usagelogFields[42].Descriptor()
 	// usagelog.DefaultMemberID holds the default value on creation for the member_id field.
 	usagelog.DefaultMemberID = usagelogDescMemberID.Default.(int)
+	// usagelogDescDepartmentID is the schema descriptor for department_id field.
+	usagelogDescDepartmentID := usagelogFields[43].Descriptor()
+	// usagelog.DefaultDepartmentID holds the default value on creation for the department_id field.
+	usagelog.DefaultDepartmentID = usagelogDescDepartmentID.Default.(int)
 	// usagelogDescStatus is the schema descriptor for status field.
-	usagelogDescStatus := usagelogFields[43].Descriptor()
+	usagelogDescStatus := usagelogFields[44].Descriptor()
 	// usagelog.DefaultStatus holds the default value on creation for the status field.
 	usagelog.DefaultStatus = usagelogDescStatus.Default.(string)
 	// usagelogDescErrorCode is the schema descriptor for error_code field.
-	usagelogDescErrorCode := usagelogFields[44].Descriptor()
+	usagelogDescErrorCode := usagelogFields[45].Descriptor()
 	// usagelog.DefaultErrorCode holds the default value on creation for the error_code field.
 	usagelog.DefaultErrorCode = usagelogDescErrorCode.Default.(string)
 	// usagelogDescErrorStatus is the schema descriptor for error_status field.
-	usagelogDescErrorStatus := usagelogFields[45].Descriptor()
+	usagelogDescErrorStatus := usagelogFields[46].Descriptor()
 	// usagelog.DefaultErrorStatus holds the default value on creation for the error_status field.
 	usagelog.DefaultErrorStatus = usagelogDescErrorStatus.Default.(int)
 	// usagelogDescErrorMessage is the schema descriptor for error_message field.
-	usagelogDescErrorMessage := usagelogFields[46].Descriptor()
+	usagelogDescErrorMessage := usagelogFields[47].Descriptor()
 	// usagelog.DefaultErrorMessage holds the default value on creation for the error_message field.
 	usagelog.DefaultErrorMessage = usagelogDescErrorMessage.Default.(string)
 	// usagelogDescCreatedAt is the schema descriptor for created_at field.
-	usagelogDescCreatedAt := usagelogFields[47].Descriptor()
+	usagelogDescCreatedAt := usagelogFields[48].Descriptor()
 	// usagelog.DefaultCreatedAt holds the default value on creation for the created_at field.
 	usagelog.DefaultCreatedAt = usagelogDescCreatedAt.Default.(func() time.Time)
 	userFields := schema.User{}.Fields()
@@ -832,41 +979,41 @@ func init() {
 	// user.DefaultIsEnterpriseOwner holds the default value on creation for the is_enterprise_owner field.
 	user.DefaultIsEnterpriseOwner = userDescIsEnterpriseOwner.Default.(bool)
 	// userDescMaxConcurrency is the schema descriptor for max_concurrency field.
-	userDescMaxConcurrency := userFields[8].Descriptor()
+	userDescMaxConcurrency := userFields[9].Descriptor()
 	// user.DefaultMaxConcurrency holds the default value on creation for the max_concurrency field.
 	user.DefaultMaxConcurrency = userDescMaxConcurrency.Default.(int)
 	// user.MaxConcurrencyValidator is a validator for the "max_concurrency" field. It is called by the builders before save.
 	user.MaxConcurrencyValidator = userDescMaxConcurrency.Validators[0].(func(int) error)
 	// userDescBalanceAlertThreshold is the schema descriptor for balance_alert_threshold field.
-	userDescBalanceAlertThreshold := userFields[13].Descriptor()
+	userDescBalanceAlertThreshold := userFields[14].Descriptor()
 	// user.DefaultBalanceAlertThreshold holds the default value on creation for the balance_alert_threshold field.
 	user.DefaultBalanceAlertThreshold = userDescBalanceAlertThreshold.Default.(float64)
 	// userDescBalanceAlertNotified is the schema descriptor for balance_alert_notified field.
-	userDescBalanceAlertNotified := userFields[14].Descriptor()
+	userDescBalanceAlertNotified := userFields[15].Descriptor()
 	// user.DefaultBalanceAlertNotified holds the default value on creation for the balance_alert_notified field.
 	user.DefaultBalanceAlertNotified = userDescBalanceAlertNotified.Default.(bool)
 	// userDescSignupSource is the schema descriptor for signup_source field.
-	userDescSignupSource := userFields[16].Descriptor()
+	userDescSignupSource := userFields[17].Descriptor()
 	// user.DefaultSignupSource holds the default value on creation for the signup_source field.
 	user.DefaultSignupSource = userDescSignupSource.Default.(string)
 	// user.SignupSourceValidator is a validator for the "signup_source" field. It is called by the builders before save.
 	user.SignupSourceValidator = userDescSignupSource.Validators[0].(func(string) error)
 	// userDescInviteCode is the schema descriptor for invite_code field.
-	userDescInviteCode := userFields[17].Descriptor()
+	userDescInviteCode := userFields[18].Descriptor()
 	// user.InviteCodeValidator is a validator for the "invite_code" field. It is called by the builders before save.
 	user.InviteCodeValidator = userDescInviteCode.Validators[0].(func(string) error)
 	// userDescReferralDisplayName is the schema descriptor for referral_display_name field.
-	userDescReferralDisplayName := userFields[21].Descriptor()
+	userDescReferralDisplayName := userFields[22].Descriptor()
 	// user.DefaultReferralDisplayName holds the default value on creation for the referral_display_name field.
 	user.DefaultReferralDisplayName = userDescReferralDisplayName.Default.(string)
 	// user.ReferralDisplayNameValidator is a validator for the "referral_display_name" field. It is called by the builders before save.
 	user.ReferralDisplayNameValidator = userDescReferralDisplayName.Validators[0].(func(string) error)
 	// userDescCreatedAt is the schema descriptor for created_at field.
-	userDescCreatedAt := userFields[22].Descriptor()
+	userDescCreatedAt := userFields[23].Descriptor()
 	// user.DefaultCreatedAt holds the default value on creation for the created_at field.
 	user.DefaultCreatedAt = userDescCreatedAt.Default.(func() time.Time)
 	// userDescUpdatedAt is the schema descriptor for updated_at field.
-	userDescUpdatedAt := userFields[23].Descriptor()
+	userDescUpdatedAt := userFields[24].Descriptor()
 	// user.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	user.DefaultUpdatedAt = userDescUpdatedAt.Default.(func() time.Time)
 	// user.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -889,6 +1036,62 @@ func init() {
 	useridentityDescCreatedAt := useridentityFields[3].Descriptor()
 	// useridentity.DefaultCreatedAt holds the default value on creation for the created_at field.
 	useridentity.DefaultCreatedAt = useridentityDescCreatedAt.Default.(func() time.Time)
+	usernotificationFields := schema.UserNotification{}.Fields()
+	_ = usernotificationFields
+	// usernotificationDescKind is the schema descriptor for kind field.
+	usernotificationDescKind := usernotificationFields[1].Descriptor()
+	// usernotification.KindValidator is a validator for the "kind" field. It is called by the builders before save.
+	usernotification.KindValidator = func() func(string) error {
+		validators := usernotificationDescKind.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(kind string) error {
+			for _, fn := range fns {
+				if err := fn(kind); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// usernotificationDescTitle is the schema descriptor for title field.
+	usernotificationDescTitle := usernotificationFields[3].Descriptor()
+	// usernotification.TitleValidator is a validator for the "title" field. It is called by the builders before save.
+	usernotification.TitleValidator = func() func(string) error {
+		validators := usernotificationDescTitle.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(title string) error {
+			for _, fn := range fns {
+				if err := fn(title); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// usernotificationDescContent is the schema descriptor for content field.
+	usernotificationDescContent := usernotificationFields[4].Descriptor()
+	// usernotification.DefaultContent holds the default value on creation for the content field.
+	usernotification.DefaultContent = usernotificationDescContent.Default.(string)
+	// usernotificationDescLink is the schema descriptor for link field.
+	usernotificationDescLink := usernotificationFields[5].Descriptor()
+	// usernotification.DefaultLink holds the default value on creation for the link field.
+	usernotification.DefaultLink = usernotificationDescLink.Default.(string)
+	// usernotification.LinkValidator is a validator for the "link" field. It is called by the builders before save.
+	usernotification.LinkValidator = usernotificationDescLink.Validators[0].(func(string) error)
+	// usernotificationDescDedupeKey is the schema descriptor for dedupe_key field.
+	usernotificationDescDedupeKey := usernotificationFields[6].Descriptor()
+	// usernotification.DedupeKeyValidator is a validator for the "dedupe_key" field. It is called by the builders before save.
+	usernotification.DedupeKeyValidator = usernotificationDescDedupeKey.Validators[0].(func(string) error)
+	// usernotificationDescCreatedAt is the schema descriptor for created_at field.
+	usernotificationDescCreatedAt := usernotificationFields[8].Descriptor()
+	// usernotification.DefaultCreatedAt holds the default value on creation for the created_at field.
+	usernotification.DefaultCreatedAt = usernotificationDescCreatedAt.Default.(func() time.Time)
 	usersubscriptionFields := schema.UserSubscription{}.Fields()
 	_ = usersubscriptionFields
 	// usersubscriptionDescCreatedAt is the schema descriptor for created_at field.

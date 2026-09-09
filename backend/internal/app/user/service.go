@@ -14,7 +14,7 @@ import (
 )
 
 // BalanceAlertFunc 余额预警回调（异步调用，不阻塞主流程）。
-type BalanceAlertFunc func(email string, balance float64, threshold float64)
+type BalanceAlertFunc func(userID int, email string, balance float64, threshold float64)
 
 // Service 用户应用服务。
 type Service struct {
@@ -336,7 +336,7 @@ func (s *Service) checkBalanceAlert(ctx context.Context, user User, beforeBalanc
 	// 余额从高于阈值降到低于阈值，且尚未通知过
 	if user.Balance < threshold && !user.BalanceAlertNotified {
 		_ = s.repo.SetBalanceAlertNotified(ctx, user.ID, true)
-		go s.onBalanceAlert(user.Email, user.Balance, threshold)
+		go s.onBalanceAlert(user.ID, user.Email, user.Balance, threshold)
 	}
 	// 余额回到阈值以上（充值），重置通知状态
 	if user.Balance >= threshold && user.BalanceAlertNotified {

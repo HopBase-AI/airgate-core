@@ -30,4 +30,6 @@ var (
 	ErrMemberNoAccount = errors.New("该成员没有登录账号")
 	// ErrQuotaRequired 有登录账号的成员额度必填（>0）；0=不限只保留给老模型成员。
 	ErrQuotaRequired = errors.New("成员额度必填，请填写大于 0 的额度")
+	// ErrDepartmentNotFound 指定的部门不存在或不属于当前企业主。
+	ErrDepartmentNotFound = errors.New("部门不存在")
 )

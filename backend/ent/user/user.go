@@ -31,6 +31,8 @@ const (
 	FieldCanAuthorBlog = "can_author_blog"
 	// FieldIsEnterpriseOwner holds the string denoting the is_enterprise_owner field in the database.
 	FieldIsEnterpriseOwner = "is_enterprise_owner"
+	// FieldBillingPeriodAnchor holds the string denoting the billing_period_anchor field in the database.
+	FieldBillingPeriodAnchor = "billing_period_anchor"
 	// FieldMaxConcurrency holds the string denoting the max_concurrency field in the database.
 	FieldMaxConcurrency = "max_concurrency"
 	// FieldTotpSecret holds the string denoting the totp_secret field in the database.
@@ -67,6 +69,8 @@ const (
 	EdgeAPIKeys = "api_keys"
 	// EdgeMembers holds the string denoting the members edge name in mutations.
 	EdgeMembers = "members"
+	// EdgeDepartments holds the string denoting the departments edge name in mutations.
+	EdgeDepartments = "departments"
 	// EdgeMembership holds the string denoting the membership edge name in mutations.
 	EdgeMembership = "membership"
 	// EdgeSubscriptions holds the string denoting the subscriptions edge name in mutations.
@@ -95,6 +99,13 @@ const (
 	MembersInverseTable = "members"
 	// MembersColumn is the table column denoting the members relation/edge.
 	MembersColumn = "user_members"
+	// DepartmentsTable is the table that holds the departments relation/edge.
+	DepartmentsTable = "departments"
+	// DepartmentsInverseTable is the table name for the Department entity.
+	// It exists in this package in order to avoid circular dependency with the "department" package.
+	DepartmentsInverseTable = "departments"
+	// DepartmentsColumn is the table column denoting the departments relation/edge.
+	DepartmentsColumn = "user_departments"
 	// MembershipTable is the table that holds the membership relation/edge.
 	MembershipTable = "users"
 	// MembershipInverseTable is the table name for the Member entity.
@@ -148,6 +159,7 @@ var Columns = []string{
 	FieldRole,
 	FieldCanAuthorBlog,
 	FieldIsEnterpriseOwner,
+	FieldBillingPeriodAnchor,
 	FieldMaxConcurrency,
 	FieldTotpSecret,
 	FieldGroupRates,
@@ -388,6 +400,11 @@ func ByIsEnterpriseOwner(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldIsEnterpriseOwner, opts...).ToFunc()
 }
 
+// ByBillingPeriodAnchor orders the results by the billing_period_anchor field.
+func ByBillingPeriodAnchor(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBillingPeriodAnchor, opts...).ToFunc()
+}
+
 // ByMaxConcurrency orders the results by the max_concurrency field.
 func ByMaxConcurrency(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldMaxConcurrency, opts...).ToFunc()
@@ -486,6 +503,20 @@ func ByMembers(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByDepartmentsCount orders the results by departments count.
+func ByDepartmentsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newDepartmentsStep(), opts...)
+	}
+}
+
+// ByDepartments orders the results by departments terms.
+func ByDepartments(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newDepartmentsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByMembershipField orders the results by membership field.
 func ByMembershipField(field string, opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -574,6 +605,13 @@ func newMembersStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(MembersInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, MembersTable, MembersColumn),
+	)
+}
+func newDepartmentsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(DepartmentsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, DepartmentsTable, DepartmentsColumn),
 	)
 }
 func newMembershipStep() *sqlgraph.Step {

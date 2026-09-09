@@ -281,6 +281,10 @@ type apiKeyStubRepository struct {
 	memberOwned func(context.Context, int, int) (bool, error)
 }
 
+func (s apiKeyStubRepository) DepartmentOwnedBy(_ context.Context, _ int, departmentID int) (bool, error) {
+	return departmentID == 9, nil
+}
+
 func (s apiKeyStubRepository) MemberOwnedBy(ctx context.Context, userID, memberID int) (bool, error) {
 	if s.memberOwned == nil {
 		return false, nil

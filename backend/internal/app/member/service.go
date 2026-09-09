@@ -8,6 +8,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/DouDOU-start/airgate-core/internal/app/audit"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/pkg/pagination"
 	"github.com/DouDOU-start/airgate-core/internal/pkg/period"
@@ -21,13 +22,17 @@ import (
 // 因此写操作完成后会按成员名下 key 的 hash 逐个失效缓存；失效失败不影响写入结果
 // （最多 apiKeyCacheTTL 后自然生效）。
 type Service struct {
-	repo Repository
-	now  func() time.Time
+	repo  Repository
+	audit audit.Recorder
+	now   func() time.Time
 }
 
-// NewService 创建成员服务。
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo, now: time.Now}
+// NewService 创建成员服务；recorder 为 nil 时不写审计。
+func NewService(repo Repository, recorder audit.Recorder) *Service {
+	if recorder == nil {
+		recorder = audit.Noop{}
+	}
+	return &Service{repo: repo, audit: recorder, now: time.Now}
 }
 
 // List 查询当前用户名下的成员，并附带本期已用 / 密钥数 / 今日与近 30 天成本。
@@ -110,7 +115,18 @@ func (s *Service) Create(ctx context.Context, ownerID int, input CreateInput) (M
 	if err != nil {
 		return Member{}, err
 	}
+	departmentID, hasDepartment, err := s.resolveDepartment(ctx, ownerID, input.DepartmentID)
+	if err != nil {
+		return Member{}, err
+	}
+	// 账期对齐：锚点继承企业账期锚点、本期起点按锚点逐月对齐——部门/成员/企业三层「本期」同窗，
+	// 否则会出现「部门本期已用 < 成员本期已用」的父子矛盾。
+	anchor, err := s.repo.OwnerBillingAnchor(ctx, ownerID)
+	if err != nil {
+		return Member{}, err
+	}
 	now := s.now()
+	start, _, _ := period.Window(anchor, now, now)
 	email := strings.TrimSpace(input.Email)
 	note := strings.TrimSpace(input.Note)
 	mutation := Mutation{
@@ -122,8 +138,10 @@ func (s *Service) Create(ctx context.Context, ownerID int, input CreateInput) (M
 		QuotaPeriod:        &quotaPeriod,
 		AllowedGroupIDs:    allowed,
 		HasAllowedGroupIDs: true,
-		PeriodAnchor:       &now,
-		PeriodStart:        &now,
+		PeriodAnchor:       &anchor,
+		PeriodStart:        &start,
+		DepartmentID:       departmentID,
+		HasDepartmentID:    hasDepartment,
 	}
 
 	var item Member
@@ -147,8 +165,44 @@ func (s *Service) Create(ctx context.Context, ownerID int, input CreateInput) (M
 		}
 	}
 	logger.Info("member_created", sdk.LogFieldUserID, ownerID, "member_id", item.ID, "with_account", item.AccountUserID > 0)
+	s.audit.Record(ctx, audit.Entry{
+		OwnerID: ownerID, Action: audit.ActionMemberCreate, TargetType: audit.TargetMember,
+		TargetID: item.ID, TargetName: item.Name, After: snapshot(item),
+	})
 	Decorate(&item, now)
 	return item, nil
+}
+
+// resolveDepartment 校验部门归属：nil 不动；0 = 未分配；>0 必须是本企业主的部门。
+func (s *Service) resolveDepartment(ctx context.Context, ownerID int, raw *int64) (departmentID *int, has bool, err error) {
+	if raw == nil {
+		return nil, false, nil
+	}
+	if *raw <= 0 {
+		return nil, true, nil
+	}
+	id := int(*raw)
+	owned, err := s.repo.DepartmentOwnedBy(ctx, ownerID, id)
+	if err != nil {
+		return nil, false, err
+	}
+	if !owned {
+		return nil, false, ErrDepartmentNotFound
+	}
+	return &id, true, nil
+}
+
+// snapshot 审计用的关键字段快照（不含密码）。
+func snapshot(m Member) map[string]any {
+	return map[string]any{
+		"name":              m.Name,
+		"email":             m.Email,
+		"quota_usd":         m.QuotaUSD,
+		"quota_period":      m.QuotaPeriod,
+		"status":            m.Status,
+		"allowed_group_ids": append([]int64{}, m.AllowedGroupIDs...),
+		"department_id":     m.DepartmentID,
+	}
 }
 
 // buildAccount 校验邮箱/密码并生成账号写入；邮箱与全站用户唯一。
@@ -250,6 +304,12 @@ func (s *Service) Update(ctx context.Context, ownerID, id int, input UpdateInput
 		mutation.AllowedGroupIDs = allowed
 		mutation.HasAllowedGroupIDs = true
 	}
+	if departmentID, has, err := s.resolveDepartment(ctx, ownerID, input.DepartmentID); err != nil {
+		return Member{}, err
+	} else if has {
+		mutation.DepartmentID = departmentID
+		mutation.HasDepartmentID = true
+	}
 
 	// 账号资料（邮箱/密码）先于成员资料写：有账号的成员邮箱是登录凭证，须全站唯一。
 	current, err := s.repo.FindOwned(ctx, ownerID, id)
@@ -318,8 +378,19 @@ func (s *Service) Update(ctx context.Context, ownerID, id int, input UpdateInput
 	if mutation.HasAllowedGroupIDs {
 		logger.Info("member_groups_updated", sdk.LogFieldUserID, ownerID, "member_id", id, "groups", len(mutation.AllowedGroupIDs))
 	}
+	if mutation.HasDepartmentID {
+		logger.Info("member_department_changed", sdk.LogFieldUserID, ownerID, "member_id", id, "department_id", updated.DepartmentID)
+	}
 	s.invalidateKeyCaches(ctx, id)
 	auth.InvalidateTeamIdentity(updated.AccountUserID)
+	after := snapshot(updated)
+	if input.Password != nil && *input.Password != "" {
+		after["password_reset"] = true
+	}
+	s.audit.Record(ctx, audit.Entry{
+		OwnerID: ownerID, Action: audit.ActionMemberUpdate, TargetType: audit.TargetMember,
+		TargetID: id, TargetName: updated.Name, Before: snapshot(current), After: after,
+	})
 	Decorate(&updated, s.now())
 	return updated, nil
 }
@@ -333,7 +404,8 @@ func (s *Service) Delete(ctx context.Context, ownerID, id int) error {
 		logger.Warn("member_key_hash_lookup_failed", "member_id", id, sdk.LogFieldError, err)
 	}
 	accountUserID := 0
-	if current, err := s.repo.FindOwned(ctx, ownerID, id); err == nil {
+	current, findErr := s.repo.FindOwned(ctx, ownerID, id)
+	if findErr == nil {
 		accountUserID = current.AccountUserID
 	}
 	if err := s.repo.DeleteOwned(ctx, ownerID, id); err != nil {
@@ -345,6 +417,12 @@ func (s *Service) Delete(ctx context.Context, ownerID, id int) error {
 	}
 	auth.InvalidateTeamIdentity(accountUserID)
 	logger.Info("member_deleted", sdk.LogFieldUserID, ownerID, "member_id", id, "keys", len(hashes), "account_user_id", accountUserID)
+	if findErr == nil {
+		s.audit.Record(ctx, audit.Entry{
+			OwnerID: ownerID, Action: audit.ActionMemberDelete, TargetType: audit.TargetMember,
+			TargetID: id, TargetName: current.Name, Before: snapshot(current),
+		})
+	}
 	return nil
 }
 
@@ -359,6 +437,10 @@ func (s *Service) ResetPeriod(ctx context.Context, ownerID, id int) (Member, err
 	}
 	logger.Info("member_period_reset", sdk.LogFieldUserID, ownerID, "member_id", id)
 	s.invalidateKeyCaches(ctx, id)
+	s.audit.Record(ctx, audit.Entry{
+		OwnerID: ownerID, Action: audit.ActionMemberResetPeriod, TargetType: audit.TargetMember,
+		TargetID: id, TargetName: updated.Name,
+	})
 	Decorate(&updated, now)
 	return updated, nil
 }

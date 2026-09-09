@@ -9,6 +9,14 @@ import (
 )
 
 func toUserRespFromDomain(item appuser.User) dto.UserResp {
+	resp := userRespFromDomain(item)
+	// 后台列表：成员账号标注所属企业主（/users/me 的同名字段由 applyMembershipToUserResp 填）。
+	resp.TeamOwnerID = int64(item.TeamOwnerID)
+	resp.TeamOwnerEmail = item.TeamOwnerEmail
+	return resp
+}
+
+func userRespFromDomain(item appuser.User) dto.UserResp {
 	return dto.UserResp{
 		ID:                    int64(item.ID),
 		Email:                 item.Email,
@@ -94,13 +102,15 @@ func applyMembershipToUserResp(resp *dto.UserResp, brief appuser.MembershipBrief
 	}
 	resp.MemberAllowedGroupIDs = brief.AllowedGroupIDs
 	resp.TeamOwnerEmail = brief.OwnerEmail
-	// 余额展示口径：有额度的成员看本期剩余额度（企业主余额对他无意义也不该暴露）；
-	// 不限额的老模型成员消耗直接落企业主，才看企业主余额。
-	if brief.QuotaUSD > 0 {
-		resp.Balance = max(0, brief.QuotaUSD-brief.UsedQuota)
-	} else {
-		resp.Balance = brief.OwnerBalance
+	resp.MemberDepartmentID = int64(brief.DepartmentID)
+	resp.MemberDepartmentName = brief.DepartmentName
+	if brief.DepartmentLimited {
+		resp.DepartmentQuotaUSD = brief.DepartmentQuotaUSD
+		resp.DepartmentUsedQuota = brief.DepartmentUsedQuota
 	}
+	// 余额展示口径：三层取小（成员本期剩余、部门本期剩余、企业主余额）——每一层看到的「剩余」
+	// 都必须是三层取小，否则会出现成员看到自己还有 $100、一发请求就 402 的「看得到花不动」。
+	resp.Balance = brief.EffectiveRemaining
 	resp.MaxConcurrency = brief.OwnerMaxConc
 	// 成员不是分销/企业主主体：这些能力位随成员账号本身（默认关）即可，不继承 owner。
 }

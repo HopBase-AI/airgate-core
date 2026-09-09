@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
+	"github.com/DouDOU-start/airgate-core/ent/department"
 	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
 	"github.com/DouDOU-start/airgate-core/ent/user"
@@ -282,6 +283,25 @@ func (mu *MemberUpdate) SetAccount(u *User) *MemberUpdate {
 	return mu.SetAccountID(u.ID)
 }
 
+// SetDepartmentID sets the "department" edge to the Department entity by ID.
+func (mu *MemberUpdate) SetDepartmentID(id int) *MemberUpdate {
+	mu.mutation.SetDepartmentID(id)
+	return mu
+}
+
+// SetNillableDepartmentID sets the "department" edge to the Department entity by ID if the given value is not nil.
+func (mu *MemberUpdate) SetNillableDepartmentID(id *int) *MemberUpdate {
+	if id != nil {
+		mu = mu.SetDepartmentID(*id)
+	}
+	return mu
+}
+
+// SetDepartment sets the "department" edge to the Department entity.
+func (mu *MemberUpdate) SetDepartment(d *Department) *MemberUpdate {
+	return mu.SetDepartmentID(d.ID)
+}
+
 // Mutation returns the MemberMutation object of the builder.
 func (mu *MemberUpdate) Mutation() *MemberMutation {
 	return mu.mutation
@@ -317,6 +337,12 @@ func (mu *MemberUpdate) RemoveAPIKeys(a ...*APIKey) *MemberUpdate {
 // ClearAccount clears the "account" edge to the User entity.
 func (mu *MemberUpdate) ClearAccount() *MemberUpdate {
 	mu.mutation.ClearAccount()
+	return mu
+}
+
+// ClearDepartment clears the "department" edge to the Department entity.
+func (mu *MemberUpdate) ClearDepartment() *MemberUpdate {
+	mu.mutation.ClearDepartment()
 	return mu
 }
 
@@ -561,6 +587,35 @@ func (mu *MemberUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if mu.mutation.DepartmentCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   member.DepartmentTable,
+			Columns: []string{member.DepartmentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := mu.mutation.DepartmentIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   member.DepartmentTable,
+			Columns: []string{member.DepartmentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -839,6 +894,25 @@ func (muo *MemberUpdateOne) SetAccount(u *User) *MemberUpdateOne {
 	return muo.SetAccountID(u.ID)
 }
 
+// SetDepartmentID sets the "department" edge to the Department entity by ID.
+func (muo *MemberUpdateOne) SetDepartmentID(id int) *MemberUpdateOne {
+	muo.mutation.SetDepartmentID(id)
+	return muo
+}
+
+// SetNillableDepartmentID sets the "department" edge to the Department entity by ID if the given value is not nil.
+func (muo *MemberUpdateOne) SetNillableDepartmentID(id *int) *MemberUpdateOne {
+	if id != nil {
+		muo = muo.SetDepartmentID(*id)
+	}
+	return muo
+}
+
+// SetDepartment sets the "department" edge to the Department entity.
+func (muo *MemberUpdateOne) SetDepartment(d *Department) *MemberUpdateOne {
+	return muo.SetDepartmentID(d.ID)
+}
+
 // Mutation returns the MemberMutation object of the builder.
 func (muo *MemberUpdateOne) Mutation() *MemberMutation {
 	return muo.mutation
@@ -874,6 +948,12 @@ func (muo *MemberUpdateOne) RemoveAPIKeys(a ...*APIKey) *MemberUpdateOne {
 // ClearAccount clears the "account" edge to the User entity.
 func (muo *MemberUpdateOne) ClearAccount() *MemberUpdateOne {
 	muo.mutation.ClearAccount()
+	return muo
+}
+
+// ClearDepartment clears the "department" edge to the Department entity.
+func (muo *MemberUpdateOne) ClearDepartment() *MemberUpdateOne {
+	muo.mutation.ClearDepartment()
 	return muo
 }
 
@@ -1148,6 +1228,35 @@ func (muo *MemberUpdateOne) sqlSave(ctx context.Context) (_node *Member, err err
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if muo.mutation.DepartmentCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   member.DepartmentTable,
+			Columns: []string{member.DepartmentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := muo.mutation.DepartmentIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   member.DepartmentTable,
+			Columns: []string{member.DepartmentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

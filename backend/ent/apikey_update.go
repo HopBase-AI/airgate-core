@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
+	"github.com/DouDOU-start/airgate-core/ent/department"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
@@ -325,6 +326,25 @@ func (aku *APIKeyUpdate) SetMember(m *Member) *APIKeyUpdate {
 	return aku.SetMemberID(m.ID)
 }
 
+// SetDepartmentID sets the "department" edge to the Department entity by ID.
+func (aku *APIKeyUpdate) SetDepartmentID(id int) *APIKeyUpdate {
+	aku.mutation.SetDepartmentID(id)
+	return aku
+}
+
+// SetNillableDepartmentID sets the "department" edge to the Department entity by ID if the given value is not nil.
+func (aku *APIKeyUpdate) SetNillableDepartmentID(id *int) *APIKeyUpdate {
+	if id != nil {
+		aku = aku.SetDepartmentID(*id)
+	}
+	return aku
+}
+
+// SetDepartment sets the "department" edge to the Department entity.
+func (aku *APIKeyUpdate) SetDepartment(d *Department) *APIKeyUpdate {
+	return aku.SetDepartmentID(d.ID)
+}
+
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
 func (aku *APIKeyUpdate) AddUsageLogIDs(ids ...int) *APIKeyUpdate {
 	aku.mutation.AddUsageLogIDs(ids...)
@@ -360,6 +380,12 @@ func (aku *APIKeyUpdate) ClearGroup() *APIKeyUpdate {
 // ClearMember clears the "member" edge to the Member entity.
 func (aku *APIKeyUpdate) ClearMember() *APIKeyUpdate {
 	aku.mutation.ClearMember()
+	return aku
+}
+
+// ClearDepartment clears the "department" edge to the Department entity.
+func (aku *APIKeyUpdate) ClearDepartment() *APIKeyUpdate {
+	aku.mutation.ClearDepartment()
 	return aku
 }
 
@@ -624,6 +650,35 @@ func (aku *APIKeyUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if aku.mutation.DepartmentCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.DepartmentTable,
+			Columns: []string{apikey.DepartmentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := aku.mutation.DepartmentIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.DepartmentTable,
+			Columns: []string{apikey.DepartmentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -988,6 +1043,25 @@ func (akuo *APIKeyUpdateOne) SetMember(m *Member) *APIKeyUpdateOne {
 	return akuo.SetMemberID(m.ID)
 }
 
+// SetDepartmentID sets the "department" edge to the Department entity by ID.
+func (akuo *APIKeyUpdateOne) SetDepartmentID(id int) *APIKeyUpdateOne {
+	akuo.mutation.SetDepartmentID(id)
+	return akuo
+}
+
+// SetNillableDepartmentID sets the "department" edge to the Department entity by ID if the given value is not nil.
+func (akuo *APIKeyUpdateOne) SetNillableDepartmentID(id *int) *APIKeyUpdateOne {
+	if id != nil {
+		akuo = akuo.SetDepartmentID(*id)
+	}
+	return akuo
+}
+
+// SetDepartment sets the "department" edge to the Department entity.
+func (akuo *APIKeyUpdateOne) SetDepartment(d *Department) *APIKeyUpdateOne {
+	return akuo.SetDepartmentID(d.ID)
+}
+
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
 func (akuo *APIKeyUpdateOne) AddUsageLogIDs(ids ...int) *APIKeyUpdateOne {
 	akuo.mutation.AddUsageLogIDs(ids...)
@@ -1023,6 +1097,12 @@ func (akuo *APIKeyUpdateOne) ClearGroup() *APIKeyUpdateOne {
 // ClearMember clears the "member" edge to the Member entity.
 func (akuo *APIKeyUpdateOne) ClearMember() *APIKeyUpdateOne {
 	akuo.mutation.ClearMember()
+	return akuo
+}
+
+// ClearDepartment clears the "department" edge to the Department entity.
+func (akuo *APIKeyUpdateOne) ClearDepartment() *APIKeyUpdateOne {
+	akuo.mutation.ClearDepartment()
 	return akuo
 }
 
@@ -1317,6 +1397,35 @@ func (akuo *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err er
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(member.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if akuo.mutation.DepartmentCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.DepartmentTable,
+			Columns: []string{apikey.DepartmentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := akuo.mutation.DepartmentIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.DepartmentTable,
+			Columns: []string{apikey.DepartmentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

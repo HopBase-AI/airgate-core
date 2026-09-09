@@ -118,6 +118,18 @@ func (s *stubUsageRepository) StatsByGroup(ctx context.Context, filter StatsFilt
 	return nil, nil
 }
 
+func (s *stubUsageRepository) StatsByDepartment(context.Context, StatsFilter) ([]DepartmentStats, error) {
+	return nil, nil
+}
+
+func (s *stubUsageRepository) StatsByMember(context.Context, StatsFilter) ([]MemberStats, error) {
+	return nil, nil
+}
+
+func (s *stubUsageRepository) StatsByAPIKey(context.Context, StatsFilter) ([]APIKeyStats, error) {
+	return nil, nil
+}
+
 func (s *stubUsageRepository) TrendEntries(ctx context.Context, filter TrendFilter) ([]TrendEntry, error) {
 	if s.trendEntriesFn != nil {
 		return s.trendEntriesFn(ctx, filter)

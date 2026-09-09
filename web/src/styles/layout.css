@@ -170,3 +170,54 @@
     margin-top: 2.5rem !important;
   }
 }
+
+/* 团队页企业总览条：余额 / 已分配给部门 / 已分配给成员 / 本期消耗 / 账期 */
+.ag-team-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+.ag-team-overview-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--ag-border, var(--heroui-border, #e5e7eb));
+  border-radius: 0.75rem;
+  min-width: 0;
+}
+.ag-team-overview-label {
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  color: var(--ag-text-tertiary, #6b7280);
+}
+.ag-team-overview-value {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5rem;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ag-team-overview-item[data-tone="muted"] .ag-team-overview-value {
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+.ag-team-overview-item[data-tone="warning"] .ag-team-overview-value,
+.ag-team-overview-item[data-tone="warning"] .ag-team-overview-hint {
+  color: var(--ag-warning, #b45309);
+}
+.ag-team-overview-hint {
+  margin: 0;
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  color: var(--ag-text-tertiary, #6b7280);
+}
+.ag-team-overview-action {
+  justify-content: center;
+  align-items: flex-start;
+  border-style: dashed;
+}

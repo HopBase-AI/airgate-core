@@ -11,6 +11,8 @@ type APIKeyListParams = PageReq & {
   member_id?: number;
   /** 只看未归属团队成员的 key（与 member_id 互斥） */
   member_unassigned?: boolean;
+  /** 按有效部门筛选；0 = 未分配 */
+  department_id?: number;
   group_id?: number;
   /** 展示态口径：过期优先于启用/停用 */
   status?: 'active' | 'disabled' | 'expired';

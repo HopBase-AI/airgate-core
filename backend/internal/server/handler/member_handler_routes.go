@@ -20,12 +20,17 @@ func (h *MemberHandler) ListMembers(c *gin.Context) {
 		response.BindError(c, err)
 		return
 	}
-	result, err := h.service.List(c.Request.Context(), userID, appmember.ListFilter{
+	filter := appmember.ListFilter{
 		Page:     query.Page,
 		PageSize: query.PageSize,
 		Keyword:  query.Keyword,
 		Status:   query.Status,
-	}, c.Query("tz"))
+	}
+	if query.DepartmentID != nil && *query.DepartmentID >= 0 {
+		departmentID := int(*query.DepartmentID)
+		filter.DepartmentID = &departmentID
+	}
+	result, err := h.service.List(c.Request.Context(), userID, filter, c.Query("tz"))
 	if err != nil {
 		httpCode, message := h.handleError("查询团队成员失败", "查询失败", err)
 		response.Error(c, httpCode, httpCode, message)
@@ -50,7 +55,7 @@ func (h *MemberHandler) CreateMember(c *gin.Context) {
 		response.BindError(c, err)
 		return
 	}
-	item, err := h.service.Create(c.Request.Context(), userID, appmember.CreateInput{
+	item, err := h.service.Create(auditContext(c).Request.Context(), userID, appmember.CreateInput{
 		Name:            req.Name,
 		Email:           req.Email,
 		Password:        req.Password,
@@ -58,6 +63,7 @@ func (h *MemberHandler) CreateMember(c *gin.Context) {
 		QuotaUSD:        req.QuotaUSD,
 		QuotaPeriod:     req.QuotaPeriod,
 		AllowedGroupIDs: req.AllowedGroupIDs,
+		DepartmentID:    req.DepartmentID,
 	})
 	if err != nil {
 		httpCode, message := h.handleError("创建团队成员失败", "创建失败", err)
@@ -84,7 +90,7 @@ func (h *MemberHandler) UpdateMember(c *gin.Context) {
 		response.BindError(c, err)
 		return
 	}
-	item, err := h.service.Update(c.Request.Context(), userID, id, appmember.UpdateInput{
+	item, err := h.service.Update(auditContext(c).Request.Context(), userID, id, appmember.UpdateInput{
 		Name:            req.Name,
 		Email:           req.Email,
 		Password:        req.Password,
@@ -93,6 +99,7 @@ func (h *MemberHandler) UpdateMember(c *gin.Context) {
 		QuotaPeriod:     req.QuotaPeriod,
 		Status:          req.Status,
 		AllowedGroupIDs: req.AllowedGroupIDs,
+		DepartmentID:    req.DepartmentID,
 	})
 	if err != nil {
 		httpCode, message := h.handleError("更新团队成员失败", "更新失败", err)
@@ -114,7 +121,7 @@ func (h *MemberHandler) DeleteMember(c *gin.Context) {
 		response.BadRequest(c, "无效的成员 ID")
 		return
 	}
-	if err := h.service.Delete(c.Request.Context(), userID, id); err != nil {
+	if err := h.service.Delete(auditContext(c).Request.Context(), userID, id); err != nil {
 		httpCode, message := h.handleError("删除团队成员失败", "删除失败", err)
 		response.Error(c, httpCode, httpCode, message)
 		return
@@ -134,7 +141,7 @@ func (h *MemberHandler) ResetMemberPeriod(c *gin.Context) {
 		response.BadRequest(c, "无效的成员 ID")
 		return
 	}
-	item, err := h.service.ResetPeriod(c.Request.Context(), userID, id)
+	item, err := h.service.ResetPeriod(auditContext(c).Request.Context(), userID, id)
 	if err != nil {
 		httpCode, message := h.handleError("重置成员额度周期失败", "重置失败", err)
 		response.Error(c, httpCode, httpCode, message)

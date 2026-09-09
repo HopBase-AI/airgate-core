@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
+	"github.com/DouDOU-start/airgate-core/ent/department"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
@@ -22,15 +23,16 @@ import (
 // APIKeyQuery is the builder for querying APIKey entities.
 type APIKeyQuery struct {
 	config
-	ctx           *QueryContext
-	order         []apikey.OrderOption
-	inters        []Interceptor
-	predicates    []predicate.APIKey
-	withUser      *UserQuery
-	withGroup     *GroupQuery
-	withMember    *MemberQuery
-	withUsageLogs *UsageLogQuery
-	withFKs       bool
+	ctx            *QueryContext
+	order          []apikey.OrderOption
+	inters         []Interceptor
+	predicates     []predicate.APIKey
+	withUser       *UserQuery
+	withGroup      *GroupQuery
+	withMember     *MemberQuery
+	withDepartment *DepartmentQuery
+	withUsageLogs  *UsageLogQuery
+	withFKs        bool
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -126,6 +128,28 @@ func (akq *APIKeyQuery) QueryMember() *MemberQuery {
 			sqlgraph.From(apikey.Table, apikey.FieldID, selector),
 			sqlgraph.To(member.Table, member.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, apikey.MemberTable, apikey.MemberColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(akq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryDepartment chains the current query on the "department" edge.
+func (akq *APIKeyQuery) QueryDepartment() *DepartmentQuery {
+	query := (&DepartmentClient{config: akq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := akq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := akq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(apikey.Table, apikey.FieldID, selector),
+			sqlgraph.To(department.Table, department.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, apikey.DepartmentTable, apikey.DepartmentColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(akq.driver.Dialect(), step)
 		return fromU, nil
@@ -342,15 +366,16 @@ func (akq *APIKeyQuery) Clone() *APIKeyQuery {
 		return nil
 	}
 	return &APIKeyQuery{
-		config:        akq.config,
-		ctx:           akq.ctx.Clone(),
-		order:         append([]apikey.OrderOption{}, akq.order...),
-		inters:        append([]Interceptor{}, akq.inters...),
-		predicates:    append([]predicate.APIKey{}, akq.predicates...),
-		withUser:      akq.withUser.Clone(),
-		withGroup:     akq.withGroup.Clone(),
-		withMember:    akq.withMember.Clone(),
-		withUsageLogs: akq.withUsageLogs.Clone(),
+		config:         akq.config,
+		ctx:            akq.ctx.Clone(),
+		order:          append([]apikey.OrderOption{}, akq.order...),
+		inters:         append([]Interceptor{}, akq.inters...),
+		predicates:     append([]predicate.APIKey{}, akq.predicates...),
+		withUser:       akq.withUser.Clone(),
+		withGroup:      akq.withGroup.Clone(),
+		withMember:     akq.withMember.Clone(),
+		withDepartment: akq.withDepartment.Clone(),
+		withUsageLogs:  akq.withUsageLogs.Clone(),
 		// clone intermediate query.
 		sql:  akq.sql.Clone(),
 		path: akq.path,
@@ -387,6 +412,17 @@ func (akq *APIKeyQuery) WithMember(opts ...func(*MemberQuery)) *APIKeyQuery {
 		opt(query)
 	}
 	akq.withMember = query
+	return akq
+}
+
+// WithDepartment tells the query-builder to eager-load the nodes that are connected to
+// the "department" edge. The optional arguments are used to configure the query builder of the edge.
+func (akq *APIKeyQuery) WithDepartment(opts ...func(*DepartmentQuery)) *APIKeyQuery {
+	query := (&DepartmentClient{config: akq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	akq.withDepartment = query
 	return akq
 }
 
@@ -480,14 +516,15 @@ func (akq *APIKeyQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*APIK
 		nodes       = []*APIKey{}
 		withFKs     = akq.withFKs
 		_spec       = akq.querySpec()
-		loadedTypes = [4]bool{
+		loadedTypes = [5]bool{
 			akq.withUser != nil,
 			akq.withGroup != nil,
 			akq.withMember != nil,
+			akq.withDepartment != nil,
 			akq.withUsageLogs != nil,
 		}
 	)
-	if akq.withUser != nil || akq.withGroup != nil || akq.withMember != nil {
+	if akq.withUser != nil || akq.withGroup != nil || akq.withMember != nil || akq.withDepartment != nil {
 		withFKs = true
 	}
 	if withFKs {
@@ -526,6 +563,12 @@ func (akq *APIKeyQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*APIK
 	if query := akq.withMember; query != nil {
 		if err := akq.loadMember(ctx, query, nodes, nil,
 			func(n *APIKey, e *Member) { n.Edges.Member = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := akq.withDepartment; query != nil {
+		if err := akq.loadDepartment(ctx, query, nodes, nil,
+			func(n *APIKey, e *Department) { n.Edges.Department = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -628,6 +671,38 @@ func (akq *APIKeyQuery) loadMember(ctx context.Context, query *MemberQuery, node
 		nodes, ok := nodeids[n.ID]
 		if !ok {
 			return fmt.Errorf(`unexpected foreign-key "member_api_keys" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
+func (akq *APIKeyQuery) loadDepartment(ctx context.Context, query *DepartmentQuery, nodes []*APIKey, init func(*APIKey), assign func(*APIKey, *Department)) error {
+	ids := make([]int, 0, len(nodes))
+	nodeids := make(map[int][]*APIKey)
+	for i := range nodes {
+		if nodes[i].department_api_keys == nil {
+			continue
+		}
+		fk := *nodes[i].department_api_keys
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(department.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "department_api_keys" returned %v`, n.ID)
 		}
 		for i := range nodes {
 			assign(nodes[i], n)

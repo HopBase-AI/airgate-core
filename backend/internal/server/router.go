@@ -124,6 +124,11 @@ func (s *Server) registerRoutes() {
 		accountGroup.PUT("/users/me/balance-alert", handlers.User.UpdateBalanceAlert)
 		accountGroup.GET("/users/me/balance-history", handlers.User.GetMyBalanceHistory)
 
+		// 站内通知：任何已登录用户（含成员账号）看自己的通知，不经企业主解析
+		accountGroup.GET("/notifications/me", handlers.Notification.ListMine)
+		accountGroup.GET("/notifications/me/unread-count", handlers.Notification.UnreadCount)
+		accountGroup.POST("/notifications/me/read", handlers.Notification.MarkRead)
+
 		// 团队成员（企业子账号）：主账号侧增删改、分配额度、重置本期。
 		// 企业客户专属能力,须管理员授予 is_enterprise_owner(管理员天然可用)。
 		memberGroup := accountGroup.Group("")
@@ -133,6 +138,15 @@ func (s *Server) registerRoutes() {
 		memberGroup.PUT("/members/:id", handlers.Member.UpdateMember)
 		memberGroup.DELETE("/members/:id", handlers.Member.DeleteMember)
 		memberGroup.POST("/members/:id/reset-period", handlers.Member.ResetMemberPeriod)
+		// 企业组织（部门）：三层额度的中间层；企业总览 / 账期 / 操作审计同属企业主能力。
+		memberGroup.GET("/departments", handlers.Department.ListDepartments)
+		memberGroup.POST("/departments", handlers.Department.CreateDepartment)
+		memberGroup.PUT("/departments/:id", handlers.Department.UpdateDepartment)
+		memberGroup.DELETE("/departments/:id", handlers.Department.DeleteDepartment)
+		memberGroup.POST("/departments/:id/reset-period", handlers.Department.ResetDepartmentPeriod)
+		memberGroup.GET("/team/overview", handlers.Department.TeamOverview)
+		memberGroup.PUT("/team/billing-period", handlers.Department.UpdateBillingPeriod)
+		memberGroup.GET("/team/audit-logs", handlers.Department.ListTeamAuditLogs)
 
 		// API Key 管理
 		accountGroup.GET("/api-keys", handlers.APIKey.ListKeys)
@@ -335,7 +349,8 @@ func (s *Server) registerRoutes() {
 	// 用于支付插件等面向用户的扩展，让普通用户能调用插件接口（创建充值订单、查询自己订单等）。
 	// 插件需自行根据 X-Airgate-User-ID 头识别用户，并校验数据归属。
 	extUserGroup := r.Group("/api/v1/ext-user")
-	extUserGroup.Use(middleware.JWTAuth(s.jwtMgr), middleware.RequireRoles("admin", "user"))
+	// 带 db：成员账号停用后经插件页面（充值/AI Chat/工作台）的会话同样即时失效，与核心会话口径一致。
+	extUserGroup.Use(middleware.JWTAuth(s.jwtMgr, s.db), middleware.RequireRoles("admin", "user"))
 	{
 		extUserGroup.Any("/:pluginName/*path", s.extensionProxy.Handle)
 	}

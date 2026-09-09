@@ -123,6 +123,13 @@ export interface UserResp {
   member_period_end?: string;
   member_allowed_group_ids?: number[];
   team_owner_email?: string;
+  /** 后台列表：成员账号所属企业主 id（0/缺省 = 不是成员账号） */
+  team_owner_id?: number;
+  /** 成员所属部门（0/缺省 = 未分配）与部门本期额度口径（部门不限额时缺省） */
+  member_department_id?: number;
+  member_department_name?: string;
+  department_quota_usd?: number;
+  department_used_quota?: number;
   created_at: string;
   updated_at: string;
 }
@@ -545,6 +552,10 @@ export interface APIKeyResp {
   /** 所属团队成员；null 表示不归属 */
   member_id: number | null;
   member_name?: string;
+  /** 有效部门（直挂 ?? 成员所属）；null 表示未分配。department_direct 表示直挂 */
+  department_id: number | null;
+  department_name?: string;
+  department_direct?: boolean;
   ip_whitelist?: string[];
   ip_blacklist?: string[];
   quota_usd: number;
@@ -569,6 +580,8 @@ export interface CreateAPIKeyReq {
   group_id: number;
   /** 归属团队成员；不传 / 0 表示不归属 */
   member_id?: number;
+  /** 直挂部门；不传 / 0 表示不直挂（有成员时跟随成员的部门） */
+  department_id?: number;
   ip_whitelist?: string[];
   ip_blacklist?: string[];
   quota_usd?: number;
@@ -584,6 +597,8 @@ export interface UpdateAPIKeyReq {
   group_id?: number;
   /** 不传不改动；传 0 解除成员归属 */
   member_id?: number;
+  /** 不传不改动；传 0 解除直挂部门 */
+  department_id?: number;
   ip_whitelist?: string[];
   ip_blacklist?: string[];
   quota_usd?: number;
@@ -623,6 +638,9 @@ export interface MemberResp {
   /** 是否有自己的登录账号（2026-09-04 起新建成员都有；老成员可能没有） */
   has_account: boolean;
   account_user_id?: number;
+  /** 所属部门；0 = 未分配 */
+  department_id: number;
+  department_name?: string;
   created_at: string;
   updated_at: string;
 }
@@ -636,6 +654,86 @@ export interface CreateMemberReq {
   quota_usd?: number;
   quota_period?: 'none' | 'monthly';
   allowed_group_ids?: number[];
+  /** 所属部门；不传 / 0 = 未分配 */
+  department_id?: number;
+}
+
+// ==================== Department (企业组织) ====================
+
+export interface DepartmentResp {
+  id: number;
+  name: string;
+  note: string;
+  sort: number;
+  /** 0 表示不限 */
+  quota_usd: number;
+  quota_period: 'none' | 'monthly';
+  /** 本期已用（账面口径） */
+  period_used: number;
+  period_start: string;
+  period_end?: string;
+  used_quota: number;
+  used_quota_actual: number;
+  member_count: number;
+  key_count: number;
+  /** 已分配给本部门成员的额度之和（限额之和，可超过部门额度） */
+  member_quota_total: number;
+  today_cost: number;
+  thirty_day_cost: number;
+  /** 部门负责人（成员 ID），0 = 未设；只接收本部门额度预警，无管理权限 */
+  manager_member_id: number;
+  manager_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateDepartmentReq {
+  name: string;
+  note?: string;
+  sort?: number;
+  quota_usd?: number;
+  quota_period?: 'none' | 'monthly';
+}
+
+export interface UpdateDepartmentReq {
+  name?: string;
+  note?: string;
+  sort?: number;
+  quota_usd?: number;
+  quota_period?: 'none' | 'monthly';
+  /** 部门负责人；不传 = 不动，0 = 清空，>0 须是本部门成员 */
+  manager_member_id?: number;
+}
+
+/** 企业层总览：「已分配」是限额之和而非预扣，允许超过企业余额 */
+export interface TeamOverviewResp {
+  balance: number;
+  department_count: number;
+  member_count: number;
+  department_quota_total: number;
+  member_quota_total: number;
+  unassigned_member_quota: number;
+  billing_day: number;
+  period_anchor: string;
+  period_start: string;
+  period_end: string;
+  period_used_actual: number;
+  period_used_billed: number;
+}
+
+export interface TeamAuditLogResp {
+  id: number;
+  actor_user_id: number;
+  actor_email: string;
+  action: string;
+  target_type: 'department' | 'member' | 'apikey' | 'team';
+  target_id: number;
+  target_name: string;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+  ip: string;
+  request_id: string;
+  created_at: string;
 }
 
 export interface UpdateMemberReq {
@@ -648,7 +746,8 @@ export interface UpdateMemberReq {
   quota_period?: 'none' | 'monthly';
   status?: 'active' | 'disabled';
   /** 传了即整体替换；空数组 = 清空白名单 */
-  allowed_group_ids?: number[];
+  allowed_group_ids?: number[];  /** 不传不改动；传 0 调出部门 */
+  department_id?: number;
 }
 
 // ==================== Subscription ====================
@@ -729,6 +828,9 @@ export interface UsageLogResp {
   member_id?: number;
   /** 成员名；成员已删除时为空 */
   member_name?: string;
+  /** 部门快照；0/缺省 = 未分配。部门已删除时无名 */
+  department_id?: number;
+  department_name?: string;
   account_id: number;
   account_name?: string;
   account_email?: string;
@@ -811,6 +913,9 @@ export interface UserUsageLogResp {
   member_id?: number;
   /** 成员名；成员已删除时为空 */
   member_name?: string;
+  /** 部门快照；0/缺省 = 未分配。部门已删除时无名 */
+  department_id?: number;
+  department_name?: string;
   group_id: number;
   platform: string;
   model: string;
@@ -912,6 +1017,8 @@ export interface UsageQuery extends PageReq {
   api_key_id?: number;
   /** 按团队成员筛选（主账号视角） */
   member_id?: number;
+  /** 按部门筛选；0 = 未分配 */
+  department_id?: number;
   account_id?: number;
   group_id?: number;
   platform?: string;
@@ -936,6 +1043,45 @@ export interface UsageStatsResp {
   by_user?: UserStats[];
   by_account?: AccountStats[];
   by_group?: GroupStats[];
+  /** 企业主分层下钻（按 breakdown 参数按需返回） */
+  by_department?: DepartmentStats[];
+  by_member?: MemberStats[];
+  by_key?: APIKeyStats[];
+}
+
+/** 按部门统计；department_id=0 为「未分配」 */
+export interface DepartmentStats {
+  department_id: number;
+  name: string;
+  requests: number;
+  tokens: number;
+  total_cost: number;
+  actual_cost: number;
+  billed_cost?: number;
+}
+
+/** 按成员统计；member_id=0 为企业主本人 / 未归属 */
+export interface MemberStats {
+  member_id: number;
+  name: string;
+  department_id: number;
+  requests: number;
+  tokens: number;
+  total_cost: number;
+  actual_cost: number;
+  billed_cost?: number;
+}
+
+/** 按密钥统计；api_key_id=0 为无密钥（AI Chat / 工作台）的消耗 */
+export interface APIKeyStats {
+  api_key_id: number;
+  name: string;
+  member_id: number;
+  requests: number;
+  tokens: number;
+  total_cost: number;
+  actual_cost: number;
+  billed_cost?: number;
 }
 
 export interface ModelStats {
@@ -1340,4 +1486,37 @@ export interface UpdateEntryCodeReq {
   note?: string;
   enabled?: boolean;
   user_id?: number;
+}
+
+// ==================== User Notifications（站内个人通知） ====================
+
+export type UserNotificationKind = 'quota_alert' | 'balance_alert' | 'system';
+export type UserNotificationLevel = 'info' | 'warning' | 'danger';
+
+export interface UserNotificationResp {
+  id: number;
+  kind: UserNotificationKind;
+  level: UserNotificationLevel;
+  title: string;
+  content: string;
+  /** 控制台内路径（如 /team、/usage），空串表示无跳转 */
+  link: string;
+  read: boolean;
+  created_at: string;
+}
+
+export interface UserNotificationListParams {
+  page?: number;
+  page_size?: number;
+  unread_only?: boolean;
+}
+
+export interface UserNotificationUnreadCountResp {
+  count: number;
+}
+
+export type MarkNotificationsReadReq = { ids: number[] } | { all: true };
+
+export interface MarkNotificationsReadResp {
+  updated: number;
 }

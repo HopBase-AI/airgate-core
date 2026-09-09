@@ -52,6 +52,18 @@ func (s *stubUsageRepo) StatsByAccount(context.Context, appusage.StatsFilter) ([
 	return nil, nil
 }
 
+func (s *stubUsageRepo) StatsByDepartment(context.Context, appusage.StatsFilter) ([]appusage.DepartmentStats, error) {
+	return nil, nil
+}
+
+func (s *stubUsageRepo) StatsByMember(context.Context, appusage.StatsFilter) ([]appusage.MemberStats, error) {
+	return nil, nil
+}
+
+func (s *stubUsageRepo) StatsByAPIKey(context.Context, appusage.StatsFilter) ([]appusage.APIKeyStats, error) {
+	return nil, nil
+}
+
 func (s *stubUsageRepo) StatsByGroup(context.Context, appusage.StatsFilter) ([]appusage.GroupStats, error) {
 	return nil, nil
 }

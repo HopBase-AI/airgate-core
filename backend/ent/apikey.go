@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/DouDOU-start/airgate-core/ent/apikey"
+	"github.com/DouDOU-start/airgate-core/ent/department"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/user"
@@ -53,11 +54,12 @@ type APIKey struct {
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the APIKeyQuery when eager-loading is set.
-	Edges           APIKeyEdges `json:"edges"`
-	group_api_keys  *int
-	member_api_keys *int
-	user_api_keys   *int
-	selectValues    sql.SelectValues
+	Edges               APIKeyEdges `json:"edges"`
+	department_api_keys *int
+	group_api_keys      *int
+	member_api_keys     *int
+	user_api_keys       *int
+	selectValues        sql.SelectValues
 }
 
 // APIKeyEdges holds the relations/edges for other nodes in the graph.
@@ -68,11 +70,13 @@ type APIKeyEdges struct {
 	Group *Group `json:"group,omitempty"`
 	// Member holds the value of the member edge.
 	Member *Member `json:"member,omitempty"`
+	// Department holds the value of the department edge.
+	Department *Department `json:"department,omitempty"`
 	// UsageLogs holds the value of the usage_logs edge.
 	UsageLogs []*UsageLog `json:"usage_logs,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [4]bool
+	loadedTypes [5]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -108,10 +112,21 @@ func (e APIKeyEdges) MemberOrErr() (*Member, error) {
 	return nil, &NotLoadedError{edge: "member"}
 }
 
+// DepartmentOrErr returns the Department value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e APIKeyEdges) DepartmentOrErr() (*Department, error) {
+	if e.Department != nil {
+		return e.Department, nil
+	} else if e.loadedTypes[3] {
+		return nil, &NotFoundError{label: department.Label}
+	}
+	return nil, &NotLoadedError{edge: "department"}
+}
+
 // UsageLogsOrErr returns the UsageLogs value or an error if the edge
 // was not loaded in eager-loading.
 func (e APIKeyEdges) UsageLogsOrErr() ([]*UsageLog, error) {
-	if e.loadedTypes[3] {
+	if e.loadedTypes[4] {
 		return e.UsageLogs, nil
 	}
 	return nil, &NotLoadedError{edge: "usage_logs"}
@@ -132,11 +147,13 @@ func (*APIKey) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullString)
 		case apikey.FieldExpiresAt, apikey.FieldCreatedAt, apikey.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
-		case apikey.ForeignKeys[0]: // group_api_keys
+		case apikey.ForeignKeys[0]: // department_api_keys
 			values[i] = new(sql.NullInt64)
-		case apikey.ForeignKeys[1]: // member_api_keys
+		case apikey.ForeignKeys[1]: // group_api_keys
 			values[i] = new(sql.NullInt64)
-		case apikey.ForeignKeys[2]: // user_api_keys
+		case apikey.ForeignKeys[2]: // member_api_keys
+			values[i] = new(sql.NullInt64)
+		case apikey.ForeignKeys[3]: // user_api_keys
 			values[i] = new(sql.NullInt64)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -256,19 +273,26 @@ func (ak *APIKey) assignValues(columns []string, values []any) error {
 			}
 		case apikey.ForeignKeys[0]:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for edge-field department_api_keys", value)
+			} else if value.Valid {
+				ak.department_api_keys = new(int)
+				*ak.department_api_keys = int(value.Int64)
+			}
+		case apikey.ForeignKeys[1]:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for edge-field group_api_keys", value)
 			} else if value.Valid {
 				ak.group_api_keys = new(int)
 				*ak.group_api_keys = int(value.Int64)
 			}
-		case apikey.ForeignKeys[1]:
+		case apikey.ForeignKeys[2]:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for edge-field member_api_keys", value)
 			} else if value.Valid {
 				ak.member_api_keys = new(int)
 				*ak.member_api_keys = int(value.Int64)
 			}
-		case apikey.ForeignKeys[2]:
+		case apikey.ForeignKeys[3]:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for edge-field user_api_keys", value)
 			} else if value.Valid {
@@ -301,6 +325,11 @@ func (ak *APIKey) QueryGroup() *GroupQuery {
 // QueryMember queries the "member" edge of the APIKey entity.
 func (ak *APIKey) QueryMember() *MemberQuery {
 	return NewAPIKeyClient(ak.config).QueryMember(ak)
+}
+
+// QueryDepartment queries the "department" edge of the APIKey entity.
+func (ak *APIKey) QueryDepartment() *DepartmentQuery {
+	return NewAPIKeyClient(ak.config).QueryDepartment(ak)
 }
 
 // QueryUsageLogs queries the "usage_logs" edge of the APIKey entity.

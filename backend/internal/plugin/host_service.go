@@ -466,8 +466,10 @@ type hostForwardRequest struct {
 	// submitterID 是**改写前**的原始调用账号：任务行的 user_id 记的是提交人本人，
 	// 在途预留必须按它统计，按企业主查一条都查不到。
 	memberID            int
+	departmentID        int
 	memberAllowedGroups []int64
 	member              *ent.Member
+	department          *ent.Department
 	submitterID         int
 }
 
@@ -491,7 +493,11 @@ func (h *HostService) resolveHostForwardIdentity(ctx context.Context, req *hostF
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
 	if gate.Exhausted() {
-		return hostForwardInsufficientQuotaError()
+		return hostForwardQuotaExhaustedError(hostErrMemberQuotaExhausted)
+	}
+	// 部门闸门：成员所属部门本期额度用尽同样按额度不足处理（成员 → 部门 → 企业余额）。
+	if deptGate := auth.EvaluateDepartmentGate(ctx, h.db, identity.Department, time.Now()); deptGate.Exhausted() {
+		return hostForwardQuotaExhaustedError(hostErrDepartmentQuotaExhausted)
 	}
 	if req.GroupID > 0 && !identity.AllowsGroup(int(req.GroupID)) {
 		slog.Warn("host_forward_member_group_forbidden",
@@ -501,6 +507,10 @@ func (h *HostService) resolveHostForwardIdentity(ctx context.Context, req *hostF
 	req.memberID = identity.Member.ID
 	req.memberAllowedGroups = identity.Member.AllowedGroupIds
 	req.member = identity.Member
+	req.department = identity.Department
+	if identity.Department != nil {
+		req.departmentID = identity.Department.ID
+	}
 	req.UserID = int64(identity.Owner.ID)
 	return nil
 }
@@ -2138,6 +2148,11 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 	if usage == nil {
 		return 0, nil
 	}
+	// 只读元信息路径（如 /v1/video/estimate 估价）不计费也不落使用记录：否则每次估价都写一条
+	// 零费用的 usage_logs，污染使用记录、概览模型分布与总请求数。
+	if h.isHostMetadataOnlyPath(req.Path) {
+		return 0, nil
+	}
 	req.RequestID = strings.TrimSpace(req.RequestID)
 	usageValues := usageSnapshotFromSDK(usage)
 
@@ -2179,6 +2194,7 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 		UserID:                       int(req.UserID),
 		UserEmail:                    userEmail,
 		MemberID:                     req.memberID,
+		DepartmentID:                 req.departmentID,
 		APIKeyID:                     int(req.APIKeyID),
 		AccountID:                    accountID,
 		GroupID:                      route.GroupID,
@@ -2437,11 +2453,8 @@ func (h *HostService) getUserInfo(ctx context.Context, req hostGetUserInfoReques
 	// 不限额的老模型成员消耗直接落企业主，才看企业主余额。身份字段仍是成员本人。
 	balance := u.Balance
 	if identity, err := auth.ResolveTeamIdentity(ctx, h.db, u.ID); err == nil && identity.IsMember() {
-		if remaining, limited := auth.MemberRemainingQuota(identity.Member, time.Now()); limited {
-			balance = remaining
-		} else {
-			balance = identity.Owner.Balance
-		}
+		// 三层取小：成员本期剩余、部门本期剩余、企业主余额（EffectiveRemaining 统一口径）。
+		balance, _ = identity.EffectiveRemaining(time.Now())
 	}
 	return map[string]interface{}{
 		"user_id":  int64(u.ID),
@@ -2504,10 +2517,23 @@ func (h *HostService) updateUserBalance(ctx context.Context, pluginID string, re
 		"amount", req.Amount,
 		"idempotency_key", req.IdempotencyKey,
 	)
-	u, err := h.users.AdjustBalance(ctx, int(req.UserID), appuser.BalanceChange{
+	// 团队成员账号充值（支付插件经此入账）一律落到企业主余额：成员自己的 users.balance 永远不参与扣费，
+	// 钱进去就是死钱。备注里留成员邮箱，企业主在充值记录里能看出是谁充的。
+	targetUserID := int(req.UserID)
+	remark := req.Remark
+	if identity, err := auth.ResolveTeamIdentity(ctx, h.db, targetUserID); err == nil && identity.IsMember() {
+		slog.Info("host_service_update_balance_member_redirect",
+			"module", "host", sdk.LogFieldPluginID, pluginID,
+			sdk.LogFieldUserID, req.UserID, "owner_id", identity.Owner.ID, "member_id", identity.Member.ID)
+		targetUserID = identity.Owner.ID
+		if identity.Member.Email != "" {
+			remark = strings.TrimSpace(remark + " [成员 " + identity.Member.Email + "]")
+		}
+	}
+	u, err := h.users.AdjustBalance(ctx, targetUserID, appuser.BalanceChange{
 		Action:         req.Action,
 		Amount:         req.Amount,
-		Remark:         req.Remark,
+		Remark:         remark,
 		IdempotencyKey: req.IdempotencyKey,
 	})
 	if err != nil {
@@ -2579,6 +2605,23 @@ func (h *HostService) recordUsage(ctx context.Context, pluginID string, req host
 		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	// 插件自报用量同样按付费身份归属：成员账号发起 → 扣企业主、记成员与部门，
+	// 否则这条路的消耗既不进成员/部门额度，还会落到成员自己永不扣费的余额上。
+	billingUserID, memberID, departmentID := int(req.UserID), 0, 0
+	identity, err := auth.ResolveTeamIdentity(ctx, h.db, int(req.UserID))
+	if err != nil {
+		if cerr := hostContextError(err); cerr != nil {
+			return nil, cerr
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if identity.IsMember() {
+		billingUserID = identity.Owner.ID
+		memberID = identity.Member.ID
+		if identity.Department != nil {
+			departmentID = identity.Department.ID
+		}
+	}
 
 	metadata := make(map[string]string, len(req.Metadata)+5)
 	for key, value := range req.Metadata {
@@ -2616,7 +2659,9 @@ func (h *HostService) recordUsage(ctx context.Context, pluginID string, req host
 	}
 	record := billing.UsageRecord{
 		RequestID:             req.IdempotencyKey,
-		UserID:                int(req.UserID),
+		UserID:                billingUserID,
+		MemberID:              memberID,
+		DepartmentID:          departmentID,
 		Platform:              req.Platform,
 		Model:                 req.Model,
 		TotalCost:             req.AccountCost,
@@ -2637,7 +2682,7 @@ func (h *HostService) recordUsage(ctx context.Context, pluginID string, req host
 		}
 		if ent.IsConstraintError(err) {
 			row, queryErr := h.db.UsageLog.Query().Where(entusagelog.RequestIDEQ(req.IdempotencyKey)).Only(ctx)
-			if queryErr == nil && row.UserIDSnapshot == int(req.UserID) {
+			if queryErr == nil && row.UserIDSnapshot == billingUserID {
 				return map[string]interface{}{"usage_id": row.ID, "usage": customUsagePayloadFromLog(row)}, nil
 			}
 		}
@@ -3248,6 +3293,17 @@ func hostForwardPayload(outcome sdk.ForwardOutcome, scrubber *identityScrubber) 
 
 func hostForwardInsufficientQuotaError() error {
 	return status.Error(codes.ResourceExhausted, "余额不足")
+}
+
+// 成员 / 部门额度用尽的文案：插件（AI Chat / 工作台）把 Host 错误原文展示给用户，成员看到「余额不足」
+// 会去找充值入口，而他根本没有余额——要告诉他该找企业管理员。状态码同为 ResourceExhausted（402 语义）。
+const (
+	hostErrMemberQuotaExhausted     = "团队成员额度已用尽，请联系企业管理员"
+	hostErrDepartmentQuotaExhausted = "所属部门额度已用尽，请联系企业管理员"
+)
+
+func hostForwardQuotaExhaustedError(message string) error {
+	return status.Error(codes.ResourceExhausted, message)
 }
 
 func protoHeadersToHTTPHost(ph map[string]interface{}) http.Header {

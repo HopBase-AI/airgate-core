@@ -10,6 +10,8 @@ export interface MemberForm {
   quota_period: 'none' | 'monthly';
   /** 分组白名单；空 = 继承企业主全部可见分组 */
   allowed_group_ids: number[];
+  /** 所属部门 ID；空字符串 = 未分配 */
+  department_id: string;
 }
 
 export const emptyMemberForm: MemberForm = {
@@ -20,4 +22,28 @@ export const emptyMemberForm: MemberForm = {
   quota_usd: '',
   quota_period: 'monthly',
   allowed_group_ids: [],
+  department_id: '',
 };
+
+export interface DepartmentForm {
+  name: string;
+  note: string;
+  /** 额度（USD）；空字符串或 "0" = 不限 */
+  quota_usd: string;
+  quota_period: 'none' | 'monthly';
+  /** 部门负责人成员 ID；空字符串 = 不设（仅编辑时可选，新建部门还没有成员） */
+  manager_member_id: string;
+}
+
+export const emptyDepartmentForm: DepartmentForm = {
+  name: '',
+  note: '',
+  quota_usd: '',
+  quota_period: 'monthly',
+  manager_member_id: '',
+};
+
+export interface DepartmentOption {
+  id: string;
+  label: string;
+}
