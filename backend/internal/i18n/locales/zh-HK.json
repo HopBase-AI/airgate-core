@@ -63,5 +63,13 @@
   "gw.pinned_account_unavailable": "指定的上游帳號暫時無法使用，請稍後重試",
   "gw.pinned_account_rate_limited": "指定的上游帳號目前受到速率限制，請稍後重試",
   "gw.budget_insufficient_balance": "餘額不足：可用 $%.2f，進行中預留 $%.2f，本次預估 $%.2f",
-  "gw.budget_insufficient_quota": "額度不足：可用 $%.2f，進行中預留 $%.2f，本次預估 $%.2f"
+  "gw.budget_insufficient_quota": "額度不足：可用 $%.2f，進行中預留 $%.2f，本次預估 $%.2f",
+  "gw.user_not_found": "用戶不存在",
+  "gw.group_not_found": "分組不存在",
+  "gw.no_eligible_group": "目前平台沒有可用的分組",
+  "gw.pinned_account_not_found": "指定的上游帳號不存在，或不屬於該分組",
+  "gw.member_quota_exhausted": "成員額度已用盡，請聯絡企業管理員",
+  "gw.department_quota_exhausted": "部門額度已用盡，請聯絡企業管理員",
+  "gw.render_insufficient_quota": "餘額不足，無法收取文件轉換費用",
+  "gw.internal_error": "請求因內部錯誤未能完成，請稍後重試"
 }

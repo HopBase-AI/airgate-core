@@ -63,5 +63,13 @@
   "gw.pinned_account_unavailable": "指定上游账号暂时不可用，请稍后重试",
   "gw.pinned_account_rate_limited": "指定上游账号当前受到限流，请稍后重试",
   "gw.budget_insufficient_balance": "余额不足：可用 $%.2f，在途预留 $%.2f，本条预估 $%.2f",
-  "gw.budget_insufficient_quota": "额度不足：可用 $%.2f，在途预留 $%.2f，本条预估 $%.2f"
+  "gw.budget_insufficient_quota": "额度不足：可用 $%.2f，在途预留 $%.2f，本条预估 $%.2f",
+  "gw.user_not_found": "用户不存在",
+  "gw.group_not_found": "分组不存在",
+  "gw.no_eligible_group": "当前平台没有可用的分组",
+  "gw.pinned_account_not_found": "指定的上游账号不存在，或不属于该分组",
+  "gw.member_quota_exhausted": "成员额度已用尽，请联系企业管理员",
+  "gw.department_quota_exhausted": "部门额度已用尽，请联系企业管理员",
+  "gw.render_insufficient_quota": "余额不足，无法收取文件渲染费用",
+  "gw.internal_error": "请求因内部错误未能完成，请稍后重试"
 }

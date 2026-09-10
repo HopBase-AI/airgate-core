@@ -63,5 +63,13 @@
   "gw.pinned_account_unavailable": "指定された上流アカウントは一時的に利用できません。しばらくしてから再試行してください",
   "gw.pinned_account_rate_limited": "指定された上流アカウントは現在レート制限中です。しばらくしてから再試行してください",
   "gw.budget_insufficient_balance": "残高不足：利用可能 $%.2f、処理中の予約 $%.2f、このリクエストの見積 $%.2f",
-  "gw.budget_insufficient_quota": "クォータ不足：利用可能 $%.2f、処理中の予約 $%.2f、このリクエストの見積 $%.2f"
+  "gw.budget_insufficient_quota": "クォータ不足：利用可能 $%.2f、処理中の予約 $%.2f、このリクエストの見積 $%.2f",
+  "gw.user_not_found": "ユーザーが見つかりません",
+  "gw.group_not_found": "グループが見つかりません",
+  "gw.no_eligible_group": "このプラットフォームで利用できるグループがありません",
+  "gw.pinned_account_not_found": "指定された上流アカウントが存在しないか、このグループに属していません",
+  "gw.member_quota_exhausted": "メンバーのクォータを使い果たしました。企業管理者にお問い合わせください",
+  "gw.department_quota_exhausted": "部門のクォータを使い果たしました。企業管理者にお問い合わせください",
+  "gw.render_insufficient_quota": "残高が不足しているため、ドキュメント生成料金を請求できません",
+  "gw.internal_error": "内部エラーによりリクエストを完了できませんでした。しばらくしてから再試行してください"
 }
