@@ -171,53 +171,73 @@
   }
 }
 
-/* 团队页企业总览条：余额 / 已分配给部门 / 已分配给成员 / 本期消耗 / 账期 */
-.ag-team-overview-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
-  gap: 0.75rem;
-  margin: 0;
+/* 团队页企业账本条：一块发丝线面板，一行五项（余额 / 已分配给部门 / 已分配给成员 / 本期消耗 / 账期），
+   项与项之间靠发丝线分隔（项自带左 / 上边线，负外边距叠到面板边框上，换行后行间也有线） */
+.ag-team-overview {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  border: 1px solid var(--ag-border, var(--heroui-border, #e5e7eb));
+  border-radius: var(--ag-radius-md, 6px);
+  background: var(--ag-surface, transparent);
+  overflow: hidden;
 }
 .ag-team-overview-item {
   display: flex;
+  flex: 1 1 10rem;
   flex-direction: column;
   gap: 0.125rem;
-  padding: 0.75rem 0.875rem;
-  border: 1px solid var(--ag-border, var(--heroui-border, #e5e7eb));
-  border-radius: 0.75rem;
   min-width: 0;
+  margin: -1px 0 0 -1px;
+  padding: 0.625rem 0.875rem 0.5rem;
+  border-top: 1px solid var(--ag-border-subtle, var(--ag-border, #e5e7eb));
+  border-left: 1px solid var(--ag-border-subtle, var(--ag-border, #e5e7eb));
 }
 .ag-team-overview-label {
   font-size: 0.75rem;
-  line-height: 1.25rem;
+  line-height: 1rem;
   color: var(--ag-text-tertiary, #6b7280);
 }
 .ag-team-overview-value {
   margin: 0;
-  font-size: 1rem;
+  font-size: 0.9375rem;
   font-weight: 600;
-  line-height: 1.5rem;
+  line-height: 1.375rem;
   font-variant-numeric: tabular-nums;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ag-team-overview-item[data-tone="muted"] .ag-team-overview-value {
-  font-size: 0.8125rem;
+.ag-team-overview-value[data-kind="date"] {
   font-weight: 500;
 }
-.ag-team-overview-item[data-tone="warning"] .ag-team-overview-value,
-.ag-team-overview-item[data-tone="warning"] .ag-team-overview-hint {
-  color: var(--ag-warning, #b45309);
-}
 .ag-team-overview-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 0.5rem;
   margin: 0;
   font-size: 0.6875rem;
   line-height: 1rem;
   color: var(--ag-text-tertiary, #6b7280);
 }
-.ag-team-overview-action {
-  justify-content: center;
-  align-items: flex-start;
-  border-style: dashed;
+.ag-team-overview-hint[data-tone="warning"] {
+  color: var(--ag-warning, #b45309);
+  cursor: help;
+}
+.ag-team-overview-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ag-text-secondary, #4b5563);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--ag-border, #c8c8c2);
+  cursor: pointer;
+}
+.ag-team-overview-link:hover {
+  color: var(--ag-text, inherit);
+  text-decoration-color: currentColor;
 }

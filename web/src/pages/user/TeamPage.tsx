@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, AlertDialog, Button, Dropdown, EmptyState, ListBox, Select, Spinner, Tabs } from '@heroui/react';
+import { AlertDialog, Button, Dropdown, EmptyState, ListBox, Select, Spinner, Tabs } from '@heroui/react';
 import { DialogTriggerShim } from '../../shared/components/DialogTriggerShim';
 import { membersApi } from '../../shared/api/members';
 import { departmentsApi } from '../../shared/api/departments';
@@ -21,7 +21,6 @@ import {
   Building2,
   CheckCircle,
   History,
-  Info,
   KeyRound,
   MoreHorizontal,
   Pencil,
@@ -249,18 +248,8 @@ export default function TeamPage() {
 
   return (
     <div className="p-6">
-      <Alert className="mb-5" status="accent">
-        <Alert.Indicator>
-          <Info className="h-4 w-4" />
-        </Alert.Indicator>
-        <Alert.Content>
-          <Alert.Description>
-            {t('team.description')}
-            {' '}
-            {t('team.login_hint')}
-          </Alert.Description>
-        </Alert.Content>
-      </Alert>
+      {/* 标题下一行弱化说明，替代原来的整条提示横幅；完整引导只在成员为空时出现 */}
+      <p className="mb-4 text-[13px] leading-5 text-text-tertiary">{t('team.intro')}</p>
 
       <TeamOverviewBar />
 
