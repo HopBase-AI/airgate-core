@@ -50,3 +50,57 @@ func replaceTranslationsForTest(next map[string]map[string]string, nextDefault s
 		mu.Unlock()
 	}
 }
+
+func TestDetectLanguageAndClientLangDefaults(t *testing.T) {
+	cases := map[string]string{
+		"":                           "en",
+		"es-MX,es;q=0.9":             "es",
+		"zh-CN,zh;q=0.9":             "zh",
+		"zh-HK":                      "zh-HK",
+		"zh-TW,zh;q=0.8":             "zh-HK",
+		"ja,en-US;q=0.7":             "ja",
+		"fr-FR,fr;q=0.9":             "en",
+		"*":                          "en",
+		"en-GB,en;q=0.9,zh;q=0.8":    "en",
+		"de-DE,es-ES;q=0.5,en;q=0.3": "es",
+	}
+	for header, want := range cases {
+		if got := DetectLanguage(header, LangEN); got != want {
+			t.Errorf("DetectLanguage(%q) = %q, want %q", header, got, want)
+		}
+	}
+	if got := DetectLanguage("", "zh"); got != "zh" {
+		t.Errorf("空头应回退 fallback，得到 %q", got)
+	}
+	if got := ClientLang(nil); got != LangEN {
+		t.Errorf("ClientLang(nil) = %q, want en", got)
+	}
+}
+
+func TestLocalesShareIdenticalKeySets(t *testing.T) {
+	restoreTranslations := replaceTranslationsForTest(map[string]map[string]string{}, "zh")
+	defer restoreTranslations()
+	if err := LoadEmbedded(); err != nil {
+		t.Fatal(err)
+	}
+	langs := SupportedLanguages()
+	for _, want := range []string{"zh", "en", "es", "ja", "zh-HK"} {
+		if !Has(want, "gw.no_available_account") {
+			t.Errorf("locales/%s.json 缺失或缺少 gw.no_available_account（已加载: %v）", want, langs)
+		}
+	}
+	mu.RLock()
+	defer mu.RUnlock()
+	for lang, msgs := range translations {
+		for key := range translations["en"] {
+			if _, ok := msgs[key]; !ok {
+				t.Errorf("locales/%s.json 缺少 key %s", lang, key)
+			}
+		}
+		for key := range msgs {
+			if _, ok := translations["en"][key]; !ok {
+				t.Errorf("locales/%s.json 多出 en 没有的 key %s", lang, key)
+			}
+		}
+	}
+}

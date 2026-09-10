@@ -11,6 +11,7 @@ import (
 
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
 
@@ -128,13 +129,13 @@ func canceledRequestFailure(status int) usageFailure {
 		return usageFailure{
 			code:    appusage.ErrorCodeClientCanceled,
 			status:  statusClientClosedRequest,
-			message: "客户端在请求完成前断开连接",
+			message: i18n.En("gw.client_disconnected"),
 		}
 	}
 	return usageFailure{
 		code:    appusage.ErrorCodeRequestTimeout,
 		status:  http.StatusGatewayTimeout,
-		message: "请求在完成前超时",
+		message: i18n.En("gw.request_timeout"),
 	}
 }
 

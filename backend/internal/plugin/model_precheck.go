@@ -1,8 +1,7 @@
 package plugin
 
 import (
-	"fmt"
-
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 )
 
@@ -47,7 +46,7 @@ func (f *Forwarder) precheckModelServed(state *forwardState) (string, bool) {
 		return "", true
 	}
 
-	blockReason := fmt.Sprintf("当前分组不支持所请求的模型: %s", state.model)
+	blockReason := i18n.En("gw.model_not_supported", state.model)
 
 	// 分支 a：分组配置了 model_routing —— 以路由规则为准（与调度层同一匹配源）。
 	if routing := state.keyInfo.GroupModelRouting; len(routing) > 0 {

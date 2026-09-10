@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/time/rate"
 
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
 
@@ -149,7 +150,7 @@ func newIPRateLimitHandler(rl *IPRateLimiter) gin.HandlerFunc {
 			)
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error":   "too_many_requests",
-				"message": "请求过于频繁，请稍后再试",
+				"message": i18n.Tc(c, "gw.too_many_requests"),
 			})
 			return
 		}

@@ -18,6 +18,7 @@ import (
 	entmember "github.com/DouDOU-start/airgate-core/ent/member"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	"github.com/DouDOU-start/airgate-core/internal/server/response"
 )
 
@@ -206,14 +207,14 @@ func APIKeyAuth(db *ent.Client) gin.HandlerFunc {
 		key := extractBearerToken(c)
 		if key == "" {
 			slog.Warn("api_key_validation_failed", sdk.LogFieldReason, "missing_api_key", sdk.LogFieldRequestID, RequestIDFromGinContext(c))
-			abortWithOpenAIError(c, http.StatusUnauthorized, "missing_api_key", "缺少 API Key")
+			abortWithOpenAIError(c, http.StatusUnauthorized, "missing_api_key", i18n.Tc(c, "gw.missing_api_key"))
 			return
 		}
 
 		// 验证 API Key 格式
 		if !strings.HasPrefix(key, "sk-") {
 			slog.Warn("api_key_validation_failed", sdk.LogFieldReason, "invalid_format", sdk.LogFieldRequestID, RequestIDFromGinContext(c))
-			abortWithOpenAIError(c, http.StatusUnauthorized, "invalid_api_key", "无效的 API Key 格式")
+			abortWithOpenAIError(c, http.StatusUnauthorized, "invalid_api_key", i18n.Tc(c, "gw.invalid_api_key_format"))
 			return
 		}
 
@@ -266,7 +267,7 @@ func APIKeyAuth(db *ent.Client) gin.HandlerFunc {
 				reason = "service_unavailable"
 			}
 			slog.Warn("api_key_validation_failed", sdk.LogFieldReason, reason, sdk.LogFieldError, err, sdk.LogFieldStatus, status, sdk.LogFieldRequestID, RequestIDFromGinContext(c))
-			abortWithOpenAIError(c, status, code, err.Error())
+			abortWithOpenAIError(c, status, code, i18n.Tc(c, apiKeyErrorMsgKey(code)))
 			return
 		}
 
@@ -285,6 +286,29 @@ func APIKeyAuth(db *ent.Client) gin.HandlerFunc {
 }
 
 // abortWithOpenAIError 返回 OpenAI 兼容的错误格式并终止请求
+// apiKeyErrorMsgKey 把 API Key 校验失败的错误码映射到对外文案 key。
+// 对外只按 code 说话：底层 auth.Err* 的中文原文只进日志，不再直接回给客户端。
+func apiKeyErrorMsgKey(code string) string {
+	switch code {
+	case "api_key_expired":
+		return "gw.api_key_expired"
+	case "insufficient_quota":
+		return "gw.api_key_quota_exceeded"
+	case "api_key_misconfigured":
+		return "gw.api_key_misconfigured"
+	case "account_disabled":
+		return "gw.account_disabled"
+	case "member_disabled":
+		return "gw.member_disabled"
+	case "member_group_forbidden":
+		return "gw.member_group_forbidden"
+	case "service_unavailable":
+		return "gw.auth_service_unavailable"
+	default:
+		return "gw.invalid_api_key"
+	}
+}
+
 func abortWithOpenAIError(c *gin.Context, status int, code, message string) {
 	c.AbortWithStatusJSON(status, gin.H{
 		"error": gin.H{

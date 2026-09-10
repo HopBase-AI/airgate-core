@@ -20,6 +20,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent"
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	"github.com/DouDOU-start/airgate-core/internal/pkg/usagemodel"
 	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 	"github.com/DouDOU-start/airgate-core/internal/server/middleware"
@@ -29,13 +30,14 @@ import (
 // parseRequest 从 HTTP 请求构造 forwardState。认证 / body 读取 / 插件匹配失败时
 // bodyReadError 把读取请求体的错误映射为对外状态码/错误码/消息。
 // 超限（http.MaxBytesReader 触发）返回 413 与明确的上限提示，其余保持 400。
-func bodyReadError(err error) (status int, code string, message string) {
+// 返回的是文案 key 与占位参数：对外响应按请求方语言 i18n.Tc，落库按 i18n.En。
+func bodyReadError(err error) (status int, code string, msgKey string, args []any) {
 	var tooLarge *http.MaxBytesError
 	if errors.As(err, &tooLarge) {
 		return http.StatusRequestEntityTooLarge, appusage.ErrorCodeRequestTooLarge,
-			fmt.Sprintf("请求体超过大小限制（%d MB）", maxExtensionBodySize>>20)
+			"gw.request_too_large", []any{maxExtensionBodySize >> 20}
 	}
-	return http.StatusBadRequest, appusage.ErrorCodeInvalidRequest, "读取请求体失败"
+	return http.StatusBadRequest, appusage.ErrorCodeInvalidRequest, "gw.read_body_failed", nil
 }
 
 // 直接写响应并返回 false。
@@ -63,12 +65,12 @@ func (f *Forwarder) parseRequest(c *gin.Context) (*forwardState, bool) {
 			sdk.LogFieldAPIKeyID, keyInfo.KeyID,
 			sdk.LogFieldError, err,
 		)
-		status, code, message := bodyReadError(err)
-		protocolError(c, status, "invalid_request_error", code, message)
+		status, code, msgKey, args := bodyReadError(err)
+		protocolError(c, status, "invalid_request_error", code, i18n.Tc(c, msgKey, args...))
 		f.recordFailureUsage(c, state, usageFailure{
 			code:    code,
 			status:  status,
-			message: message,
+			message: i18n.En(msgKey, args...),
 		})
 		return nil, false
 	}
@@ -122,7 +124,7 @@ func requireKeyInfo(c *gin.Context) (*auth.APIKeyInfo, bool) {
 func writeUnauthenticated(c *gin.Context) {
 	c.JSON(http.StatusUnauthorized, gin.H{
 		"error": gin.H{
-			"message": "未认证",
+			"message": i18n.Tc(c, "gw.unauthenticated"),
 			"type":    "authentication_error",
 			"code":    "missing_api_key",
 		},
@@ -453,12 +455,11 @@ func (f *Forwarder) matchPlugin(c *gin.Context, keyInfo *auth.APIKeyInfo, platfo
 				sdk.LogFieldGroupID, keyInfo.GroupID,
 				sdk.LogFieldPath, path,
 			)
-			message := "插件不可用，请联系管理员"
-			protocolError(c, http.StatusServiceUnavailable, "server_error", appusage.ErrorCodePluginUnavailable, message)
+			protocolError(c, http.StatusServiceUnavailable, "server_error", appusage.ErrorCodePluginUnavailable, i18n.Tc(c, "gw.plugin_unavailable"))
 			return nil, &usageFailure{
 				code:    appusage.ErrorCodePluginUnavailable,
 				status:  http.StatusServiceUnavailable,
-				message: message,
+				message: i18n.En("gw.plugin_unavailable"),
 			}
 		} else {
 			slog.Warn("plugin_route_not_found",
@@ -469,12 +470,11 @@ func (f *Forwarder) matchPlugin(c *gin.Context, keyInfo *auth.APIKeyInfo, platfo
 			)
 			// 平台插件已知但路径未命中：404 也按该插件声明的协议格式写出
 			setRequestErrorFormat(c, f.manager.ErrorFormat(platformInst.Name, path))
-			message := "当前平台不支持该 API 路径"
-			protocolError(c, http.StatusNotFound, "invalid_request_error", appusage.ErrorCodeRouteNotFound, message)
+			protocolError(c, http.StatusNotFound, "invalid_request_error", appusage.ErrorCodeRouteNotFound, i18n.Tc(c, "gw.route_not_supported"))
 			return nil, &usageFailure{
 				code:    appusage.ErrorCodeRouteNotFound,
 				status:  http.StatusNotFound,
-				message: message,
+				message: i18n.En("gw.route_not_supported"),
 			}
 		}
 	}
@@ -485,12 +485,11 @@ func (f *Forwarder) matchPlugin(c *gin.Context, keyInfo *auth.APIKeyInfo, platfo
 			sdk.LogFieldPath, path,
 			sdk.LogFieldUserID, keyInfo.UserID,
 		)
-		message := "未找到匹配的插件"
-		protocolError(c, http.StatusNotFound, "invalid_request_error", appusage.ErrorCodeRouteNotFound, message)
+		protocolError(c, http.StatusNotFound, "invalid_request_error", appusage.ErrorCodeRouteNotFound, i18n.Tc(c, "gw.plugin_not_found"))
 		return nil, &usageFailure{
 			code:    appusage.ErrorCodeRouteNotFound,
 			status:  http.StatusNotFound,
-			message: message,
+			message: i18n.En("gw.plugin_not_found"),
 		}
 	}
 	return inst, nil

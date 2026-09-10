@@ -1,9 +1,9 @@
 package middleware
 
 import (
-	"strings"
-
 	"github.com/gin-gonic/gin"
+
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 )
 
 // Context Key 常量
@@ -19,28 +19,8 @@ func I18n() gin.HandlerFunc {
 	}
 }
 
-// detectLanguage 从 Accept-Language 头检测语言
-// 支持的语言：zh（默认）、en、es
+// detectLanguage 从 Accept-Language 头检测语言（控制台 REST 口径：默认 zh）。
+// 解析规则与网关共用 i18n.DetectLanguage；网关 API 路径默认英文，见 i18n.ClientLang。
 func detectLanguage(header string) string {
-	if header == "" {
-		return "zh"
-	}
-	// 简单解析，取第一个语言标签
-	header = strings.ToLower(header)
-	// 按逗号分割多个语言偏好
-	parts := strings.Split(header, ",")
-	for _, part := range parts {
-		// 去除权重 (q=xxx)
-		lang := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
-		if strings.HasPrefix(lang, "en") {
-			return "en"
-		}
-		if strings.HasPrefix(lang, "zh") {
-			return "zh"
-		}
-		if strings.HasPrefix(lang, "es") {
-			return "es"
-		}
-	}
-	return "zh"
+	return i18n.DetectLanguage(header, "zh")
 }

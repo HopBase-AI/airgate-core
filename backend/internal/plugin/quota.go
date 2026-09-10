@@ -5,13 +5,13 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
@@ -26,11 +26,11 @@ func (f *Forwarder) checkBalance(c *gin.Context, state *forwardState) bool {
 		return true
 	}
 	if state.keyInfo.UserBalance <= 0 {
-		protocolError(c, http.StatusPaymentRequired, "insufficient_quota", "insufficient_quota", "余额不足")
+		protocolError(c, http.StatusPaymentRequired, "insufficient_quota", "insufficient_quota", i18n.Tc(c, "gw.insufficient_quota"))
 		f.recordFailureUsage(c, state, usageFailure{
 			code:    appusage.ErrorCodeInsufficientQuota,
 			status:  http.StatusPaymentRequired,
-			message: "账户余额不足",
+			message: i18n.En("gw.insufficient_quota"),
 		})
 		return false
 	}
@@ -73,11 +73,11 @@ func (f *Forwarder) acquireClientQuota(c *gin.Context, state *forwardState) func
 	userHeld := false
 	if max := state.keyInfo.UserMaxConcurrency; max > 0 {
 		if err := f.concurrency.AcquireUserSlot(ctx, userID, slotID, max, 0); err != nil {
-			protocolRateLimitError(c, http.StatusTooManyRequests, "user_concurrency_limit", "用户并发已达上限，请稍后重试", concurrencyRetryAfter)
+			protocolRateLimitError(c, http.StatusTooManyRequests, "user_concurrency_limit", i18n.Tc(c, "gw.user_concurrency_limit"), concurrencyRetryAfter)
 			f.recordFailureUsage(c, state, usageFailure{
 				code:    appusage.ErrorCodeConcurrencyLimit,
 				status:  http.StatusTooManyRequests,
-				message: "用户并发已达上限（" + strconv.Itoa(max) + "）",
+				message: i18n.En("gw.user_concurrency_limit_detail", max),
 			})
 			return nil
 		}
@@ -90,11 +90,11 @@ func (f *Forwarder) acquireClientQuota(c *gin.Context, state *forwardState) func
 			if userHeld {
 				f.concurrency.ReleaseUserSlot(ctx, userID, slotID)
 			}
-			protocolRateLimitError(c, http.StatusTooManyRequests, "apikey_concurrency_limit", "API Key 并发已达上限，请稍后重试", concurrencyRetryAfter)
+			protocolRateLimitError(c, http.StatusTooManyRequests, "apikey_concurrency_limit", i18n.Tc(c, "gw.apikey_concurrency_limit"), concurrencyRetryAfter)
 			f.recordFailureUsage(c, state, usageFailure{
 				code:    appusage.ErrorCodeConcurrencyLimit,
 				status:  http.StatusTooManyRequests,
-				message: "API Key 并发已达上限（" + strconv.Itoa(max) + "）",
+				message: i18n.En("gw.apikey_concurrency_limit_detail", max),
 			})
 			return nil
 		}
@@ -259,30 +259,30 @@ func (f *Forwarder) forwardMetadataOnly(c *gin.Context, state *forwardState) {
 	outcome, err := state.plugin.Gateway.Forward(c.Request.Context(), req)
 	if err != nil {
 		slog.Error("metadata 请求插件失败", "plugin", state.plugin.Name, "path", state.requestPath, "error", err)
-		protocolError(c, http.StatusBadGateway, "server_error", appusage.ErrorCodeUpstreamError, "metadata 请求插件失败")
+		protocolError(c, http.StatusBadGateway, "server_error", appusage.ErrorCodeUpstreamError, i18n.Tc(c, "gw.metadata_plugin_failed"))
 		f.recordFailureUsage(c, state, usageFailure{
 			code:    appusage.ErrorCodePluginError,
 			status:  http.StatusBadGateway,
-			message: "metadata 请求插件失败",
+			message: i18n.En("gw.metadata_plugin_failed"),
 		})
 		return
 	}
 	if err := f.scopeMetadataOnlyModels(c.Request.Context(), state, &outcome); err != nil {
 		slog.Error("metadata 模型列表按分组收敛失败", "plugin", state.plugin.Name, "path", state.requestPath, "group_id", state.keyInfo.GroupID, "error", err)
-		protocolError(c, http.StatusInternalServerError, "server_error", appusage.ErrorCodeMetadataScopeFailed, "模型列表加载失败")
+		protocolError(c, http.StatusInternalServerError, "server_error", appusage.ErrorCodeMetadataScopeFailed, i18n.Tc(c, "gw.model_list_failed"))
 		f.recordFailureUsage(c, state, usageFailure{
 			code:    appusage.ErrorCodeMetadataScopeFailed,
 			status:  http.StatusInternalServerError,
-			message: "模型列表加载失败",
+			message: i18n.En("gw.model_list_failed"),
 		})
 		return
 	}
 	if len(outcome.Upstream.Body) == 0 {
-		protocolError(c, http.StatusBadGateway, "server_error", appusage.ErrorCodeUpstreamError, "metadata 请求插件返回空响应")
+		protocolError(c, http.StatusBadGateway, "server_error", appusage.ErrorCodeUpstreamError, i18n.Tc(c, "gw.metadata_empty_response"))
 		f.recordFailureUsage(c, state, usageFailure{
 			code:    appusage.ErrorCodeUpstreamError,
 			status:  http.StatusBadGateway,
-			message: "metadata 请求插件返回空响应",
+			message: i18n.En("gw.metadata_empty_response"),
 		})
 		return
 	}
@@ -292,7 +292,7 @@ func (f *Forwarder) forwardMetadataOnly(c *gin.Context, state *forwardState) {
 			failure.code = appusage.ErrorCodeUpstreamError
 		}
 		if failure.message == "" {
-			failure.message = "metadata 请求失败"
+			failure.message = i18n.En("gw.metadata_request_failed")
 		}
 		f.recordFailureUsage(c, state, failure)
 	}

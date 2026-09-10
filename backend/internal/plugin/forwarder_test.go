@@ -503,8 +503,8 @@ func TestAPIKeyGroupRequirementErrorImageDisabled(t *testing.T) {
 	if errResp.code != "image_generation_disabled" {
 		t.Fatalf("code = %q, want image_generation_disabled", errResp.code)
 	}
-	if errResp.message != "当前分组未开启图片生成功能" {
-		t.Fatalf("message = %q", errResp.message)
+	if errResp.msgKey != "gw.image_generation_disabled" {
+		t.Fatalf("message = %q", errResp.msgKey)
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/enttest"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
@@ -26,6 +27,10 @@ import (
 // 被多个 t.Parallel() goroutine 同时写导致 -race 告警。
 func TestMain(m *testing.M) {
 	gin.SetMode(gin.TestMode)
+	// 网关对外文案经 i18n key 取值，测试断言的是真实英文文案，须先加载词典。
+	if err := i18n.LoadEmbedded(); err != nil {
+		panic(err)
+	}
 	os.Exit(m.Run())
 }
 
@@ -52,8 +57,8 @@ func TestWriteFailureResponse_StreamBeforeResponseStarts(t *testing.T) {
 	if recorder.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadGateway)
 	}
-	if body := recorder.Body.String(); !strings.Contains(body, "上游服务暂不可用") {
-		t.Fatalf("body = %q, want contain '上游服务暂不可用'", body)
+	if body := recorder.Body.String(); !strings.Contains(body, "Upstream service is temporarily unavailable") {
+		t.Fatalf("body = %q, want contain 'Upstream service is temporarily unavailable'", body)
 	}
 }
 
@@ -80,8 +85,8 @@ func TestWriteFailureResponse_SanitizesUpstreamBody(t *testing.T) {
 	if body := recorder.Body.String(); strings.Contains(body, "authentication token has been invalidated") {
 		t.Fatalf("body = %q, want sanitized upstream error", body)
 	}
-	if body := recorder.Body.String(); !strings.Contains(body, "上游账号不可用") {
-		t.Fatalf("body = %q, want contain '上游账号不可用'", body)
+	if body := recorder.Body.String(); !strings.Contains(body, "Upstream account is unavailable") {
+		t.Fatalf("body = %q, want contain 'Upstream account is unavailable'", body)
 	}
 }
 
@@ -362,8 +367,8 @@ func TestWriteFailureResponse_NonStreamAlwaysWrites(t *testing.T) {
 	if recorder.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadGateway)
 	}
-	if body := recorder.Body.String(); !strings.Contains(body, "上游账号不可用") {
-		t.Fatalf("body = %q, want contain '上游账号不可用'", body)
+	if body := recorder.Body.String(); !strings.Contains(body, "Upstream account is unavailable") {
+		t.Fatalf("body = %q, want contain 'Upstream account is unavailable'", body)
 	}
 }
 
@@ -395,7 +400,7 @@ func TestWriteAllRoutesFailed_SanitizesUpstreamBody(t *testing.T) {
 	if strings.Contains(got, "upstream secret") || strings.Contains(got, "349f8894") {
 		t.Fatalf("body = %q, want sanitized upstream error", got)
 	}
-	if !strings.Contains(got, "上游服务暂不可用") {
+	if !strings.Contains(got, "Upstream service is temporarily unavailable") {
 		t.Fatalf("body = %q, want contain sanitized upstream message", got)
 	}
 }
@@ -413,8 +418,8 @@ func TestWriteFailureResponse_RateLimitedReturns429(t *testing.T) {
 	if recorder.Code != http.StatusTooManyRequests {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusTooManyRequests)
 	}
-	if body := recorder.Body.String(); !strings.Contains(body, "限流") {
-		t.Fatalf("body = %q, want contain '限流'", body)
+	if body := recorder.Body.String(); !strings.Contains(body, "rate limited") {
+		t.Fatalf("body = %q, want contain 'rate limited'", body)
 	}
 }
 
@@ -433,8 +438,8 @@ func TestSanitizedClientErrorMessage_ImageTooLarge(t *testing.T) {
 	if got := sanitizedClientErrorStatus(outcome); got != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status = %d, want %d", got, http.StatusRequestEntityTooLarge)
 	}
-	if got := sanitizedClientErrorMessage(outcome, nil); got != imageTooLargeMessage {
-		t.Fatalf("message = %q, want %q", got, imageTooLargeMessage)
+	if got := sanitizedClientErrorMessage(i18n.LangEN, outcome, nil); got != i18n.En(msgKeyImageTooLarge) {
+		t.Fatalf("message = %q, want %q", got, i18n.En(msgKeyImageTooLarge))
 	}
 }
 
@@ -453,7 +458,7 @@ func TestSanitizedClientErrorMessage_UsesUpstreamMessage(t *testing.T) {
 	if got := sanitizedClientErrorStatus(outcome); got != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", got, http.StatusBadRequest)
 	}
-	if got := sanitizedClientErrorMessage(outcome, nil); got != "messages 中未找到用户消息" {
+	if got := sanitizedClientErrorMessage(i18n.LangEN, outcome, nil); got != "messages 中未找到用户消息" {
 		t.Fatalf("message = %q, want upstream message", got)
 	}
 }
@@ -466,7 +471,7 @@ func TestSanitizedClientErrorMessage_DefaultWhenNoMessage(t *testing.T) {
 		Upstream: sdk.UpstreamResponse{StatusCode: http.StatusBadRequest},
 	}
 
-	if got := sanitizedClientErrorMessage(outcome, nil); got != defaultClientErrorMessage {
-		t.Fatalf("message = %q, want %q", got, defaultClientErrorMessage)
+	if got := sanitizedClientErrorMessage(i18n.LangEN, outcome, nil); got != i18n.En(msgKeyClientErrorDefault) {
+		t.Fatalf("message = %q, want %q", got, i18n.En(msgKeyClientErrorDefault))
 	}
 }
