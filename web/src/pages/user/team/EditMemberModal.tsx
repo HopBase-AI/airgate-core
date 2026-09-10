@@ -186,9 +186,9 @@ export function EditMemberModal({
           ) : groups.length === 0 ? (
             <p className="py-3 text-center text-xs text-text-tertiary">{t('common.no_data')}</p>
           ) : (
-            <div className="max-h-48 space-y-0.5 overflow-y-auto rounded-lg border border-border p-1">
+            <div className="max-h-56 space-y-0.5 overflow-y-auto rounded-lg border border-border p-1 contain-paint">
               {groups.map((group) => (
-                <div key={group.id} className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm">
+                <div key={group.id} className="flex items-center gap-2.5 rounded-md px-2 py-1 text-sm">
                   <Checkbox
                     isSelected={form.allowed_group_ids.includes(group.id)}
                     onChange={(selected) => toggleGroup(group.id, selected)}

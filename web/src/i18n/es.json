@@ -1791,7 +1791,6 @@
     "dept_manager_none": "Sin responsable",
     "dept_manager_hint": "El responsable solo recibe las alertas de cuota de este departamento y sus miembros; no tiene permisos de administración",
     "dept_manager_label": "Responsable: {{name}}",
-    "remaining": "Quedan ${{amount}}",
     "overview_balance": "Saldo de la empresa",
     "overview_department_quota": "Asignado a departamentos",
     "overview_member_quota": "Asignado a miembros",
@@ -1844,8 +1843,7 @@
     "audit_field_expires_at": "Caduca el",
     "audit_field_billing_day": "Día de facturación",
     "audit_field_password_reset": "Restablecer contraseña",
-    "audit_field_note": "Nota",
-    "usage_rate": "{{pct}}% usado"
+    "audit_field_note": "Nota"
   },
   "setup": {
     "title": "Configuración del sistema",
