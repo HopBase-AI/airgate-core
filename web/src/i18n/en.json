@@ -1243,7 +1243,19 @@
     "kind_quota_alert": "Quota alert",
     "kind_balance_alert": "Balance alert",
     "kind_system": "System",
-    "view_link": "View"
+    "view_link": "View",
+    "edit": "Edit",
+    "edit_title": "Edit notification",
+    "edit_description": "Editing \"{{title}}\". Saving updates the history and every user’s notification center.",
+    "edit_save": "Save changes",
+    "edit_popup_hint": "Editing only changes the text; it does not turn the popup on or off.",
+    "edit_success": "Notification updated",
+    "editing_badge": "Editing",
+    "withdraw": "Withdraw",
+    "withdraw_title": "Withdraw notification",
+    "withdraw_confirm": "Withdraw \"{{title}}\"? Users will no longer see it in their notification center.",
+    "withdraw_current_hint": "This is the notification currently in use; withdrawing it also stops the popup.",
+    "withdraw_success": "Notification withdrawn"
   },
   "settings": {
     "title": "Settings",

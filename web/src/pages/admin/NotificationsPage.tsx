@@ -1,18 +1,24 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Chip, Input, Label, Spinner, TextArea } from '@heroui/react';
-import { AlertCircle, AlertTriangle, BellRing, Clock3, Loader2, Megaphone, Save, Send } from 'lucide-react';
+import { AlertDialog, Button, Card, Chip, Input, Label, Spinner, TextArea } from '@heroui/react';
+import { AlertCircle, AlertTriangle, BellRing, Clock3, Loader2, Megaphone, Pencil, Save, Send, Trash2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { settingsApi } from '../../shared/api/settings';
 import { queryKeys } from '../../shared/queryKeys';
 import type { SettingItem } from '../../shared/types';
+import { DialogTriggerShim } from '../../shared/components/DialogTriggerShim';
 import { NativeSwitch } from '../../shared/components/NativeSwitch';
 import { useToast } from '../../shared/ui';
 import {
+  applyNotificationEdit,
+  applyNotificationWithdraw,
+  isCurrentAnnouncement,
   mergeLegacyNotification,
   NOTIFICATION_HISTORY_LIMIT,
   parseNotificationHistory,
   serializeNotificationHistory,
+  type AnnouncementMutation,
+  type CurrentAnnouncement,
   type NotificationLevel,
   type SiteNotification,
 } from '../../shared/notifications';
@@ -48,6 +54,10 @@ interface PublishPayload {
   notice: SiteNotification;
   history: SiteNotification[];
   showPopup: boolean;
+}
+
+interface RevisePayload extends AnnouncementMutation {
+  kind: 'edit' | 'withdraw';
 }
 
 function createNotificationId() {
@@ -108,6 +118,8 @@ export default function NotificationsPage() {
   const [draftContent, setDraftContent] = useState('');
   const [draftLevel, setDraftLevel] = useState<NotificationLevel>('info');
   const [showPopup, setShowPopup] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [withdrawTarget, setWithdrawTarget] = useState<SiteNotification | null>(null);
   const [formError, setFormError] = useState('');
   const [landingDirty, setLandingDirty] = useState(false);
 
@@ -136,10 +148,28 @@ export default function NotificationsPage() {
     () => parseLandingAnnouncement(values.landing_announcement_json),
     [values.landing_announcement_json],
   );
+  const currentAnnouncement = useMemo<CurrentAnnouncement>(() => ({
+    id: values.announcement_id ?? '',
+    title: values.announcement_title ?? '',
+    content: values.announcement_content ?? '',
+    level: (values.announcement_level as NotificationLevel) ?? 'info',
+  }), [values.announcement_content, values.announcement_id, values.announcement_level, values.announcement_title]);
+  const editingNotice = useMemo(
+    () => (editingId ? history.find((item) => item.id === editingId) ?? null : null),
+    [editingId, history],
+  );
 
   const refreshSettings = () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.settings() });
     void queryClient.invalidateQueries({ queryKey: queryKeys.siteSettings() });
+  };
+
+  const resetDraft = () => {
+    setEditingId(null);
+    setDraftTitle('');
+    setDraftContent('');
+    setDraftLevel('info');
+    setFormError('');
   };
 
   const publishMutation = useMutation({
@@ -163,9 +193,7 @@ export default function NotificationsPage() {
         announcement_content: payload.notice.content,
         announcement_history_json: serializeNotificationHistory(payload.history),
       }));
-      setDraftTitle('');
-      setDraftContent('');
-      setFormError('');
+      resetDraft();
       toast('success', t('notifications.publish_success'));
       refreshSettings();
     },
@@ -184,6 +212,47 @@ export default function NotificationsPage() {
     onError: (error: Error) => toast('error', error.message),
   });
 
+  // 修改与撤回共用一条写回链路：历史整体覆盖，动到当前公告时再顺带同步 announcement_*
+  const reviseMutation = useMutation({
+    mutationFn: (payload: RevisePayload) => settingsApi.update({
+      settings: [
+        {
+          key: 'announcement_history_json',
+          value: serializeNotificationHistory(payload.history),
+          group: 'site',
+        },
+        ...(payload.current ? [
+          { key: 'announcement_id', value: payload.current.id, group: 'site' },
+          { key: 'announcement_title', value: payload.current.title, group: 'site' },
+          { key: 'announcement_level', value: payload.current.level, group: 'site' },
+          { key: 'announcement_content', value: payload.current.content, group: 'site' },
+        ] : []),
+        ...(payload.disablePopup
+          ? [{ key: 'announcement_enabled', value: 'false', group: 'site' }]
+          : []),
+      ],
+    }),
+    onSuccess: (_, payload) => {
+      setValues((current) => ({
+        ...current,
+        announcement_history_json: serializeNotificationHistory(payload.history),
+        ...(payload.current ? {
+          announcement_id: payload.current.id,
+          announcement_title: payload.current.title,
+          announcement_level: payload.current.level,
+          announcement_content: payload.current.content,
+        } : {}),
+        ...(payload.disablePopup ? { announcement_enabled: 'false' } : {}),
+      }));
+      setWithdrawTarget(null);
+      if (payload.kind === 'edit') resetDraft();
+      else if (editingId && !payload.history.some((item) => item.id === editingId)) resetDraft();
+      toast('success', t(payload.kind === 'edit' ? 'notifications.edit_success' : 'notifications.withdraw_success'));
+      refreshSettings();
+    },
+    onError: (error: Error) => toast('error', error.message),
+  });
+
   const landingMutation = useMutation({
     mutationFn: (item: SettingItem) => settingsApi.update({ settings: [item] }),
     onSuccess: () => {
@@ -194,11 +263,24 @@ export default function NotificationsPage() {
     onError: (error: Error) => toast('error', error.message),
   });
 
-  const publish = (event: FormEvent) => {
+  const submitDraft = (event: FormEvent) => {
     event.preventDefault();
     const content = draftContent.trim();
     if (!content) {
       setFormError(t('notifications.content_required'));
+      return;
+    }
+
+    if (editingId) {
+      reviseMutation.mutate({
+        kind: 'edit',
+        ...applyNotificationEdit(history, currentAnnouncement, {
+          id: editingId,
+          title: draftTitle.trim(),
+          content,
+          level: draftLevel,
+        }),
+      });
       return;
     }
 
@@ -213,6 +295,21 @@ export default function NotificationsPage() {
       notice,
       history: [notice, ...history].slice(0, NOTIFICATION_HISTORY_LIMIT),
       showPopup,
+    });
+  };
+
+  const startEdit = (notice: SiteNotification) => {
+    setEditingId(notice.id);
+    setDraftTitle(notice.title);
+    setDraftContent(notice.content);
+    setDraftLevel(notice.level);
+    setFormError('');
+  };
+
+  const withdraw = (notice: SiteNotification) => {
+    reviseMutation.mutate({
+      kind: 'withdraw',
+      ...applyNotificationWithdraw(history, currentAnnouncement, notice.id),
     });
   };
 
@@ -251,11 +348,15 @@ export default function NotificationsPage() {
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
         <Card>
           <Card.Header>
-            <Card.Title>{t('notifications.publish_title')}</Card.Title>
-            <Card.Description>{t('notifications.publish_description')}</Card.Description>
+            <Card.Title>{t(editingId ? 'notifications.edit_title' : 'notifications.publish_title')}</Card.Title>
+            <Card.Description>
+              {editingId
+                ? t('notifications.edit_description', { title: editingNotice?.title || t('notifications.default_title') })
+                : t('notifications.publish_description')}
+            </Card.Description>
           </Card.Header>
           <Card.Content>
-            <form className="space-y-5" onSubmit={publish}>
+            <form className="space-y-5" onSubmit={submitDraft}>
               <Field label={t('notifications.field_title')} hint={t('notifications.field_title_hint')}>
                 <Input
                   className="w-full"
@@ -305,21 +406,37 @@ export default function NotificationsPage() {
                 </div>
               </Field>
 
-              <NativeSwitch
-                isSelected={showPopup}
-                label={(
-                  <span>
-                    <span className="block text-sm font-medium text-text">{t('notifications.show_popup')}</span>
-                    <span className="block text-xs leading-5 text-text-tertiary">{t('notifications.show_popup_hint')}</span>
-                  </span>
-                )}
-                onChange={setShowPopup}
-              />
+              {editingId ? (
+                <p className="text-xs leading-5 text-text-tertiary">{t('notifications.edit_popup_hint')}</p>
+              ) : (
+                <NativeSwitch
+                  isSelected={showPopup}
+                  label={(
+                    <span>
+                      <span className="block text-sm font-medium text-text">{t('notifications.show_popup')}</span>
+                      <span className="block text-xs leading-5 text-text-tertiary">{t('notifications.show_popup_hint')}</span>
+                    </span>
+                  )}
+                  onChange={setShowPopup}
+                />
+              )}
 
-              <div className="flex justify-end border-t border-border pt-4">
-                <Button isDisabled={publishMutation.isPending} type="submit" variant="primary">
-                  {publishMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  {t('notifications.publish')}
+              <div className="flex justify-end gap-2 border-t border-border pt-4">
+                {editingId && (
+                  <Button isDisabled={reviseMutation.isPending} type="button" variant="secondary" onPress={resetDraft}>
+                    <X className="h-4 w-4" />
+                    {t('common.cancel')}
+                  </Button>
+                )}
+                <Button
+                  isDisabled={editingId ? reviseMutation.isPending : publishMutation.isPending}
+                  type="submit"
+                  variant="primary"
+                >
+                  {(editingId ? reviseMutation.isPending : publishMutation.isPending)
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : editingId ? <Save className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+                  {t(editingId ? 'notifications.edit_save' : 'notifications.publish')}
                 </Button>
               </div>
             </form>
@@ -375,8 +492,13 @@ export default function NotificationsPage() {
                   : new Intl.DateTimeFormat(locale, {
                     year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
                   }).format(date);
+                const isEditing = editingId === notice.id;
                 return (
-                  <article key={notice.id} className="flex items-start gap-3 border-b border-border px-4 py-4 last:border-b-0">
+                  <article
+                    key={notice.id}
+                    className="flex items-start gap-3 border-b border-border px-4 py-4 last:border-b-0"
+                    data-editing={isEditing || undefined}
+                  >
                     <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius)] bg-bg">
                       <Icon className="h-4 w-4 text-text-secondary" />
                     </span>
@@ -388,12 +510,37 @@ export default function NotificationsPage() {
                         <Chip color={LEVEL_TONES[notice.level]} size="sm" variant="soft">
                           {t(`settings.announcement_level_${notice.level}`)}
                         </Chip>
+                        {isEditing && (
+                          <Chip color="accent" size="sm" variant="soft">{t('notifications.editing_badge')}</Chip>
+                        )}
                       </div>
                       <p className="mt-1.5 whitespace-pre-wrap break-words text-xs leading-5 text-text-secondary">{notice.content}</p>
-                      <p className="mt-2 flex items-center gap-1.5 text-[10px] text-text-tertiary">
-                        <Clock3 className="h-3 w-3" />
-                        {time}
-                      </p>
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                        <p className="flex items-center gap-1.5 text-[10px] text-text-tertiary">
+                          <Clock3 className="h-3 w-3" />
+                          {time}
+                        </p>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            isDisabled={reviseMutation.isPending}
+                            size="sm"
+                            variant="ghost"
+                            onPress={() => (isEditing ? resetDraft() : startEdit(notice))}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            {t(isEditing ? 'common.cancel' : 'notifications.edit')}
+                          </Button>
+                          <Button
+                            isDisabled={reviseMutation.isPending}
+                            size="sm"
+                            variant="ghost"
+                            onPress={() => setWithdrawTarget(notice)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            {t('notifications.withdraw')}
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   </article>
                 );
@@ -460,6 +607,50 @@ export default function NotificationsPage() {
           </Card.Content>
         </Card>
       </div>
+
+      {/* 撤回确认：撤的若是当前公告，会一并关掉弹窗并清空 announcement_* */}
+      <AlertDialog
+        isOpen={!!withdrawTarget}
+        onOpenChange={(open) => {
+          if (!open) setWithdrawTarget(null);
+        }}
+      >
+        <DialogTriggerShim />
+        <AlertDialog.Backdrop>
+          <AlertDialog.Container placement="center" size="sm">
+            <AlertDialog.Dialog className="ag-elevation-modal">
+              <AlertDialog.Header>
+                <AlertDialog.Icon status="danger" />
+                <AlertDialog.Heading>{t('notifications.withdraw_title')}</AlertDialog.Heading>
+              </AlertDialog.Header>
+              <AlertDialog.Body>
+                {t('notifications.withdraw_confirm', {
+                  title: withdrawTarget?.title || t('notifications.default_title'),
+                })}
+                {withdrawTarget && isCurrentAnnouncement(withdrawTarget, currentAnnouncement) && (
+                  <span className="mt-2 block text-xs text-text-tertiary">
+                    {t('notifications.withdraw_current_hint')}
+                  </span>
+                )}
+              </AlertDialog.Body>
+              <AlertDialog.Footer>
+                <Button variant="secondary" onPress={() => setWithdrawTarget(null)}>
+                  {t('common.cancel')}
+                </Button>
+                <Button
+                  aria-busy={reviseMutation.isPending}
+                  isDisabled={reviseMutation.isPending}
+                  variant="danger"
+                  onPress={() => withdrawTarget && withdraw(withdrawTarget)}
+                >
+                  {reviseMutation.isPending ? <Spinner size="sm" /> : null}
+                  {t('common.confirm')}
+                </Button>
+              </AlertDialog.Footer>
+            </AlertDialog.Dialog>
+          </AlertDialog.Container>
+        </AlertDialog.Backdrop>
+      </AlertDialog>
     </div>
   );
 }

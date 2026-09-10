@@ -1243,7 +1243,19 @@
     "kind_quota_alert": "Alerta de cuota",
     "kind_balance_alert": "Alerta de saldo",
     "kind_system": "Sistema",
-    "view_link": "Ver"
+    "view_link": "Ver",
+    "edit": "Editar",
+    "edit_title": "Editar notificación",
+    "edit_description": "Editando «{{title}}». Al guardar se actualizan el historial y el centro de notificaciones de los usuarios.",
+    "edit_save": "Guardar cambios",
+    "edit_popup_hint": "La edición solo cambia el texto; no activa ni desactiva la ventana emergente.",
+    "edit_success": "Notificación actualizada",
+    "editing_badge": "Editando",
+    "withdraw": "Retirar",
+    "withdraw_title": "Retirar notificación",
+    "withdraw_confirm": "¿Retirar «{{title}}»? Los usuarios dejarán de verla en su centro de notificaciones.",
+    "withdraw_current_hint": "Es la notificación en uso; al retirarla también se detiene la ventana emergente.",
+    "withdraw_success": "Notificación retirada"
   },
   "settings": {
     "title": "Configuración",
