@@ -14,6 +14,8 @@ import (
 
 	appmcp "github.com/DouDOU-start/airgate-core/internal/app/mcp"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
+	"github.com/DouDOU-start/airgate-core/internal/server/middleware"
 )
 
 // MCPHandler 无状态 MCP(Model Context Protocol) Streamable HTTP 服务端的传输层。
@@ -98,7 +100,7 @@ func (h *MCPHandler) authenticateMCP(c *gin.Context) (*auth.APIKeyInfo, bool) {
 	}
 	if key == "" || !strings.HasPrefix(key, "sk-") {
 		slog.Warn("api_key_validation_failed", sdk.LogFieldReason, "mcp_missing_api_key")
-		mcpAbortAuth(c, http.StatusUnauthorized, "missing_api_key", "缺少 API Key")
+		mcpAbortAuth(c, http.StatusUnauthorized, "missing_api_key", i18n.Tc(c, "gw.missing_api_key"))
 		return nil, false
 	}
 
@@ -119,7 +121,7 @@ func (h *MCPHandler) authenticateMCP(c *gin.Context) (*auth.APIKeyInfo, bool) {
 			code, status, reason = "service_unavailable", http.StatusServiceUnavailable, "mcp_service_unavailable"
 		}
 		slog.Warn("api_key_validation_failed", sdk.LogFieldReason, reason, sdk.LogFieldError, err, sdk.LogFieldStatus, status)
-		mcpAbortAuth(c, status, code, err.Error())
+		mcpAbortAuth(c, status, code, i18n.Tc(c, middleware.APIKeyErrorMsgKey(code, "")))
 		return nil, false
 	}
 	return info, true

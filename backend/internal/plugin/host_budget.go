@@ -2,7 +2,6 @@ package plugin
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/user"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	"github.com/DouDOU-start/airgate-core/internal/routing"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
@@ -82,11 +82,11 @@ func evaluateBudget(balance, reserved float64, limited bool, quotaRemaining, est
 // insufficientBudgetMessage 拒绝文案。三个数字都要露出来——只说「余额不足」用户会以为
 // 是系统问题（他刚充过钱），把在途预留摆出来才解释得清钱去哪了。
 func insufficientBudgetMessage(quotaCase bool, avail, reserved, estimate float64) string {
-	prefix := "余额不足"
+	key := "gw.budget_insufficient_balance"
 	if quotaCase {
-		prefix = "额度不足"
+		key = "gw.budget_insufficient_quota"
 	}
-	return fmt.Sprintf("%s：可用 $%.2f，在途预留 $%.2f，本条预估 $%.2f", prefix, avail, reserved, estimate)
+	return i18n.En(key, avail, reserved, estimate)
 }
 
 // reservedInFlightCost 汇总某账号名下所有非终态任务的预估 = 在途预留。

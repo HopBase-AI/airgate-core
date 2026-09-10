@@ -1857,11 +1857,11 @@ func hostAllRoutesFailurePayload(summary allRoutesFailureSummary, lastUpstream s
 func hostAccountGatePayload(decision scheduler.AccountGateDecision) map[string]interface{} {
 	statusCode := http.StatusServiceUnavailable
 	code := appusage.ErrorCodeNoAvailableAccount
-	message := "指定上游账号暂不可用，请稍后重试"
+	message := i18n.En("gw.pinned_account_unavailable")
 	if decision.Reason == scheduler.AccountGateRateLimited {
 		statusCode = http.StatusTooManyRequests
 		code = appusage.ErrorCodeAllRoutesRateLimited
-		message = "指定上游账号当前被限流，请稍后重试"
+		message = i18n.En("gw.pinned_account_rate_limited")
 	}
 	retryAfter := time.Until(decision.RetryAt)
 	if retryAfter < 0 {
@@ -3219,7 +3219,7 @@ func (h *HostService) checkHostForwardBalanceOrReplay(ctx context.Context, req h
 }
 
 func hostForwardGenericError() error {
-	return status.Error(codes.Unavailable, "请求暂时无法完成，请稍后重试")
+	return status.Error(codes.Unavailable, i18n.En("gw.all_routes_failed"))
 }
 
 func hostContextError(err error) error {

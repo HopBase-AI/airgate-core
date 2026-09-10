@@ -655,8 +655,11 @@ func formatConnectivityHTTPMessage(statusCode int, msg string) string {
 }
 
 func isConnectivityInternalDiagnostic(reason string) bool {
+	// openai 插件 2026-09-10 起对外文案改英文,新旧两种写法都要认(历史事件仍是中文)。
 	return strings.Contains(reason, "上游流式响应为空") ||
-		strings.Contains(reason, "未收到上游流式完成事件")
+		strings.Contains(reason, "未收到上游流式完成事件") ||
+		strings.Contains(reason, "upstream stream response is empty") ||
+		strings.Contains(reason, "upstream stream completion event was not received")
 }
 
 // extractBodyError 从上游错误响应 body 中提取人类可读的错误消息。

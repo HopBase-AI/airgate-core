@@ -57,5 +57,11 @@
   "gw.metadata_plugin_failed": "ゲートウェイプラグインがこのメタデータリクエストを処理できませんでした",
   "gw.model_list_failed": "モデル一覧の読み込みに失敗しました。しばらくしてから再試行してください",
   "gw.metadata_empty_response": "ゲートウェイプラグインが空のメタデータレスポンスを返しました",
-  "gw.metadata_request_failed": "メタデータリクエストに失敗しました"
+  "gw.metadata_request_failed": "メタデータリクエストに失敗しました",
+  "gw.member_quota_exceeded": "メンバーのクォータを使い果たしました",
+  "gw.department_quota_exceeded": "部門のクォータを使い果たしました",
+  "gw.pinned_account_unavailable": "指定された上流アカウントは一時的に利用できません。しばらくしてから再試行してください",
+  "gw.pinned_account_rate_limited": "指定された上流アカウントは現在レート制限中です。しばらくしてから再試行してください",
+  "gw.budget_insufficient_balance": "残高不足：利用可能 $%.2f、処理中の予約 $%.2f、このリクエストの見積 $%.2f",
+  "gw.budget_insufficient_quota": "クォータ不足：利用可能 $%.2f、処理中の予約 $%.2f、このリクエストの見積 $%.2f"
 }
