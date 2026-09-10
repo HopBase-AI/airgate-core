@@ -45,7 +45,7 @@ func TestCheckSubmissionBudgetReservesInFlightTasks(t *testing.T) {
 	if status.Code(err) != codes.ResourceExhausted {
 		t.Fatalf("checkSubmissionBudget(estimate 5) = %v, want ResourceExhausted", err)
 	}
-	const wantMsg = "余额不足：可用 $10.00，在途预留 $6.00，本条预估 $5.00"
+	const wantMsg = "Insufficient balance: available $10.00, reserved in flight $6.00, this request estimated $5.00"
 	if got := status.Convert(err).Message(); got != wantMsg {
 		t.Fatalf("message = %q, want %q", got, wantMsg)
 	}
@@ -103,7 +103,7 @@ func TestCheckSubmissionBudgetMemberQuota(t *testing.T) {
 	if status.Code(err) != codes.ResourceExhausted {
 		t.Fatalf("checkSubmissionBudget(member) = %v, want ResourceExhausted", err)
 	}
-	const wantMsg = "额度不足：可用 $5.00，在途预留 $0.00，本条预估 $6.00"
+	const wantMsg = "Insufficient quota: available $5.00, reserved in flight $0.00, this request estimated $6.00"
 	if got := status.Convert(err).Message(); got != wantMsg {
 		t.Fatalf("message = %q, want %q", got, wantMsg)
 	}
@@ -169,7 +169,7 @@ func TestBillingBudget(t *testing.T) {
 		t.Fatalf("billingBudget(insufficient): %v", err)
 	}
 	assertBudgetField(t, out, "sufficient", false)
-	assertBudgetField(t, out, "message", "余额不足：可用 $20.00，在途预留 $5.00，本条预估 $16.00")
+	assertBudgetField(t, out, "message", "Insufficient balance: available $20.00, reserved in flight $5.00, this request estimated $16.00")
 
 	// 不带预估：只报余额与预留，不做本条判定
 	out, err = host.billingBudget(ctx, hostBillingBudgetRequest{UserID: int64(u.ID), Platform: "budget-test"})
@@ -209,7 +209,7 @@ func TestBillingBudgetMember(t *testing.T) {
 	assertBudgetField(t, out, "quota_remaining", 4.0)
 	assertBudgetField(t, out, "available", 4.0) // min(100, 4) − 0
 	assertBudgetField(t, out, "sufficient", false)
-	assertBudgetField(t, out, "message", "额度不足：可用 $4.00，在途预留 $0.00，本条预估 $6.00")
+	assertBudgetField(t, out, "message", "Insufficient quota: available $4.00, reserved in flight $0.00, this request estimated $6.00")
 }
 
 func assertBudgetField(t *testing.T, out map[string]interface{}, key string, want interface{}) {
@@ -239,7 +239,7 @@ func TestEvaluateBudget(t *testing.T) {
 	if d.Available != 5 {
 		t.Fatalf("available = %v, want 5（取余额与额度的小者）", d.Available)
 	}
-	if d.Message != "额度不足：可用 $5.00，在途预留 $0.00，本条预估 $6.00" {
+	if d.Message != "Insufficient quota: available $5.00, reserved in flight $0.00, this request estimated $6.00" {
 		t.Fatalf("message = %q", d.Message)
 	}
 }

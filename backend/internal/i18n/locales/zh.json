@@ -57,5 +57,11 @@
   "gw.metadata_plugin_failed": "网关插件处理该元数据请求失败",
   "gw.model_list_failed": "模型列表加载失败，请稍后重试",
   "gw.metadata_empty_response": "网关插件返回了空的元数据响应",
-  "gw.metadata_request_failed": "元数据请求失败"
+  "gw.metadata_request_failed": "元数据请求失败",
+  "gw.member_quota_exceeded": "成员额度已用尽",
+  "gw.department_quota_exceeded": "部门额度已用尽",
+  "gw.pinned_account_unavailable": "指定上游账号暂时不可用，请稍后重试",
+  "gw.pinned_account_rate_limited": "指定上游账号当前受到限流，请稍后重试",
+  "gw.budget_insufficient_balance": "余额不足：可用 $%.2f，在途预留 $%.2f，本条预估 $%.2f",
+  "gw.budget_insufficient_quota": "额度不足：可用 $%.2f，在途预留 $%.2f，本条预估 $%.2f"
 }

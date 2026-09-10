@@ -57,5 +57,11 @@
   "gw.metadata_plugin_failed": "El plugin de la pasarela no pudo procesar esta solicitud de metadatos",
   "gw.model_list_failed": "No se pudo cargar la lista de modelos, inténtelo de nuevo más tarde",
   "gw.metadata_empty_response": "El plugin de la pasarela devolvió una respuesta de metadatos vacía",
-  "gw.metadata_request_failed": "La solicitud de metadatos falló"
+  "gw.metadata_request_failed": "La solicitud de metadatos falló",
+  "gw.member_quota_exceeded": "Cuota del miembro agotada",
+  "gw.department_quota_exceeded": "Cuota del departamento agotada",
+  "gw.pinned_account_unavailable": "La cuenta upstream especificada no está disponible temporalmente, inténtelo de nuevo más tarde",
+  "gw.pinned_account_rate_limited": "La cuenta upstream especificada está sujeta a límite de tasa en este momento, inténtelo de nuevo más tarde",
+  "gw.budget_insufficient_balance": "Saldo insuficiente: disponible $%.2f, reservado en curso $%.2f, estimado de esta solicitud $%.2f",
+  "gw.budget_insufficient_quota": "Cuota insuficiente: disponible $%.2f, reservado en curso $%.2f, estimado de esta solicitud $%.2f"
 }

@@ -57,5 +57,11 @@
   "gw.metadata_plugin_failed": "The gateway plugin failed to handle this metadata request",
   "gw.model_list_failed": "Failed to load the model list, please retry later",
   "gw.metadata_empty_response": "The gateway plugin returned an empty metadata response",
-  "gw.metadata_request_failed": "Metadata request failed"
+  "gw.metadata_request_failed": "Metadata request failed",
+  "gw.member_quota_exceeded": "Member quota exhausted",
+  "gw.department_quota_exceeded": "Department quota exhausted",
+  "gw.pinned_account_unavailable": "The specified upstream account is temporarily unavailable, please retry later",
+  "gw.pinned_account_rate_limited": "The specified upstream account is currently rate limited, please retry later",
+  "gw.budget_insufficient_balance": "Insufficient balance: available $%.2f, reserved in flight $%.2f, this request estimated $%.2f",
+  "gw.budget_insufficient_quota": "Insufficient quota: available $%.2f, reserved in flight $%.2f, this request estimated $%.2f"
 }

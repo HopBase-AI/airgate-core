@@ -267,7 +267,7 @@ func APIKeyAuth(db *ent.Client) gin.HandlerFunc {
 				reason = "service_unavailable"
 			}
 			slog.Warn("api_key_validation_failed", sdk.LogFieldReason, reason, sdk.LogFieldError, err, sdk.LogFieldStatus, status, sdk.LogFieldRequestID, RequestIDFromGinContext(c))
-			abortWithOpenAIError(c, status, code, i18n.Tc(c, apiKeyErrorMsgKey(code)))
+			abortWithOpenAIError(c, status, code, i18n.Tc(c, APIKeyErrorMsgKey(code, reason)))
 			return
 		}
 
@@ -286,13 +286,21 @@ func APIKeyAuth(db *ent.Client) gin.HandlerFunc {
 }
 
 // abortWithOpenAIError 返回 OpenAI 兼容的错误格式并终止请求
-// apiKeyErrorMsgKey 把 API Key 校验失败的错误码映射到对外文案 key。
+// APIKeyErrorMsgKey 把 API Key 校验失败的错误码映射到对外文案 key（MCP 鉴权同用）。
 // 对外只按 code 说话：底层 auth.Err* 的中文原文只进日志，不再直接回给客户端。
-func apiKeyErrorMsgKey(code string) string {
+// insufficient_quota 一码三因（密钥 / 成员 / 部门额度），按 reason 区分文案，
+// 否则企业成员撞部门上限会被告知「密钥额度用尽」。
+func APIKeyErrorMsgKey(code, reason string) string {
 	switch code {
 	case "api_key_expired":
 		return "gw.api_key_expired"
 	case "insufficient_quota":
+		switch reason {
+		case "member_quota_exceeded":
+			return "gw.member_quota_exceeded"
+		case "department_quota_exceeded":
+			return "gw.department_quota_exceeded"
+		}
 		return "gw.api_key_quota_exceeded"
 	case "api_key_misconfigured":
 		return "gw.api_key_misconfigured"

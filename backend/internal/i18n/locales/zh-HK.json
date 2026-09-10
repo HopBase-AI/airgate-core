@@ -57,5 +57,11 @@
   "gw.metadata_plugin_failed": "閘道插件處理此元數據請求失敗",
   "gw.model_list_failed": "模型列表載入失敗，請稍後重試",
   "gw.metadata_empty_response": "閘道插件回傳了空的元數據回應",
-  "gw.metadata_request_failed": "元數據請求失敗"
+  "gw.metadata_request_failed": "元數據請求失敗",
+  "gw.member_quota_exceeded": "成員額度已用盡",
+  "gw.department_quota_exceeded": "部門額度已用盡",
+  "gw.pinned_account_unavailable": "指定的上游帳號暫時無法使用，請稍後重試",
+  "gw.pinned_account_rate_limited": "指定的上游帳號目前受到速率限制，請稍後重試",
+  "gw.budget_insufficient_balance": "餘額不足：可用 $%.2f，進行中預留 $%.2f，本次預估 $%.2f",
+  "gw.budget_insufficient_quota": "額度不足：可用 $%.2f，進行中預留 $%.2f，本次預估 $%.2f"
 }
