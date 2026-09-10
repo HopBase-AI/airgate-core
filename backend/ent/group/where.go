@@ -365,6 +365,16 @@ func ModelRoutingNotNil() predicate.Group {
 	return predicate.Group(sql.FieldNotNull(FieldModelRouting))
 }
 
+// ModelRatesIsNil applies the IsNil predicate on the "model_rates" field.
+func ModelRatesIsNil() predicate.Group {
+	return predicate.Group(sql.FieldIsNull(FieldModelRates))
+}
+
+// ModelRatesNotNil applies the NotNil predicate on the "model_rates" field.
+func ModelRatesNotNil() predicate.Group {
+	return predicate.Group(sql.FieldNotNull(FieldModelRates))
+}
+
 // PluginSettingsIsNil applies the IsNil predicate on the "plugin_settings" field.
 func PluginSettingsIsNil() predicate.Group {
 	return predicate.Group(sql.FieldIsNull(FieldPluginSettings))

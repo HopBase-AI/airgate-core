@@ -38,6 +38,8 @@ type Group struct {
 	Quotas map[string]interface{} `json:"quotas,omitempty"`
 	// ModelRouting holds the value of the "model_routing" field.
 	ModelRouting map[string][]int64 `json:"model_routing,omitempty"`
+	// ModelRates holds the value of the "model_rates" field.
+	ModelRates map[string]float64 `json:"model_rates,omitempty"`
 	// PluginSettings holds the value of the "plugin_settings" field.
 	PluginSettings map[string]map[string]string `json:"plugin_settings,omitempty"`
 	// ServiceTier holds the value of the "service_tier" field.
@@ -127,7 +129,7 @@ func (*Group) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case group.FieldNameI18n, group.FieldQuotas, group.FieldModelRouting, group.FieldPluginSettings, group.FieldNoteI18n:
+		case group.FieldNameI18n, group.FieldQuotas, group.FieldModelRouting, group.FieldModelRates, group.FieldPluginSettings, group.FieldNoteI18n:
 			values[i] = new([]byte)
 		case group.FieldIsExclusive, group.FieldStatusVisible, group.FieldDelisted:
 			values[i] = new(sql.NullBool)
@@ -224,6 +226,14 @@ func (gr *Group) assignValues(columns []string, values []any) error {
 			} else if value != nil && len(*value) > 0 {
 				if err := json.Unmarshal(*value, &gr.ModelRouting); err != nil {
 					return fmt.Errorf("unmarshal field model_routing: %w", err)
+				}
+			}
+		case group.FieldModelRates:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field model_rates", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &gr.ModelRates); err != nil {
+					return fmt.Errorf("unmarshal field model_rates: %w", err)
 				}
 			}
 		case group.FieldPluginSettings:
@@ -368,6 +378,9 @@ func (gr *Group) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("model_routing=")
 	builder.WriteString(fmt.Sprintf("%v", gr.ModelRouting))
+	builder.WriteString(", ")
+	builder.WriteString("model_rates=")
+	builder.WriteString(fmt.Sprintf("%v", gr.ModelRates))
 	builder.WriteString(", ")
 	builder.WriteString("plugin_settings=")
 	builder.WriteString(fmt.Sprintf("%v", gr.PluginSettings))

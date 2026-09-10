@@ -5,15 +5,17 @@ type GroupResp struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
 	// NameI18n / NoteI18n 展示文案多语言覆盖（键=语言码 en / zh-HK / ja；zh 基准即 name / note）。
-	NameI18n          map[string]string            `json:"name_i18n,omitempty"`
-	Platform          string                       `json:"platform"`
-	RateMultiplier    float64                      `json:"rate_multiplier"`
-	IsExclusive       bool                         `json:"is_exclusive"`
-	StatusVisible     bool                         `json:"status_visible"`    // 是否在公开 /status 页展示
-	Delisted          bool                         `json:"delisted"`          // 是否已下架
-	SubscriptionType  string                       `json:"subscription_type"` // standard / subscription
-	Quotas            map[string]interface{}       `json:"quotas,omitempty"`  // 日/周/月限额
-	ModelRouting      map[string][]int64           `json:"model_routing,omitempty"`
+	NameI18n         map[string]string      `json:"name_i18n,omitempty"`
+	Platform         string                 `json:"platform"`
+	RateMultiplier   float64                `json:"rate_multiplier"`
+	IsExclusive      bool                   `json:"is_exclusive"`
+	StatusVisible    bool                   `json:"status_visible"`    // 是否在公开 /status 页展示
+	Delisted         bool                   `json:"delisted"`          // 是否已下架
+	SubscriptionType string                 `json:"subscription_type"` // standard / subscription
+	Quotas           map[string]interface{} `json:"quotas,omitempty"`  // 日/周/月限额
+	ModelRouting     map[string][]int64     `json:"model_routing,omitempty"`
+	// ModelRates 按模型卖价倍率（模型 ID → 倍率）：覆盖该模型的 rate_multiplier；仅管理员视图返回。
+	ModelRates        map[string]float64           `json:"model_rates,omitempty"`
 	PluginSettings    map[string]map[string]string `json:"plugin_settings,omitempty"` // 插件命名空间开关
 	ServiceTier       string                       `json:"service_tier,omitempty"`
 	ForceInstructions string                       `json:"force_instructions,omitempty"`
@@ -65,10 +67,12 @@ type CreateGroupReq struct {
 	StatusVisible *bool `json:"status_visible"`
 	Delisted      *bool `json:"delisted"` // 是否下架，缺省 false（未下架）
 	// AllowedUserIDs 专属分组的授权用户 ID（仅 is_exclusive 时有意义；空=仅管理员可见）。
-	AllowedUserIDs    []int64                      `json:"allowed_user_ids"`
-	SubscriptionType  string                       `json:"subscription_type" binding:"oneof=standard subscription"`
-	Quotas            map[string]interface{}       `json:"quotas"`
-	ModelRouting      map[string][]int64           `json:"model_routing"`
+	AllowedUserIDs   []int64                `json:"allowed_user_ids"`
+	SubscriptionType string                 `json:"subscription_type" binding:"oneof=standard subscription"`
+	Quotas           map[string]interface{} `json:"quotas"`
+	ModelRouting     map[string][]int64     `json:"model_routing"`
+	// ModelRates 按模型卖价倍率（模型 ID → 倍率，须 > 0）；缺省/空 = 全部沿用 rate_multiplier。
+	ModelRates        map[string]float64           `json:"model_rates"`
 	PluginSettings    map[string]map[string]string `json:"plugin_settings"`
 	ServiceTier       string                       `json:"service_tier" binding:"omitempty,oneof=fast flex"`
 	ForceInstructions string                       `json:"force_instructions"`
@@ -89,10 +93,12 @@ type UpdateGroupReq struct {
 	StatusVisible  *bool             `json:"status_visible"`
 	Delisted       *bool             `json:"delisted"`
 	// AllowedUserIDs nil=不修改授权用户，[]=清空（仅管理员可见），[1,2]=设置。
-	AllowedUserIDs    *[]int64                     `json:"allowed_user_ids"`
-	SubscriptionType  *string                      `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`
-	Quotas            map[string]interface{}       `json:"quotas"`
-	ModelRouting      map[string][]int64           `json:"model_routing"`
+	AllowedUserIDs   *[]int64               `json:"allowed_user_ids"`
+	SubscriptionType *string                `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`
+	Quotas           map[string]interface{} `json:"quotas"`
+	ModelRouting     map[string][]int64     `json:"model_routing"`
+	// ModelRates：省略=不修改；提交则整体覆盖（空对象 = 清空全部按模型倍率）。
+	ModelRates        map[string]float64           `json:"model_rates"`
 	PluginSettings    map[string]map[string]string `json:"plugin_settings"`
 	ServiceTier       *string                      `json:"service_tier" binding:"omitempty,oneof=fast flex"`
 	ForceInstructions *string                      `json:"force_instructions"`

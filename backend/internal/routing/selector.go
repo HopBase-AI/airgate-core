@@ -3,6 +3,7 @@ package routing
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"sort"
 	"strings"
 
@@ -19,10 +20,17 @@ type Requirements struct {
 }
 
 type Candidate struct {
-	GroupID                int
-	Platform               string
-	EffectiveRate          float64
-	GroupRateMultiplier    float64
+	GroupID  int
+	Platform string
+	// EffectiveRate 是分组级有效倍率（用户专属 > 分组 > 1.0），**不含按模型倍率**：
+	// 自动选组的排序在不知道模型时进行（一个候选要服务多种模型），这里保持分组口径；
+	// 真正落账 / 报价 / 预算门禁知道模型后必须用 RateForModel。
+	EffectiveRate       float64
+	GroupRateMultiplier float64
+	// GroupModelRates 分组按模型卖价倍率；UserGroupRate 用户对该分组的专属倍率（0=无）。
+	// 两者一起让 RateForModel 能在候选上重放完整优先级链。
+	GroupModelRates        map[string]float64
+	UserGroupRate          float64
 	GroupServiceTier       string
 	GroupForceInstructions string
 	GroupPluginSettings    map[string]map[string]string
@@ -70,6 +78,8 @@ func ListEligibleGroups(ctx context.Context, db *ent.Client, userID int, platfor
 			Platform:               g.Platform,
 			EffectiveRate:          billing.ResolveBillingRateForGroup(userGroupRates, g.ID, g.RateMultiplier),
 			GroupRateMultiplier:    g.RateMultiplier,
+			GroupModelRates:        maps.Clone(g.ModelRates),
+			UserGroupRate:          userGroupRates[int64(g.ID)],
 			GroupServiceTier:       g.ServiceTier,
 			GroupForceInstructions: g.ForceInstructions,
 			GroupPluginSettings:    clonePluginSettings(g.PluginSettings),
@@ -97,6 +107,40 @@ func ListEligibleGroups(ctx context.Context, db *ent.Client, userID int, platfor
 			"top_rate", candidates[0].EffectiveRate)
 	}
 	return candidates, nil
+}
+
+// RateForModel 返回该候选分组对指定模型的实付倍率，完整优先级链：
+//
+//	用户专属倍率 > 分组按模型倍率 > 分组倍率（EffectiveRate）> 1.0
+//
+// model 为空或未配置按模型倍率时等于 EffectiveRate（EffectiveRate 由构造方按分组口径
+// 解析好，手工构造的候选只填 EffectiveRate 也能正确落账）。
+func (c Candidate) RateForModel(model string) float64 {
+	if c.UserGroupRate > 0 {
+		return c.UserGroupRate
+	}
+	if r, ok := billing.MatchGroupModelRate(c.GroupModelRates, model); ok {
+		return r
+	}
+	if c.EffectiveRate > 0 {
+		return c.EffectiveRate
+	}
+	return billing.ResolveBillingRateForGroup(nil, c.GroupID, c.GroupRateMultiplier)
+}
+
+// SortCandidatesForModel 在知道请求模型后，按各候选对该模型的实付倍率（RateForModel）稳定重排，
+// 次序规则仍是 CandidatePrecedes（倍率 → 权重 → ID）。与 modelpricing 按模型选最便宜分组同口径，
+// 保证模型广场展示的价格就是自动选组真正路由到的分组。model 为空不重排（保持分组口径）。
+func SortCandidatesForModel(candidates []Candidate, model string) {
+	if strings.TrimSpace(model) == "" || len(candidates) < 2 {
+		return
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		left, right := candidates[i], candidates[j]
+		left.EffectiveRate = left.RateForModel(model)
+		right.EffectiveRate = right.RateForModel(model)
+		return CandidatePrecedes(left, right)
+	})
 }
 
 // CandidatePrecedes defines the canonical automatic group-routing order.

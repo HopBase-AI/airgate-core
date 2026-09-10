@@ -38,7 +38,7 @@ func NewService(catalog CatalogReader, groups GroupReader, users UserReader, api
 
 // UserPricing 计算用户视角的模型报价：
 // 每个模型取"能路由到它的可用分组"中实付倍率最低者（计费同口径：
-// user.group_rates 覆盖 > group.rate_multiplier > 1.0）。
+// user.group_rates 覆盖 > group.model_rates[model] > group.rate_multiplier > 1.0）。
 func (s *Service) UserPricing(ctx context.Context, userID int) (Result, error) {
 	return s.UserPricingScoped(ctx, userID, nil)
 }
@@ -191,7 +191,7 @@ func (s *Service) APIKeyPricing(ctx context.Context, userID, apiKeyID int) (Resu
 			rate := key.SellRate
 			rateAvailable := rate > 0
 			if !rateAvailable {
-				rate, rateAvailable = pricingGroupRate(u.GroupRates, group, prices)
+				rate, rateAvailable = pricingGroupRate(u.GroupRates, group, model.ID, prices)
 			}
 			if rateAvailable && !hasCompleteFixedImagePrices(quote) {
 				quote.UserRate = rate
@@ -252,7 +252,7 @@ func selectModelGroupCandidate(
 			continue
 		}
 		fixedPrices := resolveFixedImagePrices(model.ID, userPluginSettings[int64(g.ID)], g.PluginSettings)
-		effective, ok := pricingGroupRate(userGroupRates, g, fixedPrices)
+		effective, ok := pricingGroupRate(userGroupRates, g, model.ID, fixedPrices)
 		if !ok {
 			continue
 		}
@@ -280,29 +280,38 @@ func modelGroupCandidateLess(left, right modelGroupCandidate) bool {
 	)
 }
 
-// pricingGroupRate 返回报价选组使用的真实有效倍率。倍率 0 的特殊分组默认
-// 不参与 token 报价；但若同组存在固定图片档位，缺失档位会按 billing 的 1.0
-// 兜底继续计费，因此该分组必须作为有效候选。
-func pricingGroupRate(userGroupRates map[int64]float64, g appgroup.Group, fixedPrices ModelQuote) (float64, bool) {
-	if rate, ok := effectiveGroupRate(userGroupRates, g); ok {
+// pricingGroupRate 返回报价选组使用的真实有效倍率（按模型：用户专属 > 分组按模型 > 分组）。
+// 倍率 0 的特殊分组默认不参与 token 报价；但若同组存在固定图片档位，缺失档位会按
+// billing 的 1.0 兜底继续计费，因此该分组必须作为有效候选。
+func pricingGroupRate(userGroupRates map[int64]float64, g appgroup.Group, model string, fixedPrices ModelQuote) (float64, bool) {
+	if rate, ok := effectiveGroupRateForModel(userGroupRates, g, model); ok {
 		return rate, true
 	}
 	if hasFixedImagePrices(fixedPrices) {
-		return billing.ResolveBillingRateForGroup(userGroupRates, g.ID, g.RateMultiplier), true
+		return billing.ResolveBillingRateForGroupModel(userGroupRates, g.ID, g.RateMultiplier, g.ModelRates, model), true
 	}
 	return 0, false
 }
 
-// effectiveGroupRate 返回分组对该用户的有效 token 倍率。
+// effectiveGroupRate 返回分组对该用户的分组级有效 token 倍率（不看按模型倍率，供分组摘要）。
 // ok=false 表示这是固定图价/特殊分组：rate_multiplier<=0 且无正的用户专属倍率。
 // 倍率 0 是「按固定图价计费、token 倍率不适用」的哨兵，不能当 token 折扣参与广场选价，
 // 否则 billing 的 1.0 兜底会把 GLM/Gemini/图像等模型污染成「1.5 折」的假象
 // （空 model_routing 的 4k 超分图组即此坑）。
 func effectiveGroupRate(userGroupRates map[int64]float64, g appgroup.Group) (float64, bool) {
+	return effectiveGroupRateForModel(userGroupRates, g, "")
+}
+
+// effectiveGroupRateForModel 是 effectiveGroupRate 的按模型版本，与 billing 优先级链同源：
+// 用户专属 > 分组按模型倍率 > 分组倍率；三者皆无正值时 ok=false（哨兵语义同上）。
+func effectiveGroupRateForModel(userGroupRates map[int64]float64, g appgroup.Group, model string) (float64, bool) {
 	if userGroupRates != nil {
 		if r, ok := userGroupRates[int64(g.ID)]; ok && r > 0 {
 			return r, true
 		}
+	}
+	if r, ok := billing.MatchGroupModelRate(g.ModelRates, model); ok {
+		return r, true
 	}
 	if g.RateMultiplier > 0 {
 		return g.RateMultiplier, true
@@ -311,7 +320,7 @@ func effectiveGroupRate(userGroupRates map[int64]float64, g appgroup.Group) (flo
 }
 
 // groupUSDMultiplier 计算分组相对官方美元价的有效倍率（输入价口径）：
-// 遍历该分组可路由的模型，比值 = 实付倍率 × 基准输入价 / 官方美元输入价，
+// 遍历该分组可路由的模型，比值 = 该模型实付倍率（含按模型倍率）× 基准输入价 / 官方美元输入价，
 // 取最低者（最优惠口径）。完整固定图片档位会替代整单 token 计费，因此不参与
 // token 折扣摘要；部分固定档位仍需展示未覆盖尺寸的 token 回退。常规模型（基准价
 // 即官方美元价）与视频模型（桶价即官方美元牌价）比值即实付倍率；CNY 基准模型需
@@ -322,10 +331,6 @@ func groupUSDMultiplier(
 	userGroupRates map[int64]float64,
 	userPluginSettings map[string]map[string]string,
 ) float64 {
-	effectiveRate, ok := effectiveGroupRate(userGroupRates, g)
-	if !ok {
-		return 0 // 固定图价/特殊分组：无有效 token 倍率，前端回退「Nx 倍率」文案
-	}
 	best := 0.0
 	for _, platform := range catalog {
 		if platform.Platform != g.Platform {
@@ -338,6 +343,10 @@ func groupUSDMultiplier(
 			fixedPrices := resolveFixedImagePrices(model.ID, userPluginSettings, g.PluginSettings)
 			if hasCompleteFixedImagePrices(fixedPrices) {
 				continue
+			}
+			effectiveRate, ok := effectiveGroupRateForModel(userGroupRates, g, model.ID)
+			if !ok {
+				continue // 固定图价/特殊分组：无有效 token 倍率，前端回退「Nx 倍率」文案
 			}
 			var ratio float64
 			switch {

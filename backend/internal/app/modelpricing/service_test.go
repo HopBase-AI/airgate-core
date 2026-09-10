@@ -3,6 +3,7 @@ package modelpricing
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -832,5 +833,96 @@ func TestGroupServesModel(t *testing.T) {
 				t.Fatalf("got %v want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// testServiceWithModelRates 仿「DeepSeek」单组多档卖价：组 28 倍率 6.8（牌价），
+// 按模型把 V4 Pro / V4 Flash 卖 3.74（5.5 折），V4.1 Flash 未列出沿用 6.8。
+func testServiceWithModelRates(user appuser.User) *Service {
+	catalog := &fakeCatalog{items: []apppluginadmin.PublicPlatformPricing{
+		{Platform: "openai", Models: []apppluginadmin.PublicPricingModel{
+			{ID: "deepseek-v4-pro", Input: 1.2, Output: 3.6},
+			{ID: "deepseek-v4-flash", Input: 0.3, Output: 0.9},
+			{ID: "deepseek-v4.1-flash", Input: 0.3, Output: 0.9},
+		}},
+	}}
+	groups := &fakeGroups{groups: []appgroup.Group{
+		{ID: 28, Name: "DeepSeek", Platform: "openai", RateMultiplier: 6.8,
+			ModelRates:   map[string]float64{"deepseek-v4-pro": 3.74, "deepseek-v4-flash": 3.74},
+			ModelRouting: map[string][]int64{"deepseek-*": {70}}},
+	}}
+	return NewService(catalog, groups, &fakeUsers{user: user}, &fakeAPIKeys{})
+}
+
+func modelQuotesByID(result Result) map[string]ModelQuote {
+	quotes := map[string]ModelQuote{}
+	for _, platform := range result.Platforms {
+		for _, m := range platform.Models {
+			quotes[m.ID] = m
+		}
+	}
+	return quotes
+}
+
+// TestUserPricingAppliesGroupModelRates 模型广场按模型实付价：列出的模型用按模型倍率，
+// 未列出的沿用分组倍率；分组摘要保持分组口径，USDMultiplier 取全组最优（含按模型倍率）。
+func TestUserPricingAppliesGroupModelRates(t *testing.T) {
+	svc := testServiceWithModelRates(appuser.User{})
+	result, err := svc.UserPricing(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	quotes := modelQuotesByID(result)
+	if q := quotes["deepseek-v4-pro"]; q.UserRate != 3.74 || q.GroupID != 28 {
+		t.Fatalf("deepseek-v4-pro = %+v", q)
+	}
+	if q := quotes["deepseek-v4-flash"]; q.UserRate != 3.74 || q.GroupID != 28 {
+		t.Fatalf("deepseek-v4-flash = %+v", q)
+	}
+	if q := quotes["deepseek-v4.1-flash"]; q.UserRate != 6.8 || q.GroupID != 28 {
+		t.Fatalf("deepseek-v4.1-flash = %+v", q)
+	}
+	if len(result.Groups) != 1 {
+		t.Fatalf("groups = %+v", result.Groups)
+	}
+	// USDMultiplier = 3.74 × 基准 1.2 / 官方 1.2，浮点往返留容差
+	if g := result.Groups[0]; g.GroupRate != 6.8 || g.EffectiveRate != 6.8 || math.Abs(g.USDMultiplier-3.74) > 1e-9 {
+		t.Fatalf("DeepSeek group quote = %+v", g)
+	}
+}
+
+// TestUserPricingUserOverrideBeatsGroupModelRates 用户专属倍率是分组级整体覆盖，压过按模型倍率。
+func TestUserPricingUserOverrideBeatsGroupModelRates(t *testing.T) {
+	svc := testServiceWithModelRates(appuser.User{GroupRates: map[int64]float64{28: 2.0}})
+	result, err := svc.UserPricing(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	quotes := modelQuotesByID(result)
+	for _, id := range []string{"deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4.1-flash"} {
+		if q := quotes[id]; q.UserRate != 2.0 {
+			t.Fatalf("%s = %+v, want user override 2.0", id, q)
+		}
+	}
+	if g := result.Groups[0]; g.EffectiveRate != 2.0 || g.USDMultiplier != 2.0 {
+		t.Fatalf("DeepSeek group quote = %+v", g)
+	}
+}
+
+// TestAPIKeyPricingAppliesGroupModelRates API Key 会话无 sell_rate 时沿用真实计费链，按模型倍率同样生效。
+func TestAPIKeyPricingAppliesGroupModelRates(t *testing.T) {
+	svc := testServiceWithModelRates(appuser.User{ID: 1, Status: "active"})
+	groupID := 28
+	svc.apiKeys = &fakeAPIKeys{key: appapikey.Key{ID: 9, UserID: 1, Status: "active", GroupID: &groupID}}
+	result, err := svc.APIKeyPricing(context.Background(), 1, 9)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	quotes := modelQuotesByID(result)
+	if q := quotes["deepseek-v4-pro"]; q.UserRate != 3.74 {
+		t.Fatalf("deepseek-v4-pro = %+v", q)
+	}
+	if q := quotes["deepseek-v4.1-flash"]; q.UserRate != 6.8 {
+		t.Fatalf("deepseek-v4.1-flash = %+v", q)
 	}
 }

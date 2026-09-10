@@ -37,6 +37,13 @@ func (Group) Fields() []ent.Field {
 		field.Enum("subscription_type").Values("standard", "subscription").Default("standard"),
 		field.JSON("quotas", map[string]interface{}{}).Optional(),
 		field.JSON("model_routing", map[string][]int64{}).Optional(),
+		// model_rates 按模型覆盖本分组的卖价倍率（模型 ID → 倍率），形如
+		//   {"deepseek-v4-pro": 3.74, "deepseek-v4-flash": 3.74}
+		// 语义：值 > 0 的条目对该模型覆盖 rate_multiplier；未列出的模型沿用 rate_multiplier。
+		// 优先级（billing.ResolveBillingRateForGroupModel）：
+		//   user.group_rates[group] > group.model_rates[model] > group.rate_multiplier > 1.0
+		// 用途：同一「DeepSeek」分组把 V4 Pro/Flash 卖 5.5 折、V4.1 Flash 卖牌价，不必拆组。
+		field.JSON("model_rates", map[string]float64{}).Optional(),
 		// plugin_settings 按插件命名空间存放细粒度开关，形如
 		//   {"claude": {"claude_code_only": "true"}}
 		// Core 在 buildForwardHeaders 时按约定映射成 X-Airgate-* 头下发给网关插件。

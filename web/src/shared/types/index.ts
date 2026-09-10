@@ -468,6 +468,8 @@ export interface GroupResp {
   subscription_type: 'standard' | 'subscription';
   quotas?: Record<string, unknown>;
   model_routing?: Record<string, number[]>;
+  // 按模型卖价倍率(模型 ID → 倍率):覆盖该模型的 rate_multiplier;缺省 = 全部沿用 rate_multiplier
+  model_rates?: Record<string, number>;
   plugin_settings?: Record<string, Record<string, string>>;
   service_tier?: 'fast' | 'flex';
   force_instructions?: string;
@@ -502,6 +504,8 @@ export interface CreateGroupReq {
   subscription_type: 'standard' | 'subscription';
   quotas?: Record<string, unknown>;
   model_routing?: Record<string, number[]>;
+  // 按模型卖价倍率(模型 ID → 倍率,须 > 0)
+  model_rates?: Record<string, number>;
   plugin_settings?: Record<string, Record<string, string>>;
   service_tier?: 'fast' | 'flex';
   force_instructions?: string;
@@ -532,6 +536,8 @@ export interface UpdateGroupReq {
   subscription_type?: 'standard' | 'subscription';
   quotas?: Record<string, unknown>;
   model_routing?: Record<string, number[]>;
+  // 省略=不修改;提交则整体覆盖(空对象 = 清空全部按模型倍率)
+  model_rates?: Record<string, number>;
   plugin_settings?: Record<string, Record<string, string>>;
   service_tier?: 'fast' | 'flex';
   force_instructions?: string;

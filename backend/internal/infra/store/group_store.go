@@ -149,6 +149,9 @@ func (s *GroupStore) Create(ctx context.Context, input appgroup.CreateInput) (ap
 		if input.ModelRouting != nil {
 			builder = builder.SetModelRouting(appgroupCloneModelRouting(input.ModelRouting))
 		}
+		if len(input.ModelRates) > 0 {
+			builder = builder.SetModelRates(maps.Clone(input.ModelRates))
+		}
 		if input.PluginSettings != nil {
 			builder = builder.SetPluginSettings(appgroupClonePluginSettings(input.PluginSettings))
 		}
@@ -232,6 +235,9 @@ func (s *GroupStore) Create(ctx context.Context, input appgroup.CreateInput) (ap
 	if input.ModelRouting != nil {
 		builder = builder.SetModelRouting(sanitizeModelRouting(input.ModelRouting, accountIDsByAvailability(accountIDs, nil)))
 	}
+	if len(input.ModelRates) > 0 {
+		builder = builder.SetModelRates(maps.Clone(input.ModelRates))
+	}
 	if input.PluginSettings != nil {
 		builder = builder.SetPluginSettings(appgroupClonePluginSettings(input.PluginSettings))
 	}
@@ -300,6 +306,14 @@ func (s *GroupStore) Update(ctx context.Context, id int, input appgroup.UpdateIn
 			return appgroup.Group{}, err
 		}
 		builder = builder.SetModelRouting(sanitizeModelRouting(input.ModelRouting, availableAccountIDs))
+	}
+	// ModelRates：nil=不修改；非 nil 空 map=清空（落 NULL）；否则整体覆盖。
+	if input.ModelRates != nil {
+		if len(input.ModelRates) == 0 {
+			builder = builder.ClearModelRates()
+		} else {
+			builder = builder.SetModelRates(maps.Clone(input.ModelRates))
+		}
 	}
 	if input.PluginSettings != nil {
 		builder = builder.SetPluginSettings(appgroupClonePluginSettings(input.PluginSettings))
@@ -747,6 +761,7 @@ func mapGroup(item *ent.Group) appgroup.Group {
 		SubscriptionType:         string(item.SubscriptionType),
 		Quotas:                   appgroupCloneQuotas(item.Quotas),
 		ModelRouting:             appgroupCloneModelRouting(item.ModelRouting),
+		ModelRates:               maps.Clone(item.ModelRates),
 		PluginSettings:           appgroupClonePluginSettings(item.PluginSettings),
 		AccountAvailabilityKnown: accountAvailabilityKnown,
 		RoutableChatAccountIDs:   chatAccountIDs,

@@ -33,7 +33,8 @@ type UserReader interface {
 // ModelQuote 单模型对当前用户的报价：公开基准价 + 用户最优分组的实付倍率。
 type ModelQuote struct {
 	apppluginadmin.PublicPricingModel
-	// UserRate 用户在该模型上的最优 token 实付倍率（计费口径，user.group_rates 覆盖后）；
+	// UserRate 用户在该模型上的最优 token 实付倍率（计费口径：user.group_rates 覆盖 >
+	// group.model_rates[model] > group.rate_multiplier）；
 	// 部分图片尺寸有固定价时，它表示未配置尺寸的 token 回退倍率。0 表示没有可用
 	// token 报价，或所有图片尺寸均使用固定价。
 	UserRate float64
@@ -61,8 +62,9 @@ type GroupQuote struct {
 	ID       int
 	Name     string
 	Platform string
-	// GroupRate 分组标准倍率（原样透出，可能为 0）；EffectiveRate 计费实际倍率
-	//（user.group_rates 覆盖后，billing.ResolveBillingRateForGroup 口径）。
+	// GroupRate 分组标准倍率（原样透出，可能为 0）；EffectiveRate 分组级计费实际倍率
+	//（user.group_rates 覆盖后，billing.ResolveBillingRateForGroup 口径，不含按模型倍率——
+	// 按模型的实付价看各 ModelQuote.UserRate）。
 	GroupRate     float64
 	EffectiveRate float64
 	// USDMultiplier 相对官方美元价的有效倍率（输入价口径）：
