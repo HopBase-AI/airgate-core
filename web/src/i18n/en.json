@@ -156,14 +156,15 @@
     "model_plaza": "Model Plaza",
     "pricing": "Pricing",
     "entry_codes": "Entry Codes",
-    "my_team": "Team",
+    "my_team": "Team management",
+    "my_team_audit": "Activity log",
     "section_overview": "Overview",
     "section_access": "Integration",
     "section_team": "Team",
     "section_workspace": "Workspace",
     "section_account": "Account",
-    "badge_enterprise_owner": "Enterprise Owner",
-    "badge_team_member": "Team Member"
+    "badge_enterprise_owner": "Owner",
+    "badge_team_member": "Member"
   },
   "model_plaza": {
     "title": "Model Plaza",
@@ -1749,7 +1750,7 @@
     "no_account_hint": "Legacy member without a login account; only keys you created for them work. Delete and re-add to enable login.",
     "members_tab": "Members",
     "departments_tab": "Departments",
-    "audit_tab": "Activity log",
+    "audit_intro": "Department, member, budget, permission and API key changes are all recorded here; filter by time range and target.",
     "department": "Department",
     "department_none": "Unassigned",
     "department_hint": "Usage also counts against the department budget; leave empty for no department",

@@ -129,6 +129,7 @@
 
 .ag-account-name {
   display: block;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   font-size: 0.78125rem;
@@ -137,10 +138,14 @@
   white-space: nowrap;
 }
 
-/* 身份徽记(企业主 / 团队成员;已认证 / 未认证等状态复用 data-tone):小胶囊 + 发丝线 + 弱色,不做底色 */
+/* 身份徽记(企业主 / 团队成员;已认证 / 未认证等状态复用 data-tone):小胶囊 + 发丝线 + 弱色,不做底色。
+   徽记可压缩且最多占半行:flex:none + 长译文(英语 Enterprise Owner / 西语 Propietario empresarial)
+   会把用户名挤成一个字符,宁可徽记自己省略号。 */
 .ag-account-badge {
   display: inline-flex;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   align-items: center;
   height: 16px;
   padding: 0 6px;

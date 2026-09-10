@@ -156,14 +156,15 @@
     "model_plaza": "Plaza de modelos",
     "pricing": "Precios",
     "entry_codes": "Códigos de entrada",
-    "my_team": "Equipo",
+    "my_team": "Gestión de equipo",
+    "my_team_audit": "Registro de actividad",
     "section_overview": "Resumen",
     "section_access": "Integración",
     "section_team": "Equipo",
     "section_workspace": "Espacio de trabajo",
     "section_account": "Cuenta",
-    "badge_enterprise_owner": "Propietario empresarial",
-    "badge_team_member": "Miembro del equipo"
+    "badge_enterprise_owner": "Propietario",
+    "badge_team_member": "Miembro"
   },
   "model_plaza": {
     "title": "Plaza de modelos",
@@ -1749,7 +1750,7 @@
     "no_account_hint": "Miembro antiguo sin cuenta de acceso; solo funcionan las claves que creaste para él. Elimínalo y vuelve a añadirlo para habilitar el acceso.",
     "members_tab": "Miembros",
     "departments_tab": "Departamentos",
-    "audit_tab": "Registro de actividad",
+    "audit_intro": "Los cambios de departamentos, miembros, presupuestos, permisos y claves API quedan registrados; se pueden filtrar por periodo y objeto.",
     "department": "Departamento",
     "department_none": "Sin asignar",
     "department_hint": "El consumo también cuenta para el presupuesto del departamento; vacío = sin departamento",

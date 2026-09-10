@@ -1,20 +1,21 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { EmptyState, ListBox, Select } from '@heroui/react';
-import { CommonTable } from '../../../shared/components/CommonTable';
-import { TableLoadingRow } from '../../../shared/components/TableLoadingRow';
-import { TablePaginationFooter } from '../../../shared/components/TablePaginationFooter';
-import { UsageDateRangeFilter } from '../../../shared/components/UsageDateRangeFilter';
-import { departmentsApi } from '../../../shared/api/departments';
-import { membersApi } from '../../../shared/api/members';
-import { groupsApi } from '../../../shared/api/groups';
-import { localizedGroupText } from '../../../shared/groupText';
-import { queryKeys } from '../../../shared/queryKeys';
-import { FETCH_ALL_PARAMS } from '../../../shared/constants';
-import { usePagination } from '../../../shared/hooks/usePagination';
-import { getTotalPages } from '../../../shared/utils/pagination';
-import type { TeamAuditLogResp } from '../../../shared/types';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button, EmptyState, ListBox, Select } from '@heroui/react';
+import { RefreshCw } from 'lucide-react';
+import { CommonTable } from '../../shared/components/CommonTable';
+import { TableLoadingRow } from '../../shared/components/TableLoadingRow';
+import { TablePaginationFooter } from '../../shared/components/TablePaginationFooter';
+import { UsageDateRangeFilter } from '../../shared/components/UsageDateRangeFilter';
+import { departmentsApi } from '../../shared/api/departments';
+import { membersApi } from '../../shared/api/members';
+import { groupsApi } from '../../shared/api/groups';
+import { localizedGroupText } from '../../shared/groupText';
+import { queryKeys } from '../../shared/queryKeys';
+import { FETCH_ALL_PARAMS } from '../../shared/constants';
+import { usePagination } from '../../shared/hooks/usePagination';
+import { getTotalPages } from '../../shared/utils/pagination';
+import type { TeamAuditLogResp } from '../../shared/types';
 
 const TARGET_TYPES = ['department', 'member', 'apikey', 'team'] as const;
 
@@ -108,8 +109,10 @@ function diffLines(entry: TeamAuditLogResp, t: Translate, lang: string, resolve:
 }
 
 // 操作记录：组织调整 / 成员变更 / 权限与额度调整 / 密钥操作 / 账期改动全程可查、可追溯。
-export function AuditTab() {
+// 独立成页挂在侧栏「团队」段下：与「团队管理」的额度经营是两件事，页签里挤着反而找不到。
+export default function TeamAuditPage() {
   const { t, i18n } = useTranslation();
+  const queryClient = useQueryClient();
   const { page, setPage, pageSize, setPageSize } = usePagination(20, 'user.team.audit');
   const [targetType, setTargetType] = useState<'' | (typeof TARGET_TYPES)[number]>('');
   const [startDate, setStartDate] = useState<string | undefined>();
@@ -123,7 +126,7 @@ export function AuditTab() {
     end_date: endDate,
     tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
   };
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: queryKeys.teamAuditLogs(params),
     queryFn: ({ signal }) => departmentsApi.auditLogs(params, { signal }),
     placeholderData: keepPreviousData,
@@ -159,6 +162,13 @@ export function AuditTab() {
     };
   }, [departmentsData?.list, groupsData?.list, lang, membersData?.list, t]);
 
+  // 刷新要连名称映射一起刷:三张 lookup 的 staleTime 是 60s,刚改完部门名再点刷新否则仍显示旧名
+  const refreshLookups = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.departmentsAll() });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.membersForKeys() });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.groupsForKeys() });
+  };
+
   const rows = data?.list ?? [];
   const total = data?.total ?? 0;
   const typeOptions = [
@@ -167,8 +177,12 @@ export function AuditTab() {
   ];
 
   return (
-    <>
-      <div className="ag-filter-bar mb-4 flex flex-col flex-wrap items-stretch gap-3 sm:flex-row sm:items-center">
+    <div className="p-6">
+      {/* 标题由 AppShell 按侧栏项渲染；这里只留一行弱化说明 */}
+      <p className="mb-4 text-[13px] leading-5 text-text-tertiary">{t('team.audit_intro')}</p>
+
+      {/* 筛选条不做盒子：分区靠间距，刷新按钮并进同一行末尾，避免多出一条横线 */}
+      <div className="ag-filter-bar flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-5 flex-wrap">
         <div className="w-full sm:w-auto">
           <UsageDateRangeFilter
             clearLabel={t('common.clear')}
@@ -206,10 +220,22 @@ export function AuditTab() {
             </Select.Popover>
           </Select>
         </div>
+        {/* 刷新按钮靠右成组:与用户管理 / 分组等筛选条一致(sm:ml-auto),不跟筛选控件挤在一起 */}
+        <div className="flex items-center gap-2 sm:ml-auto">
+          <Button
+            isIconOnly
+            aria-label={t('common.refresh', 'Refresh')}
+            size="sm"
+            variant="ghost"
+            onPress={() => { void refetch(); refreshLookups(); }}
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       <CommonTable
-        ariaLabel={t('team.audit_tab')}
+        ariaLabel={t('nav.my_team_audit')}
         footer={(
           <TablePaginationFooter page={page} pageSize={pageSize} setPage={setPage} setPageSize={setPageSize} total={total} totalPages={getTotalPages(total, pageSize)} />
         )}
@@ -273,6 +299,6 @@ export function AuditTab() {
           )}
         </CommonTable.Body>
       </CommonTable>
-    </>
+    </div>
   );
 }
