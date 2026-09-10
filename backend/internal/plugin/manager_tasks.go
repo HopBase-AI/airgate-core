@@ -366,15 +366,21 @@ func (m *Manager) processOneTask(ctx context.Context, pluginName string, process
 	db := m.hostFactory.db
 
 	if err != nil || (resp != nil && !resp.Success) {
-		errMsg := "processing failed"
+		rawMsg := "processing failed"
 		if err != nil {
-			errMsg = err.Error()
+			rawMsg = err.Error()
 		} else if resp != nil && resp.ErrorMessage != "" {
-			errMsg = resp.ErrorMessage
+			rawMsg = resp.ErrorMessage
 		}
+		// 插件把 Host 的 gRPC error 原样返回是常态（不是所有插件都自己落库），
+		// 而这个 errMsg 会直写 tasks.error_message、被工作坊前端原样渲染给终端用户。
+		// core 在这里做最后一道清洗：剥掉 `rpc error: code = X desc = ` 信封 + 抹凭证。
+		// 生产两条头号报错都是这个形状，剥在这里等于所有插件（含以后新写的）一次性免疫。
+		errMsg, grpcCode := taskFailureMessage(rawMsg)
 
 		slog.Error("task_process_failed",
-			"task_id", t.ID, sdk.LogFieldPluginID, pluginName, sdk.LogFieldError, errMsg)
+			"task_id", t.ID, sdk.LogFieldPluginID, pluginName,
+			"grpc_code", grpcCode, "raw_error", rawMsg, sdk.LogFieldError, errMsg)
 
 		// t.Attempts is the pre-increment value; DB already has attempts+1
 		if t.Attempts+1 < t.MaxAttempts {
@@ -392,6 +398,9 @@ func (m *Manager) processOneTask(ctx context.Context, pluginName string, process
 					SetStage("failed").
 					SetErrorMessage(errMsg).
 					SetCompletedAt(now)
+				if grpcCode != "" {
+					update.SetErrorType(grpcCode)
+				}
 			}); err != nil {
 				slog.Error("task_fail_update_failed", "task_id", t.ID, sdk.LogFieldError, err)
 			}

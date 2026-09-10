@@ -153,7 +153,7 @@ func (h *pluginHostHandle) requireMethod(method string) error {
 
 func (h *pluginHostHandle) Invoke(ctx context.Context, req *pb.HostInvokeRequest) (*pb.HostInvokeResponse, error) {
 	if req == nil || req.Method == "" {
-		return nil, status.Error(codes.InvalidArgument, "method 不能为空")
+		return nil, status.Error(codes.InvalidArgument, "method is required")
 	}
 	if err := h.requireMethod(req.Method); err != nil {
 		return nil, err
@@ -179,7 +179,7 @@ func (h *pluginHostHandle) InvokeStream(stream pb.CoreInvokeService_InvokeStream
 		return err
 	}
 	if first.Method == "" {
-		return status.Error(codes.InvalidArgument, "stream 首帧 method 不能为空")
+		return status.Error(codes.InvalidArgument, "stream first frame requires method")
 	}
 	if err := h.requireMethod(first.Method); err != nil {
 		return err
@@ -491,19 +491,19 @@ func (h *HostService) resolveHostForwardIdentity(ctx context.Context, req *hostF
 	}
 	gate, err := auth.EvaluateMemberGate(ctx, h.db, identity.Member, time.Now())
 	if err != nil {
-		return status.Error(codes.PermissionDenied, err.Error())
+		return hostMemberGateError(err)
 	}
 	if gate.Exhausted() {
-		return hostForwardQuotaExhaustedError(hostErrMemberQuotaExhausted)
+		return hostForwardQuotaExhaustedError("gw.member_quota_exhausted")
 	}
 	// 部门闸门：成员所属部门本期额度用尽同样按额度不足处理（成员 → 部门 → 企业余额）。
 	if deptGate := auth.EvaluateDepartmentGate(ctx, h.db, identity.Department, time.Now()); deptGate.Exhausted() {
-		return hostForwardQuotaExhaustedError(hostErrDepartmentQuotaExhausted)
+		return hostForwardQuotaExhaustedError("gw.department_quota_exhausted")
 	}
 	if req.GroupID > 0 && !identity.AllowsGroup(int(req.GroupID)) {
 		slog.Warn("host_forward_member_group_forbidden",
 			sdk.LogFieldUserID, req.UserID, "member_id", identity.Member.ID, sdk.LogFieldGroupID, req.GroupID)
-		return status.Error(codes.PermissionDenied, auth.ErrMemberGroupForbidden.Error())
+		return status.Error(codes.PermissionDenied, i18n.En("gw.member_group_forbidden"))
 	}
 	req.memberID = identity.Member.ID
 	req.memberAllowedGroups = identity.Member.AllowedGroupIds
@@ -639,7 +639,7 @@ type hostDeleteTaskRequest struct {
 // selectAccount 调度选号：走和真实用户请求完全相同的路径。
 func (h *HostService) selectAccount(ctx context.Context, req hostSelectAccountRequest) (map[string]interface{}, error) {
 	if req.GroupID <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "group_id 必须 > 0")
+		return nil, status.Error(codes.InvalidArgument, "group_id must be > 0")
 	}
 	g, err := h.db.Group.Get(ctx, int(req.GroupID))
 	if err != nil {
@@ -647,9 +647,10 @@ func (h *HostService) selectAccount(ctx context.Context, req hostSelectAccountRe
 			return nil, cerr
 		}
 		if ent.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, "分组不存在")
+			return nil, status.Error(codes.NotFound, i18n.En("gw.group_not_found"))
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_select_account_group_lookup_failed", err,
+			sdk.LogFieldGroupID, req.GroupID)
 	}
 
 	model := req.Model
@@ -667,11 +668,15 @@ func (h *HostService) selectAccount(ctx context.Context, req hostSelectAccountRe
 		if cerr := hostContextError(err); cerr != nil {
 			return nil, cerr
 		}
-		// scheduler 自身的"无可用账户"是业务可预期错误，用 NotFound 让插件区分
-		if errors.Is(err, scheduler.ErrNoAvailableAccount) {
-			return nil, status.Error(codes.NotFound, err.Error())
+		// scheduler 自身的"无可用账户"是业务可预期错误，用 NotFound 让插件区分；
+		// 文案经 hostSchedulerError 翻成英文 gw.* 词条，中文哨兵原文不出边界。
+		if serr := hostSchedulerError(err); serr != nil {
+			slog.Warn("host_select_account_unavailable",
+				sdk.LogFieldGroupID, req.GroupID, sdk.LogFieldModel, model, sdk.LogFieldError, err)
+			return nil, serr
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_select_account_failed", err,
+			sdk.LogFieldGroupID, req.GroupID, sdk.LogFieldModel, model)
 	}
 	return map[string]interface{}{
 		"account_id":   int64(acc.ID),
@@ -945,7 +950,7 @@ func (h *HostService) listGroups(ctx context.Context, req hostListGroupsRequest)
 		if cerr := hostContextError(err); cerr != nil {
 			return nil, cerr
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_groups_list_query_failed", err, sdk.LogFieldPlatform, req.Platform)
 	}
 	// 报价客户（pricing_mode=quote）：插件 UI 也不得看到标准牌价——倍率字段
 	// 改写为该用户的有效倍率，与 /models/pricing/me 的裁剪口径一致。
@@ -965,7 +970,7 @@ func (h *HostService) listGroups(ctx context.Context, req hostListGroupsRequest)
 			if cerr := hostContextError(err); cerr != nil {
 				return nil, cerr
 			}
-			return nil, status.Error(codes.Internal, err.Error())
+			return nil, hostInternalError("host_groups_list_user_lookup_failed", err, sdk.LogFieldUserID, req.UserID)
 		}
 	}
 	items := make([]map[string]interface{}, 0, len(groups))
@@ -998,11 +1003,11 @@ func (h *HostService) listGroups(ctx context.Context, req hostListGroupsRequest)
 // 保证展示给用户的候选与自动选组行为一致。
 func (h *HostService) listEligibleGroups(ctx context.Context, req hostListGroupsRequest) (map[string]interface{}, error) {
 	if req.UserID <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "eligible_only 需要 user_id > 0")
+		return nil, status.Error(codes.InvalidArgument, "eligible_only requires user_id > 0")
 	}
 	platform := strings.TrimSpace(req.Platform)
 	if platform == "" {
-		return nil, status.Error(codes.InvalidArgument, "eligible_only 需要 platform")
+		return nil, status.Error(codes.InvalidArgument, "eligible_only requires platform")
 	}
 	// 成员账号：资格与倍率按企业主判定，再按成员分组白名单收敛——与 gateway.forward 一致。
 	billingUserID, memberAllowed, err := h.resolveHostBillingUser(ctx, int(req.UserID))
@@ -1015,9 +1020,9 @@ func (h *HostService) listEligibleGroups(ctx context.Context, req hostListGroups
 			return nil, cerr
 		}
 		if ent.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, "用户不存在")
+			return nil, status.Error(codes.NotFound, i18n.En("gw.user_not_found"))
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_eligible_groups_user_lookup_failed", err, sdk.LogFieldUserID, req.UserID)
 	}
 	candidates, err := routing.ListEligibleGroups(ctx, h.db, billingUserID, platform,
 		u.GroupRates, u.GroupPluginSettings, routing.Requirements{NeedsImage: req.NeedsImage})
@@ -1025,7 +1030,7 @@ func (h *HostService) listEligibleGroups(ctx context.Context, req hostListGroups
 		if cerr := hostContextError(err); cerr != nil {
 			return nil, cerr
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_eligible_groups_routing_failed", err, sdk.LogFieldUserID, req.UserID, sdk.LogFieldPlatform, platform)
 	}
 	candidates = filterCandidatesByMemberGroups(candidates, memberAllowed)
 	ids := make([]int, 0, len(candidates))
@@ -1039,7 +1044,7 @@ func (h *HostService) listEligibleGroups(ctx context.Context, req hostListGroups
 			if cerr := hostContextError(err); cerr != nil {
 				return nil, cerr
 			}
-			return nil, status.Error(codes.Internal, err.Error())
+			return nil, hostInternalError("host_eligible_groups_query_failed", err, sdk.LogFieldUserID, req.UserID, sdk.LogFieldPlatform, platform)
 		}
 		for _, g := range groups {
 			byID[g.ID] = g
@@ -1123,7 +1128,7 @@ func (h *HostService) groupHasSchedulableAccountForModel(ctx context.Context, c 
 // 就把账号标死。
 func (h *HostService) reportAccountResult(ctx context.Context, req hostReportAccountResultRequest) (map[string]interface{}, error) {
 	if req.AccountID <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "account_id 必须 > 0")
+		return nil, status.Error(codes.InvalidArgument, "account_id must be > 0")
 	}
 	kind := sdk.OutcomeUpstreamTransient
 	if req.Success {
@@ -1141,7 +1146,7 @@ func (h *HostService) reportAccountResult(ctx context.Context, req hostReportAcc
 // 账号级故障自动 failover，直到当前路由的候选账号耗尽。
 func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[string]interface{}, error) {
 	if req.UserID <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "user_id 必须 > 0")
+		return nil, status.Error(codes.InvalidArgument, "user_id must be > 0")
 	}
 	// 身份解析会把成员账号的 UserID 改写成企业主，原始提交账号先留一份：
 	// 在途预留按任务行的 user_id（= 提交人本人）统计。
@@ -1392,7 +1397,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 // 判决仍进账号状态机，Usage 仍走完整计费管线。
 func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest) (map[string]interface{}, error) {
 	if req.GroupID <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "钉选账号转发必须显式指定 group_id")
+		return nil, status.Error(codes.InvalidArgument, "pinned account forward requires an explicit group_id")
 	}
 	routes, userEmail, err := h.hostForwardRoutes(ctx, req)
 	if err != nil {
@@ -1432,7 +1437,7 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 				sdk.LogFieldGroupID, route.GroupID,
 				sdk.LogFieldPlatform, route.Platform,
 			)
-			return nil, status.Error(codes.NotFound, "指定账号不存在或不属于该分组")
+			return nil, status.Error(codes.NotFound, i18n.En("gw.pinned_account_not_found"))
 		}
 		slog.Error("host_forward_pinned_account_load_failed",
 			sdk.LogFieldAccountID, req.AccountID, sdk.LogFieldError, err)
@@ -1536,14 +1541,16 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 func (h *HostService) signRelayURL(pluginID string, req hostRelaySignURLRequest) (map[string]interface{}, error) {
 	rs := h.manager.RelayService()
 	if rs == nil {
-		return nil, status.Error(codes.FailedPrecondition, "relay 服务未启用")
+		return nil, status.Error(codes.FailedPrecondition, "relay service is not enabled")
 	}
 	if strings.TrimSpace(req.Ref) == "" {
-		return nil, status.Error(codes.InvalidArgument, "ref 不能为空")
+		return nil, status.Error(codes.InvalidArgument, "ref is required")
 	}
 	path, expiresAt, err := rs.SignPath(pluginID, req.Ref, req.Filename, time.Duration(req.TTLSeconds)*time.Second)
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+		slog.Warn("host_relay_sign_url_failed",
+			sdk.LogFieldPluginID, pluginID, "ref", req.Ref, sdk.LogFieldError, err)
+		return nil, status.Error(codes.InvalidArgument, "invalid relay sign request")
 	}
 	return map[string]interface{}{"path": path, "expires_at": expiresAt}, nil
 }
@@ -1553,7 +1560,7 @@ func (h *HostService) signRelayURL(pluginID string, req hostRelaySignURLRequest)
 // 成功（< 400）时立即切换到真流式，失败时缓冲数据后丢弃重试。
 func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest, stream pb.CoreInvokeService_InvokeStreamServer) error {
 	if req.UserID <= 0 {
-		return status.Error(codes.InvalidArgument, "user_id 必须 > 0")
+		return status.Error(codes.InvalidArgument, "user_id must be > 0")
 	}
 	if err := h.resolveHostForwardIdentity(ctx, &req); err != nil {
 		return err
@@ -2279,12 +2286,13 @@ func (h *HostService) existingHostForwardUsageID(
 		return 0, false, nil
 	}
 	if err != nil {
-		return 0, false, fmt.Errorf("查询 gateway.forward 幂等 usage 失败: %w", err)
+		return 0, false, hostInternalError("host_forward_idempotent_usage_lookup_failed", err,
+			"request_id", requestID)
 	}
 	accountMismatch := req.AccountID > 0 && (row.Edges.Account == nil || row.Edges.Account.ID != int(req.AccountID))
 	groupMismatch := req.GroupID > 0 && (row.Edges.Group == nil || row.Edges.Group.ID != int(req.GroupID))
 	if row.UserIDSnapshot != int(req.UserID) || accountMismatch || groupMismatch || row.Platform != platform || row.Model != model || row.Endpoint != req.Path || row.Status != billing.UsageStatusSuccess {
-		return 0, false, status.Errorf(codes.FailedPrecondition, "request_id %q 已用于其他计费上下文", requestID)
+		return 0, false, status.Errorf(codes.FailedPrecondition, "request_id %q is already bound to a different billing context", requestID)
 	}
 	return row.ID, true, nil
 }
@@ -2338,7 +2346,7 @@ func (h *HostService) listPlatforms(_ context.Context) (map[string]interface{}, 
 // listModels 列出指定平台的模型列表。
 func (h *HostService) listModels(_ context.Context, req hostListModelsRequest) (map[string]interface{}, error) {
 	if req.Platform == "" {
-		return nil, status.Error(codes.InvalidArgument, "platform 不能为空")
+		return nil, status.Error(codes.InvalidArgument, "platform is required")
 	}
 	models := h.manager.GetModels(req.Platform)
 	items := make([]map[string]interface{}, 0, len(models))
@@ -2380,13 +2388,13 @@ const modelsRefreshMaxEntries = 512
 func (h *HostService) refreshModels(pluginID string, req hostModelsRefreshRequest) (map[string]interface{}, error) {
 	inst := h.manager.GetInstance(pluginID)
 	if inst == nil || inst.Platform == "" {
-		return nil, status.Errorf(codes.FailedPrecondition, "插件 %q 不是已加载的网关插件", pluginID)
+		return nil, status.Errorf(codes.FailedPrecondition, "plugin %q is not a loaded gateway plugin", pluginID)
 	}
 	if len(req.Models) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "models 不能为空")
+		return nil, status.Error(codes.InvalidArgument, "models is required")
 	}
 	if len(req.Models) > modelsRefreshMaxEntries {
-		return nil, status.Errorf(codes.InvalidArgument, "models 数量超过上限 %d", modelsRefreshMaxEntries)
+		return nil, status.Errorf(codes.InvalidArgument, "models exceeds the maximum of %d entries", modelsRefreshMaxEntries)
 	}
 	models := make([]sdk.ModelInfo, 0, len(req.Models))
 	for _, e := range req.Models {
@@ -2404,7 +2412,7 @@ func (h *HostService) refreshModels(pluginID string, req hostModelsRefreshReques
 		})
 	}
 	if len(models) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "models 不能全为空条目")
+		return nil, status.Error(codes.InvalidArgument, "models contains no usable entry")
 	}
 	h.manager.UpdateModelCache(inst.Platform, models)
 	slog.Info("models_cache_refreshed",
@@ -2426,14 +2434,15 @@ func modelCatalogSettingKey(platform string) string {
 // 由调用方插件自行解析、并与其硬编码默认目录合并。未配置时返回空字符串，插件据此纯用硬编码默认。
 func (h *HostService) getModelsCatalog(ctx context.Context, req hostModelsCatalogRequest) (map[string]interface{}, error) {
 	if req.Platform == "" {
-		return nil, status.Error(codes.InvalidArgument, "platform 不能为空")
+		return nil, status.Error(codes.InvalidArgument, "platform is required")
 	}
 	row, err := h.db.Setting.Query().Where(setting.KeyEQ(modelCatalogSettingKey(req.Platform))).Only(ctx)
 	if ent.IsNotFound(err) {
 		return map[string]interface{}{"catalog_json": ""}, nil
 	}
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "查询模型目录配置失败: %v", err)
+		return nil, hostInternalError("host_models_catalog_query_failed", err,
+			sdk.LogFieldPlatform, req.Platform)
 	}
 	return map[string]interface{}{"catalog_json": row.Value}, nil
 }
@@ -2441,14 +2450,14 @@ func (h *HostService) getModelsCatalog(ctx context.Context, req hostModelsCatalo
 // getUserInfo 获取用户基本信息。
 func (h *HostService) getUserInfo(ctx context.Context, req hostGetUserInfoRequest) (map[string]interface{}, error) {
 	if req.UserID <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "user_id 必须 > 0")
+		return nil, status.Error(codes.InvalidArgument, "user_id must be > 0")
 	}
 	u, err := h.db.User.Get(ctx, int(req.UserID))
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, "用户不存在")
+			return nil, status.Error(codes.NotFound, i18n.En("gw.user_not_found"))
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_user_info_lookup_failed", err, sdk.LogFieldUserID, req.UserID)
 	}
 	// 成员账号的余额展示口径：有额度的成员看本期剩余额度（企业主余额对他无意义也不该暴露）；
 	// 不限额的老模型成员消耗直接落企业主，才看企业主余额。身份字段仍是成员本人。
@@ -2475,7 +2484,7 @@ func (h *HostService) resolveHostBillingUser(ctx context.Context, userID int) (i
 		if cerr := hostContextError(err); cerr != nil {
 			return 0, nil, cerr
 		}
-		return 0, nil, status.Error(codes.Internal, err.Error())
+		return 0, nil, hostInternalError("host_billing_user_resolve_failed", err, sdk.LogFieldUserID, userID)
 	}
 	if !identity.IsMember() {
 		return userID, nil, nil
@@ -2499,16 +2508,16 @@ type hostUpdateBalanceRequest struct {
 // 插件不应也无需直写 core 的 users / balance_logs 表。
 func (h *HostService) updateUserBalance(ctx context.Context, pluginID string, req hostUpdateBalanceRequest) (map[string]interface{}, error) {
 	if req.UserID <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "user_id 必须 > 0")
+		return nil, status.Error(codes.InvalidArgument, "user_id must be > 0")
 	}
 	if req.Action != "add" && req.Action != "subtract" {
-		return nil, status.Errorf(codes.InvalidArgument, "action 仅支持 add/subtract，收到 %q", req.Action)
+		return nil, status.Errorf(codes.InvalidArgument, "action must be add or subtract, got %q", req.Action)
 	}
 	if req.Amount <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "amount 必须 > 0")
+		return nil, status.Error(codes.InvalidArgument, "amount must be > 0")
 	}
 	if req.IdempotencyKey == "" {
-		return nil, status.Error(codes.InvalidArgument, "idempotency_key 必填（防止重试导致重复入账）")
+		return nil, status.Error(codes.InvalidArgument, "idempotency_key is required (it prevents retries from double-posting)")
 	}
 	slog.Info("host_service_update_balance",
 		"module", "host",
@@ -2540,14 +2549,14 @@ func (h *HostService) updateUserBalance(ctx context.Context, pluginID string, re
 	if err != nil {
 		switch {
 		case errors.Is(err, appuser.ErrUserNotFound):
-			return nil, status.Error(codes.NotFound, "用户不存在")
+			return nil, status.Error(codes.NotFound, i18n.En("gw.user_not_found"))
 		case errors.Is(err, appuser.ErrInsufficientBalance):
-			return nil, status.Error(codes.FailedPrecondition, "余额不足")
+			return nil, status.Error(codes.FailedPrecondition, i18n.En("gw.insufficient_quota"))
 		default:
 			if cerr := hostContextError(err); cerr != nil {
 				return nil, cerr
 			}
-			return nil, status.Error(codes.Internal, err.Error())
+			return nil, hostInternalError("host_update_balance_failed", err, sdk.LogFieldUserID, req.UserID)
 		}
 	}
 	return map[string]interface{}{
@@ -2577,7 +2586,7 @@ type hostRecordUsageRequest struct {
 
 func (h *HostService) recordUsage(ctx context.Context, pluginID string, req hostRecordUsageRequest) (map[string]interface{}, error) {
 	if req.UserID <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "user_id 必须 > 0")
+		return nil, status.Error(codes.InvalidArgument, "user_id must be > 0")
 	}
 	if strings.TrimSpace(req.Platform) == "" {
 		req.Platform = pluginID
@@ -2586,25 +2595,25 @@ func (h *HostService) recordUsage(ctx context.Context, pluginID string, req host
 		req.Model = "document-render"
 	}
 	if strings.TrimSpace(req.Format) == "" || len(req.Format) > 16 || strings.ContainsAny(req.Format, " /\\\t\r\n") {
-		return nil, status.Error(codes.InvalidArgument, "format 无效")
+		return nil, status.Error(codes.InvalidArgument, "invalid format")
 	}
 	if req.Quantity <= 0 || math.IsNaN(req.Quantity) || math.IsInf(req.Quantity, 0) || req.Quantity > 10000 {
-		return nil, status.Error(codes.InvalidArgument, "quantity 必须在 0-10000 之间")
+		return nil, status.Error(codes.InvalidArgument, "quantity must be between 0 and 10000")
 	}
 	if req.AccountCost < 0 || math.IsNaN(req.AccountCost) || math.IsInf(req.AccountCost, 0) || req.UserCost < 0 || math.IsNaN(req.UserCost) || math.IsInf(req.UserCost, 0) {
-		return nil, status.Error(codes.InvalidArgument, "费用必须为有限非负数")
+		return nil, status.Error(codes.InvalidArgument, "cost must be a finite non-negative number")
 	}
 	if req.IdempotencyKey == "" {
-		return nil, status.Error(codes.InvalidArgument, "idempotency_key 必填")
+		return nil, status.Error(codes.InvalidArgument, "idempotency_key is required")
 	}
 	if len(req.IdempotencyKey) > 240 {
-		return nil, status.Error(codes.InvalidArgument, "idempotency_key 过长")
+		return nil, status.Error(codes.InvalidArgument, "idempotency_key is too long")
 	}
 	if _, err := h.db.User.Get(ctx, int(req.UserID)); err != nil {
 		if ent.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, "用户不存在")
+			return nil, status.Error(codes.NotFound, i18n.En("gw.user_not_found"))
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_record_usage_user_lookup_failed", err, sdk.LogFieldUserID, req.UserID)
 	}
 	// 插件自报用量同样按付费身份归属：成员账号发起 → 扣企业主、记成员与部门，
 	// 否则这条路的消耗既不进成员/部门额度，还会落到成员自己永不扣费的余额上。
@@ -2614,7 +2623,7 @@ func (h *HostService) recordUsage(ctx context.Context, pluginID string, req host
 		if cerr := hostContextError(err); cerr != nil {
 			return nil, cerr
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_record_usage_identity_failed", err, sdk.LogFieldUserID, req.UserID)
 	}
 	if identity.IsMember() {
 		billingUserID = identity.Owner.ID
@@ -2679,7 +2688,7 @@ func (h *HostService) recordUsage(ctx context.Context, pluginID string, req host
 	usageID, err := h.recorder.RecordSyncCharge(ctx, record)
 	if err != nil {
 		if errors.Is(err, billing.ErrInsufficientBalance) {
-			return nil, status.Error(codes.FailedPrecondition, "余额不足，无法收取文件渲染费用")
+			return nil, status.Error(codes.FailedPrecondition, i18n.En("gw.render_insufficient_quota"))
 		}
 		if ent.IsConstraintError(err) {
 			row, queryErr := h.db.UsageLog.Query().Where(entusagelog.RequestIDEQ(req.IdempotencyKey)).Only(ctx)
@@ -2687,7 +2696,7 @@ func (h *HostService) recordUsage(ctx context.Context, pluginID string, req host
 				return map[string]interface{}{"usage_id": row.ID, "usage": customUsagePayloadFromLog(row)}, nil
 			}
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_record_usage_charge_failed", err, sdk.LogFieldUserID, req.UserID)
 	}
 	return map[string]interface{}{"usage_id": usageID, "usage": customUsagePayload(record)}, nil
 }
@@ -2741,13 +2750,13 @@ type hostNotifyTopupRequest struct {
 // 失败让支付平台重试回调，配合幂等键保证不重不漏。
 func (h *HostService) notifyTopup(ctx context.Context, pluginID string, req hostNotifyTopupRequest) (map[string]interface{}, error) {
 	if req.UserID <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "user_id 必须 > 0")
+		return nil, status.Error(codes.InvalidArgument, "user_id must be > 0")
 	}
 	if req.OutTradeNo == "" {
-		return nil, status.Error(codes.InvalidArgument, "out_trade_no 必填")
+		return nil, status.Error(codes.InvalidArgument, "out_trade_no is required")
 	}
 	if req.PaidAmount <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "paid_amount 必须 > 0")
+		return nil, status.Error(codes.InvalidArgument, "paid_amount must be > 0")
 	}
 	slog.Info("host_service_notify_topup",
 		"module", "host",
@@ -2770,14 +2779,14 @@ func (h *HostService) notifyTopup(ctx context.Context, pluginID string, req host
 		if cerr := hostContextError(err); cerr != nil {
 			return nil, cerr
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_notify_topup_failed", err, sdk.LogFieldUserID, req.UserID, "out_trade_no", req.OutTradeNo)
 	}
 	return map[string]interface{}{"handled": true}, nil
 }
 
 func (h *HostService) storeAsset(ctx context.Context, req hostStoreAssetRequest) (map[string]interface{}, error) {
 	if req.UserID <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "user_id 必须 > 0")
+		return nil, status.Error(codes.InvalidArgument, "user_id must be > 0")
 	}
 	if len(req.Data) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "asset data is required")
@@ -2788,11 +2797,11 @@ func (h *HostService) storeAsset(ctx context.Context, req hostStoreAssetRequest)
 	}
 	storage, err := NewAssetStorage(ctx, h.db)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_store_asset_storage_init_failed", err, sdk.LogFieldUserID, req.UserID)
 	}
 	asset, err := storage.Store(ctx, req.UserID, purpose, req.ContentType, req.FileExtension, req.Data)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_store_asset_failed", err, sdk.LogFieldUserID, req.UserID)
 	}
 	return map[string]interface{}{
 		"asset_id":     asset.ID,
@@ -2805,7 +2814,7 @@ func (h *HostService) storeAsset(ctx context.Context, req hostStoreAssetRequest)
 
 func (h *HostService) storeAssetFromURL(ctx context.Context, req hostStoreAssetFromURLRequest) (map[string]interface{}, error) {
 	if req.UserID <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "user_id 必须 > 0")
+		return nil, status.Error(codes.InvalidArgument, "user_id must be > 0")
 	}
 	if req.SourceURL == "" {
 		return nil, status.Error(codes.InvalidArgument, "source_url is required")
@@ -2816,11 +2825,11 @@ func (h *HostService) storeAssetFromURL(ctx context.Context, req hostStoreAssetF
 	}
 	storage, err := NewAssetStorage(ctx, h.db)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_store_asset_url_storage_init_failed", err, sdk.LogFieldUserID, req.UserID)
 	}
 	asset, err := storage.StoreFromURL(ctx, req.UserID, purpose, req.SourceURL)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_store_asset_url_failed", err, sdk.LogFieldUserID, req.UserID)
 	}
 	return map[string]interface{}{
 		"asset_id":     asset.ID,
@@ -2834,11 +2843,11 @@ func (h *HostService) storeAssetFromURL(ctx context.Context, req hostStoreAssetF
 func (h *HostService) getAssetURL(ctx context.Context, req hostGetAssetURLRequest) (map[string]interface{}, error) {
 	storage, err := NewAssetStorage(ctx, h.db)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_asset_url_storage_init_failed", err)
 	}
 	publicURL, err := storage.PublicURL(ctx, req.ObjectKey)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_asset_url_failed", err, "object_key", req.ObjectKey)
 	}
 	return map[string]interface{}{"public_url": publicURL}, nil
 }
@@ -2846,25 +2855,25 @@ func (h *HostService) getAssetURL(ctx context.Context, req hostGetAssetURLReques
 func (h *HostService) getAssetBytes(ctx context.Context, req hostGetAssetBytesRequest) (map[string]interface{}, error) {
 	storage, err := NewAssetStorage(ctx, h.db)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_asset_bytes_storage_init_failed", err)
 	}
 	data, contentType, err := storage.GetBytes(ctx, req.ObjectKey)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_asset_bytes_failed", err, "object_key", req.ObjectKey)
 	}
 	return map[string]interface{}{"data": data, "content_type": contentType}, nil
 }
 
 func (h *HostService) deleteAsset(ctx context.Context, req hostDeleteAssetRequest) (map[string]interface{}, error) {
 	if req.ObjectKey == "" {
-		return nil, status.Error(codes.InvalidArgument, "object_key 不能为空")
+		return nil, status.Error(codes.InvalidArgument, "object_key is required")
 	}
 	storage, err := NewAssetStorage(ctx, h.db)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_delete_asset_storage_init_failed", err)
 	}
 	if err := storage.Delete(ctx, req.ObjectKey); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_delete_asset_failed", err, "object_key", req.ObjectKey)
 	}
 	return map[string]interface{}{"deleted": true}, nil
 }
@@ -2888,7 +2897,7 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 				return nil, "", cerr
 			}
 			if ent.IsNotFound(err) {
-				return nil, "", status.Error(codes.NotFound, "分组不存在")
+				return nil, "", status.Error(codes.NotFound, i18n.En("gw.group_not_found"))
 			}
 			slog.Error("host_forward_group_lookup_failed",
 				sdk.LogFieldGroupID, req.GroupID, sdk.LogFieldError, err)
@@ -2951,7 +2960,7 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 
 	platform := h.hostForwardRequestPlatform(req)
 	if platform == "" {
-		return nil, "", status.Error(codes.InvalidArgument, "platform 不能为空")
+		return nil, "", status.Error(codes.InvalidArgument, "platform is required")
 	}
 	u, err := h.db.User.Query().Where(user.IDEQ(int(req.UserID))).Only(ctx)
 	if err != nil {
@@ -3179,7 +3188,7 @@ func (h *HostService) checkHostForwardBalance(ctx context.Context, userID int64)
 			return cerr
 		}
 		if ent.IsNotFound(err) {
-			return status.Error(codes.NotFound, "用户不存在")
+			return status.Error(codes.NotFound, i18n.En("gw.user_not_found"))
 		}
 		slog.Error("host_forward_balance_check_user_lookup_failed",
 			sdk.LogFieldUserID, userID, sdk.LogFieldError, err)
@@ -3293,18 +3302,81 @@ func hostForwardPayload(outcome sdk.ForwardOutcome, scrubber *identityScrubber) 
 }
 
 func hostForwardInsufficientQuotaError() error {
-	return status.Error(codes.ResourceExhausted, "余额不足")
+	return status.Error(codes.ResourceExhausted, i18n.En("gw.insufficient_quota"))
 }
 
 // 成员 / 部门额度用尽的文案：插件（AI Chat / 工作台）把 Host 错误原文展示给用户，成员看到「余额不足」
 // 会去找充值入口，而他根本没有余额——要告诉他该找企业管理员。状态码同为 ResourceExhausted（402 语义）。
-const (
-	hostErrMemberQuotaExhausted     = "团队成员额度已用尽，请联系企业管理员"
-	hostErrDepartmentQuotaExhausted = "所属部门额度已用尽，请联系企业管理员"
-)
+// Host 没有请求上下文（gRPC 调用不带 Accept-Language），一律取英文，与落库口径一致。
+func hostForwardQuotaExhaustedError(key string) error {
+	return status.Error(codes.ResourceExhausted, i18n.En(key))
+}
 
-func hostForwardQuotaExhaustedError(message string) error {
-	return status.Error(codes.ResourceExhausted, message)
+// hostInternalError 内部错误的统一出口：细节进日志，对外只回英文通用文案。
+//
+// 直接把 err.Error() 塞进 status.Error 会把内部诊断原样送给插件，插件再写进
+// tasks.error_message 展示给终端用户——而 core 这些依赖包（billing / auth / app/user /
+// scheduler）的错误文本全是中文，2026-08~09 创作工作坊 9935 条中文报错就是这么来的。
+func hostInternalError(event string, err error, args ...any) error {
+	slog.Error(event, append(args, sdk.LogFieldError, err)...)
+	return status.Error(codes.Internal, i18n.En("gw.internal_error"))
+}
+
+// hostSchedulerError 把 scheduler 的中文哨兵错误翻译成英文对外文案。
+//
+// scheduler 的哨兵文本是内部诊断语（"无可用账户: 分组已下线"、
+// "无可用账户: 上游账号正在限流冷却，最早恢复时间 …"），插件会把 Host 错误原文写进
+// tasks.error_message 并直接展示给终端用户。这里按 forwarder 的同一套分类
+// （见 recordPickAccountError / selectAllRoutesFailureResponse）映射到 gw.* key。
+//
+// 文案用渠道中性的 *_generic 变体：本方法只服务 Host（scheduler.select_account /
+// 工作坊提交），用户是在工作坊 UI 里选的分组、手上没有 API Key，网关路径那句
+// "去控制台创建新的 API Key" 对他毫无意义。带 API Key 措辞的
+// gw.group_offline / gw.model_not_served 仍归网关路径（forwarder）用。
+//
+// 刻意在边界映射而不是改哨兵文本：哨兵的中文注释与文本是内部诊断的一部分，
+// 调度侧日志、account_events 与既有断言都依赖它，改文本会把治理面铺得过宽。
+// gRPC code 维持既有口径不变——ErrNoAvailableAccount 家族 → NotFound，
+// 让插件继续能按 code 区分"业务可预期的选不到号"与真正的内部故障。
+//
+// 返回 nil 表示 err 不是 scheduler 哨兵，由调用方按内部错误兜底。
+func hostSchedulerError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if _, ok := scheduler.RateLimitedRetryAt(err); ok {
+		return status.Error(codes.NotFound, i18n.En("gw.all_routes_rate_limited"))
+	}
+	switch {
+	case errors.Is(err, scheduler.ErrGroupOffline):
+		return status.Error(codes.NotFound, i18n.En("gw.group_offline_generic"))
+	case errors.Is(err, scheduler.ErrModelNotServed):
+		return status.Error(codes.NotFound, i18n.En("gw.model_not_served_generic"))
+	case errors.Is(err, scheduler.ErrNoAvailableAccount):
+		return status.Error(codes.NotFound, i18n.En("gw.no_available_account"))
+	case errors.Is(err, scheduler.ErrGroupNotFound):
+		return status.Error(codes.NotFound, i18n.En("gw.group_not_found"))
+	case errors.Is(err, scheduler.ErrConcurrencyLimit):
+		return status.Error(codes.NotFound, i18n.En("gw.no_available_account"))
+	}
+	return nil
+}
+
+// hostMemberGateError 成员准入失败的对外文案：auth 的哨兵错误文本同样是中文内部诊断，
+// 与网关 middleware 的映射口径（见 server/middleware/auth.go）保持一致。
+func hostMemberGateError(err error) error {
+	if cerr := hostContextError(err); cerr != nil {
+		return cerr
+	}
+	switch {
+	case errors.Is(err, auth.ErrMemberDisabled):
+		return status.Error(codes.PermissionDenied, i18n.En("gw.member_disabled"))
+	case errors.Is(err, auth.ErrMemberGroupForbidden):
+		return status.Error(codes.PermissionDenied, i18n.En("gw.member_group_forbidden"))
+	case errors.Is(err, auth.ErrMemberQuota):
+		return hostForwardQuotaExhaustedError("gw.member_quota_exhausted")
+	}
+	return hostInternalError("host_forward_member_gate_failed", err)
 }
 
 func protoHeadersToHTTPHost(ph map[string]interface{}) http.Header {

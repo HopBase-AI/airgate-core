@@ -63,5 +63,16 @@
   "gw.pinned_account_unavailable": "La cuenta upstream especificada no está disponible temporalmente, inténtelo de nuevo más tarde",
   "gw.pinned_account_rate_limited": "La cuenta upstream especificada está sujeta a límite de tasa en este momento, inténtelo de nuevo más tarde",
   "gw.budget_insufficient_balance": "Saldo insuficiente: disponible $%.2f, reservado en curso $%.2f, estimado de esta solicitud $%.2f",
-  "gw.budget_insufficient_quota": "Cuota insuficiente: disponible $%.2f, reservado en curso $%.2f, estimado de esta solicitud $%.2f"
+  "gw.budget_insufficient_quota": "Cuota insuficiente: disponible $%.2f, reservado en curso $%.2f, estimado de esta solicitud $%.2f",
+  "gw.user_not_found": "Usuario no encontrado",
+  "gw.group_not_found": "Grupo no encontrado",
+  "gw.no_eligible_group": "No hay ningún grupo disponible para esta plataforma",
+  "gw.pinned_account_not_found": "La cuenta upstream especificada no existe o no pertenece a este grupo",
+  "gw.member_quota_exhausted": "Cuota del miembro agotada, contacte al administrador de la empresa",
+  "gw.department_quota_exhausted": "Cuota del departamento agotada, contacte al administrador de la empresa",
+  "gw.render_insufficient_quota": "Saldo insuficiente para cobrar la tarifa de renderizado del documento",
+  "gw.internal_error": "No se pudo completar la solicitud debido a un error interno, inténtelo de nuevo más tarde",
+  "gw.group_offline_generic": "El grupo seleccionado ha sido dado de baja y ya no atiende solicitudes, elija otro grupo",
+  "gw.model_not_served_generic": "El grupo seleccionado no ofrece el modelo solicitado, elija otro modelo u otro grupo",
+  "gw.task_stale_timeout": "La tarea no finalizó en 24 horas y se terminó automáticamente"
 }

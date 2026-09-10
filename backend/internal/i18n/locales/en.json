@@ -63,5 +63,16 @@
   "gw.pinned_account_unavailable": "The specified upstream account is temporarily unavailable, please retry later",
   "gw.pinned_account_rate_limited": "The specified upstream account is currently rate limited, please retry later",
   "gw.budget_insufficient_balance": "Insufficient balance: available $%.2f, reserved in flight $%.2f, this request estimated $%.2f",
-  "gw.budget_insufficient_quota": "Insufficient quota: available $%.2f, reserved in flight $%.2f, this request estimated $%.2f"
+  "gw.budget_insufficient_quota": "Insufficient quota: available $%.2f, reserved in flight $%.2f, this request estimated $%.2f",
+  "gw.user_not_found": "User not found",
+  "gw.group_not_found": "Group not found",
+  "gw.no_eligible_group": "No group is available for this platform",
+  "gw.pinned_account_not_found": "The specified upstream account does not exist or does not belong to this group",
+  "gw.member_quota_exhausted": "Member quota exhausted, please contact your enterprise administrator",
+  "gw.department_quota_exhausted": "Department quota exhausted, please contact your enterprise administrator",
+  "gw.render_insufficient_quota": "Insufficient balance to charge the document rendering fee",
+  "gw.internal_error": "The request could not be completed due to an internal error, please retry later",
+  "gw.group_offline_generic": "The selected group has been taken offline and no longer serves requests, please choose another group",
+  "gw.model_not_served_generic": "The selected group does not provide the requested model, please choose another model or group",
+  "gw.task_stale_timeout": "The task did not finish within 24 hours and was terminated automatically"
 }

@@ -167,7 +167,7 @@ func (h *HostService) checkSubmissionBudget(ctx context.Context, req *hostForwar
 			return cerr
 		}
 		if ent.IsNotFound(err) {
-			return status.Error(codes.NotFound, "用户不存在")
+			return status.Error(codes.NotFound, i18n.En("gw.user_not_found"))
 		}
 		slog.Error("host_forward_budget_user_lookup_failed",
 			sdk.LogFieldUserID, req.UserID, sdk.LogFieldError, err)
@@ -232,14 +232,14 @@ type hostBillingBudgetRequest struct {
 // 真正的拦截仍在 gateway.forward 里（这里查完到那里提交之间会有并发窗口）。
 func (h *HostService) billingBudget(ctx context.Context, req hostBillingBudgetRequest) (map[string]interface{}, error) {
 	if req.UserID <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "user_id 必须 > 0")
+		return nil, status.Error(codes.InvalidArgument, "user_id must be > 0")
 	}
 	identity, err := auth.ResolveTeamIdentity(ctx, h.db, int(req.UserID))
 	if err != nil {
 		if cerr := hostContextError(err); cerr != nil {
 			return nil, cerr
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_budget_identity_failed", err, sdk.LogFieldUserID, req.UserID)
 	}
 	// 成员账号：钱看企业主，额度看成员本期，分组受成员白名单约束。
 	billingUserID := int(req.UserID)
@@ -264,9 +264,9 @@ func (h *HostService) billingBudget(ctx context.Context, req hostBillingBudgetRe
 			return nil, cerr
 		}
 		if ent.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, "用户不存在")
+			return nil, status.Error(codes.NotFound, i18n.En("gw.user_not_found"))
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_budget_user_lookup_failed", err, sdk.LogFieldUserID, billingUserID)
 	}
 
 	// 在途预留按调用方传进来的账号统计（任务行 user_id 记的是提交人，成员就是成员本人）。
@@ -275,7 +275,7 @@ func (h *HostService) billingBudget(ctx context.Context, req hostBillingBudgetRe
 		if cerr := hostContextError(err); cerr != nil {
 			return nil, cerr
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, hostInternalError("host_budget_reserved_query_failed", err, sdk.LogFieldUserID, req.UserID)
 	}
 
 	estimate := 0.0
@@ -311,25 +311,25 @@ func (h *HostService) resolveBudgetRate(ctx context.Context, u *ent.User, platfo
 				return 0, cerr
 			}
 			if ent.IsNotFound(err) {
-				return 0, status.Error(codes.NotFound, "分组不存在")
+				return 0, status.Error(codes.NotFound, i18n.En("gw.group_not_found"))
 			}
-			return 0, status.Error(codes.Internal, err.Error())
+			return 0, hostInternalError("host_budget_group_lookup_failed", err, sdk.LogFieldGroupID, groupID)
 		}
 		return billing.ResolveBillingRateForGroup(u.GroupRates, g.ID, g.RateMultiplier), nil
 	}
 	if strings.TrimSpace(platform) == "" {
-		return 0, status.Error(codes.InvalidArgument, "platform 不能为空")
+		return 0, status.Error(codes.InvalidArgument, "platform is required")
 	}
 	routes, err := routing.ListEligibleGroups(ctx, h.db, u.ID, platform, u.GroupRates, u.GroupPluginSettings, routing.Requirements{})
 	if err != nil {
 		if cerr := hostContextError(err); cerr != nil {
 			return 0, cerr
 		}
-		return 0, status.Error(codes.Internal, err.Error())
+		return 0, hostInternalError("host_budget_routing_failed", err, sdk.LogFieldUserID, u.ID, sdk.LogFieldPlatform, platform)
 	}
 	routes = filterCandidatesByMemberGroups(routes, allowedGroups)
 	if len(routes) == 0 {
-		return 0, status.Error(codes.FailedPrecondition, "没有可用的分组")
+		return 0, status.Error(codes.FailedPrecondition, i18n.En("gw.no_eligible_group"))
 	}
 	return routes[0].EffectiveRate, nil
 }
