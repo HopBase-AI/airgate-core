@@ -7,10 +7,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/time/rate"
 
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
 

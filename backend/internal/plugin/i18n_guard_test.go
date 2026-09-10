@@ -117,20 +117,26 @@ func TestGatewayMessageKeysCoverAllLocales(t *testing.T) {
 	usedKeys := map[string]bool{}
 	fset := token.NewFileSet()
 	for _, dir := range []string{".", filepath.Join("..", "server", "middleware")} {
-		pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool { return !strings.HasSuffix(fi.Name(), "_test.go") }, 0)
+		entries, err := os.ReadDir(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, pkg := range pkgs {
-			for _, file := range pkg.Files {
-				ast.Inspect(file, func(n ast.Node) bool {
-					lit, ok := n.(*ast.BasicLit)
-					if ok && lit.Kind == token.STRING && strings.HasPrefix(lit.Value, `"gw.`) {
-						usedKeys[strings.Trim(lit.Value, `"`)] = true
-					}
-					return true
-				})
+		for _, entry := range entries {
+			name := entry.Name()
+			if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+				continue
 			}
+			file, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ast.Inspect(file, func(n ast.Node) bool {
+				lit, ok := n.(*ast.BasicLit)
+				if ok && lit.Kind == token.STRING && strings.HasPrefix(lit.Value, `"gw.`) {
+					usedKeys[strings.Trim(lit.Value, `"`)] = true
+				}
+				return true
+			})
 		}
 	}
 	if len(usedKeys) == 0 {

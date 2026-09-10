@@ -1,8 +1,9 @@
 package middleware
 
 import (
-	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	"github.com/gin-gonic/gin"
+
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 )
 
 // Context Key 常量
