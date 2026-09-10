@@ -302,6 +302,16 @@ func (f *Forwarder) persistUpdatedCredentials(accountID int, updated map[string]
 	go f.updateAccountCredentials(accountID, updated)
 }
 
+// billingRateModel 返回分组按模型倍率查表用的模型名：优先客户端请求的公开模型名——它与目录
+// 定价查找同名，也是管理员在分组「按模型倍率」里配置的名字；模型无关路由（请求模型为空）
+// 才退回插件回报的 usage.Model。上游映射后的真名（如 image_model_map 的目标名）从不参与查表。
+func billingRateModel(requestedModel, actualModel string) string {
+	if strings.TrimSpace(requestedModel) != "" {
+		return requestedModel
+	}
+	return actualModel
+}
+
 // recordUsage 写 usage_log 并更新 scheduler 的窗口费用。调用前 outcome.Usage 必须非 nil。
 func (f *Forwarder) recordUsage(c *gin.Context, state *forwardState, execution forwardExecution) {
 	f.recordUsageWithFailureOverride(c, state, execution, nil)
@@ -324,7 +334,7 @@ func (f *Forwarder) recordUsageWithFailureOverride(c *gin.Context, state *forwar
 	usageValues := usageSnapshotFromSDK(usage)
 
 	// 三条独立倍率管道：
-	//   billingRate: 平台对 reseller 的计费倍率（group/user 优先级链）
+	//   billingRate: 平台对 reseller 的计费倍率（user/group-model/group 优先级链，按请求的公开模型名查表）
 	//   sellRate:    reseller 对客户的销售倍率（独立 markup 管道）
 	//   accountRate: 账号自身的真实成本系数（"账号计费"统计管道）
 	calcInput := billing.CalculateInput{
@@ -334,7 +344,7 @@ func (f *Forwarder) recordUsageWithFailureOverride(c *gin.Context, state *forwar
 		CachedInputCost:   usageValues.CachedInputCost,
 		CacheCreationCost: usageValues.CacheCreationCost,
 		ImageCost:         usageValues.ImageCost,
-		BillingRate:       billing.ResolveBillingRate(state.keyInfo),
+		BillingRate:       billing.ResolveBillingRateForModel(state.keyInfo, billingRateModel(state.model, actualModel)),
 		SellRate:          state.keyInfo.SellRate,
 		AccountRate:       billing.ResolveAccountRateForModel(state.account.Extra, actualModel, state.account.RateMultiplier),
 	}

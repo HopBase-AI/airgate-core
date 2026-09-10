@@ -918,7 +918,17 @@
     "model_whitelist_hint": "Only checked models are available to this group; unchecking removes a model from it. Checking none = no restriction (all models of this platform are available).",
     "loading_models_hint": "Loading account model catalogs… If this stays empty, confirm the accounts have synced their models.",
     "cli_only_label": "Claude Code client only",
-    "cli_only_hint": "When enabled, accounts in this group only accept traffic from the official Claude CLI; non-CLI requests get 403."
+    "cli_only_hint": "When enabled, accounts in this group only accept traffic from the official Claude CLI; non-CLI requests get 403.",
+    "model_rates_section": "Per-model multipliers",
+    "model_rates_hint": "Overrides the rate multiplier above only for the models listed; other models keep the group multiplier. User-specific multipliers still take precedence. Model IDs must match the catalog / model routing exactly (case-insensitive, no wildcards).",
+    "model_rates_add": "Add model",
+    "model_rates_empty": "Not set — every model in this group bills at the group multiplier.",
+    "model_rates_model_placeholder": "Model ID, e.g. deepseek-v4-pro",
+    "model_rates_custom_hint": "Type a model ID directly (suggestions come from the catalog of this group's accounts)",
+    "model_rates_zhe": "≈ {{zhe}}/10 of list price (multiplier ÷ FX {{fx}})",
+    "model_rates_invalid": "Model ID must be non-empty and unique; multiplier must be greater than 0",
+    "model_rates_remove": "Remove this model multiplier",
+    "model_rates_badge": "{{count}} per-model"
   },
   "api_keys": {
     "title": "API Keys",

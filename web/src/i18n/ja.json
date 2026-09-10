@@ -918,7 +918,17 @@
     "model_whitelist_hint": "チェックしたモデルのみこのグループで利用できます。チェックを外すとそのモデルは除外されます。何もチェックしない場合は制限なし(このプラットフォームの全モデルが利用可能)。",
     "loading_models_hint": "アカウントのモデルカタログを読み込み中…長時間空のままの場合は、アカウントのモデル同期を確認してください。",
     "cli_only_label": "Claude Code クライアントのみ",
-    "cli_only_hint": "有効にすると、このグループのアカウントは公式 Claude CLI からのトラフィックのみ受け付けます。CLI 以外のリクエストは 403 を返します。"
+    "cli_only_hint": "有効にすると、このグループのアカウントは公式 Claude CLI からのトラフィックのみ受け付けます。CLI 以外のリクエストは 403 を返します。",
+    "model_rates_section": "モデル別倍率",
+    "model_rates_hint": "一覧のモデルに限り上の料金倍率を上書きします。それ以外のモデルはグループ倍率のままです。ユーザー専用倍率はこれより優先されます。モデル ID はモデルカタログ / モデルルーティングと完全一致が必要です（大文字小文字は区別せず、ワイルドカード不可）。",
+    "model_rates_add": "モデルを追加",
+    "model_rates_empty": "未設定——このグループの全モデルはグループ倍率で課金されます。",
+    "model_rates_model_placeholder": "モデル ID（例: deepseek-v4-pro）",
+    "model_rates_custom_hint": "モデル ID を直接入力できます（候補はこのグループのアカウントのカタログから）",
+    "model_rates_zhe": "≈ 定価の {{zhe}} 割（倍率 ÷ 為替 {{fx}}）",
+    "model_rates_invalid": "モデル ID は空・重複不可、倍率は 0 より大きい値が必要です",
+    "model_rates_remove": "このモデル倍率を削除",
+    "model_rates_badge": "モデル別 {{count}}"
   },
   "api_keys": {
     "title": "APIキー",

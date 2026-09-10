@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"net/http"
 	"strconv"
@@ -970,6 +971,8 @@ func (h *HostService) listGroups(ctx context.Context, req hostListGroupsRequest)
 	}
 	items := make([]map[string]interface{}, 0, len(groups))
 	for _, g := range groups {
+		// 非 eligible_only 的分组列表不按模型解析：这里只能给分组级倍率（按模型倍率随模型才可判定）；
+		// 插件侧按模型展示价格请走 groups.list(eligible_only=true, model=…) 或 /models/pricing/me。
 		rateMultiplier := g.RateMultiplier
 		if quoteUser != nil {
 			rateMultiplier = billing.ResolveBillingRateForGroup(quoteUser.GroupRates, g.ID, g.RateMultiplier)
@@ -1056,9 +1059,11 @@ func (h *HostService) listEligibleGroups(ctx context.Context, req hostListGroups
 		}
 		// 报价客户：标准牌价改写为有效倍率，响应里不存在「标准 vs 专属」差值
 		//（与 /models/pricing/me 的裁剪口径一致），插件 UI 无从渲染牌价对比。
+		// 带 model 时有效倍率按模型解析（用户专属 > 分组按模型 > 分组），与落账口径一致。
+		effectiveRate := c.RateForModel(req.Model)
 		rateMultiplier := g.RateMultiplier
 		if u.PricingMode == user.PricingModeQuote {
-			rateMultiplier = c.EffectiveRate
+			rateMultiplier = effectiveRate
 		}
 		item := map[string]interface{}{
 			"id":              int64(g.ID),
@@ -1067,7 +1072,7 @@ func (h *HostService) listEligibleGroups(ctx context.Context, req hostListGroups
 			"platform":        g.Platform,
 			"is_exclusive":    g.IsExclusive,
 			"rate_multiplier": rateMultiplier,
-			"effective_rate":  c.EffectiveRate,
+			"effective_rate":  effectiveRate,
 			"note":            g.Note,
 			"note_i18n":       g.NoteI18n,
 			"status_visible":  g.StatusVisible,
@@ -1171,7 +1176,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 	// 同一个门禁，见 forwardPinned）。元信息路径不带预估，天然 no-op。倍率取首候选
 	// ——真正落账的多半就是它，failover 到后面的分组只会更贵/更便宜一档，不值得为了
 	// 精确到分而把选号提前到这里。
-	if err := h.checkSubmissionBudget(ctx, &req, routes[0].EffectiveRate); err != nil {
+	if err := h.checkSubmissionBudget(ctx, &req, routes[0].RateForModel(req.Model)); err != nil {
 		return nil, err
 	}
 	fwdCtx, cancel := context.WithTimeout(ctx, hostForwardTimeout(h.manager, req))
@@ -1403,7 +1408,7 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 	// （参考图素材绑在选中账号上，必须钉住），只有它带 estimated_official_cost；
 	// 后续的进度轮询/结算不带，checkSubmissionBudget 会直接 no-op 放行——
 	// 这正是 2026-09-04「已提交任务被余额门禁卡死」那条教训要保住的边界。
-	if err := h.checkSubmissionBudget(ctx, &req, route.EffectiveRate); err != nil {
+	if err := h.checkSubmissionBudget(ctx, &req, route.RateForModel(req.Model)); err != nil {
 		return nil, err
 	}
 	inst := h.manager.GetPluginByPlatform(route.Platform)
@@ -2168,7 +2173,7 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 		CachedInputCost:   usageValues.CachedInputCost,
 		CacheCreationCost: usageValues.CacheCreationCost,
 		ImageCost:         usageValues.ImageCost,
-		BillingRate:       route.EffectiveRate,
+		BillingRate:       route.RateForModel(billingRateModel(model, actualModel)),
 		AccountRate:       billing.ResolveAccountRateForModel(accFull.Extra, actualModel, accFull.RateMultiplier),
 	}
 	var imageFixedPriceApplied bool
@@ -2941,6 +2946,8 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 			Platform:               g.Platform,
 			EffectiveRate:          billing.ResolveBillingRateForGroup(u.GroupRates, g.ID, g.RateMultiplier),
 			GroupRateMultiplier:    g.RateMultiplier,
+			GroupModelRates:        maps.Clone(g.ModelRates),
+			UserGroupRate:          u.GroupRates[int64(g.ID)],
 			GroupServiceTier:       g.ServiceTier,
 			GroupForceInstructions: g.ForceInstructions,
 			GroupPluginSettings:    clonePluginSettingsHost(g.PluginSettings),

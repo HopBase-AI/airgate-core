@@ -918,7 +918,17 @@
     "model_whitelist_hint": "僅勾選的模型會對本分組開放;取消勾選即從本分組下架該模型。不勾任何模型=不限制(該平台模型全部開放)。",
     "loading_models_hint": "正在加載賬號的模型目錄…若長時間為空,請確認賬號已同步模型。",
     "cli_only_label": "僅 Claude Code 客戶端",
-    "cli_only_hint": "開啟後,本分組的賬號只接受官方 Claude CLI 發起的流量;非 CLI 請求返回 403。"
+    "cli_only_hint": "開啟後,本分組的賬號只接受官方 Claude CLI 發起的流量;非 CLI 請求返回 403。",
+    "model_rates_section": "按模型倍率",
+    "model_rates_hint": "只對列出的模型覆蓋上面的費率倍率，其餘模型沿用分組倍率；用戶專屬倍率仍優先於此處。模型 ID 須與模型目錄 / 模型路由裡的完全一致（不區分大小寫，不支援萬用字元）。",
+    "model_rates_add": "新增模型",
+    "model_rates_empty": "未設定——本分組所有模型按分組倍率計費。",
+    "model_rates_model_placeholder": "模型 ID，如 deepseek-v4-pro",
+    "model_rates_custom_hint": "可直接輸入模型 ID（候選取自本分組帳號的模型目錄）",
+    "model_rates_zhe": "≈ {{zhe}} 折（倍率 ÷ 匯率 {{fx}}）",
+    "model_rates_invalid": "模型 ID 不能為空或重複，倍率必須大於 0",
+    "model_rates_remove": "刪除該模型倍率",
+    "model_rates_badge": "按模型 {{count}}"
   },
   "api_keys": {
     "title": "API 金鑰",

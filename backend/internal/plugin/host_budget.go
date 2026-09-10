@@ -224,7 +224,9 @@ type hostBillingBudgetRequest struct {
 	UserID   int64  `json:"user_id"`
 	Platform string `json:"platform"`
 	// GroupID > 0 时按该分组的倍率算；否则取自动选组的首候选（与 forward 同口径）。
-	GroupID               int64   `json:"group_id"`
+	GroupID int64 `json:"group_id"`
+	// Model 可选：传了按分组「按模型倍率」解析（与提交落账同口径），不传退回分组级倍率。
+	Model                 string  `json:"model"`
 	EstimatedOfficialCost float64 `json:"estimated_official_cost"`
 }
 
@@ -280,7 +282,7 @@ func (h *HostService) billingBudget(ctx context.Context, req hostBillingBudgetRe
 
 	estimate := 0.0
 	if req.EstimatedOfficialCost > 0 {
-		rate, err := h.resolveBudgetRate(ctx, u, req.Platform, req.GroupID, allowedGroups)
+		rate, err := h.resolveBudgetRate(ctx, u, req.Platform, req.GroupID, req.Model, allowedGroups)
 		if err != nil {
 			return nil, err
 		}
@@ -302,8 +304,8 @@ func (h *HostService) billingBudget(ctx context.Context, req hostBillingBudgetRe
 }
 
 // resolveBudgetRate 与 hostForwardRoutes 同口径地取倍率，否则预判出来的数会和提交时
-// 实际用的不一样，用户就会看到「查着够、提交被拒」。
-func (h *HostService) resolveBudgetRate(ctx context.Context, u *ent.User, platform string, groupID int64, allowedGroups []int64) (float64, error) {
+// 实际用的不一样，用户就会看到「查着够、提交被拒」。model 非空时按模型倍率解析。
+func (h *HostService) resolveBudgetRate(ctx context.Context, u *ent.User, platform string, groupID int64, model string, allowedGroups []int64) (float64, error) {
 	if groupID > 0 {
 		g, err := h.db.Group.Get(ctx, int(groupID))
 		if err != nil {
@@ -315,7 +317,7 @@ func (h *HostService) resolveBudgetRate(ctx context.Context, u *ent.User, platfo
 			}
 			return 0, status.Error(codes.Internal, err.Error())
 		}
-		return billing.ResolveBillingRateForGroup(u.GroupRates, g.ID, g.RateMultiplier), nil
+		return billing.ResolveBillingRateForGroupModel(u.GroupRates, g.ID, g.RateMultiplier, g.ModelRates, model), nil
 	}
 	if strings.TrimSpace(platform) == "" {
 		return 0, status.Error(codes.InvalidArgument, "platform 不能为空")
@@ -331,5 +333,5 @@ func (h *HostService) resolveBudgetRate(ctx context.Context, u *ent.User, platfo
 	if len(routes) == 0 {
 		return 0, status.Error(codes.FailedPrecondition, "没有可用的分组")
 	}
-	return routes[0].EffectiveRate, nil
+	return routes[0].RateForModel(model), nil
 }

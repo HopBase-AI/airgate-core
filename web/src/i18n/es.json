@@ -918,7 +918,17 @@
     "model_whitelist_hint": "Solo los modelos marcados están disponibles para este grupo; desmarcar uno lo retira del grupo. No marcar ninguno = sin restricción (todos los modelos de la plataforma disponibles).",
     "loading_models_hint": "Cargando catálogos de modelos… Si permanece vacío, confirma que las cuentas hayan sincronizado sus modelos.",
     "cli_only_label": "Solo cliente Claude Code",
-    "cli_only_hint": "Al activarlo, las cuentas de este grupo solo aceptan tráfico del CLI oficial de Claude; las demás solicitudes reciben 403."
+    "cli_only_hint": "Al activarlo, las cuentas de este grupo solo aceptan tráfico del CLI oficial de Claude; las demás solicitudes reciben 403.",
+    "model_rates_section": "Multiplicadores por modelo",
+    "model_rates_hint": "Sobrescribe el multiplicador de tarifa de arriba solo para los modelos listados; el resto conserva el multiplicador del grupo. Los multiplicadores exclusivos por usuario siguen teniendo prioridad. El ID del modelo debe coincidir exactamente con el catálogo / enrutamiento de modelos (sin distinguir mayúsculas, sin comodines).",
+    "model_rates_add": "Añadir modelo",
+    "model_rates_empty": "Sin configurar: todos los modelos de este grupo se facturan con el multiplicador del grupo.",
+    "model_rates_model_placeholder": "ID del modelo, p. ej. deepseek-v4-pro",
+    "model_rates_custom_hint": "Escribe el ID del modelo directamente (las sugerencias vienen del catálogo de las cuentas de este grupo)",
+    "model_rates_zhe": "≈ {{zhe}}/10 del precio de lista (multiplicador ÷ tipo de cambio {{fx}})",
+    "model_rates_invalid": "El ID del modelo no puede estar vacío ni repetirse; el multiplicador debe ser mayor que 0",
+    "model_rates_remove": "Eliminar este multiplicador de modelo",
+    "model_rates_badge": "{{count}} por modelo"
   },
   "api_keys": {
     "title": "Claves API",

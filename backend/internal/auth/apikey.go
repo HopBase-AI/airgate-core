@@ -123,6 +123,7 @@ type APIKeyInfo struct {
 	UserGroupRates          map[int64]float64                      // 用户级专属倍率（按 group_id），用于 ResolveBillingRate 优先级链
 	UserGroupPluginSettings map[int64]map[string]map[string]string // 用户级分组插件配置覆盖（按 group_id）
 	GroupRateMultiplier     float64                                // 分组倍率
+	GroupModelRates         map[string]float64                     // 分组按模型卖价倍率（模型 ID → 倍率），用于 ResolveBillingRateForModel；只读消费
 	GroupServiceTier        string                                 // 分组 service tier
 	GroupForceInstructions  string                                 // 分组强制 instructions
 	GroupPluginSettings     map[string]map[string]string           // 分组插件级开关（claude_code_only 等）
@@ -359,6 +360,7 @@ func ValidateAPIKey(ctx context.Context, db *ent.Client, key string) (*APIKeyInf
 		UserGroupRates:          u.GroupRates,
 		UserGroupPluginSettings: u.GroupPluginSettings,
 		GroupRateMultiplier:     g.RateMultiplier,
+		GroupModelRates:         g.ModelRates,
 		GroupServiceTier:        g.ServiceTier,
 		GroupForceInstructions:  g.ForceInstructions,
 		GroupPluginSettings:     g.PluginSettings,

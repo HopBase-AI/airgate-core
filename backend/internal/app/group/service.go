@@ -111,6 +111,11 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Group, error) 
 	input.PluginSettings = clonePluginSettings(input.PluginSettings)
 	input.NameI18n = sanitizeI18nMap(input.NameI18n)
 	input.NoteI18n = sanitizeI18nMap(input.NoteI18n)
+	modelRates, err := sanitizeModelRates(input.ModelRates)
+	if err != nil {
+		return Group{}, err
+	}
+	input.ModelRates = modelRates
 	g, err := s.repo.Create(ctx, input)
 	if err != nil {
 		logger.Error("group_persist_failed",
@@ -135,6 +140,11 @@ func (s *Service) Update(ctx context.Context, id int, input UpdateInput) (Group,
 	input.PluginSettings = clonePluginSettings(input.PluginSettings)
 	input.NameI18n = sanitizeI18nMap(input.NameI18n)
 	input.NoteI18n = sanitizeI18nMap(input.NoteI18n)
+	modelRates, err := sanitizeModelRates(input.ModelRates)
+	if err != nil {
+		return Group{}, err
+	}
+	input.ModelRates = modelRates
 	g, err := s.repo.Update(ctx, id, input)
 	if err != nil {
 		logger.Error("group_persist_failed",
@@ -146,6 +156,9 @@ func (s *Service) Update(ctx context.Context, id int, input UpdateInput) (Group,
 	logger.Info("group_update_succeeded", sdk.LogFieldGroupID, id)
 	if input.ModelRouting != nil {
 		logger.Info("group_routing_updated", sdk.LogFieldGroupID, id)
+	}
+	if input.ModelRates != nil {
+		logger.Info("group_model_rates_updated", sdk.LogFieldGroupID, id, "model_count", len(input.ModelRates))
 	}
 	return g, err
 }

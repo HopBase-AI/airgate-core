@@ -8256,6 +8256,7 @@ type GroupMutation struct {
 	subscription_type    *group.SubscriptionType
 	quotas               *map[string]interface{}
 	model_routing        *map[string][]int64
+	model_rates          *map[string]float64
 	plugin_settings      *map[string]map[string]string
 	service_tier         *string
 	force_instructions   *string
@@ -8801,6 +8802,55 @@ func (m *GroupMutation) ModelRoutingCleared() bool {
 func (m *GroupMutation) ResetModelRouting() {
 	m.model_routing = nil
 	delete(m.clearedFields, group.FieldModelRouting)
+}
+
+// SetModelRates sets the "model_rates" field.
+func (m *GroupMutation) SetModelRates(value map[string]float64) {
+	m.model_rates = &value
+}
+
+// ModelRates returns the value of the "model_rates" field in the mutation.
+func (m *GroupMutation) ModelRates() (r map[string]float64, exists bool) {
+	v := m.model_rates
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModelRates returns the old "model_rates" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldModelRates(ctx context.Context) (v map[string]float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModelRates is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModelRates requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModelRates: %w", err)
+	}
+	return oldValue.ModelRates, nil
+}
+
+// ClearModelRates clears the value of the "model_rates" field.
+func (m *GroupMutation) ClearModelRates() {
+	m.model_rates = nil
+	m.clearedFields[group.FieldModelRates] = struct{}{}
+}
+
+// ModelRatesCleared returns if the "model_rates" field was cleared in this mutation.
+func (m *GroupMutation) ModelRatesCleared() bool {
+	_, ok := m.clearedFields[group.FieldModelRates]
+	return ok
+}
+
+// ResetModelRates resets all changes to the "model_rates" field.
+func (m *GroupMutation) ResetModelRates() {
+	m.model_rates = nil
+	delete(m.clearedFields, group.FieldModelRates)
 }
 
 // SetPluginSettings sets the "plugin_settings" field.
@@ -9441,7 +9491,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 18)
+	fields := make([]string, 0, 19)
 	if m.name != nil {
 		fields = append(fields, group.FieldName)
 	}
@@ -9471,6 +9521,9 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.model_routing != nil {
 		fields = append(fields, group.FieldModelRouting)
+	}
+	if m.model_rates != nil {
+		fields = append(fields, group.FieldModelRates)
 	}
 	if m.plugin_settings != nil {
 		fields = append(fields, group.FieldPluginSettings)
@@ -9524,6 +9577,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.Quotas()
 	case group.FieldModelRouting:
 		return m.ModelRouting()
+	case group.FieldModelRates:
+		return m.ModelRates()
 	case group.FieldPluginSettings:
 		return m.PluginSettings()
 	case group.FieldServiceTier:
@@ -9569,6 +9624,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldQuotas(ctx)
 	case group.FieldModelRouting:
 		return m.OldModelRouting(ctx)
+	case group.FieldModelRates:
+		return m.OldModelRates(ctx)
 	case group.FieldPluginSettings:
 		return m.OldPluginSettings(ctx)
 	case group.FieldServiceTier:
@@ -9663,6 +9720,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetModelRouting(v)
+		return nil
+	case group.FieldModelRates:
+		v, ok := value.(map[string]float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModelRates(v)
 		return nil
 	case group.FieldPluginSettings:
 		v, ok := value.(map[string]map[string]string)
@@ -9786,6 +9850,9 @@ func (m *GroupMutation) ClearedFields() []string {
 	if m.FieldCleared(group.FieldModelRouting) {
 		fields = append(fields, group.FieldModelRouting)
 	}
+	if m.FieldCleared(group.FieldModelRates) {
+		fields = append(fields, group.FieldModelRates)
+	}
 	if m.FieldCleared(group.FieldPluginSettings) {
 		fields = append(fields, group.FieldPluginSettings)
 	}
@@ -9814,6 +9881,9 @@ func (m *GroupMutation) ClearField(name string) error {
 		return nil
 	case group.FieldModelRouting:
 		m.ClearModelRouting()
+		return nil
+	case group.FieldModelRates:
+		m.ClearModelRates()
 		return nil
 	case group.FieldPluginSettings:
 		m.ClearPluginSettings()
@@ -9858,6 +9928,9 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldModelRouting:
 		m.ResetModelRouting()
+		return nil
+	case group.FieldModelRates:
+		m.ResetModelRates()
 		return nil
 	case group.FieldPluginSettings:
 		m.ResetPluginSettings()

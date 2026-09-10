@@ -4,14 +4,17 @@ import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '../../../shared/queryKeys';
 import { Button, Checkbox, Chip, ComboBox, Description, Input, Label, ListBox, Modal, Select, Spinner, TextArea, TextField as HeroTextField, useOverlayState } from '@heroui/react';
 import { DialogTriggerShim } from '../../../shared/components/DialogTriggerShim';
-import { ArrowUpDown, ChevronDown, Languages, Layers, Search, TriangleAlert, X } from 'lucide-react';
+import { ArrowUpDown, ChevronDown, Languages, Layers, Plus, Search, Trash2, TriangleAlert, X } from 'lucide-react';
 import { groupsApi } from '../../../shared/api/groups';
 import { accountsApi } from '../../../shared/api/accounts';
 import { usersApi } from '../../../shared/api/users';
+import { settingsApi } from '../../../shared/api/settings';
+import { formatZhe, parseQuoteFx, zheOfRate } from '../../../shared/quoteMath';
 import { useDebouncedValue } from '../../../shared/hooks/useDebouncedValue';
 import { NativeSwitch } from '../../../shared/components/NativeSwitch';
 import type { GroupResp, GroupAllowedUser, CreateGroupReq, UpdateGroupReq } from '../../../shared/types';
 import { isModelRouteSelected, normalizeModelRouting, toggleModelRoute } from './modelRouting';
+import { buildModelRates, modelRateRowsFromMap, newModelRateRow, parseModelRateInput, type ModelRateRow } from './modelRates';
 
 // 分组可见性：公开（所有用户）/ 指定用户可见 / 仅管理员可见。
 // 后端实际只有 is_exclusive + allowed_users 两个原语，这里在 UI 层归并成三态：
@@ -190,6 +193,31 @@ export function GroupFormModal({
     setModelRouting((prev) => toggleModelRoute(prev, modelId, checked, defaultModelAccountIds));
   };
 
+  // 按模型倍率：编辑行 ↔ model_rates；候选模型沿用「支持模型」的目录（新建分组无目录时允许直接输入）。
+  // 折数提示与报价单同源（倍率 ÷ 汇率，汇率取 toc_landing_pricing.fx，缺省 6.8）。
+  const [modelRateRows, setModelRateRows] = useState<ModelRateRow[]>(() => modelRateRowsFromMap(group?.model_rates));
+  const [modelRatesInvalidIds, setModelRatesInvalidIds] = useState<number[]>([]);
+  const { data: publicSettings } = useQuery({
+    queryKey: queryKeys.siteSettings(),
+    queryFn: settingsApi.getPublic,
+    staleTime: 5 * 60_000,
+    retry: false,
+    enabled: open,
+  });
+  const fx = useMemo(() => parseQuoteFx(publicSettings?.toc_landing_pricing), [publicSettings?.toc_landing_pricing]);
+  const updateModelRateRow = (id: number, patch: Partial<Pick<ModelRateRow, 'model' | 'rate'>>) => {
+    setModelRateRows((rows) => rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+    setModelRatesInvalidIds((ids) => ids.filter((x) => x !== id));
+  };
+  const removeModelRateRow = (id: number) => {
+    setModelRateRows((rows) => rows.filter((row) => row.id !== id));
+    setModelRatesInvalidIds((ids) => ids.filter((x) => x !== id));
+  };
+  const usedModelRateIds = new Set(modelRateRows.map((row) => row.model.trim().toLowerCase()));
+  const modelRateSuggestions = supportedModelIds
+    .filter((id) => !usedModelRateIds.has(id.toLowerCase()))
+    .map((id) => ({ id, label: modelNameById.get(id) ?? '' }));
+
   const { data: copySourceData } = useQuery({
     queryKey: queryKeys.groupsForCopy(form.platform),
     queryFn: () => groupsApi.list({ page: 1, page_size: 100, platform: form.platform }),
@@ -248,6 +276,10 @@ export function GroupFormModal({
 
   const handleSubmit = () => {
     if (!isEdit && (!form.name || !form.platform)) return;
+    // 按模型倍率有非法行时拦下提交并高亮，不让半成品静默落库（错价事故的入口）。
+    const modelRates = buildModelRates(modelRateRows);
+    setModelRatesInvalidIds(modelRates.invalidRowIds);
+    if (modelRates.invalid) return;
 
     const pluginSettings = clonePluginSettings(group?.plugin_settings);
     if (form.platform === 'claude') {
@@ -273,6 +305,8 @@ export function GroupFormModal({
       quotas: form.subscription_type === 'subscription' ? buildQuotas(quotas) : undefined,
       subscription_type: form.subscription_type,
       ...(isEdit ? { model_routing: normalizeModelRouting(modelRouting) } : {}),
+      // 编辑始终整体提交（空对象 = 清空）；新建仅在填了条目时提交
+      ...(isEdit || Object.keys(modelRates.rates).length > 0 ? { model_rates: modelRates.rates } : {}),
       ...(!isEdit && copyFromGroupIds.length > 0
         ? { copy_accounts_from_group_ids: copyFromGroupIds }
         : {}),
@@ -456,6 +490,104 @@ export function GroupFormModal({
             <span>{t('groups.rate_multiplier_warn')}</span>
           </div>
         </HeroTextField>
+
+        <div className="rounded-lg border border-glass-border p-3">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <p className="text-xs font-medium uppercaser text-text-secondary">{t('groups.model_rates_section')}</p>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="flex items-center gap-1"
+              onPress={() => setModelRateRows((rows) => [...rows, newModelRateRow()])}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              {t('groups.model_rates_add')}
+            </Button>
+          </div>
+          <p className="mb-2 text-[11px] text-text-tertiary">{t('groups.model_rates_hint')}</p>
+          {modelRateRows.length === 0 ? (
+            <p className="text-[11px] text-text-tertiary">{t('groups.model_rates_empty')}</p>
+          ) : (
+            <div className="space-y-2">
+              {modelRateRows.map((row) => {
+                const invalid = modelRatesInvalidIds.includes(row.id);
+                const rate = parseModelRateInput(row.rate);
+                return (
+                  <div key={row.id} className="grid grid-cols-[minmax(0,1fr)_96px_auto] items-start gap-2">
+                    <ComboBox
+                      aria-label={t('groups.model_rates_model_placeholder')}
+                      allowsCustomValue
+                      allowsEmptyCollection
+                      fullWidth
+                      inputValue={row.model}
+                      items={modelRateSuggestions}
+                      menuTrigger="focus"
+                      selectedKey={null}
+                      onInputChange={(value) => updateModelRateRow(row.id, { model: value })}
+                      onSelectionChange={(key) => {
+                        if (key != null) updateModelRateRow(row.id, { model: String(key) });
+                      }}
+                    >
+                      <ComboBox.InputGroup className="relative">
+                        <Input
+                          className={`pr-10 font-mono text-xs${invalid && row.model.trim() === '' ? ' border-danger' : ''}`}
+                          placeholder={t('groups.model_rates_model_placeholder') ?? ''}
+                        />
+                        <ComboBox.Trigger className="ag-combobox-preview-trigger absolute right-1 top-1/2 z-10 h-7 w-7 min-w-0 -translate-y-1/2 p-0 text-text-tertiary hover:text-text" />
+                      </ComboBox.InputGroup>
+                      <ComboBox.Popover>
+                        <ListBox
+                          items={modelRateSuggestions}
+                          renderEmptyState={() => (
+                            <div className="px-3 py-4 text-center text-xs text-text-tertiary">
+                              {t('groups.model_rates_custom_hint')}
+                            </div>
+                          )}
+                        >
+                          {(item) => (
+                            <ListBox.Item id={item.id} textValue={item.id}>
+                              <div className="min-w-0">
+                                <div className="truncate font-mono text-xs text-text">{item.id}</div>
+                                {item.label ? <div className="truncate text-xs text-text-tertiary">{item.label}</div> : null}
+                              </div>
+                            </ListBox.Item>
+                          )}
+                        </ListBox>
+                      </ComboBox.Popover>
+                    </ComboBox>
+                    <HeroTextField fullWidth>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className={`font-mono text-xs${invalid && rate == null ? ' border-danger' : ''}`}
+                        value={row.rate}
+                        onChange={(e) => updateModelRateRow(row.id, { rate: e.target.value })}
+                        placeholder={String(form.rate_multiplier)}
+                      />
+                    </HeroTextField>
+                    <Button
+                      isIconOnly
+                      aria-label={t('groups.model_rates_remove')}
+                      size="sm"
+                      variant="ghost"
+                      onPress={() => removeModelRateRow(row.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                    <p className={`col-span-3 -mt-1 text-[11px] ${invalid ? 'text-danger' : 'text-text-tertiary'}`}>
+                      {invalid
+                        ? t('groups.model_rates_invalid')
+                        : rate != null
+                          ? t('groups.model_rates_zhe', { zhe: formatZhe(zheOfRate(rate, fx)), fx })
+                          : '\u00a0'}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         <div className="space-y-3 rounded-lg border border-glass-border p-3">
           <Select

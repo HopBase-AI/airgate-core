@@ -174,6 +174,18 @@ func (gu *GroupUpdate) ClearModelRouting() *GroupUpdate {
 	return gu
 }
 
+// SetModelRates sets the "model_rates" field.
+func (gu *GroupUpdate) SetModelRates(m map[string]float64) *GroupUpdate {
+	gu.mutation.SetModelRates(m)
+	return gu
+}
+
+// ClearModelRates clears the value of the "model_rates" field.
+func (gu *GroupUpdate) ClearModelRates() *GroupUpdate {
+	gu.mutation.ClearModelRates()
+	return gu
+}
+
 // SetPluginSettings sets the "plugin_settings" field.
 func (gu *GroupUpdate) SetPluginSettings(m map[string]map[string]string) *GroupUpdate {
 	gu.mutation.SetPluginSettings(m)
@@ -561,6 +573,12 @@ func (gu *GroupUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if gu.mutation.ModelRoutingCleared() {
 		_spec.ClearField(group.FieldModelRouting, field.TypeJSON)
+	}
+	if value, ok := gu.mutation.ModelRates(); ok {
+		_spec.SetField(group.FieldModelRates, field.TypeJSON, value)
+	}
+	if gu.mutation.ModelRatesCleared() {
+		_spec.ClearField(group.FieldModelRates, field.TypeJSON)
 	}
 	if value, ok := gu.mutation.PluginSettings(); ok {
 		_spec.SetField(group.FieldPluginSettings, field.TypeJSON, value)
@@ -975,6 +993,18 @@ func (guo *GroupUpdateOne) SetModelRouting(m map[string][]int64) *GroupUpdateOne
 // ClearModelRouting clears the value of the "model_routing" field.
 func (guo *GroupUpdateOne) ClearModelRouting() *GroupUpdateOne {
 	guo.mutation.ClearModelRouting()
+	return guo
+}
+
+// SetModelRates sets the "model_rates" field.
+func (guo *GroupUpdateOne) SetModelRates(m map[string]float64) *GroupUpdateOne {
+	guo.mutation.SetModelRates(m)
+	return guo
+}
+
+// ClearModelRates clears the value of the "model_rates" field.
+func (guo *GroupUpdateOne) ClearModelRates() *GroupUpdateOne {
+	guo.mutation.ClearModelRates()
 	return guo
 }
 
@@ -1395,6 +1425,12 @@ func (guo *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error
 	}
 	if guo.mutation.ModelRoutingCleared() {
 		_spec.ClearField(group.FieldModelRouting, field.TypeJSON)
+	}
+	if value, ok := guo.mutation.ModelRates(); ok {
+		_spec.SetField(group.FieldModelRates, field.TypeJSON, value)
+	}
+	if guo.mutation.ModelRatesCleared() {
+		_spec.ClearField(group.FieldModelRates, field.TypeJSON)
 	}
 	if value, ok := guo.mutation.PluginSettings(); ok {
 		_spec.SetField(group.FieldPluginSettings, field.TypeJSON, value)

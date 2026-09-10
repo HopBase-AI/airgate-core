@@ -26,6 +26,7 @@ import { TablePaginationFooter } from '../../shared/components/TablePaginationFo
 import { TableLoadingRow } from '../../shared/components/TableLoadingRow';
 import { CommonTable } from '../../shared/components/CommonTable';
 import { MetricChips } from '../../shared/components/MetricChips';
+import { modelRateCount } from './groups/modelRates';
 import { GroupFormModal } from './groups/EditGroupModal';
 import { GroupRateOverridesModal } from './groups/GroupRateOverridesModal';
 import type { GroupResp, CreateGroupReq, UpdateGroupReq } from '../../shared/types';
@@ -232,10 +233,22 @@ export default function GroupsPage() {
                       </Chip>
                     </CommonTable.Cell>
                     <CommonTable.Cell>
-                      <div className="min-w-0">
+                      <div className="flex min-w-0 flex-wrap items-center gap-1">
                         <span className="font-mono" style={{ color: 'var(--ag-primary)' }}>
                           {row.rate_multiplier}x
                         </span>
+                        {modelRateCount(row.model_rates) > 0 ? (
+                          // 有按模型倍率覆盖的分组：紧凑徽记提示，悬停列出各模型倍率
+                          <span
+                            title={Object.entries(row.model_rates ?? {})
+                              .map(([model, rate]) => `${model}: ${rate}x`)
+                              .join('\n')}
+                          >
+                            <Chip color="accent" size="sm" variant="soft">
+                              {t('groups.model_rates_badge', { count: modelRateCount(row.model_rates) })}
+                            </Chip>
+                          </span>
+                        ) : null}
                       </div>
                     </CommonTable.Cell>
                     <CommonTable.Cell>

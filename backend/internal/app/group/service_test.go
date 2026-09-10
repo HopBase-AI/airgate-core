@@ -2,6 +2,9 @@ package group
 
 import (
 	"context"
+	"errors"
+	"math"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -185,4 +188,90 @@ func (s groupStubRepository) StatsForGroups(ctx context.Context, groupIDs []int,
 		return nil, nil, nil
 	}
 	return s.statsForGroups(ctx, groupIDs)
+}
+
+// TestCreateValidatesModelRates 按模型倍率：键去空白、值必须为正有限数、大小写重复视为冲突。
+func TestCreateValidatesModelRates(t *testing.T) {
+	inf := math.Inf(1)
+	tests := []struct {
+		name    string
+		input   map[string]float64
+		want    map[string]float64
+		wantErr error
+	}{
+		{name: "nil stays nil", input: nil, want: nil},
+		{name: "empty map stays empty", input: map[string]float64{}, want: map[string]float64{}},
+		{name: "trims keys", input: map[string]float64{" deepseek-v4-pro ": 3.74}, want: map[string]float64{"deepseek-v4-pro": 3.74}},
+		{name: "empty key rejected", input: map[string]float64{"  ": 3.74}, wantErr: ErrInvalidModelRates},
+		{name: "zero rate rejected", input: map[string]float64{"deepseek-v4-pro": 0}, wantErr: ErrInvalidModelRates},
+		{name: "negative rate rejected", input: map[string]float64{"deepseek-v4-pro": -1}, wantErr: ErrInvalidModelRates},
+		{name: "infinite rate rejected", input: map[string]float64{"deepseek-v4-pro": inf}, wantErr: ErrInvalidModelRates},
+		{name: "nan rate rejected", input: map[string]float64{"deepseek-v4-pro": math.NaN()}, wantErr: ErrInvalidModelRates},
+		{name: "case-insensitive duplicate rejected", input: map[string]float64{"GPT-5.5": 1, "gpt-5.5": 2}, wantErr: ErrInvalidModelRates},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var captured CreateInput
+			service := NewService(groupStubRepository{
+				create: func(_ context.Context, input CreateInput) (Group, error) {
+					captured = input
+					return Group{ID: 1}, nil
+				},
+			}, stubConcurrencyReader{})
+			_, err := service.Create(t.Context(), CreateInput{Name: "DeepSeek", Platform: "openai", SubscriptionType: "standard", ModelRates: tt.input})
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("Create() err = %v, want %v", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Create() returned error: %v", err)
+			}
+			if !reflect.DeepEqual(captured.ModelRates, tt.want) {
+				t.Fatalf("captured model rates = %#v, want %#v", captured.ModelRates, tt.want)
+			}
+		})
+	}
+}
+
+func TestUpdateModelRatesKeepsNilSemanticsAndClones(t *testing.T) {
+	var captured UpdateInput
+	service := NewService(groupStubRepository{
+		update: func(_ context.Context, _ int, input UpdateInput) (Group, error) {
+			captured = input
+			return Group{ID: 1}, nil
+		},
+	}, stubConcurrencyReader{})
+
+	// nil = 不修改
+	if _, err := service.Update(t.Context(), 1, UpdateInput{}); err != nil {
+		t.Fatalf("Update() returned error: %v", err)
+	}
+	if captured.ModelRates != nil {
+		t.Fatalf("nil model rates should stay nil, got %#v", captured.ModelRates)
+	}
+
+	// 非 nil = 整体覆盖，且不与调用方共享底层 map
+	source := map[string]float64{"deepseek-v4-pro": 3.74}
+	if _, err := service.Update(t.Context(), 1, UpdateInput{ModelRates: source}); err != nil {
+		t.Fatalf("Update() returned error: %v", err)
+	}
+	source["deepseek-v4-pro"] = 9
+	if captured.ModelRates["deepseek-v4-pro"] != 3.74 {
+		t.Fatalf("captured model rates mutated to %v, want 3.74", captured.ModelRates["deepseek-v4-pro"])
+	}
+
+	// 空 map = 清空（保持非 nil 让仓储识别成 Clear）
+	if _, err := service.Update(t.Context(), 1, UpdateInput{ModelRates: map[string]float64{}}); err != nil {
+		t.Fatalf("Update() returned error: %v", err)
+	}
+	if captured.ModelRates == nil || len(captured.ModelRates) != 0 {
+		t.Fatalf("empty model rates should stay empty non-nil, got %#v", captured.ModelRates)
+	}
+
+	// 非法值直接拒绝，不落仓储
+	if _, err := service.Update(t.Context(), 1, UpdateInput{ModelRates: map[string]float64{"x": 0}}); !errors.Is(err, ErrInvalidModelRates) {
+		t.Fatalf("Update() err = %v, want ErrInvalidModelRates", err)
+	}
 }

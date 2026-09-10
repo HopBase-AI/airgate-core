@@ -2,6 +2,7 @@ package group
 
 import (
 	"context"
+	"math"
 	"strings"
 	"time"
 )
@@ -64,7 +65,10 @@ type Group struct {
 	SubscriptionType string
 	Quotas           map[string]any
 	ModelRouting     map[string][]int64
-	PluginSettings   map[string]map[string]string
+	// ModelRates 按模型卖价倍率（模型 ID → 倍率）：值 > 0 的条目对该模型覆盖 RateMultiplier；
+	// 优先级 user.group_rates > model_rates[model] > rate_multiplier > 1.0（billing.ResolveBillingRateForGroupModel）。
+	ModelRates     map[string]float64
+	PluginSettings map[string]map[string]string
 	// AccountAvailabilityKnown 表示仓储已加载分组账号快照；两组 ID 只包含
 	// 同平台、未 disabled 且满足真实调度 workload/protocol 要求的绑定账号。
 	AccountAvailabilityKnown bool
@@ -118,10 +122,12 @@ type CreateInput struct {
 	StatusVisible  bool
 	Delisted       bool
 	// AllowedUserIDs 专属分组的授权用户 ID 列表（仅 IsExclusive 时有意义；空=仅管理员可见）。
-	AllowedUserIDs    []int64
-	SubscriptionType  string
-	Quotas            map[string]any
-	ModelRouting      map[string][]int64
+	AllowedUserIDs   []int64
+	SubscriptionType string
+	Quotas           map[string]any
+	ModelRouting     map[string][]int64
+	// ModelRates 按模型卖价倍率；service 保存前校验（键非空、值为正有限数），空 map 视为未配置。
+	ModelRates        map[string]float64
 	PluginSettings    map[string]map[string]string
 	ServiceTier       string
 	ForceInstructions string
@@ -148,12 +154,41 @@ type UpdateInput struct {
 	SubscriptionType  *string
 	Quotas            map[string]any
 	ModelRouting      map[string][]int64
+	// ModelRates：nil=不修改；非 nil 时整体覆盖（空 map = 清空全部按模型倍率）。
+	ModelRates        map[string]float64
 	PluginSettings    map[string]map[string]string
 	ServiceTier       *string
 	ForceInstructions *string
 	Note              *string
 	NoteI18n          map[string]string
 	SortWeight        *int
+}
+
+// sanitizeModelRates 克隆并校验按模型倍率表：模型名去首尾空白且不能为空，倍率必须是大于 0 的有限数，
+// 去空白/忽略大小写后重复的模型名视为冲突（计费匹配不区分大小写，两条会二义）。
+// 保持 nil / 非 nil 语义（nil=不修改，非 nil 空 map=清空），供 Update 部分更新使用。
+func sanitizeModelRates(input map[string]float64) (map[string]float64, error) {
+	if input == nil {
+		return nil, nil
+	}
+	cleaned := make(map[string]float64, len(input))
+	seen := make(map[string]struct{}, len(input))
+	for model, rate := range input {
+		trimmed := strings.TrimSpace(model)
+		if trimmed == "" {
+			return nil, ErrInvalidModelRates
+		}
+		if !(rate > 0) || math.IsInf(rate, 0) || math.IsNaN(rate) {
+			return nil, ErrInvalidModelRates
+		}
+		folded := strings.ToLower(trimmed)
+		if _, dup := seen[folded]; dup {
+			return nil, ErrInvalidModelRates
+		}
+		seen[folded] = struct{}{}
+		cleaned[trimmed] = rate
+	}
+	return cleaned, nil
 }
 
 // sanitizeI18nMap 克隆并清理多语言文案 map：value 去首尾空白，空白条目剔除。

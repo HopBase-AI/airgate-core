@@ -125,6 +125,12 @@ func (gc *GroupCreate) SetModelRouting(m map[string][]int64) *GroupCreate {
 	return gc
 }
 
+// SetModelRates sets the "model_rates" field.
+func (gc *GroupCreate) SetModelRates(m map[string]float64) *GroupCreate {
+	gc.mutation.SetModelRates(m)
+	return gc
+}
+
 // SetPluginSettings sets the "plugin_settings" field.
 func (gc *GroupCreate) SetPluginSettings(m map[string]map[string]string) *GroupCreate {
 	gc.mutation.SetPluginSettings(m)
@@ -498,6 +504,10 @@ func (gc *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := gc.mutation.ModelRouting(); ok {
 		_spec.SetField(group.FieldModelRouting, field.TypeJSON, value)
 		_node.ModelRouting = value
+	}
+	if value, ok := gc.mutation.ModelRates(); ok {
+		_spec.SetField(group.FieldModelRates, field.TypeJSON, value)
+		_node.ModelRates = value
 	}
 	if value, ok := gc.mutation.PluginSettings(); ok {
 		_spec.SetField(group.FieldPluginSettings, field.TypeJSON, value)
