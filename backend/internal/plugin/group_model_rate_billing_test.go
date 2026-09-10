@@ -100,16 +100,21 @@ func keyInfoFromGroup(user *ent.User, group *ent.Group, keyID int) *auth.APIKeyI
 func TestForwarderRecordUsageAppliesGroupModelRate(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tests := []struct {
-		name           string
-		requestModel   string
-		usageModel     string
-		userGroupRates func(groupID int) map[int64]float64
-		wantRate       float64
+		name             string
+		requestModel     string
+		schedulingModels []string
+		usageModel       string
+		userGroupRates   func(groupID int) map[int64]float64
+		wantRate         float64
 	}{
 		{name: "listed model takes model rate", requestModel: "deepseek-v4-pro", usageModel: "deepseek-v4-pro", wantRate: modelRateProRate},
 		{name: "unlisted model keeps group rate", requestModel: "deepseek-v4.1-flash", usageModel: "deepseek-v4.1-flash", wantRate: modelRateGroupRate},
 		{name: "lookup uses requested public model not upstream reported name", requestModel: "deepseek-v4-pro", usageModel: "upstream-real-name", wantRate: modelRateProRate},
 		{name: "model-less request falls back to usage model", requestModel: "", usageModel: "deepseek-v4-pro", wantRate: modelRateProRate},
+		// Anthropic 协议打 openai 分组：请求名 claude-*，目录名只出现在调度候选 / usage.Model
+		{name: "anthropic protocol request matches by usage model", requestModel: "claude-sonnet-4", usageModel: "deepseek-v4-pro", wantRate: modelRateProRate},
+		{name: "anthropic protocol request matches by scheduling candidate", requestModel: "claude-sonnet-4", schedulingModels: []string{"deepseek-v4-pro"}, usageModel: "upstream-real-name", wantRate: modelRateProRate},
+		{name: "anthropic protocol request with unlisted target keeps group rate", requestModel: "claude-sonnet-4", schedulingModels: []string{"deepseek-v4.1-flash"}, usageModel: "deepseek-v4.1-flash", wantRate: modelRateGroupRate},
 		{
 			name: "user override beats model rate", requestModel: "deepseek-v4-pro", usageModel: "deepseek-v4-pro",
 			userGroupRates: func(groupID int) map[int64]float64 { return map[int64]float64{int64(groupID): 2.0} },
@@ -143,11 +148,12 @@ func TestForwarderRecordUsageAppliesGroupModelRate(t *testing.T) {
 			ginCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 
 			forwarder.recordUsage(ginCtx, &forwardState{
-				requestPath: "/v1/chat/completions",
-				model:       tt.requestModel,
-				plugin:      &PluginInstance{Name: "gateway-openai", Platform: "openai"},
-				account:     account,
-				keyInfo:     keyInfoFromGroup(user, group, key.ID),
+				requestPath:      "/v1/chat/completions",
+				model:            tt.requestModel,
+				schedulingModels: tt.schedulingModels,
+				plugin:           &PluginInstance{Name: "gateway-openai", Platform: "openai"},
+				account:          account,
+				keyInfo:          keyInfoFromGroup(user, group, key.ID),
 			}, forwardExecution{
 				outcome:  sdk.ForwardOutcome{Kind: sdk.OutcomeSuccess, Usage: modelRateUsage(tt.usageModel)},
 				duration: time.Second,
@@ -179,11 +185,30 @@ func TestForwarderRecordUsageAppliesGroupModelRate(t *testing.T) {
 // gateway.forward）：候选分组携带按模型倍率，落账用 RateForModel 而非分组级 EffectiveRate。
 func TestHostForwardRecordUsageAppliesGroupModelRate(t *testing.T) {
 	tests := []struct {
-		name     string
-		model    string
-		route    func(group *ent.Group) routing.Candidate
-		wantRate float64
+		name string
+		// model 是原始 req.Model；resolvedModel 是 resolveHostModel 替换后传给落账的名字（空请求名时为目录首项）
+		model         string
+		resolvedModel string
+		usageModel    string
+		route         func(group *ent.Group) routing.Candidate
+		wantRate      float64
 	}{
+		{
+			// 模型无关调用：resolveHostModel 会把目录首项（这里恰是列了倍率的模型）当 model 传进来，
+			// 落账必须用原始空请求名 → usage.Model 决定
+			name: "empty request model uses usage model when listed", model: "", resolvedModel: "deepseek-v4-pro", usageModel: "deepseek-v4-pro",
+			route: func(group *ent.Group) routing.Candidate {
+				return routing.Candidate{GroupID: group.ID, Platform: "openai", EffectiveRate: modelRateGroupRate, GroupRateMultiplier: modelRateGroupRate, GroupModelRates: group.ModelRates}
+			},
+			wantRate: modelRateProRate,
+		},
+		{
+			name: "empty request model never picks catalog-first model rate", model: "", resolvedModel: "deepseek-v4-pro", usageModel: "deepseek-v4.1-flash",
+			route: func(group *ent.Group) routing.Candidate {
+				return routing.Candidate{GroupID: group.ID, Platform: "openai", EffectiveRate: modelRateGroupRate, GroupRateMultiplier: modelRateGroupRate, GroupModelRates: group.ModelRates}
+			},
+			wantRate: modelRateGroupRate,
+		},
 		{
 			name:  "listed model takes model rate",
 			model: "deepseek-v4-pro",
@@ -219,16 +244,24 @@ func TestHostForwardRecordUsageAppliesGroupModelRate(t *testing.T) {
 				calculator: billing.NewCalculator(),
 				recorder:   billing.NewRecorder(db, 0),
 			}
+			resolvedModel := tt.resolvedModel
+			if resolvedModel == "" {
+				resolvedModel = tt.model
+			}
+			usageModel := tt.usageModel
+			if usageModel == "" {
+				usageModel = tt.model
+			}
 			usageID, err := host.recordHostForwardUsage(
 				ctx,
 				hostForwardRequest{UserID: int64(user.ID), Path: "/v1/chat/completions", Model: tt.model},
 				tt.route(group),
 				account.ID,
 				"openai",
-				tt.model,
+				resolvedModel,
 				account,
 				user.Email,
-				sdk.ForwardOutcome{Kind: sdk.OutcomeSuccess, Usage: modelRateUsage(tt.model)},
+				sdk.ForwardOutcome{Kind: sdk.OutcomeSuccess, Usage: modelRateUsage(usageModel)},
 				time.Second,
 			)
 			if err != nil {
@@ -268,17 +301,28 @@ func TestKeyInfoRouteCarriesGroupModelRates(t *testing.T) {
 	}
 }
 
-func TestBillingRateModelPrefersRequestedModel(t *testing.T) {
+func TestBillingRateModelCandidateOrder(t *testing.T) {
+	rates := map[string]float64{"gpt-5.5": 2.0, "deepseek-v4-pro": 3.74}
 	tests := []struct {
-		requested, actual, want string
+		name       string
+		rates      map[string]float64
+		requested  string
+		scheduling []string
+		actual     string
+		want       string
 	}{
-		{"deepseek-v4-pro", "upstream-real-name", "deepseek-v4-pro"},
-		{"  ", "deepseek-v4-pro", "deepseek-v4-pro"},
-		{"", "", ""},
+		{name: "requested wins when listed", rates: rates, requested: "deepseek-v4-pro", scheduling: []string{"gpt-5.5"}, actual: "gpt-5.5", want: "deepseek-v4-pro"},
+		{name: "claude-* request falls to scheduling candidate", rates: rates, requested: "claude-sonnet-4", scheduling: []string{"gpt-5.5"}, actual: "upstream-real-name", want: "gpt-5.5"},
+		{name: "then usage model", rates: rates, requested: "claude-sonnet-4", scheduling: []string{"claude-sonnet-4"}, actual: "gpt-5.5", want: "gpt-5.5"},
+		{name: "empty request skips to usage model", rates: rates, requested: "", actual: "deepseek-v4-pro", want: "deepseek-v4-pro"},
+		{name: "nothing listed returns empty", rates: rates, requested: "claude-sonnet-4", scheduling: []string{"gpt-5.6"}, actual: "gpt-5.6", want: ""},
+		{name: "no model rates returns empty", rates: nil, requested: "gpt-5.5", actual: "gpt-5.5", want: ""},
 	}
 	for _, tt := range tests {
-		if got := billingRateModel(tt.requested, tt.actual); got != tt.want {
-			t.Errorf("billingRateModel(%q, %q) = %q, want %q", tt.requested, tt.actual, got, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			if got := billingRateModel(tt.rates, tt.requested, tt.scheduling, tt.actual); got != tt.want {
+				t.Errorf("billingRateModel() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

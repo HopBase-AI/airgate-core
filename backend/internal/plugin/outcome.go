@@ -302,14 +302,28 @@ func (f *Forwarder) persistUpdatedCredentials(accountID int, updated map[string]
 	go f.updateAccountCredentials(accountID, updated)
 }
 
-// billingRateModel 返回分组按模型倍率查表用的模型名：优先客户端请求的公开模型名——它与目录
-// 定价查找同名，也是管理员在分组「按模型倍率」里配置的名字；模型无关路由（请求模型为空）
-// 才退回插件回报的 usage.Model。上游映射后的真名（如 image_model_map 的目标名）从不参与查表。
-func billingRateModel(requestedModel, actualModel string) string {
-	if strings.TrimSpace(requestedModel) != "" {
-		return requestedModel
+// billingRateModel 返回分组按模型倍率（model_rates）查表用的模型名：按顺序尝试
+//
+//	客户端请求模型 → 调度候选（协议翻译入口 claude-* → gpt-* 后的目录名）→ 插件回报的 usage.Model
+//
+// 取第一个在 modelRates 里命中的；全部未命中返回空串，调用方随即落到分组倍率。
+// 管理员配置的是目录里的公开模型名：Anthropic 协议打 openai 分组时请求名是 claude-*，
+// 目录名是调度候选/usage.Model；模型无关路由请求名为空，只剩 usage.Model。
+// 上游映射后的真名（如 image_model_map 的目标名）从不参与——插件回报的 usage.Model 本身就是公开名。
+func billingRateModel(modelRates map[string]float64, requestedModel string, schedulingCandidates []string, actualModel string) string {
+	if len(modelRates) == 0 {
+		return ""
 	}
-	return actualModel
+	candidates := make([]string, 0, 2+len(schedulingCandidates))
+	candidates = append(candidates, requestedModel)
+	candidates = append(candidates, schedulingCandidates...)
+	candidates = append(candidates, actualModel)
+	for _, model := range candidates {
+		if _, ok := billing.MatchGroupModelRate(modelRates, model); ok {
+			return strings.TrimSpace(model)
+		}
+	}
+	return ""
 }
 
 // recordUsage 写 usage_log 并更新 scheduler 的窗口费用。调用前 outcome.Usage 必须非 nil。
@@ -344,7 +358,7 @@ func (f *Forwarder) recordUsageWithFailureOverride(c *gin.Context, state *forwar
 		CachedInputCost:   usageValues.CachedInputCost,
 		CacheCreationCost: usageValues.CacheCreationCost,
 		ImageCost:         usageValues.ImageCost,
-		BillingRate:       billing.ResolveBillingRateForModel(state.keyInfo, billingRateModel(state.model, actualModel)),
+		BillingRate:       billing.ResolveBillingRateForModel(state.keyInfo, billingRateModel(state.keyInfo.GroupModelRates, state.model, state.schedulingModelCandidates(), actualModel)),
 		SellRate:          state.keyInfo.SellRate,
 		AccountRate:       billing.ResolveAccountRateForModel(state.account.Extra, actualModel, state.account.RateMultiplier),
 	}

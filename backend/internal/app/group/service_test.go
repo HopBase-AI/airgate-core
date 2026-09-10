@@ -201,7 +201,7 @@ func TestCreateValidatesModelRates(t *testing.T) {
 	}{
 		{name: "nil stays nil", input: nil, want: nil},
 		{name: "empty map stays empty", input: map[string]float64{}, want: map[string]float64{}},
-		{name: "trims keys", input: map[string]float64{" deepseek-v4-pro ": 3.74}, want: map[string]float64{"deepseek-v4-pro": 3.74}},
+		{name: "trims and lower-cases keys", input: map[string]float64{" DeepSeek-V4-Pro ": 3.74}, want: map[string]float64{"deepseek-v4-pro": 3.74}},
 		{name: "empty key rejected", input: map[string]float64{"  ": 3.74}, wantErr: ErrInvalidModelRates},
 		{name: "zero rate rejected", input: map[string]float64{"deepseek-v4-pro": 0}, wantErr: ErrInvalidModelRates},
 		{name: "negative rate rejected", input: map[string]float64{"deepseek-v4-pro": -1}, wantErr: ErrInvalidModelRates},

@@ -164,8 +164,9 @@ type UpdateInput struct {
 	SortWeight        *int
 }
 
-// sanitizeModelRates 克隆并校验按模型倍率表：模型名去首尾空白且不能为空，倍率必须是大于 0 的有限数，
-// 去空白/忽略大小写后重复的模型名视为冲突（计费匹配不区分大小写，两条会二义）。
+// sanitizeModelRates 克隆并校验按模型倍率表：模型名去首尾空白、统一小写落库（计费匹配本就不区分
+// 大小写，落库归一化后 MatchGroupModelRate 遍历 map 不会在大小写变体间随机命中）且不能为空，
+// 倍率必须是大于 0 的有限数，归一化后重复的模型名视为冲突。
 // 保持 nil / 非 nil 语义（nil=不修改，非 nil 空 map=清空），供 Update 部分更新使用。
 func sanitizeModelRates(input map[string]float64) (map[string]float64, error) {
 	if input == nil {
@@ -186,7 +187,7 @@ func sanitizeModelRates(input map[string]float64) (map[string]float64, error) {
 			return nil, ErrInvalidModelRates
 		}
 		seen[folded] = struct{}{}
-		cleaned[trimmed] = rate
+		cleaned[folded] = rate
 	}
 	return cleaned, nil
 }

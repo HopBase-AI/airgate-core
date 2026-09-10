@@ -2173,8 +2173,10 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 		CachedInputCost:   usageValues.CachedInputCost,
 		CacheCreationCost: usageValues.CacheCreationCost,
 		ImageCost:         usageValues.ImageCost,
-		BillingRate:       route.RateForModel(billingRateModel(model, actualModel)),
-		AccountRate:       billing.ResolveAccountRateForModel(accFull.Extra, actualModel, accFull.RateMultiplier),
+		// 用原始 req.Model 而非 resolveHostModel 替换后的目录首项：模型无关调用不能捡到
+		// 任意模型的按模型倍率，空请求名直接落到 usage.Model（与 checkSubmissionBudget 用原始 req.Model 对齐）。
+		BillingRate: route.RateForModel(billingRateModel(route.GroupModelRates, req.Model, nil, actualModel)),
+		AccountRate: billing.ResolveAccountRateForModel(accFull.Extra, actualModel, accFull.RateMultiplier),
 	}
 	var imageFixedPriceApplied bool
 	var imageFixedPriceReplacesTotal bool
@@ -2973,6 +2975,9 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 	if err == nil {
 		// 成员分组白名单：自动选组只在企业主授予的分组里挑
 		routes = filterCandidatesByMemberGroups(routes, req.memberAllowedGroups)
+		// 自动选组知道模型时按该模型实付倍率重排，与模型广场「按模型最便宜分组」同口径，
+		// 否则按模型倍率会让展示价与实际路由到的分组不一致。
+		routing.SortCandidatesForModel(routes, req.Model)
 	}
 	if err != nil {
 		if cerr := hostContextError(err); cerr != nil {

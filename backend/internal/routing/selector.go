@@ -128,6 +128,21 @@ func (c Candidate) RateForModel(model string) float64 {
 	return billing.ResolveBillingRateForGroup(nil, c.GroupID, c.GroupRateMultiplier)
 }
 
+// SortCandidatesForModel 在知道请求模型后，按各候选对该模型的实付倍率（RateForModel）稳定重排，
+// 次序规则仍是 CandidatePrecedes（倍率 → 权重 → ID）。与 modelpricing 按模型选最便宜分组同口径，
+// 保证模型广场展示的价格就是自动选组真正路由到的分组。model 为空不重排（保持分组口径）。
+func SortCandidatesForModel(candidates []Candidate, model string) {
+	if strings.TrimSpace(model) == "" || len(candidates) < 2 {
+		return
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		left, right := candidates[i], candidates[j]
+		left.EffectiveRate = left.RateForModel(model)
+		right.EffectiveRate = right.RateForModel(model)
+		return CandidatePrecedes(left, right)
+	})
+}
+
 // CandidatePrecedes defines the canonical automatic group-routing order.
 // Pricing and routing must use the same order so displayed prices remain reachable.
 func CandidatePrecedes(left, right Candidate) bool {

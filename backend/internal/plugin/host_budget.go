@@ -330,6 +330,7 @@ func (h *HostService) resolveBudgetRate(ctx context.Context, u *ent.User, platfo
 		return 0, status.Error(codes.Internal, err.Error())
 	}
 	routes = filterCandidatesByMemberGroups(routes, allowedGroups)
+	routing.SortCandidatesForModel(routes, model)
 	if len(routes) == 0 {
 		return 0, status.Error(codes.FailedPrecondition, "没有可用的分组")
 	}
