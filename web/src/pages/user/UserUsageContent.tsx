@@ -7,13 +7,12 @@ import { usageApi } from '../../shared/api/usage';
 import { apikeysApi } from '../../shared/api/apikeys';
 import { membersApi } from '../../shared/api/members';
 import { departmentsApi } from '../../shared/api/departments';
-import { UsageBreakdownPanel, type BreakdownDimension } from './UsageBreakdownPanel';
 import { queryKeys } from '../../shared/queryKeys';
 import { usePagination } from '../../shared/hooks/usePagination';
 import { usePlatforms } from '../../shared/hooks/usePlatforms';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { useToast } from '../../shared/ui';
-import { Building2, Clock, Download, Gauge, Percent, Upload, UsersRound, X } from 'lucide-react';
+import { Building2, Clock, Download, Gauge, Percent, Upload, UsersRound } from 'lucide-react';
 import type { UsageQuery } from '../../shared/types';
 import { useUsageColumns, fmtNum, type UsageColumnConfig, type UsageRow } from '../../shared/columns/usageColumns';
 import { getSessionAPIKey } from '../../shared/api/client';
@@ -243,7 +242,6 @@ export default function UserUsageContent() {
     ...(initialMemberID ? { member_id: initialMemberID } : {}),
     ...(initialDepartmentID != null ? { department_id: initialDepartmentID } : {}),
   });
-  const [breakdown, setBreakdown] = useState<BreakdownDimension>('key');
   const [autoRefresh, setAutoRefresh] = usePersistentAutoRefresh(USER_USAGE_AUTO_UPDATE_STORAGE_KEY, 0, USER_AUTO_REFRESH_OPTIONS);
   const autoRefreshEnabled = autoRefresh > 0;
   const autoRefreshLabel = `${t('usage.auto_update')} `;
@@ -285,13 +283,13 @@ export default function UserUsageContent() {
   ];
   const selectedApiKeyLabel = apiKeyOptions.find((item) => item.id === String(filters.api_key_id ?? ''))?.label ?? t('common.all');
 
-  const { data: membersData, isFetched: membersFetched } = useQuery({
+  const { data: membersData } = useQuery({
     queryKey: queryKeys.membersForKeys(),
     queryFn: () => membersApi.list(FETCH_ALL_PARAMS),
     enabled: canListMembers,
     staleTime: 60_000,
   });
-  // member_id=0 是「企业主本人 / 未归属」这一有效取值（下钻面板可选中），要有对应选项
+  // member_id=0 是「企业主本人 / 未归属」这一有效取值，要有对应选项
   const memberOptions = [
     { id: '', label: t('common.all') },
     ...(membersData?.list ?? []).map((member) => ({ id: String(member.id), label: member.name })),
@@ -300,7 +298,7 @@ export default function UserUsageContent() {
   const hasMembers = (membersData?.list?.length ?? 0) > 0;
   const selectedMemberLabel = memberOptions.find((item) => item.id === String(filters.member_id ?? ''))?.label ?? t('common.all');
 
-  const { data: departmentsData, isFetched: departmentsFetched } = useQuery({
+  const { data: departmentsData } = useQuery({
     queryKey: queryKeys.departmentsAll(),
     queryFn: () => departmentsApi.list(FETCH_ALL_PARAMS),
     enabled: canListMembers,
@@ -313,15 +311,6 @@ export default function UserUsageContent() {
   ];
   const hasDepartments = (departmentsData?.list?.length ?? 0) > 0;
   const selectedDepartmentLabel = departmentOptions.find((item) => item.id === String(filters.department_id ?? ''))?.label ?? t('common.all');
-  // 分层下钻只对企业主（能列成员的完整视角）开放；默认按密钥，有部门时按部门起步
-  const [breakdownTouched, setBreakdownTouched] = useState(false);
-  const defaultBreakdown: BreakdownDimension = hasDepartments ? 'department' : hasMembers ? 'member' : 'key';
-  const breakdownVisible = (dim: BreakdownDimension) => (dim === 'department' ? hasDepartments : dim === 'member' ? hasMembers : true);
-  // 手动选过就用选的；选中的维度已不可见（部门全删了）则回落默认
-  const effectiveBreakdown: BreakdownDimension = breakdownTouched && breakdownVisible(breakdown) ? breakdown : defaultBreakdown;
-  const breakdownParam = canListMembers ? effectiveBreakdown : undefined;
-  // 企业主视角：等部门/成员列表回来再拉统计，避免默认维度翻转导致统计接口打两次、面板闪一下
-  const breakdownReady = !canListMembers || (departmentsFetched && membersFetched);
 
   const {
     data,
@@ -341,9 +330,8 @@ export default function UserUsageContent() {
 
   // 聚合统计（跟随筛选条件，独立于分页）
   const { data: stats, isFetching: isStatsFetching, refetch: refetchStats } = useQuery({
-    queryKey: queryKeys.userUsageStats(filters, breakdownParam),
-    queryFn: ({ signal }) => usageApi.userStats({ ...filters, breakdown: breakdownParam }, { signal }),
-    enabled: breakdownReady,
+    queryKey: queryKeys.userUsageStats(filters),
+    queryFn: ({ signal }) => usageApi.userStats(filters, { signal }),
     meta: { globalLoading: false },
     refetchOnReconnect: false,
     refetchOnWindowFocus: false,
@@ -404,19 +392,6 @@ export default function UserUsageContent() {
     setFilters((prev) => ({ ...prev, [key]: nextValue }));
     setPage(1);
   }
-  const drillInto = (next: { department_id?: number; member_id?: number; api_key_id?: number; group_id?: number }) => {
-    setFilters((prev) => ({ ...prev, ...next }));
-    setPage(1);
-    // 下钻一层后自动切到下一维度：部门 → 成员 → 密钥 → 分组
-    if (next.department_id != null) { setBreakdown(hasMembers ? 'member' : 'key'); setBreakdownTouched(true); }
-    else if (next.member_id != null) { setBreakdown('key'); setBreakdownTouched(true); }
-    else if (next.api_key_id != null) { setBreakdown('group'); setBreakdownTouched(true); }
-  };
-  // 当前生效的下钻筛选（部门 / 成员 / 密钥）显式列出来，可一键去掉；否则 member_id=0 这类筛选看起来像没选
-  const activeDrillFilters: Array<{ key: 'department_id' | 'member_id' | 'api_key_id'; label: string }> = [];
-  if (filters.department_id != null) activeDrillFilters.push({ key: 'department_id', label: `${t('team.department')}: ${selectedDepartmentLabel}` });
-  if (filters.member_id != null) activeDrillFilters.push({ key: 'member_id', label: `${t('team.filter_member')}: ${memberOptions.find((item) => item.id === String(filters.member_id))?.label ?? filters.member_id}` });
-  if (filters.api_key_id != null) activeDrillFilters.push({ key: 'api_key_id', label: `API Key: ${selectedApiKeyLabel}` });
 
   const list = data?.list ?? [];
   const total = data?.total ?? 0;
@@ -526,31 +501,6 @@ export default function UserUsageContent() {
         <span>{t('usage.actual_cost')}</span>
         <b><CostValue value={visibleActualCost} decimals={4} tone="actual" /></b>
       </p>
-
-      {/* 分层下钻：企业主视角才有 */}
-      {canListMembers ? (
-        <UsageBreakdownPanel
-          stats={stats}
-          dimension={effectiveBreakdown}
-          onDimensionChange={(next) => { setBreakdown(next); setBreakdownTouched(true); }}
-          hasDepartments={hasDepartments}
-          hasMembers={hasMembers}
-          totalActualCost={stats?.total_actual_cost ?? 0}
-          onDrill={drillInto}
-        />
-      ) : null}
-
-      {activeDrillFilters.length > 0 ? (
-        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-text-tertiary">{t('usage.active_filters')}</span>
-          {activeDrillFilters.map((item) => (
-            <Button key={item.key} size="sm" variant="secondary" onPress={() => updateFilter(item.key, '')}>
-              {item.label}
-              <X className="h-3 w-3" />
-            </Button>
-          ))}
-        </div>
-      ) : null}
 
       {/* 筛选栏 */}
       <div className="ag-filter-bar flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-5 flex-wrap">

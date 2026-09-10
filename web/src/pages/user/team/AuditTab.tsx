@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { EmptyState, ListBox, Select } from '@heroui/react';
@@ -7,39 +7,102 @@ import { TableLoadingRow } from '../../../shared/components/TableLoadingRow';
 import { TablePaginationFooter } from '../../../shared/components/TablePaginationFooter';
 import { UsageDateRangeFilter } from '../../../shared/components/UsageDateRangeFilter';
 import { departmentsApi } from '../../../shared/api/departments';
+import { membersApi } from '../../../shared/api/members';
+import { groupsApi } from '../../../shared/api/groups';
+import { localizedGroupText } from '../../../shared/groupText';
 import { queryKeys } from '../../../shared/queryKeys';
+import { FETCH_ALL_PARAMS } from '../../../shared/constants';
 import { usePagination } from '../../../shared/hooks/usePagination';
 import { getTotalPages } from '../../../shared/utils/pagination';
 import type { TeamAuditLogResp } from '../../../shared/types';
 
 const TARGET_TYPES = ['department', 'member', 'apikey', 'team'] as const;
 
-// 变更前后快照里值得给企业主看的字段（其余是内部字段），按 key 做 i18n。
-const DIFF_FIELDS = ['name', 'email', 'quota_usd', 'quota_period', 'status', 'department_id', 'member_id', 'group_id', 'allowed_group_ids', 'sell_rate', 'max_concurrency', 'expires_at', 'billing_day', 'password_reset', 'note'] as const;
+// 变更前后快照里值得给企业主看的字段（其余是内部字段），按 key 做 i18n；顺序即展示顺序。
+const DIFF_FIELDS = ['name', 'email', 'quota_usd', 'quota_period', 'status', 'department_id', 'manager_member_id', 'member_id', 'group_id', 'allowed_group_ids', 'sell_rate', 'max_concurrency', 'expires_at', 'billing_day', 'password_reset', 'note'] as const;
+type DiffField = (typeof DIFF_FIELDS)[number];
+// 新建只列「是什么」：名称、额度、周期、归属；状态 / 邮箱 / 备注这类快照字段是噪音
+const CREATE_FIELDS = new Set<DiffField>(['name', 'quota_usd', 'quota_period', 'department_id', 'manager_member_id', 'member_id', 'group_id', 'expires_at']);
+const MONEY_FIELDS = new Set<DiffField>(['quota_usd']);
+// 一行内最多展示两条变更，其余折成「+N 项」，完整列表进 title
+const INLINE_LINES = 2;
 
-function fmtValue(value: unknown): string {
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+interface ValueResolver {
+  department: (id: number) => string;
+  member: (id: number) => string;
+  manager: (id: number) => string;
+  group: (id: number) => string;
+  groups: (ids: number[]) => string;
+}
+
+function isEmpty(value: unknown): boolean {
+  if (value == null || value === '' || value === 0 || value === false) return true;
+  return Array.isArray(value) && value.length === 0;
+}
+
+function toID(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+// 把快照原值翻成人话：枚举走 i18n、外键换成名称、金额带 $、时间按本地格式
+function fmtValue(field: DiffField, value: unknown, t: Translate, lang: string, resolve: ValueResolver): string {
   if (value == null || value === '') return '—';
+  switch (field) {
+    case 'quota_period':
+      return value === 'monthly' ? t('team.period_monthly') : value === 'none' ? t('team.period_none') : String(value);
+    case 'status':
+      return value === 'active' ? t('status.active') : value === 'disabled' ? t('status.disabled') : String(value);
+    case 'department_id':
+      return resolve.department(toID(value));
+    case 'manager_member_id':
+      return resolve.manager(toID(value));
+    case 'member_id':
+      return resolve.member(toID(value));
+    case 'group_id':
+      return resolve.group(toID(value));
+    case 'allowed_group_ids':
+      return Array.isArray(value) ? resolve.groups(value.map(toID)) : String(value);
+    case 'expires_at': {
+      const date = new Date(String(value));
+      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString(lang);
+    }
+    case 'billing_day':
+      return t('team.overview_billing_day', { day: value });
+    default:
+      break;
+  }
+  if (typeof value === 'boolean') return value ? t('common.yes') : t('common.no');
+  if (typeof value === 'number') {
+    if (MONEY_FIELDS.has(field)) return `$${value.toFixed(2)}`;
+    return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  }
   if (Array.isArray(value)) return value.length === 0 ? '—' : value.join(', ');
-  if (typeof value === 'boolean') return value ? '✓' : '—';
-  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(2);
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 }
 
-// 只列出前后有差异的字段：创建 = 全部 after；删除 = 全部 before；更新 = 变了的那几项。
-function diffLines(entry: TeamAuditLogResp, t: (key: string) => string): string[] {
+// 只列出前后有差异的字段：创建 = 关键字段的 after；删除 = 全部 before；更新 = 变了的那几项。
+// 前后都是空 / 零的字段（「备注：—」）不占行。
+function diffLines(entry: TeamAuditLogResp, t: Translate, lang: string, resolve: ValueResolver): string[] {
   const before = entry.before ?? {};
   const after = entry.after ?? {};
+  const isCreate = entry.action.endsWith('.create');
+  const sep = lang === 'zh' || lang === 'zh-HK' || lang === 'ja' ? '：' : ': ';
   const lines: string[] = [];
   for (const field of DIFF_FIELDS) {
+    if (isCreate && !CREATE_FIELDS.has(field)) continue;
     const b = before[field];
     const a = after[field];
     if (b === undefined && a === undefined) continue;
+    if (isEmpty(b) && isEmpty(a)) continue;
     if (JSON.stringify(b) === JSON.stringify(a)) continue;
     const label = t(`team.audit_field_${field}`);
-    if (b === undefined) lines.push(`${label}: ${fmtValue(a)}`);
-    else if (a === undefined) lines.push(`${label}: ${fmtValue(b)}`);
-    else lines.push(`${label}: ${fmtValue(b)} → ${fmtValue(a)}`);
+    if (b === undefined) lines.push(`${label}${sep}${fmtValue(field, a, t, lang, resolve)}`);
+    else if (a === undefined) lines.push(`${label}${sep}${fmtValue(field, b, t, lang, resolve)}`);
+    else lines.push(`${label}${sep}${fmtValue(field, b, t, lang, resolve)} → ${fmtValue(field, a, t, lang, resolve)}`);
   }
   return lines;
 }
@@ -65,6 +128,37 @@ export function AuditTab() {
     queryFn: ({ signal }) => departmentsApi.auditLogs(params, { signal }),
     placeholderData: keepPreviousData,
   });
+  // 快照里只有外键 ID，展示时换成当前的部门 / 成员 / 分组名称；已删除的对象按「已删除」标注
+  const { data: departmentsData } = useQuery({
+    queryKey: queryKeys.departmentsAll(),
+    queryFn: () => departmentsApi.list(FETCH_ALL_PARAMS),
+    staleTime: 60_000,
+  });
+  const { data: membersData } = useQuery({
+    queryKey: queryKeys.membersForKeys(),
+    queryFn: () => membersApi.list(FETCH_ALL_PARAMS),
+    staleTime: 60_000,
+  });
+  const { data: groupsData } = useQuery({
+    queryKey: queryKeys.groupsForKeys(),
+    queryFn: () => groupsApi.listAvailable(FETCH_ALL_PARAMS),
+    staleTime: 60_000,
+  });
+  const lang = i18n.language;
+  const resolve = useMemo<ValueResolver>(() => {
+    const departments = new Map((departmentsData?.list ?? []).map((dept) => [dept.id, dept.name]));
+    const members = new Map((membersData?.list ?? []).map((member) => [member.id, member.name]));
+    const groups = new Map((groupsData?.list ?? []).map((group) => [group.id, localizedGroupText(group.name, group.name_i18n, lang)]));
+    const groupName = (id: number) => groups.get(id) ?? `#${id}`;
+    return {
+      department: (id) => (id === 0 ? t('team.department_none') : departments.get(id) ?? t('team.department_deleted')),
+      member: (id) => (id === 0 ? t('team.no_member') : members.get(id) ?? t('team.member_deleted')),
+      manager: (id) => (id === 0 ? t('team.dept_manager_none') : members.get(id) ?? t('team.member_deleted')),
+      group: groupName,
+      groups: (ids) => (ids.length === 0 ? t('team.groups_all') : ids.map(groupName).join(', ')),
+    };
+  }, [departmentsData?.list, groupsData?.list, lang, membersData?.list, t]);
+
   const rows = data?.list ?? [];
   const total = data?.total ?? 0;
   const typeOptions = [
@@ -122,10 +216,10 @@ export function AuditTab() {
         minWidth={880}
       >
         <CommonTable.Header>
-          <CommonTable.Column id="time" style={{ width: '11rem' }}>{t('team.audit_time')}</CommonTable.Column>
-          <CommonTable.Column id="actor" style={{ width: '14rem' }}>{t('team.audit_actor')}</CommonTable.Column>
-          <CommonTable.Column id="action" style={{ width: '10rem' }}>{t('team.audit_action')}</CommonTable.Column>
-          <CommonTable.Column id="target" style={{ width: '12rem' }}>{t('team.audit_target')}</CommonTable.Column>
+          <CommonTable.Column id="time" style={{ width: '9rem' }}>{t('team.audit_time')}</CommonTable.Column>
+          <CommonTable.Column id="actor" style={{ width: '12rem' }}>{t('team.audit_actor')}</CommonTable.Column>
+          <CommonTable.Column id="action" style={{ width: '7rem' }}>{t('team.audit_action')}</CommonTable.Column>
+          <CommonTable.Column id="target" style={{ width: '10rem' }}>{t('team.audit_target')}</CommonTable.Column>
           <CommonTable.Column id="detail">{t('team.audit_detail')}</CommonTable.Column>
         </CommonTable.Header>
         <CommonTable.Body>
@@ -141,16 +235,17 @@ export function AuditTab() {
             </CommonTable.Row>
           ) : (
             rows.map((row) => {
-              const lines = diffLines(row, t);
+              const lines = diffLines(row, t, lang, resolve);
+              const hidden = lines.length - INLINE_LINES;
               return (
                 <CommonTable.Row id={String(row.id)} key={row.id}>
                   <CommonTable.Cell>
-                    <span className="text-xs text-text-secondary">{new Date(row.created_at).toLocaleString(i18n.language)}</span>
+                    <span className="text-xs text-text-secondary">{new Date(row.created_at).toLocaleString(lang)}</span>
                   </CommonTable.Cell>
                   <CommonTable.Cell>
                     <div className="min-w-0">
                       <div className="truncate text-sm text-text" title={row.actor_email}>{row.actor_email || `#${row.actor_user_id}`}</div>
-                      {row.ip ? <div className="truncate text-xs text-text-tertiary">{row.ip}</div> : null}
+                      {row.ip ? <div className="truncate text-[11px] leading-4 text-text-tertiary">{row.ip}</div> : null}
                     </div>
                   </CommonTable.Cell>
                   <CommonTable.Cell>
@@ -164,8 +259,9 @@ export function AuditTab() {
                   </CommonTable.Cell>
                   <CommonTable.Cell>
                     {lines.length > 0 ? (
-                      <ul className="space-y-0.5 text-xs text-text-secondary">
-                        {lines.map((line) => <li key={line} className="truncate" title={line}>{line}</li>)}
+                      <ul className="space-y-0.5 text-xs text-text-secondary" title={lines.join('\n')}>
+                        {lines.slice(0, INLINE_LINES).map((line) => <li key={line} className="truncate">{line}</li>)}
+                        {hidden > 0 ? <li className="text-text-tertiary">{t('team.audit_more', { count: hidden })}</li> : null}
                       </ul>
                     ) : (
                       <span className="text-xs text-text-tertiary">—</span>

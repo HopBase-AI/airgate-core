@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { Link, useMatchRoute, useRouterState } from '@tanstack/react-router';
+import { Link, useMatchRoute, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { useIsFetching, useQuery } from '@tanstack/react-query';
 import { Button, Dropdown, Link as HeroLink, Tooltip } from '@heroui/react';
@@ -18,6 +18,7 @@ import { AnnouncementBanner } from '../../shared/components/AnnouncementBanner';
 import { NotificationCenter } from '../../shared/components/NotificationCenter';
 import { SiteBrand } from '../../shared/components/SiteBrand';
 import { useOnboardingReplay } from '../onboarding/OnboardingRoot';
+import { AccountBadge } from './AccountBadge';
 import {
   LayoutDashboard,
   Users,
@@ -127,20 +128,19 @@ const adminMenuItems: MenuItem[] = [
   { path: '/admin/settings', labelKey: 'nav.settings', icon: <Settings className="h-5 w-5" /> },
 ];
 
+// 普通用户侧栏分成「概览 / 接入 / 团队 / 工作台 / 账户」五段;「个人资料」不在侧栏,挂在底部头像下拉里。
 const userMenuItems: MenuItem[] = [
-  { path: '/', labelKey: 'nav.my_overview', icon: <LayoutDashboard className="h-5 w-5" />, sectionKey: 'nav.personal' },
-  { path: '/models', labelKey: 'nav.model_plaza', icon: <Boxes className="h-5 w-5" /> },
-  { path: '/profile', labelKey: 'nav.profile', icon: <UserRoundCog className="h-5 w-5" /> },
-  { path: '/keys', labelKey: 'nav.my_keys', icon: <KeyRound className="h-5 w-5" /> },
+  { path: '/', labelKey: 'nav.my_overview', icon: <LayoutDashboard className="h-5 w-5" />, sectionKey: 'nav.section_overview' },
   { path: '/usage', labelKey: 'nav.my_usage', icon: <ReceiptText className="h-5 w-5" /> },
+  { path: '/models', labelKey: 'nav.model_plaza', icon: <Boxes className="h-5 w-5" />, sectionKey: 'nav.section_access' },
+  { path: '/keys', labelKey: 'nav.my_keys', icon: <KeyRound className="h-5 w-5" /> },
 ];
 
-// 「团队成员」是企业客户专属能力：管理员天然可见，普通用户须被管理员授予 is_enterprise_owner。
-// 位置保持在「我的密钥」之后、「使用记录」之前，与授予前后的菜单次序一致。
-const teamMenuItem: MenuItem = { path: '/team', labelKey: 'nav.my_team', icon: <UsersRound className="h-5 w-5" /> };
+// 「团队管理」是企业客户专属能力：管理员天然可见，普通用户须被管理员授予 is_enterprise_owner;单独成「团队」段。
+const teamMenuItem: MenuItem = { path: '/team', labelKey: 'nav.my_team', icon: <UsersRound className="h-5 w-5" />, sectionKey: 'nav.section_team' };
 
-// 「我的邀请」仅在分销开关（公开设置 referral_enabled）打开时挂进个人菜单。
-const inviteMenuItem: MenuItem = { path: '/invite', labelKey: 'nav.my_invite', icon: <Gift className="h-5 w-5" /> };
+// 「我的邀请」仅在分销开关（公开设置 referral_enabled）打开时挂进「账户」段(与充值 / 充值记录同段)。
+const inviteMenuItem: MenuItem = { path: '/invite', labelKey: 'nav.my_invite', icon: <Gift className="h-5 w-5" />, sectionKey: 'nav.section_account' };
 
 // 「博客」:管理员天然可见(在 adminMenuItems 内);被授予 can_author_blog 的普通用户
 // 也在个人菜单下挂出该入口(单独成营销分组)。
@@ -157,8 +157,8 @@ const SIDEBAR_COLLAPSED_STORAGE_KEY = 'airgate:sidebar:collapsed';
 /**
  * 拉取插件菜单：所有登录用户均可调用 /plugins/menu，再按 page.audience 过滤显示。
  *   audience = "admin"（或空，向后兼容）— 仅管理员可见，挂在「插件」分组
- *   audience = "user"                    — 仅普通用户可见（管理员不显示），挂在「个人中心」分组
- *   audience = "all"                     — 所有登录用户可见，按当前角色挂分组
+ *   audience = "user"                    — 仅普通用户可见（管理员不显示），普通用户视图挂「账户」段、管理员视图挂「个人中心」
+ *   audience = "all"                     — 所有登录用户可见，普通用户视图挂「工作台」段、管理员视图挂「插件」分组
  */
 function pluginPagePath(pluginName: string, pagePath: string) {
   if (pluginName === 'airgate-playground' && pagePath === '/playground') return '/chat';
@@ -166,7 +166,13 @@ function pluginPagePath(pluginName: string, pagePath: string) {
   return `/plugins/${pluginName}${pagePath}`;
 }
 
-function usePluginMenuItems(isAdmin: boolean, isAPIKeySession: boolean, isTeamMember = false): {
+/**
+ * userItems 的顺序固定为「工作台(audience=all)在前、账户(audience=user)在后」,两段各自首项带
+ * sectionKey(nav.section_workspace / nav.section_account),sections 构造时据此拆段。
+ * hideBillingPages:团队成员与企业主都不挂 audience=user 的充值 / 充值记录——成员没有自己的余额,
+ * 企业客户走对公结算,不走自助充值;管理员不受影响。
+ */
+function usePluginMenuItems(isAdmin: boolean, isAPIKeySession: boolean, hideBillingPages = false): {
   adminItems: MenuItem[];
   userItems: MenuItem[];
 } {
@@ -181,18 +187,13 @@ function usePluginMenuItems(isAdmin: boolean, isAPIKeySession: boolean, isTeamMe
     if (!data?.list) return { adminItems: [], userItems: [] };
 
     const adminItems: MenuItem[] = [];
-    const userItems: MenuItem[] = [];
-    let firstAdmin = true;
-    let firstUser = true;
+    const workspaceItems: MenuItem[] = [];
+    const accountItems: MenuItem[] = [];
 
     for (const p of data.list) {
       if (!p.frontend_pages?.length) continue;
       for (const page of p.frontend_pages) {
         const audience = page.audience || 'admin';
-        // 成员账号没有自己的余额：只面向普通用户的插件页（充值 / 充值记录等 audience=user）不挂，
-        // audience=all 的 AI Chat / 工作坊照常。
-        const showInUser =
-          (audience === 'user' && !isTeamMember) || (audience === 'all' && !isAdmin);
         const showInAdmin =
           isAdmin && (audience === 'admin' || audience === 'all');
 
@@ -205,21 +206,24 @@ function usePluginMenuItems(isAdmin: boolean, isAPIKeySession: boolean, isTeamMe
         if (showInAdmin) {
           adminItems.push({
             ...item,
-            ...(firstAdmin ? { sectionKey: 'nav.plugins' } : {}),
+            ...(adminItems.length === 0 ? { sectionKey: 'nav.plugins' } : {}),
           });
-          firstAdmin = false;
         }
-        if (showInUser) {
-          userItems.push({
+        if (audience === 'all' && !isAdmin) {
+          workspaceItems.push({
             ...item,
-            ...(firstUser ? { sectionKey: 'nav.personal' } : {}),
+            ...(workspaceItems.length === 0 ? { sectionKey: 'nav.section_workspace' } : {}),
           });
-          firstUser = false;
+        } else if (audience === 'user' && !hideBillingPages) {
+          accountItems.push({
+            ...item,
+            ...(accountItems.length === 0 ? { sectionKey: 'nav.section_account' } : {}),
+          });
         }
       }
     }
-    return { adminItems, userItems };
-  }, [data?.list, isAdmin, isTeamMember]);
+    return { adminItems, userItems: [...workspaceItems, ...accountItems] };
+  }, [data?.list, isAdmin, hideBillingPages]);
 }
 
 export function AppShell({ children }: AppShellProps) {
@@ -235,6 +239,7 @@ export function AppShell({ children }: AppShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const isMobile = useIsMobile();
   const matchRoute = useMatchRoute();
+  const navigate = useNavigate();
   const routerPath = useRouterState({ select: (s) => s.location.pathname });
   const routerStatus = useRouterState({ select: (s) => s.status });
   const blockingFetches = useIsFetching({
@@ -261,32 +266,45 @@ export function AppShell({ children }: AppShellProps) {
   const isAPIKeySession = user?.role === 'api_key' || !!(user?.api_key_id && user.api_key_id > 0);
   const isAdmin = !isAPIKeySession && (getTokenRole() === 'admin' || user?.role === 'admin');
 
-  // 团队成员账号：正常用户菜单，但不挂「团队成员」（不是企业主）与「我的邀请」（消耗记在企业主名下，不做分销主体）；
-  // 插件页（充值 / 充值记录等）同样不挂——成员没有自己的余额，充值只会落到企业主名下，这个动作该由企业主做。
+  // 团队成员账号：正常用户菜单，但不挂「团队管理」（不是企业主）与「我的邀请」（消耗记在企业主名下，不做分销主体）；
+  // 插件页（充值 / 充值记录等）同样不挂——成员没有自己的余额，充值只会落到企业主名下。
   const isTeamMember = !isAPIKeySession && (user?.member_id ?? 0) > 0;
-  const { adminItems: pluginAdminItems, userItems: pluginUserItems } = usePluginMenuItems(isAdmin, isAPIKeySession, isTeamMember);
+  // 企业主(非管理员):挂「团队管理」,但与成员一样不挂「我的邀请」与充值类插件页——企业客户走对公结算。
+  const isEnterpriseOwner = !isAPIKeySession && !isTeamMember && !isAdmin && !!user?.is_enterprise_owner;
+  const hideBillingPages = isTeamMember || isEnterpriseOwner;
+  const { adminItems: pluginAdminItems, userItems: pluginUserItems } = usePluginMenuItems(isAdmin, isAPIKeySession, hideBillingPages);
   const sections = useMemo(() => {
-    const isEnterpriseOwner = !isAPIKeySession && !isTeamMember && (isAdmin || !!user?.is_enterprise_owner);
-    const userItemsWithTeam = isEnterpriseOwner
-      ? [...userMenuItems.slice(0, -1), teamMenuItem, ...userMenuItems.slice(-1)]
-      : userMenuItems;
-    const userItemsWithInvite = site.referral_enabled && !isTeamMember ? [...userItemsWithTeam, inviteMenuItem] : userItemsWithTeam;
-    const adminUserItems = userItemsWithInvite
-      .filter((item) => item.path !== '/')
-      .map((item, i) => (i === 0 ? { ...item, sectionKey: 'nav.personal' } : item));
-    // 不论 admin 还是普通用户视图，pluginUserItems 都会紧跟一个已有的「个人中心」section
-    // （admin 视图：adminUserItems；普通用户视图：userMenuItems），所以必须剥掉首项的
-    // sectionKey 避免 sections 数组里出现两个同名 section header → 渲染成两个「我的账户」。
-    const pluginUserItemsMerged = pluginUserItems.map((item, i) =>
-      i === 0 ? { path: item.path, labelKey: item.labelKey, icon: item.icon } : item,
-    );
-    // 非管理员但被授予 can_author_blog 的用户,在个人菜单后挂出「博客」入口。
+    const showTeam = !isAPIKeySession && !isTeamMember && (isAdmin || !!user?.is_enterprise_owner);
+    const showInvite = site.referral_enabled && !hideBillingPages;
+    // 插件页按 usePluginMenuItems 的约定拆成「工作台」与「账户」两段(账户段首项带 nav.section_account)。
+    const accountStart = pluginUserItems.findIndex((item) => item.sectionKey === 'nav.section_account');
+    const pluginWorkspaceItems = accountStart < 0 ? pluginUserItems : pluginUserItems.slice(0, accountStart);
+    const pluginAccountItems = accountStart < 0 ? [] : pluginUserItems.slice(accountStart);
+    const stripSection = (item: MenuItem): MenuItem => ({ path: item.path, labelKey: item.labelKey, icon: item.icon });
+    // 「账户」段:我的邀请在前、充值类插件页在后;只有段首项带 sectionKey,避免渲染出两个同名段头。
+    const accountSectionItems = [
+      ...(showInvite ? [inviteMenuItem] : []),
+      ...pluginAccountItems.map((item, i) => (showInvite && i === 0 ? stripSection(item) : item)),
+    ];
+    // 管理员视图:管理分组 + 插件分组之后,个人项合成一个「个人中心」块(沿用旧结构,只是不再有个人资料)。
+    const adminUserItems = [
+      ...userMenuItems.filter((item) => item.path !== '/'),
+      ...(showTeam ? [teamMenuItem] : []),
+      ...accountSectionItems,
+    ].map((item, i) => (i === 0 ? { ...stripSection(item), sectionKey: 'nav.personal' } : stripSection(item)));
+    // 非管理员但被授予 can_author_blog 的用户,在个人菜单最后挂出「博客」入口(营销段)。
     const canBlog = !isAPIKeySession && !!user?.can_author_blog;
     const menuItems = isAPIKeySession
       ? apiKeyMenuItems
       : isAdmin
-        ? [...adminMenuItems, ...pluginAdminItems, ...adminUserItems, ...pluginUserItemsMerged]
-        : [...userItemsWithInvite, ...(canBlog ? [blogAuthorMenuItem] : []), ...pluginUserItemsMerged];
+        ? [...adminMenuItems, ...pluginAdminItems, ...adminUserItems]
+        : [
+          ...userMenuItems,
+          ...(showTeam ? [teamMenuItem] : []),
+          ...pluginWorkspaceItems,
+          ...accountSectionItems,
+          ...(canBlog ? [blogAuthorMenuItem] : []),
+        ];
 
     const nextSections: Array<{ titleKey?: string; items: MenuItem[] }> = [];
     let currentSection: { titleKey?: string; items: MenuItem[] } | null = null;
@@ -304,7 +322,7 @@ export function AppShell({ children }: AppShellProps) {
     });
 
     return nextSections;
-  }, [isAPIKeySession, isTeamMember, isAdmin, user?.can_author_blog, user?.is_enterprise_owner, pluginAdminItems, pluginUserItems, site.referral_enabled]);
+  }, [isAPIKeySession, isTeamMember, hideBillingPages, isAdmin, user?.can_author_blog, user?.is_enterprise_owner, pluginAdminItems, pluginUserItems, site.referral_enabled]);
 
   // 团队成员的密钥会话优先显示成员名，其次才是密钥名
   const displayName = user?.member_name || user?.api_key_name || user?.username || user?.email?.split('@')[0] || site.site_name || 'HopBase';
@@ -313,7 +331,15 @@ export function AppShell({ children }: AppShellProps) {
   const accountSubline = isAdmin
     ? t('nav.admin')
     : (isAPIKeySession ? (user?.member_name ? t('auth.apikey_member_badge') : '') : (user?.email ?? ''));
+  // 身份徽记:团队成员 / 企业主(管理员与密钥会话不挂;已认证 / 未认证等状态后续按 tone 追加)
+  const accountBadge = isTeamMember
+    ? { label: t('nav.badge_team_member'), tone: 'neutral' as const }
+    : isEnterpriseOwner
+      ? { label: t('nav.badge_enterprise_owner'), tone: 'neutral' as const }
+      : null;
+  // 「个人资料」从侧栏挪进头像下拉;密钥会话进不了 /profile(router 的 accountPageBeforeLoad),不挂
   const accountMenuItems = [
+    ...(!isAPIKeySession ? [{ id: 'profile', label: t('nav.profile'), icon: <UserRoundCog className="h-3.5 w-3.5" /> }] : []),
     ...(!isAPIKeySession ? [{ id: 'guide', label: t('onboarding.sidebar_label'), icon: <Route className="h-3.5 w-3.5" /> }] : []),
     { id: 'docs', label: t('nav.docs'), icon: <BookOpen className="h-3.5 w-3.5" /> },
     { id: 'logout', label: t('common.logout'), icon: <LogOut className="h-3.5 w-3.5" /> },
@@ -327,7 +353,10 @@ export function AppShell({ children }: AppShellProps) {
       .filter((item) => item.path !== '/' && routerPath.startsWith(`${item.path}/`))
       .sort((a, b) => b.path.length - a.path.length)[0];
     const item = exact ?? nested;
-    return item ? t(item.labelKey) : null;
+    if (item) return t(item.labelKey);
+    // 个人资料不在侧栏(挂在头像下拉),标题单独兜底
+    if (routerPath === '/profile') return t('nav.profile');
+    return null;
   }, [routerPath, sections, t]);
   const notificationIdentity = isAPIKeySession
     ? `api-key:${user?.api_key_id ?? 'session'}`
@@ -447,7 +476,10 @@ export function AppShell({ children }: AppShellProps) {
             </span>
             {!sidebarCollapsed && (
               <span className="ag-account-copy">
-                <span className="ag-account-name">{displayName}</span>
+                <span className="ag-account-name-row">
+                  <span className="ag-account-name">{displayName}</span>
+                  {accountBadge && <AccountBadge tone={accountBadge.tone}>{accountBadge.label}</AccountBadge>}
+                </span>
                 <span className="ag-account-sub">{accountSubline}</span>
               </span>
             )}
@@ -457,7 +489,10 @@ export function AppShell({ children }: AppShellProps) {
             <Dropdown.Menu
               aria-label={t('common.more')}
               onAction={(key) => {
-                if (key === 'guide') {
+                if (key === 'profile') {
+                  void navigate({ to: '/profile' });
+                  setMobileOpen(false);
+                } else if (key === 'guide') {
                   openGuide();
                   setMobileOpen(false);
                 } else if (key === 'docs') {

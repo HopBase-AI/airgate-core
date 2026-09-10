@@ -120,13 +120,46 @@
   line-height: 1.25;
 }
 
+.ag-account-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .ag-account-name {
   display: block;
+  min-width: 0;
   overflow: hidden;
   font-size: 0.78125rem;
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 身份徽记(企业主 / 团队成员;已认证 / 未认证等状态复用 data-tone):小胶囊 + 发丝线 + 弱色,不做底色 */
+.ag-account-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font: 500 10px/1 var(--ag-font-mono);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.ag-account-badge[data-tone="success"] {
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+  color: var(--success);
+}
+
+.ag-account-badge[data-tone="warning"] {
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  color: var(--warning);
 }
 
 .ag-account-sub {

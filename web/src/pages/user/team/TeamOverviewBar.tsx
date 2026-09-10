@@ -2,14 +2,14 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Input, Label, Spinner, TextField as HeroTextField, useOverlayState } from '@heroui/react';
-import { CalendarClock } from 'lucide-react';
 import { departmentsApi } from '../../../shared/api/departments';
 import { queryKeys } from '../../../shared/queryKeys';
 import { CommonModal } from '../../../shared/components/CommonModal';
 import { useToast } from '../../../shared/ui';
 
-// 企业层总览：企业余额（唯一真实扣费点）、已分配给部门 / 成员的额度（限额之和，允许超发只提示）、
-// 本期消耗与账期。三层额度的「剩余」口径在后端统一，这里只展示。
+// 企业层账本条：一块发丝线面板，一行五项（余额 / 已分配给部门 / 已分配给成员 / 本期消耗 / 账期），
+// 项与项之间用发丝线分隔。企业余额是唯一真实扣费点；分配给部门 / 成员的额度是限额之和，允许超发只提示。
+// 三层额度的「剩余」口径在后端统一，这里只展示；账期日的修改入口就放在账期项里。
 export function TeamOverviewBar() {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
@@ -57,48 +57,46 @@ export function TeamOverviewBar() {
     billingMutation.mutate(day);
   };
 
-  const items: Array<{ key: string; label: string; value: string; tone?: 'warning' | 'muted'; hint?: string }> = [
-    { key: 'balance', label: t('team.overview_balance'), value: fmt(data.balance) },
-    {
-      key: 'departments',
-      label: t('team.overview_department_quota'),
-      value: fmt(data.department_quota_total),
-      tone: overAllocated ? 'warning' : undefined,
-      hint: overAllocated ? t('team.overview_over_allocated', { amount: fmt(data.department_quota_total - data.balance) }) : undefined,
-    },
-    {
-      key: 'members',
-      label: t('team.overview_member_quota'),
-      value: fmt(data.member_quota_total),
-      hint: data.unassigned_member_quota > 0 ? t('team.overview_unassigned_member_quota', { amount: fmt(data.unassigned_member_quota) }) : undefined,
-    },
-    { key: 'period_used', label: t('team.overview_period_used'), value: fmt(data.period_used_actual) },
-    {
-      key: 'period',
-      label: t('team.overview_period'),
-      value: `${fmtDate(data.period_start)} – ${fmtDate(data.period_end)}`,
-      tone: 'muted',
-      hint: t('team.overview_billing_day', { day: data.billing_day }),
-    },
-  ];
-
   return (
-    <div className="ag-team-overview mb-5">
-      <div className="ag-team-overview-grid">
-        {items.map((item) => (
-          <div key={item.key} className="ag-team-overview-item" data-tone={item.tone}>
-            <span className="ag-team-overview-label">{item.label}</span>
-            <span className="ag-team-overview-value">{item.value}</span>
-            {item.hint ? <span className="ag-team-overview-hint">{item.hint}</span> : null}
-          </div>
-        ))}
-        <div className="ag-team-overview-item ag-team-overview-action">
-          <Button size="sm" variant="ghost" onPress={openBilling}>
-            <CalendarClock className="h-3.5 w-3.5" />
-            {t('team.billing_day_edit')}
-          </Button>
+    <>
+      <dl className="ag-team-overview mb-5">
+        <div className="ag-team-overview-item">
+          <dt className="ag-team-overview-label">{t('team.overview_balance')}</dt>
+          <dd className="ag-team-overview-value">{fmt(data.balance)}</dd>
         </div>
-      </div>
+        <div className="ag-team-overview-item">
+          <dt className="ag-team-overview-label">{t('team.overview_department_quota')}</dt>
+          <dd className="ag-team-overview-value">{fmt(data.department_quota_total)}</dd>
+          {overAllocated ? (
+            <dd className="ag-team-overview-hint" data-tone="warning" title={t('team.overview_over_allocated_hint')}>
+              {t('team.overview_over_allocated', { amount: fmt(data.department_quota_total - data.balance) })}
+            </dd>
+          ) : null}
+        </div>
+        <div className="ag-team-overview-item">
+          <dt className="ag-team-overview-label">{t('team.overview_member_quota')}</dt>
+          <dd className="ag-team-overview-value">{fmt(data.member_quota_total)}</dd>
+          {data.unassigned_member_quota > 0 ? (
+            <dd className="ag-team-overview-hint">
+              {t('team.overview_unassigned_member_quota', { amount: fmt(data.unassigned_member_quota) })}
+            </dd>
+          ) : null}
+        </div>
+        <div className="ag-team-overview-item">
+          <dt className="ag-team-overview-label">{t('team.overview_period_used')}</dt>
+          <dd className="ag-team-overview-value">{fmt(data.period_used_actual)}</dd>
+        </div>
+        <div className="ag-team-overview-item">
+          <dt className="ag-team-overview-label">{t('team.overview_period')}</dt>
+          <dd className="ag-team-overview-value" data-kind="date">{`${fmtDate(data.period_start)} – ${fmtDate(data.period_end)}`}</dd>
+          <dd className="ag-team-overview-hint">
+            <span>{t('team.overview_billing_day', { day: data.billing_day })}</span>
+            <button type="button" className="ag-team-overview-link" onClick={openBilling}>
+              {t('team.billing_day_edit')}
+            </button>
+          </dd>
+        </div>
+      </dl>
 
       <CommonModal
         footer={(
@@ -122,6 +120,6 @@ export function TeamOverviewBar() {
           <p className="text-xs leading-5 text-text-tertiary">{t('team.billing_day_effect')}</p>
         </div>
       </CommonModal>
-    </div>
+    </>
   );
 }
