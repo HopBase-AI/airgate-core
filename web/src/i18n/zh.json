@@ -1791,7 +1791,6 @@
     "dept_manager_none": "不设负责人",
     "dept_manager_hint": "负责人只接收本部门及其成员的额度预警，不拥有管理权限",
     "dept_manager_label": "负责人：{{name}}",
-    "remaining": "剩余 ${{amount}}",
     "overview_balance": "企业余额",
     "overview_department_quota": "已分配给部门",
     "overview_member_quota": "已分配给成员",
@@ -1844,8 +1843,7 @@
     "audit_field_expires_at": "到期时间",
     "audit_field_billing_day": "账期日",
     "audit_field_password_reset": "重置密码",
-    "audit_field_note": "备注",
-    "usage_rate": "使用率 {{pct}}%"
+    "audit_field_note": "备注"
   },
   "setup": {
     "title": "系统安装向导",

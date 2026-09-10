@@ -162,7 +162,6 @@ export function DepartmentsTab({
             rows.map((row) => {
               const unlimited = row.quota_usd <= 0;
               const pct = unlimited ? 0 : Math.min((row.period_used / row.quota_usd) * 100, 100);
-              const remaining = unlimited ? null : Math.max(row.quota_usd - row.period_used, 0);
               const overAllocated = !unlimited && row.member_quota_total > row.quota_usd;
               return (
                 <CommonTable.Row id={String(row.id)} key={row.id}>
@@ -184,11 +183,6 @@ export function DepartmentsTab({
                       {!unlimited ? (
                         <div className="ag-quota-bar" aria-hidden="true">
                           <i data-tone={pct >= 90 ? 'danger' : pct >= 70 ? 'warning' : undefined} style={{ width: `${pct}%` }} />
-                        </div>
-                      ) : null}
-                      {remaining != null ? (
-                        <div className="mt-0.5 whitespace-nowrap text-[11px] leading-4 text-text-tertiary">
-                          {t('team.remaining', { amount: remaining.toFixed(2) })} · {t('team.usage_rate', { pct: pct.toFixed(0) })}
                         </div>
                       ) : null}
                     </div>

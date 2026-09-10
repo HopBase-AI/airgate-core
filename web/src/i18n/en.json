@@ -1791,7 +1791,6 @@
     "dept_manager_none": "No manager",
     "dept_manager_hint": "The manager only receives quota alerts for this department and its members; no management permissions are granted",
     "dept_manager_label": "Manager: {{name}}",
-    "remaining": "${{amount}} left",
     "overview_balance": "Company balance",
     "overview_department_quota": "Allocated to departments",
     "overview_member_quota": "Allocated to members",
@@ -1844,8 +1843,7 @@
     "audit_field_expires_at": "Expires at",
     "audit_field_billing_day": "Billing day",
     "audit_field_password_reset": "Password reset",
-    "audit_field_note": "Note",
-    "usage_rate": "{{pct}}% used"
+    "audit_field_note": "Note"
   },
   "setup": {
     "title": "System Setup",

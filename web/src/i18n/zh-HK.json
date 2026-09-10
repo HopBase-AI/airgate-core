@@ -1791,7 +1791,6 @@
     "dept_manager_none": "不設負責人",
     "dept_manager_hint": "負責人只接收本部門及其成員的額度預警，不擁有管理權限",
     "dept_manager_label": "負責人：{{name}}",
-    "remaining": "剩餘 ${{amount}}",
     "overview_balance": "企業餘額",
     "overview_department_quota": "已分配給部門",
     "overview_member_quota": "已分配給成員",
@@ -1844,8 +1843,7 @@
     "audit_field_expires_at": "到期時間",
     "audit_field_billing_day": "帳期日",
     "audit_field_password_reset": "重設密碼",
-    "audit_field_note": "備註",
-    "usage_rate": "使用率 {{pct}}%"
+    "audit_field_note": "備註"
   },
   "setup": {
     "title": "系統安裝向導",

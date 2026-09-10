@@ -1791,7 +1791,6 @@
     "dept_manager_none": "責任者を設定しない",
     "dept_manager_hint": "責任者は本部門とそのメンバーの上限アラートを受け取るだけで、管理権限は付与されません",
     "dept_manager_label": "責任者：{{name}}",
-    "remaining": "残り ${{amount}}",
     "overview_balance": "会社残高",
     "overview_department_quota": "部門への配分",
     "overview_member_quota": "メンバーへの配分",
@@ -1844,8 +1843,7 @@
     "audit_field_expires_at": "有効期限",
     "audit_field_billing_day": "請求日",
     "audit_field_password_reset": "パスワード再設定",
-    "audit_field_note": "メモ",
-    "usage_rate": "使用率 {{pct}}%"
+    "audit_field_note": "メモ"
   },
   "setup": {
     "title": "システムインストールウィザード",
