@@ -71,5 +71,8 @@
   "gw.member_quota_exhausted": "Member quota exhausted, please contact your enterprise administrator",
   "gw.department_quota_exhausted": "Department quota exhausted, please contact your enterprise administrator",
   "gw.render_insufficient_quota": "Insufficient balance to charge the document rendering fee",
-  "gw.internal_error": "The request could not be completed due to an internal error, please retry later"
+  "gw.internal_error": "The request could not be completed due to an internal error, please retry later",
+  "gw.group_offline_generic": "The selected group has been taken offline and no longer serves requests, please choose another group",
+  "gw.model_not_served_generic": "The selected group does not provide the requested model, please choose another model or group",
+  "gw.task_stale_timeout": "The task did not finish within 24 hours and was terminated automatically"
 }

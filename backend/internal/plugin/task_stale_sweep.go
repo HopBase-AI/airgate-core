@@ -7,6 +7,7 @@ import (
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	enttask "github.com/DouDOU-start/airgate-core/ent/task"
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 )
 
 // task_stale_sweep.go —— 卡死任务的兜底终止。
@@ -25,9 +26,15 @@ const (
 	staleTaskSweepTimeout  = 5 * time.Minute
 
 	// staleTaskErrorCode 前端据此把卡死与真实上游失败区分开。
-	staleTaskErrorCode    = "stale_timeout"
-	staleTaskErrorMessage = "任务超过 24 小时未完成，已自动终止"
+	staleTaskErrorCode = "stale_timeout"
 )
+
+// staleTaskErrorMessage 这条文案是直接写进 tasks.error_message 的——工作坊前端
+// 对 stale_timeout 没有 code→提示 的映射（failureHints.ts 未收录），会把它原样渲染
+// 给终端用户。后台任务没有请求上下文，取英文，与其余落库文案同口径。
+func staleTaskErrorMessage() string {
+	return i18n.En("gw.task_stale_timeout")
+}
 
 // StartStaleTaskSweepLoop 启动卡死任务扫描循环（每小时一轮，启动即跑一轮）。
 // 与其他单例后台循环一样只在 leader 实例执行，蓝绿/多实例期间不会重复改状态。
@@ -86,7 +93,7 @@ func sweepStaleTasks(ctx context.Context, db *ent.Client, now time.Time) (int, e
 		).
 		SetStatus(enttask.StatusFailed).
 		SetErrorCode(staleTaskErrorCode).
-		SetErrorMessage(staleTaskErrorMessage).
+		SetErrorMessage(staleTaskErrorMessage()).
 		SetCompletedAt(now).
 		Save(ctx)
 }

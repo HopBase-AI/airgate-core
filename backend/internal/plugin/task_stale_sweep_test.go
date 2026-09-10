@@ -10,6 +10,7 @@ import (
 
 	"github.com/DouDOU-start/airgate-core/ent/enttest"
 	enttask "github.com/DouDOU-start/airgate-core/ent/task"
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 )
 
 // 卡死任务扫描：超过 24 小时还没进终态的判失败（否则它的 estimated_cost 会一直占着
@@ -52,7 +53,7 @@ func TestSweepStaleTasks(t *testing.T) {
 		if got.ErrorCode != "stale_timeout" {
 			t.Fatalf("task %d error_code = %q, want stale_timeout", id, got.ErrorCode)
 		}
-		if got.ErrorMessage != "任务超过 24 小时未完成，已自动终止" {
+		if got.ErrorMessage != i18n.En("gw.task_stale_timeout") {
 			t.Fatalf("task %d error_message = %q", id, got.ErrorMessage)
 		}
 		if got.CompletedAt == nil {

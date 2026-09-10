@@ -71,5 +71,8 @@
   "gw.member_quota_exhausted": "Cuota del miembro agotada, contacte al administrador de la empresa",
   "gw.department_quota_exhausted": "Cuota del departamento agotada, contacte al administrador de la empresa",
   "gw.render_insufficient_quota": "Saldo insuficiente para cobrar la tarifa de renderizado del documento",
-  "gw.internal_error": "No se pudo completar la solicitud debido a un error interno, inténtelo de nuevo más tarde"
+  "gw.internal_error": "No se pudo completar la solicitud debido a un error interno, inténtelo de nuevo más tarde",
+  "gw.group_offline_generic": "El grupo seleccionado ha sido dado de baja y ya no atiende solicitudes, elija otro grupo",
+  "gw.model_not_served_generic": "El grupo seleccionado no ofrece el modelo solicitado, elija otro modelo u otro grupo",
+  "gw.task_stale_timeout": "La tarea no finalizó en 24 horas y se terminó automáticamente"
 }

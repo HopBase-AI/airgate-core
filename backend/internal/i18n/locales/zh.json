@@ -71,5 +71,8 @@
   "gw.member_quota_exhausted": "成员额度已用尽，请联系企业管理员",
   "gw.department_quota_exhausted": "部门额度已用尽，请联系企业管理员",
   "gw.render_insufficient_quota": "余额不足，无法收取文件渲染费用",
-  "gw.internal_error": "请求因内部错误未能完成，请稍后重试"
+  "gw.internal_error": "请求因内部错误未能完成，请稍后重试",
+  "gw.group_offline_generic": "所选分组已下线，不再处理请求，请改用其他分组",
+  "gw.model_not_served_generic": "所选分组未提供所请求的模型，请更换模型或分组",
+  "gw.task_stale_timeout": "任务超过 24 小时未完成，已自动终止"
 }

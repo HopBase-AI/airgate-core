@@ -3329,6 +3329,11 @@ func hostInternalError(event string, err error, args ...any) error {
 // tasks.error_message 并直接展示给终端用户。这里按 forwarder 的同一套分类
 // （见 recordPickAccountError / selectAllRoutesFailureResponse）映射到 gw.* key。
 //
+// 文案用渠道中性的 *_generic 变体：本方法只服务 Host（scheduler.select_account /
+// 工作坊提交），用户是在工作坊 UI 里选的分组、手上没有 API Key，网关路径那句
+// "去控制台创建新的 API Key" 对他毫无意义。带 API Key 措辞的
+// gw.group_offline / gw.model_not_served 仍归网关路径（forwarder）用。
+//
 // 刻意在边界映射而不是改哨兵文本：哨兵的中文注释与文本是内部诊断的一部分，
 // 调度侧日志、account_events 与既有断言都依赖它，改文本会把治理面铺得过宽。
 // gRPC code 维持既有口径不变——ErrNoAvailableAccount 家族 → NotFound，
@@ -3344,9 +3349,9 @@ func hostSchedulerError(err error) error {
 	}
 	switch {
 	case errors.Is(err, scheduler.ErrGroupOffline):
-		return status.Error(codes.NotFound, i18n.En("gw.group_offline"))
+		return status.Error(codes.NotFound, i18n.En("gw.group_offline_generic"))
 	case errors.Is(err, scheduler.ErrModelNotServed):
-		return status.Error(codes.NotFound, i18n.En("gw.model_not_served"))
+		return status.Error(codes.NotFound, i18n.En("gw.model_not_served_generic"))
 	case errors.Is(err, scheduler.ErrNoAvailableAccount):
 		return status.Error(codes.NotFound, i18n.En("gw.no_available_account"))
 	case errors.Is(err, scheduler.ErrGroupNotFound):
@@ -3360,6 +3365,9 @@ func hostSchedulerError(err error) error {
 // hostMemberGateError 成员准入失败的对外文案：auth 的哨兵错误文本同样是中文内部诊断，
 // 与网关 middleware 的映射口径（见 server/middleware/auth.go）保持一致。
 func hostMemberGateError(err error) error {
+	if cerr := hostContextError(err); cerr != nil {
+		return cerr
+	}
 	switch {
 	case errors.Is(err, auth.ErrMemberDisabled):
 		return status.Error(codes.PermissionDenied, i18n.En("gw.member_disabled"))

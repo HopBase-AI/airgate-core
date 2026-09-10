@@ -228,3 +228,25 @@ func redactCredentials(message string) string {
 	message = geminiCredentialPattern.ReplaceAllString(message, "[REDACTED]")
 	return longOpaqueCredentialPattern.ReplaceAllString(message, "[REDACTED]")
 }
+
+// grpcEnvelopePattern 匹配 gRPC 错误信封前缀 `rpc error: code = X desc = `。
+// 锚定行首，只剥一层：插件返回的 Host 错误会带上这段，而它对终端用户毫无意义
+// （生产两条头号任务报错 `rpc error: code = ResourceExhausted desc = …` 即此形状）。
+var grpcEnvelopePattern = regexp.MustCompile(`^rpc error: code = ([A-Za-z]+|Code\(\d+\)) desc = `)
+
+// stripGRPCEnvelope 剥掉信封并把 code 单独还给调用方——code 进结构化日志与
+// error_type，不进对外文案。
+func stripGRPCEnvelope(message string) (string, string) {
+	m := grpcEnvelopePattern.FindStringSubmatchIndex(message)
+	if m == nil {
+		return message, ""
+	}
+	return strings.TrimSpace(message[m[1]:]), message[m[2]:m[3]]
+}
+
+// taskFailureMessage 任务失败文案落库前的统一清洗：剥 gRPC 信封 + 抹凭证 + 压空白。
+// 返回 (对外文案, gRPC code)。
+func taskFailureMessage(message string) (string, string) {
+	stripped, code := stripGRPCEnvelope(strings.TrimSpace(message))
+	return sanitizeFailureMessage(stripped), code
+}

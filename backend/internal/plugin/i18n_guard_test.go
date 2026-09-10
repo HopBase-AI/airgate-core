@@ -51,6 +51,29 @@ var gatewayErrorEmitters = map[string]bool{
 	"protocolRateLimitError": true,
 	"abortWithOpenAIError":   true,
 	"writeUnauthenticated":   true,
+	// SetErrorMessage 直写 tasks.error_message，工作坊前端原样渲染给终端用户
+	// （stale_timeout 那条中文就是这么漏出去的）。
+	"SetErrorMessage": true,
+}
+
+// isI18nLookupCall 判断是否 i18n.En / i18n.Tf / i18n.Tc 取值调用。
+// 它们的 key 形参同样是"文案入口"：传进去的若是中文字面量，i18n.T 找不到 key
+// 会原样返回，中文照样直达终端用户（2026-09-10 hostForwardQuotaExhaustedError
+// 从 message 改成 key 之后就是这个形状，旧守卫穿不透）。
+func isI18nLookupCall(call *ast.CallExpr) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	pkg, ok := sel.X.(*ast.Ident)
+	if !ok || pkg.Name != "i18n" {
+		return false
+	}
+	switch sel.Sel.Name {
+	case "En", "Tf", "Tc", "T":
+		return true
+	}
+	return false
 }
 
 // cjkTaintNameHints 会被跟踪的"文案变量"名片段（小写包含即算）。
@@ -115,7 +138,8 @@ func parseGuardedFiles(t *testing.T, fset *token.FileSet) map[string]*ast.File {
 func derivedEmitters(files map[string]*ast.File) map[string]map[int]bool {
 	derived := map[string]map[int]bool{}
 	isEmitterCall := func(call *ast.CallExpr) bool {
-		return gatewayErrorEmitters[calleeName(call)] || isStatusErrorCall(call) || derived[calleeName(call)] != nil
+		return gatewayErrorEmitters[calleeName(call)] || isStatusErrorCall(call) ||
+			isI18nLookupCall(call) || derived[calleeName(call)] != nil
 	}
 	// 迭代到不动点：薄封装可能再套一层薄封装。
 	for round := 0; round < 3; round++ {
@@ -126,11 +150,18 @@ func derivedEmitters(files map[string]*ast.File) map[string]map[int]bool {
 				if !ok || fn.Body == nil || fn.Type.Params == nil {
 					continue
 				}
+				// 只跟踪 string 形参：不限类型会把 ctx / *gin.Context 这类 arg[0]
+				// 一并"派生"进出口集合，导致同名方法（Forward/Invoke/parseRequest…）
+				// 的无关中文被误报。
 				params := map[string]int{}
 				idx := 0
 				for _, field := range fn.Type.Params.List {
-					for _, ident := range field.Names {
-						params[ident.Name] = idx
+					ident, isIdent := field.Type.(*ast.Ident)
+					isString := isIdent && ident.Name == "string"
+					for _, name := range field.Names {
+						if isString {
+							params[name.Name] = idx
+						}
 						idx++
 					}
 				}
@@ -314,6 +345,59 @@ func firstCJKLiteral(expr ast.Expr) string {
 }
 
 // 每个对外 key 在五种语言里都要有：缺一种就会回落到 zh 默认语言，等于又漏中文。
+// i18n 取值的 key 必须是真 key：i18n.T 找不到 key 时原样返回 key 本身，
+// 所以传错(尤其传中文文案)不会报错，只会把那段文字直接送到终端用户面前。
+// 2026-09-10 hostForwardQuotaExhaustedError 由 message 改成 key 之后，
+// 中文实参可以绕过所有出口守卫——这条测试是那个洞的正面拦截。
+func TestGatewayI18nKeysAreWellFormed(t *testing.T) {
+	if err := i18n.LoadEmbedded(); err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	files := parseGuardedFiles(t, fset)
+	var violations []string
+	for _, file := range files {
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || !isI18nLookupCall(call) {
+				return true
+			}
+			for i, arg := range call.Args {
+				lit, ok := arg.(*ast.BasicLit)
+				if !ok || lit.Kind != token.STRING {
+					continue
+				}
+				value := strings.Trim(lit.Value, `"`)
+				// i18n.Tf(lang, key, …) / i18n.T(lang, key) 的第一参是语言码。
+				if i == 0 && isLangLiteral(value) {
+					continue
+				}
+				if !strings.HasPrefix(value, "gw.") {
+					violations = append(violations, fset.Position(arg.Pos()).String()+": "+lit.Value+"(不是 gw.* key)")
+					continue
+				}
+				if !i18n.Has(i18n.LangEN, value) {
+					violations = append(violations, fset.Position(arg.Pos()).String()+": "+value+"(locales 里不存在)")
+				}
+				break // key 之后是格式参数
+			}
+			return true
+		})
+	}
+	if len(violations) > 0 {
+		t.Fatalf("i18n key 实参必须是 locales 里真实存在的 gw.* key，不能直接写文案:\n  %s",
+			strings.Join(violations, "\n  "))
+	}
+}
+
+func isLangLiteral(value string) bool {
+	switch value {
+	case "en", "zh", "es", "ja", "zh-HK":
+		return true
+	}
+	return false
+}
+
 func TestGatewayMessageKeysCoverAllLocales(t *testing.T) {
 	if err := i18n.LoadEmbedded(); err != nil {
 		t.Fatal(err)
@@ -423,13 +507,13 @@ func TestHostErrorsSpeakEnglish(t *testing.T) {
 			name: "group_offline",
 			err:  hostSchedulerError(scheduler.ErrGroupOffline),
 			code: codes.NotFound,
-			want: i18n.En("gw.group_offline"),
+			want: i18n.En("gw.group_offline_generic"),
 		},
 		{
 			name: "model_not_served",
 			err:  hostSchedulerError(scheduler.ErrModelNotServed),
 			code: codes.NotFound,
-			want: i18n.En("gw.model_not_served"),
+			want: i18n.En("gw.model_not_served_generic"),
 		},
 		{
 			name: "no_available_account",
