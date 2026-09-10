@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyNotificationEdit,
+  applyNotificationWithdraw,
   buildInboxItems,
   isConsolePath,
+  isCurrentAnnouncement,
   mergeLegacyNotification,
   NOTIFICATION_HISTORY_LIMIT,
   parseNotificationHistory,
 } from './notifications';
-import type { SiteNotification } from './notifications';
+import type { CurrentAnnouncement, SiteNotification } from './notifications';
 import type { UserNotificationResp } from './types';
 
 describe('notification history', () => {
@@ -75,5 +78,77 @@ describe('buildInboxItems', () => {
     expect(items.find((item) => item.key === 'personal:1')?.link).toBe('/team');
     expect(items.find((item) => item.key === 'personal:2')?.link).toBe('');
     expect(isConsolePath('//host/path')).toBe(false);
+  });
+});
+
+describe('announcement edit and withdraw', () => {
+  const first: SiteNotification = {
+    id: 'a1', title: '服务动荡', content: '非 PPToken 自身原因', level: 'danger',
+    published_at: '2026-09-10T05:00:00Z',
+  };
+  const second: SiteNotification = {
+    id: 'a2', title: '已恢复', content: '服务已恢复', level: 'info',
+    published_at: '2026-09-09T05:00:00Z',
+  };
+  const history = [first, second];
+  const currentIsFirst: CurrentAnnouncement = {
+    id: 'a1', title: '服务动荡', content: '非 PPToken 自身原因', level: 'danger',
+  };
+
+  it('matches the current announcement by id, and by text when the id is missing', () => {
+    expect(isCurrentAnnouncement(first, currentIsFirst)).toBe(true);
+    expect(isCurrentAnnouncement(second, currentIsFirst)).toBe(false);
+
+    const legacy: CurrentAnnouncement = { id: '', title: '服务动荡', content: '非 PPToken 自身原因', level: 'danger' };
+    expect(isCurrentAnnouncement(first, legacy)).toBe(true);
+    expect(isCurrentAnnouncement(second, legacy)).toBe(false);
+    // 没 id 又没正文时不能瞎认，否则会把无关公告当成当前公告清掉
+    expect(isCurrentAnnouncement(first, { id: '', title: '', content: '   ', level: 'info' })).toBe(false);
+  });
+
+  it('edits in place, keeps id and publish time, and syncs announcement_* when it is the current one', () => {
+    const result = applyNotificationEdit(history, currentIsFirst, {
+      id: 'a1', title: '服务动荡', content: '非 HopBase 自身原因', level: 'warning',
+    });
+
+    expect(result.history[0]).toEqual({
+      ...first, content: '非 HopBase 自身原因', level: 'warning',
+    });
+    expect(result.history[1]).toEqual(second);
+    expect(result.current).toEqual({
+      id: 'a1', title: '服务动荡', content: '非 HopBase 自身原因', level: 'warning',
+    });
+    // 改文案不该顺手动弹窗开关
+    expect(result.disablePopup).toBe(false);
+  });
+
+  it('leaves announcement_* untouched when editing a notice that is not the current one', () => {
+    const result = applyNotificationEdit(history, currentIsFirst, {
+      id: 'a2', title: '已恢复', content: '服务已完全恢复', level: 'info',
+    });
+
+    expect(result.history[1]?.content).toBe('服务已完全恢复');
+    expect(result.current).toBeNull();
+    expect(result.disablePopup).toBe(false);
+  });
+
+  it('withdraws the current notice by clearing announcement_* so it cannot come back as a legacy entry', () => {
+    const result = applyNotificationWithdraw(history, currentIsFirst, 'a1');
+
+    expect(result.history).toEqual([second]);
+    expect(result.current).toEqual({ id: '', title: '', content: '', level: 'info' });
+    expect(result.disablePopup).toBe(true);
+    // 清空后再跑一次 merge，撤掉的那条不会被重新塞回列表
+    expect(mergeLegacyNotification(result.history, {
+      title: result.current?.title, content: result.current?.content, level: result.current?.level,
+    })).toEqual([second]);
+  });
+
+  it('withdraws a past notice without touching the live popup', () => {
+    const result = applyNotificationWithdraw(history, currentIsFirst, 'a2');
+
+    expect(result.history).toEqual([first]);
+    expect(result.current).toBeNull();
+    expect(result.disablePopup).toBe(false);
   });
 });

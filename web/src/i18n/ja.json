@@ -1243,7 +1243,19 @@
     "kind_quota_alert": "クォータ警告",
     "kind_balance_alert": "残高警告",
     "kind_system": "システム",
-    "view_link": "表示"
+    "view_link": "表示",
+    "edit": "編集",
+    "edit_title": "通知を編集",
+    "edit_description": "「{{title}}」を編集しています。保存すると履歴とユーザーの通知センターに反映されます。",
+    "edit_save": "変更を保存",
+    "edit_popup_hint": "編集は本文のみを変更し、ポップアップの有効・無効は変わりません。",
+    "edit_success": "通知を更新しました",
+    "editing_badge": "編集中",
+    "withdraw": "取り消し",
+    "withdraw_title": "通知を取り消す",
+    "withdraw_confirm": "「{{title}}」を取り消しますか？取り消すとユーザーの通知センターから消えます。",
+    "withdraw_current_hint": "現在使用中の通知です。取り消すとポップアップも停止します。",
+    "withdraw_success": "通知を取り消しました"
   },
   "settings": {
     "title": "システム設定",

@@ -116,6 +116,81 @@ export function serializeNotificationHistory(history: SiteNotification[]): strin
   return JSON.stringify(history.slice(0, NOTIFICATION_HISTORY_LIMIT));
 }
 
+// ==================== 公告的修改与撤回 ====================
+
+/** announcement_* 里描述「当前这条公告」的几个键 */
+export interface CurrentAnnouncement {
+  id: string;
+  title: string;
+  content: string;
+  level: NotificationLevel;
+}
+
+export interface AnnouncementMutation {
+  /** 改写后的完整历史，直接序列化回 announcement_history_json */
+  history: SiteNotification[];
+  /** 需要一并写回的 announcement_*；null 表示这次改动没碰到当前公告 */
+  current: CurrentAnnouncement | null;
+  /** 撤回的正是当前公告时要顺手关掉弹窗 */
+  disablePopup: boolean;
+}
+
+/**
+ * 判断一条公告是不是当前挂在 announcement_* 上的那条。
+ * 早期发布的公告没写 announcement_id（mergeLegacyNotification 兜出来的条目同理），
+ * 这种只能拿标题与正文比对。
+ */
+export function isCurrentAnnouncement(
+  notice: SiteNotification,
+  current: CurrentAnnouncement,
+): boolean {
+  if (current.id) return notice.id === current.id;
+  const content = current.content.trim();
+  if (!content) return false;
+  return notice.content === content && notice.title === current.title.trim();
+}
+
+/** 修改一条公告：标题/正文/级别就地替换，id 与发布时间保持不变 */
+export function applyNotificationEdit(
+  history: SiteNotification[],
+  current: CurrentAnnouncement,
+  edited: Pick<SiteNotification, 'id' | 'title' | 'content' | 'level'>,
+): AnnouncementMutation {
+  let hitCurrent = false;
+  const next = history.map((item) => {
+    if (item.id !== edited.id) return item;
+    if (isCurrentAnnouncement(item, current)) hitCurrent = true;
+    return { ...item, title: edited.title, content: edited.content, level: edited.level };
+  });
+
+  return {
+    history: next,
+    // 改的正是当前公告时 announcement_* 必须同步，否则弹窗里还是旧文案
+    current: hitCurrent
+      ? { id: edited.id, title: edited.title, content: edited.content, level: edited.level }
+      : null,
+    // 修改不动弹窗开关：本来在弹的继续弹，本来关着的不会被改动重新打开
+    disablePopup: false,
+  };
+}
+
+/** 撤回一条公告：从历史里删掉；撤的正是当前公告时一并清空 announcement_* 并关掉弹窗 */
+export function applyNotificationWithdraw(
+  history: SiteNotification[],
+  current: CurrentAnnouncement,
+  id: string,
+): AnnouncementMutation {
+  const target = history.find((item) => item.id === id);
+  const hitCurrent = Boolean(target) && isCurrentAnnouncement(target as SiteNotification, current);
+
+  return {
+    history: history.filter((item) => item.id !== id),
+    // 只删历史不清 announcement_content 的话，mergeLegacyNotification 会把它当 legacy 条目再塞回列表
+    current: hitCurrent ? { id: '', title: '', content: '', level: 'info' } : null,
+    disablePopup: hitCurrent,
+  };
+}
+
 // ==================== 通知中心合并视图（站点公告 + 个人通知） ====================
 
 export type InboxItemKind = 'site' | UserNotificationKind;

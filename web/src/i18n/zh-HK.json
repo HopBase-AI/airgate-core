@@ -1243,7 +1243,19 @@
     "kind_quota_alert": "額度預警",
     "kind_balance_alert": "餘額預警",
     "kind_system": "系統訊息",
-    "view_link": "查看"
+    "view_link": "查看",
+    "edit": "編輯",
+    "edit_title": "編輯通知",
+    "edit_description": "正在編輯“{{title}}”。儲存後歷史記錄與用戶端通知中心同步更新。",
+    "edit_save": "儲存修改",
+    "edit_popup_hint": "編輯只改文案，不會改變彈窗的開啟狀態。",
+    "edit_success": "通知已更新",
+    "editing_badge": "編輯中",
+    "withdraw": "撤回",
+    "withdraw_title": "撤回通知",
+    "withdraw_confirm": "確定撤回“{{title}}”嗎？撤回後用戶在通知中心將不再看到這條通知。",
+    "withdraw_current_hint": "這是當前正在使用的通知，撤回會同時停止彈窗提醒。",
+    "withdraw_success": "通知已撤回"
   },
   "settings": {
     "title": "系統設定",
