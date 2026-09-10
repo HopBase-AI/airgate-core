@@ -21,6 +21,7 @@ import {
   DashboardPage,
   InvitePage,
   TeamPage,
+  TeamAuditPage,
   DocsPage,
   LegalTermsPage,
   GroupsPage,
@@ -344,6 +345,16 @@ const teamRoute = createRoute({
   },
   component: renderPage(TeamPage),
 });
+// 操作记录独立成页(不再是 /team 的页签):侧栏「团队」段下的兄弟项,权限与 /team 完全一致。
+const teamAuditRoute = createRoute({
+  getParentRoute: () => authLayout,
+  path: '/team/audit',
+  beforeLoad: () => {
+    accountPageBeforeLoad();
+    return checkEnterpriseOwner();
+  },
+  component: renderPage(TeamAuditPage),
+});
 const userUsageRoute = createRoute({ getParentRoute: () => authLayout, path: '/usage', component: renderPage(UserUsagePage) });
 const modelPlazaRoute = createRoute({ getParentRoute: () => authLayout, path: '/models', component: renderPage(ModelPlazaPage) });
 
@@ -440,6 +451,7 @@ const routeTree = rootRoute.addChildren([
     inviteRoute,
     userKeysRoute,
     teamRoute,
+    teamAuditRoute,
     userUsageRoute,
     modelPlazaRoute,
     chatRoute,

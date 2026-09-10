@@ -157,13 +157,14 @@
     "pricing": "価格管理",
     "entry_codes": "入口コード",
     "my_team": "チーム管理",
+    "my_team_audit": "操作履歴",
     "section_overview": "概要",
     "section_access": "接続",
     "section_team": "チーム",
     "section_workspace": "ワークスペース",
     "section_account": "アカウント",
-    "badge_enterprise_owner": "企業オーナー",
-    "badge_team_member": "チームメンバー"
+    "badge_enterprise_owner": "オーナー",
+    "badge_team_member": "メンバー"
   },
   "model_plaza": {
     "title": "モデル広場",
@@ -1749,7 +1750,7 @@
     "no_account_hint": "旧仕様のメンバーにはログインアカウントがなく、あなたが代理作成したキーのみ使えます。ログインが必要なら削除して再追加してください",
     "members_tab": "メンバー",
     "departments_tab": "部門",
-    "audit_tab": "操作履歴",
+    "audit_intro": "部門・メンバー・予算・権限・APIキーの変更はすべて記録されます。期間と対象で絞り込めます。",
     "department": "所属部門",
     "department_none": "未割り当て",
     "department_hint": "メンバーの利用は部門予算にも計上されます。未選択＝部門なし",

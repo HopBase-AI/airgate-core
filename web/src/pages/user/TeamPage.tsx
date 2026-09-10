@@ -20,7 +20,6 @@ import {
   Ban,
   Building2,
   CheckCircle,
-  History,
   KeyRound,
   MoreHorizontal,
   Pencil,
@@ -34,11 +33,10 @@ import {
 import type { CreateMemberReq, MemberResp, UpdateMemberReq } from '../../shared/types';
 import { EditMemberModal } from './team/EditMemberModal';
 import { DepartmentsTab } from './team/DepartmentsTab';
-import { AuditTab } from './team/AuditTab';
 import { TeamOverviewBar } from './team/TeamOverviewBar';
 import { type MemberForm, emptyMemberForm } from './team/types';
 
-type TeamTab = 'members' | 'departments' | 'audit';
+type TeamTab = 'members' | 'departments';
 const UNASSIGNED_DEPARTMENT_FILTER = '__unassigned__';
 
 // 团队管理：「组织 + 成员」二级结构——企业主充值 → 划额度给部门 → 部门划给成员，
@@ -242,7 +240,6 @@ export default function TeamPage() {
   const tabs: Array<{ key: TeamTab; label: string; icon: typeof UsersRound }> = [
     { key: 'members', label: t('team.members_tab'), icon: UsersRound },
     { key: 'departments', label: t('team.departments_tab'), icon: Building2 },
-    { key: 'audit', label: t('team.audit_tab'), icon: History },
   ];
   const membersColSpan = hasDepartments ? 10 : 9;
 
@@ -328,7 +325,6 @@ export default function TeamPage() {
       {tab === 'departments' ? (
         <DepartmentsTab createOpen={deptCreateOpen} onCreateClose={() => setDeptCreateOpen(false)} onViewMembers={showMembersOfDepartment} />
       ) : null}
-      {tab === 'audit' ? <AuditTab /> : null}
       {tab === 'members' ? (
       <CommonTable
         ariaLabel={t('team.title')}

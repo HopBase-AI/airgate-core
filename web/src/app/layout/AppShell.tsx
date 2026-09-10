@@ -19,6 +19,7 @@ import { NotificationCenter } from '../../shared/components/NotificationCenter';
 import { SiteBrand } from '../../shared/components/SiteBrand';
 import { useOnboardingReplay } from '../onboarding/OnboardingRoot';
 import { AccountBadge } from './AccountBadge';
+import { isMenuPathActive } from './menuActive';
 import {
   LayoutDashboard,
   Users,
@@ -138,6 +139,8 @@ const userMenuItems: MenuItem[] = [
 
 // 「团队管理」是企业客户专属能力：管理员天然可见，普通用户须被管理员授予 is_enterprise_owner;单独成「团队」段。
 const teamMenuItem: MenuItem = { path: '/team', labelKey: 'nav.my_team', icon: <UsersRound className="h-5 w-5" />, sectionKey: 'nav.section_team' };
+// 操作记录:组织 / 成员 / 额度 / 密钥变更全程可查,内容与「团队管理」的额度管理是两件事,单独成页挂在「团队」段下。
+const teamAuditMenuItem: MenuItem = { path: '/team/audit', labelKey: 'nav.my_team_audit', icon: <History className="h-5 w-5" /> };
 
 // 「我的邀请」仅在分销开关（公开设置 referral_enabled）打开时挂进「账户」段(与充值 / 充值记录同段)。
 const inviteMenuItem: MenuItem = { path: '/invite', labelKey: 'nav.my_invite', icon: <Gift className="h-5 w-5" />, sectionKey: 'nav.section_account' };
@@ -289,7 +292,7 @@ export function AppShell({ children }: AppShellProps) {
     // 管理员视图:管理分组 + 插件分组之后,个人项合成一个「个人中心」块(沿用旧结构,只是不再有个人资料)。
     const adminUserItems = [
       ...userMenuItems.filter((item) => item.path !== '/'),
-      ...(showTeam ? [teamMenuItem] : []),
+      ...(showTeam ? [teamMenuItem, teamAuditMenuItem] : []),
       ...accountSectionItems,
     ].map((item, i) => (i === 0 ? { ...stripSection(item), sectionKey: 'nav.personal' } : stripSection(item)));
     // 非管理员但被授予 can_author_blog 的用户,在个人菜单最后挂出「博客」入口(营销段)。
@@ -300,7 +303,7 @@ export function AppShell({ children }: AppShellProps) {
         ? [...adminMenuItems, ...pluginAdminItems, ...adminUserItems]
         : [
           ...userMenuItems,
-          ...(showTeam ? [teamMenuItem] : []),
+          ...(showTeam ? [teamMenuItem, teamAuditMenuItem] : []),
           ...pluginWorkspaceItems,
           ...accountSectionItems,
           ...(canBlog ? [blogAuthorMenuItem] : []),
@@ -344,6 +347,8 @@ export function AppShell({ children }: AppShellProps) {
     { id: 'docs', label: t('nav.docs'), icon: <BookOpen className="h-3.5 w-3.5" /> },
     { id: 'logout', label: t('common.logout'), icon: <LogOut className="h-3.5 w-3.5" /> },
   ];
+  // 侧栏所有菜单项的路径:高亮判定要据此把 /team 与 /team/audit 这种父子项分开
+  const allMenuPaths = useMemo(() => sections.flatMap((section) => section.items.map((item) => item.path)), [sections]);
   // 标题行:页面名独占一行,取自当前导航项;自带标题或全出血的页面(AI Chat / 工作坊 / 模型广场 / 生成监控 / 价格 / 插件页 / 博客编辑器)不重复渲染
   const pageTitle = useMemo(() => {
     if (/^\/(chat|studio|plugins|models|admin\/generation-tasks|admin\/pricing|admin\/blog\/edit)(\/|$)/.test(routerPath)) return null;
@@ -426,12 +431,11 @@ export function AppShell({ children }: AppShellProps) {
             )}
             <div className="space-y-1">
               {section.items.map((item) => {
-                const isCurrentActive = item.path === '/'
-                  ? !!matchRoute({ to: '/' })
-                  : !!matchRoute({ to: item.path, fuzzy: true });
+                const isCurrentActive = isMenuPathActive(item.path, routerPath, allMenuPaths);
                 const isPendingActive = item.path === '/'
                   ? !!matchRoute({ to: '/', pending: true })
-                  : !!matchRoute({ to: item.path, fuzzy: true, pending: true });
+                  : !!matchRoute({ to: item.path, fuzzy: true, pending: true })
+                    && isMenuPathActive(item.path, routerPath, allMenuPaths);
                 const active = routerStatus === 'pending' ? isPendingActive : isCurrentActive;
                 const label = t(item.labelKey, { defaultValue: item.labelKey });
 
