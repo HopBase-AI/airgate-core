@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/DouDOU-start/airgate-core/ent"
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
 
@@ -481,7 +482,7 @@ func TestWriteClientErrorResponse_FallsBackToOwnMessage(t *testing.T) {
 	if strings.Contains(body, "aijws") {
 		t.Fatalf("回落路径仍泄漏供应商域名: %s", body)
 	}
-	if !strings.Contains(body, defaultClientErrorMessage) && !strings.Contains(body, "rejected") {
+	if !strings.Contains(body, i18n.En(msgKeyClientErrorDefault)) && !strings.Contains(body, "rejected") {
 		t.Fatalf("回落文案缺失: %s", body)
 	}
 }

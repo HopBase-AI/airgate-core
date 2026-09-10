@@ -195,7 +195,7 @@ func TestForwardEgress_UpstreamFailureStaysGeneric(t *testing.T) {
 			t.Errorf("上游故障响应泄漏内部细节 %q: %s", leak, body)
 		}
 	}
-	if !strings.Contains(body, "上游服务暂不可用") {
+	if !strings.Contains(body, "Upstream service is temporarily unavailable") {
 		t.Errorf("缺少对外分类文案: %s", body)
 	}
 	for _, name := range mustStripHeaders {

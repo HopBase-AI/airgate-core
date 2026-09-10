@@ -29,6 +29,7 @@ import (
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	"github.com/DouDOU-start/airgate-core/internal/routing"
 	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 	pb "github.com/DouDOU-start/airgate-sdk/protocol/proto"
@@ -1850,7 +1851,7 @@ func hostAllRoutesFailurePayload(summary allRoutesFailureSummary, lastUpstream s
 	}
 	response := selectAllRoutesFailureResponse(summary)
 	// 我方生成的失败文案，不含上游原文，无需清洗。
-	return hostForwardPayload(hostStructuredFailureOutcome(response.status, response.code, response.message, response.retryAfter), nil)
+	return hostForwardPayload(hostStructuredFailureOutcome(response.status, response.code, i18n.En(response.msgKey), response.retryAfter), nil)
 }
 
 func hostAccountGatePayload(decision scheduler.AccountGateDecision) map[string]interface{} {
@@ -1913,7 +1914,7 @@ func hostFailureType(statusCode int) string {
 
 func sendHostStreamFailure(stream pb.CoreInvokeService_InvokeStreamServer, summary allRoutesFailureSummary) error {
 	response := selectAllRoutesFailureResponse(summary)
-	outcome := hostStructuredFailureOutcome(response.status, response.code, response.message, response.retryAfter)
+	outcome := hostStructuredFailureOutcome(response.status, response.code, i18n.En(response.msgKey), response.retryAfter)
 	if err := stream.Send(&pb.HostStreamFrame{
 		Event:  "headers",
 		Status: "ok",
@@ -3265,7 +3266,7 @@ func hostCanceledRequestStatus(ctx context.Context, forwardErr error) int {
 }
 
 func hostForwardClientError(outcome sdk.ForwardOutcome, scrubber *identityScrubber) error {
-	return status.Error(codes.InvalidArgument, sanitizedClientErrorMessage(outcome, scrubber))
+	return status.Error(codes.InvalidArgument, sanitizedClientErrorMessage(i18n.LangEN, outcome, scrubber))
 }
 
 // hostForwardPayload 回给插件的上游响应。4xx 体会经 identityScrubber 剥供应商标识——

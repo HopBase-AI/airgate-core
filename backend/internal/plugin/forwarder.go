@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	"github.com/DouDOU-start/airgate-core/internal/routing"
 	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 	"github.com/DouDOU-start/airgate-core/internal/server/middleware"
@@ -147,7 +147,7 @@ func (f *Forwarder) Forward(c *gin.Context) {
 			sdk.LogFieldGroupID, state.keyInfo.GroupID,
 			"scheduling_models", state.schedulingModelCandidates(),
 		)
-		protocolError(c, http.StatusNotFound, "invalid_request_error", "model_not_found", reason)
+		protocolError(c, http.StatusNotFound, "invalid_request_error", "model_not_found", i18n.Tc(c, "gw.model_not_supported", state.model))
 		f.recordFailureUsage(c, state, usageFailure{
 			code:    appusage.ErrorCodeModelNotFound,
 			status:  http.StatusNotFound,
@@ -171,19 +171,19 @@ func (f *Forwarder) Forward(c *gin.Context) {
 			sdk.LogFieldUserID, state.keyInfo.UserID,
 		)
 		if errResp, ok := apiKeyGroupRequirementError(state.keyInfo, requirements); ok {
-			protocolError(c, errResp.status, errResp.errType, errResp.code, errResp.message)
+			protocolError(c, errResp.status, errResp.errType, errResp.code, i18n.Tc(c, errResp.msgKey))
 			f.recordFailureUsage(c, state, usageFailure{
 				code:    appusage.ErrorCodeCapabilityDenied,
 				status:  errResp.status,
-				message: errResp.message,
+				message: i18n.En(errResp.msgKey),
 			})
 			return
 		}
-		protocolError(c, http.StatusServiceUnavailable, "server_error", "no_available_route", "请求暂时无法完成，请稍后重试")
+		protocolError(c, http.StatusServiceUnavailable, "server_error", "no_available_route", i18n.Tc(c, "gw.all_routes_failed"))
 		f.recordFailureUsage(c, state, usageFailure{
 			code:    appusage.ErrorCodeNoAvailableRoute,
 			status:  http.StatusServiceUnavailable,
-			message: "当前分组没有可用于本次请求的上游账号",
+			message: i18n.En("gw.no_available_route_detail"),
 		})
 		return
 	}
@@ -536,17 +536,18 @@ func (f *Forwarder) Forward(c *gin.Context) {
 	f.recordFailureUsage(c, state, usageFailure{
 		code:    failResp.code,
 		status:  failResp.status,
-		message: allRoutesFailureLogMessage(failResp.message, totalAttempts),
+		message: allRoutesFailureLogMessage(failResp.msgKey, totalAttempts),
 	})
 }
 
 // allRoutesFailureLogMessage 给「全部上游失败」的日志补上尝试次数，便于区分
 // 「一次就失败」与「换了 3 个账号仍失败」。
-func allRoutesFailureLogMessage(message string, attempts int) string {
+// 落库统一英文（i18n.En），与请求方语言无关。
+func allRoutesFailureLogMessage(msgKey string, attempts int) string {
 	if attempts <= 0 {
-		return message + "（未取到可用账号）"
+		return i18n.En(msgKey) + i18n.En("gw.attempts_none")
 	}
-	return message + "（已尝试 " + strconv.Itoa(attempts) + " 次上游调用）"
+	return i18n.En(msgKey) + i18n.En("gw.attempts", attempts)
 }
 
 func canceledRequestStatus(err error) int {
@@ -623,7 +624,7 @@ func neutralizeCanceledExecution(execution forwardExecution) forwardExecution {
 	execution.err = nil
 	execution.outcome.Kind = sdk.OutcomeStreamAborted
 	if execution.outcome.Reason == "" {
-		execution.outcome.Reason = "客户端已取消请求"
+		execution.outcome.Reason = i18n.En("gw.client_canceled")
 	}
 	return execution
 }
@@ -754,21 +755,21 @@ type allRoutesFailureResponse struct {
 	status     int
 	errType    string
 	code       string
-	message    string
+	msgKey     string // 对外文案 key（gw.*）：响应按请求方语言取，落库取英文
 	retryAfter time.Duration
 }
 
 func writeAllRoutesFailed(c *gin.Context, summary allRoutesFailureSummary) {
 	response := selectAllRoutesFailureResponse(summary)
 	if streamHeartbeatOnlyWritten(c) {
-		protocolStreamError(c, response.status, response.errType, response.code, response.message)
+		protocolStreamError(c, response.status, response.errType, response.code, i18n.Tc(c, response.msgKey))
 		return
 	}
 	if response.status == http.StatusTooManyRequests {
-		protocolRateLimitError(c, response.status, response.code, response.message, response.retryAfter)
+		protocolRateLimitError(c, response.status, response.code, i18n.Tc(c, response.msgKey), response.retryAfter)
 		return
 	}
-	protocolError(c, response.status, response.errType, response.code, response.message)
+	protocolError(c, response.status, response.errType, response.code, i18n.Tc(c, response.msgKey))
 }
 
 func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFailureResponse {
@@ -781,7 +782,7 @@ func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFa
 			status:     http.StatusTooManyRequests,
 			errType:    "rate_limit_error",
 			code:       appusage.ErrorCodeAllRoutesRateLimited,
-			message:    "上游账号当前被限流，请稍后重试",
+			msgKey:     "gw.all_routes_rate_limited",
 			retryAfter: retryAfter,
 		}
 	}
@@ -790,7 +791,7 @@ func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFa
 			status:  http.StatusServiceUnavailable,
 			errType: "server_error",
 			code:    appusage.ErrorCodeAllRoutesFailed,
-			message: "请求暂时无法完成，请稍后重试",
+			msgKey:  "gw.all_routes_failed",
 		}
 	}
 	if summary.upstreamTimeoutSeen {
@@ -798,7 +799,7 @@ func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFa
 			status:  http.StatusGatewayTimeout,
 			errType: "server_error",
 			code:    appusage.ErrorCodeUpstreamTimeout,
-			message: "上游请求超时，请稍后重试",
+			msgKey:  "gw.upstream_timeout",
 		}
 	}
 	if summary.upstreamFailureSeen {
@@ -806,7 +807,7 @@ func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFa
 			status:  http.StatusBadGateway,
 			errType: "server_error",
 			code:    appusage.ErrorCodeUpstreamError,
-			message: "上游服务暂不可用，请稍后重试",
+			msgKey:  "gw.upstream_error",
 		}
 	}
 	// 结构性失败用 404 收口。必须排在通用 accountUnavailable 分支之前，且只在没有任何
@@ -822,7 +823,7 @@ func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFa
 				status:  http.StatusNotFound,
 				errType: "not_found_error",
 				code:    appusage.ErrorCodeGroupOffline,
-				message: "当前 API Key 所属分组已下线，无法继续提供服务。请在控制台重新创建 API Key 或改用其它分组。",
+				msgKey:  "gw.group_offline",
 			}
 		}
 		if summary.modelNotServedSeen {
@@ -830,7 +831,7 @@ func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFa
 				status:  http.StatusNotFound,
 				errType: "not_found_error",
 				code:    appusage.ErrorCodeModelNotServed,
-				message: "当前 API Key 所属分组未提供所请求的模型，请更换模型或改用其它分组。",
+				msgKey:  "gw.model_not_served",
 			}
 		}
 	}
@@ -839,14 +840,14 @@ func selectAllRoutesFailureResponse(summary allRoutesFailureSummary) allRoutesFa
 			status:  http.StatusServiceUnavailable,
 			errType: "server_error",
 			code:    appusage.ErrorCodeNoAvailableAccount,
-			message: "暂无可用上游账号，请稍后重试",
+			msgKey:  "gw.no_available_account",
 		}
 	}
 	return allRoutesFailureResponse{
 		status:  http.StatusServiceUnavailable,
 		errType: "server_error",
 		code:    appusage.ErrorCodeAllRoutesFailed,
-		message: "请求暂时无法完成，请稍后重试",
+		msgKey:  "gw.all_routes_failed",
 	}
 }
 
@@ -906,7 +907,7 @@ type groupRequirementError struct {
 	status  int
 	errType string
 	code    string
-	message string
+	msgKey  string // 对外文案 key（gw.*）
 }
 
 // apiKeyGroupRequirementError 基于 routing 包统一判定逻辑返回结构化错误。
@@ -923,7 +924,7 @@ func apiKeyGroupRequirementError(keyInfo *auth.APIKeyInfo, requirements routing.
 			status:  http.StatusForbidden,
 			errType: "invalid_request_error",
 			code:    "image_generation_disabled",
-			message: "当前分组未开启图片生成功能",
+			msgKey:  "gw.image_generation_disabled",
 		}, true
 	}
 	return groupRequirementError{}, false

@@ -13,6 +13,7 @@ import (
 
 	"github.com/DouDOU-start/airgate-core/ent/account"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
@@ -78,7 +79,7 @@ func (f *Forwarder) writeClientErrorResult(c *gin.Context, state *forwardState, 
 	// 中继产品名、供应商工单号、上游域名、厂商专有错误码前缀。
 	scrubber := newIdentityScrubber(state.account, state.model)
 	if state.stream && streamHeartbeatOnlyWritten(c) {
-		protocolStreamError(c, sanitizedClientErrorStatus(execution.outcome), "invalid_request_error", "invalid_request", sanitizedClientErrorMessage(execution.outcome, scrubber))
+		protocolStreamError(c, sanitizedClientErrorStatus(execution.outcome), "invalid_request_error", "invalid_request", sanitizedClientErrorMessage(i18n.ClientLang(c), execution.outcome, scrubber))
 	} else if !state.stream || !c.Writer.Written() {
 		writeClientErrorResponse(c, execution.outcome, scrubber)
 	}
@@ -92,9 +93,10 @@ func (f *Forwarder) writeClientErrorResult(c *gin.Context, state *forwardState, 
 	}
 }
 
+// 对外文案 key（locales 里的 gw.* 条目）；按请求方语言取文案见 i18n.Tc / i18n.Tf。
 const (
-	defaultClientErrorMessage = "请求无法完成，请检查输入后重试"
-	imageTooLargeMessage      = "图片过大，请压缩后重试"
+	msgKeyClientErrorDefault = "gw.client_error_default"
+	msgKeyImageTooLarge      = "gw.image_too_large"
 )
 
 func sanitizedClientErrorStatus(outcome sdk.ForwardOutcome) int {
@@ -120,21 +122,22 @@ func writeClientErrorResponse(c *gin.Context, outcome sdk.ForwardOutcome, scrubb
 	}
 	copyUpstreamHeadersForGeneratedBody(c, outcome.Upstream.Headers)
 	statusCode := sanitizedClientErrorStatus(outcome)
-	protocolError(c, statusCode, "invalid_request_error", "invalid_request", sanitizedClientErrorMessage(outcome, scrubber))
+	protocolError(c, statusCode, "invalid_request_error", "invalid_request", sanitizedClientErrorMessage(i18n.ClientLang(c), outcome, scrubber))
 }
 
-func sanitizedClientErrorMessage(outcome sdk.ForwardOutcome, scrubber *identityScrubber) string {
+// lang 是对外文案语言（网关请求用 i18n.ClientLang(c)，Host 路径用 i18n.LangEN）。
+func sanitizedClientErrorMessage(lang string, outcome sdk.ForwardOutcome, scrubber *identityScrubber) string {
 	message := extractErrorMessage(outcome.Upstream.Body)
 	if message == "" {
 		message = outcome.Reason
 	}
 	if containsImageTooLargeSignal(message) || outcome.Upstream.StatusCode == http.StatusRequestEntityTooLarge {
-		return imageTooLargeMessage
+		return i18n.Tf(lang, msgKeyImageTooLarge)
 	}
 	if cleaned := scrubber.scrubText(message); cleaned != "" {
 		return cleaned
 	}
-	return defaultClientErrorMessage
+	return i18n.Tf(lang, msgKeyClientErrorDefault)
 }
 
 func containsImageTooLargeSignal(message string) bool {
@@ -176,7 +179,7 @@ func writeFailureResponse(c *gin.Context, state *forwardState, execution forward
 				errType = "rate_limit_error"
 				code = "upstream_rate_limit"
 			}
-			protocolStreamError(c, statusCode, errType, code, sanitizedMessage(execution.outcome.Kind))
+			protocolStreamError(c, statusCode, errType, code, sanitizedMessage(c, execution.outcome.Kind))
 		}
 		return
 	}
@@ -202,24 +205,23 @@ func writeFailureResponse(c *gin.Context, state *forwardState, execution forward
 
 	if execution.outcome.Kind == sdk.OutcomeAccountRateLimited {
 		protocolRateLimitError(c, http.StatusTooManyRequests, "upstream_rate_limit",
-			sanitizedMessage(execution.outcome.Kind), execution.outcome.RetryAfter)
+			sanitizedMessage(c, execution.outcome.Kind), execution.outcome.RetryAfter)
 		return
 	}
-	protocolError(c, http.StatusBadGateway, "server_error", "upstream_error", sanitizedMessage(execution.outcome.Kind))
+	protocolError(c, http.StatusBadGateway, "server_error", "upstream_error", sanitizedMessage(c, execution.outcome.Kind))
 }
 
-func sanitizedMessage(kind sdk.OutcomeKind) string {
+// sanitizedMessage 判决类失败的对外文案：不透出上游细节，按请求方语言返回。
+func sanitizedMessage(c *gin.Context, kind sdk.OutcomeKind) string {
 	switch kind {
 	case sdk.OutcomeAccountRateLimited:
-		return "上游账号当前被限流，请稍后重试"
+		return i18n.Tc(c, "gw.all_routes_rate_limited")
 	case sdk.OutcomeAccountDead:
-		return "上游账号不可用，请联系管理员"
+		return i18n.Tc(c, "gw.account_unavailable")
 	case sdk.OutcomeStreamAborted:
-		return "响应流中断"
-	case sdk.OutcomeUpstreamTransient:
-		return "上游服务暂不可用，请稍后重试"
+		return i18n.Tc(c, "gw.stream_aborted")
 	default:
-		return "上游服务暂不可用，请稍后重试"
+		return i18n.Tc(c, "gw.upstream_error")
 	}
 }
 

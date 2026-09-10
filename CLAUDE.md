@@ -34,6 +34,7 @@
 - **新接口须走 dto + mapper**，handler 内勿手拼 `map[string]any` 作响应（统计/SSE 等无 DTO 的临时结构除外，沿用同域写法）。
 - **复用优先**：开发前先读同域现有实现（首选 `account`），沿用其结构。
 - 注释用中文；`_test.go` 与被测代码同包、表驱动。
+- **网关对外报错禁止裸中文**：`internal/plugin` 与 `server/middleware` 里写给 API 调用方的错误文案（`protocolError*` / `abortWithOpenAIError` / `usageFailure.message` 等）一律 `i18n.Tc(c, "gw.xxx")`（响应，按 Accept-Language，默认英文）+ `i18n.En("gw.xxx")`（落库统一英文），key 须在 `internal/i18n/locales/{zh,en,es,ja,zh-HK}.json` 五份同时补齐；`internal/plugin/i18n_guard_test.go` 会拦截裸中文与缺语言的 key（2026-09-10 西语客户看到中文报错的教训）。
 
 ## 后端分层（请求自上而下）
 

@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
 
@@ -65,7 +66,7 @@ func (f *Forwarder) runForwardBeginChain(c *gin.Context, state *forwardState) (b
 			}
 			msg := decision.DenyMessage
 			if msg == "" {
-				msg = "请求被中间件拒绝"
+				msg = i18n.Tc(c, "gw.middleware_denied")
 			}
 			protocolError(c, status, "middleware_denied", appusage.ErrorCodeMiddlewareDenied, msg)
 			f.recordFailureUsage(c, state, usageFailure{

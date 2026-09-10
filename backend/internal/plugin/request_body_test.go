@@ -19,6 +19,7 @@ import (
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	"github.com/DouDOU-start/airgate-core/internal/server/middleware"
 )
 
@@ -51,12 +52,13 @@ func TestBodyReadError(t *testing.T) {
 			err:        errors.New("connection reset"),
 			wantStatus: http.StatusBadRequest,
 			wantCode:   "invalid_request",
-			wantInMsg:  "读取请求体失败",
+			wantInMsg:  "Failed to read request body",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			status, code, message := bodyReadError(tt.err)
+			status, code, msgKey, args := bodyReadError(tt.err)
+			message := i18n.En(msgKey, args...)
 			if status != tt.wantStatus || code != tt.wantCode {
 				t.Fatalf("(status, code) = (%d, %q), want (%d, %q)", status, code, tt.wantStatus, tt.wantCode)
 			}

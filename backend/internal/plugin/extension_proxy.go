@@ -12,6 +12,7 @@ import (
 	pb "github.com/DouDOU-start/airgate-sdk/protocol/proto"
 	sdkgrpc "github.com/DouDOU-start/airgate-sdk/runtimego/grpc"
 
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	"github.com/DouDOU-start/airgate-core/internal/server/middleware"
 )
 
@@ -157,8 +158,8 @@ func (ep *ExtensionProxy) handle(c *gin.Context, pluginName, subPath, entry stri
 
 	req, err := ep.buildProxyRequest(c, subPath, entry)
 	if err != nil {
-		status, _, message := bodyReadError(err)
-		c.JSON(status, gin.H{"error": message})
+		status, _, msgKey, args := bodyReadError(err)
+		c.JSON(status, gin.H{"error": i18n.Tc(c, msgKey, args...)})
 		return
 	}
 
