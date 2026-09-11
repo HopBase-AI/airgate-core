@@ -23,6 +23,9 @@ import {
   resolveBucketDiscount,
   officialPriceSymbol,
   resolvePlazaFixedImageTiers,
+  videoBucketLabel,
+  videoBucketRank,
+  videoPriceCopyKeys,
 } from './modelPlazaPricing';
 
 interface TocPricingConfig {
@@ -159,21 +162,16 @@ interface BucketPrice {
   imageBillingMode?: 'fixed' | 'token';
 }
 
-// 分辨率展示序：低→高，4k 垫底；no_ref 在前、with_ref 在后。
-const VIDEO_RES_ORDER = ['480p', '720p', '1080p', '4k'];
-function videoBucketRank(bucket: string): number {
-  const parts = bucket.split('_');
-  const ri = VIDEO_RES_ORDER.indexOf(parts[0] ?? '');
-  const resRank = ri < 0 ? VIDEO_RES_ORDER.length : ri;
-  return resRank * 2 + (parts.slice(1).join('_') === 'with_ref' ? 1 : 0);
-}
-
 function isVideoModel(model: ModelLedgerItem): boolean {
   return !!model.video_tokens && Object.keys(model.video_tokens).length > 0;
 }
 
 // resolveVideoPrices 把视频桶价（bucket→官方牌价）铺成有序展示行。
 // user 模式按用户实付倍率（CNY 展示 ×rate、USD 展示 ×rate÷fx），否则套用全站售价倍率。
+//
+// 换算本身与量纲无关（单价 × 倍率），但**单位文案必须按 price_unit 选**：
+// 桶价的一份可能是「每百万 video_tokens」（seedance），也可能是「每秒」
+//（可灵 / 海螺 / 万相 / 快乐马），见 videoPriceCopyKeys。
 function resolveVideoPrices(
   model: ModelLedgerItem,
   config: TocPricingConfig | null,
@@ -186,9 +184,6 @@ function resolveVideoPrices(
   return Object.entries(model.video_tokens ?? {})
     .sort(([a], [b]) => videoBucketRank(a) - videoBucketRank(b))
     .map(([bucket, official]) => {
-      const parts = bucket.split('_');
-      const res = parts[0] ?? bucket;
-      const refKey = parts.slice(1).join('_') === 'with_ref' ? 'model_plaza.video_with_ref' : 'model_plaza.video_no_ref';
       let sale = official;
       let officialOnly = true;
       if (userMode && userRate > 0) {
@@ -200,7 +195,7 @@ function resolveVideoPrices(
       }
       return {
         bucket,
-        label: `${res.toUpperCase()} · ${t(refKey)}`,
+        label: videoBucketLabel(bucket, t),
         official,
         sale,
         officialOnly,
@@ -327,8 +322,10 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode, 
       </p>
     ) : null
   );
-  // 视频生成按 video token 桶铺价；图片生成按像素档位的单张价铺价。
+  // 视频生成按桶铺价（一份=每百万 video_tokens 或每秒，见 price_unit）；
+  // 图片生成按像素档位的单张价铺价。
   const buckets = video ?? image;
+  const videoCopy = videoPriceCopyKeys(model);
   if (buckets) {
     const hasFixedImagePricing = hasFixedImagePricingBuckets(image);
     const bucketDiscount = userMode
@@ -336,7 +333,7 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode, 
       : null;
     return (
       <div className="ag-model-price-wrap">
-        {video ? <p className="ag-model-video-price-unit">{t('model_plaza.video_price_unit')}</p> : null}
+        {video ? <p className="ag-model-video-price-unit">{t(videoCopy.unitKey)}</p> : null}
         {discountMeta(bucketDiscount, model.group_name, model.group_name_i18n, true)}
         <dl className="ag-model-price-grid ag-model-price-grid-video">
           {buckets.map((b) => (
@@ -355,7 +352,7 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode, 
             />
           ))}
         </dl>
-        {video ? <p className="ag-model-video-price-note">{t('model_plaza.video_price_note')}</p> : null}
+        {video ? <p className="ag-model-video-price-note">{t(videoCopy.noteKey)}</p> : null}
         {buckets[0]?.officialOnly ? <p className="ag-model-official-label">{officialTitle}</p> : null}
       </div>
     );

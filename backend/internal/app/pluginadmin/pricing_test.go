@@ -583,3 +583,90 @@ func TestPublicModelPricingCategory(t *testing.T) {
 		})
 	}
 }
+
+// TestPublicModelPricingCarriesPriceUnit 计价单位必须从插件 metadata 一路带到公开定价：
+// 可灵 / 海螺 / 万相 / 快乐马的 price.video_tokens.<bucket> 其实是 $/秒，插件已用
+// price.unit=second 声明；聚合层丢掉它，模型广场就会把 $0.088/秒 标成
+// $0.088/1M video_tokens（15 秒的片子少估两个数量级）。seedance 不声明则回落 token。
+func TestPublicModelPricingCarriesPriceUnit(t *testing.T) {
+	manager := &fakeCatalogManager{
+		metas: []plugin.PluginMeta{
+			{Name: "airgate-kling", Type: "gateway", Platform: "kling"},
+			{Name: "airgate-seedance", Type: "gateway", Platform: "seedance"},
+		},
+		models: map[string][]sdk.ModelInfo{
+			"kling": {
+				{ID: "kling-v3", Name: "可灵 3.0",
+					Capabilities: []string{"video_generation"},
+					Metadata: map[string]string{
+						"price.unit":                            " Second ",
+						"price.video_tokens.720p_silent_noref":  "0.08823529411764706",
+						"price.video_tokens.1080p_silent_noref": "0.11764705882352941",
+					}},
+				{ID: "kling-image-v3", Name: "可灵生图 3.0",
+					Capabilities: []string{"image_generation"},
+					Metadata: map[string]string{
+						"price.unit":         "image",
+						"price.image.img_1k": "0.0147",
+					}},
+			},
+			"seedance": {
+				{ID: "dreamina-seedance-2-0-hc", Name: "Seedance 2.0 (hc)",
+					Capabilities: []string{"video_generation"},
+					Metadata: map[string]string{
+						"price.video_tokens.480p_no_ref": "7",
+					}},
+			},
+		},
+	}
+	svc := NewService(manager, nil)
+
+	cases := []struct {
+		name    string
+		overlay string
+		modelID string
+		want    string
+	}{
+		{"插件声明 second：归一化后带到公开定价", "", "kling-v3", PriceUnitSecond},
+		{"插件声明 image：原样透出", "", "kling-image-v3", "image"},
+		{"插件未声明：回落 token，seedance 展示零回归", "", "dreamina-seedance-2-0-hc", PriceUnitToken},
+		{
+			"覆盖层改桶价不丢单位",
+			`[{"id":"kling-v3","pricing":{"720p_silent_noref":0.1}}]`,
+			"kling-v3", PriceUnitSecond,
+		},
+		{
+			"覆盖层新增按秒模型可自带 price_unit",
+			`[{"id":"kling-v9","pricing":{"720p_silent_noref":0.2},"price_unit":"second"}]`,
+			"kling-v9", PriceUnitSecond,
+		},
+		{
+			"覆盖层新增模型未声明单位：回落 token",
+			`[{"id":"kling-v9","pricing":{"720p_silent_noref":0.2}}]`,
+			"kling-v9", PriceUnitToken,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc.SetModelOverlayReader(func(ctx context.Context, platform string) (string, error) {
+				if platform != "kling" {
+					return "", nil
+				}
+				return tc.overlay, nil
+			})
+			models := map[string]PublicPricingModel{}
+			for _, platform := range svc.PublicModelPricing(context.Background()) {
+				for _, m := range platform.Models {
+					models[m.ID] = m
+				}
+			}
+			got, ok := models[tc.modelID]
+			if !ok {
+				t.Fatalf("模型 %s 不在公开定价里: %+v", tc.modelID, models)
+			}
+			if got.PriceUnit != tc.want {
+				t.Fatalf("%s price_unit = %q, want %q", tc.modelID, got.PriceUnit, tc.want)
+			}
+		})
+	}
+}

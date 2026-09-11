@@ -10,8 +10,8 @@ type PublicModelPricingResp struct {
 // PublicPricingModelResp 单模型公开定价。input/cached_input/output 是计费基准价
 // （余额单位 / 百万 token；常规模型即官方美元价）。currency="CNY" 表示基准价是官方
 // 人民币牌价按 1:1 记账，展示端须按 official（官方美元参考价）做划线对比与折扣换算。
-// 视频生成模型无 input/output，价格在 video_tokens（桶 → $/1M video_tokens）；
-// 图片生成模型价格在 image（像素档位 → $/张）。
+// 视频生成模型无 input/output，价格在 video_tokens（桶 → $ / price_unit 指定的一份：
+// token 档=每百万 video_tokens，second 档=每秒）；图片生成模型价格在 image（像素档位 → $/张）。
 type PublicPricingModelResp struct {
 	ID            string   `json:"id"`
 	Name          string   `json:"name,omitempty"`
@@ -33,6 +33,12 @@ type PublicPricingModelResp struct {
 	LongContext *PublicLongContextResp     `json:"long_context,omitempty"`
 	VideoTokens map[string]float64         `json:"video_tokens,omitempty"`
 	Image       map[string]float64         `json:"image,omitempty"`
+	// PriceUnit 价格的计量单位："token"（缺省：$/1M token，视频模型即 $/1M video_tokens）
+	// 或 "second"（$/秒，按视频时长计费：可灵 / 海螺 / 万相 / 快乐马）；生图模型可为 "image"。
+	//
+	// ⚠️ video_tokens 只是历史键名，**不代表量纲**。展示端必须按本字段选单位文案，
+	// 否则会把 $0.088/秒 标成 $0.088/1M video_tokens，15 秒的片子少估两个数量级。
+	PriceUnit string `json:"price_unit,omitempty"`
 }
 
 // PublicOfficialPricingResp 官方直付参考价（美元 / 百万 token）。

@@ -56,12 +56,38 @@ type PublicPricingModel struct {
 	LongContextInputMultiplier  float64
 	LongContextCachedMultiplier float64
 	LongContextOutputMultiplier float64
-	// 视频生成模型的桶价：bucket（<分辨率>_{no,with}_ref）→ 美元 / 百万 video_tokens。
+	// 视频生成模型的桶价：bucket（如 <分辨率>_{no,with}_ref、<分辨率>_<有无声>_<有无参考>）
+	// → 美元 / **PriceUnit 指定的一份**（token 档=每百万 video_tokens，second 档=每秒）。
 	// 非视频模型为 nil；有值时展示端按桶铺价，忽略 Input/Output。
 	VideoTokens map[string]float64
 	// 图片生成模型的按张价：bucket（如 le_236w / gt_236w）→ 美元 / 张。
 	// 非图片模型为 nil；有值时展示端按像素档位铺价，忽略 Input/Output。
 	Image map[string]float64
+	// PriceUnit 桶价/基准价的计量单位（插件 Metadata 约定键 price.unit）：
+	// PriceUnitToken（默认）/ PriceUnitSecond / "image" 等，未声明回落 token。
+	//
+	// ⚠️ 视频桶键历史上一律叫 price.video_tokens.<bucket>，但**键名不代表量纲**：
+	// seedance 的桶价是 $/1M video_tokens，可灵 / 海螺 / 万相 / 快乐马是 $/秒。
+	// 少了这个字段，展示端只能把 $0.088/秒 读成 $0.088/1M video_tokens——
+	// 15 秒的片子会被少估两个数量级（$1.32 报成不到一分钱）。
+	PriceUnit string
+}
+
+// 计价单位枚举（对外契约，展示端按此值取单位文案，勿随意改字面量）。
+// 插件声明的其它取值（如可灵生图的 "image"）原样透出，展示端自行决定是否识别。
+const (
+	// PriceUnitToken 每百万 token（含视频模型的 video_tokens）——历史缺省口径。
+	PriceUnitToken = "token"
+	// PriceUnitSecond 每秒（按视频时长计费的模型：可灵 / 海螺 / 万相 / 快乐马）。
+	PriceUnitSecond = "second"
+)
+
+// normalizePriceUnit 归一化插件声明的计价单位；未声明回落 token，与历史行为一致。
+func normalizePriceUnit(raw string) string {
+	if unit := strings.ToLower(strings.TrimSpace(raw)); unit != "" {
+		return unit
+	}
+	return PriceUnitToken
 }
 
 // OfficialPricing 官方直付参考价（美元 / 百万 token）。
@@ -107,7 +133,10 @@ type overlayModel struct {
 	// 两者只影响展示换算，插件计费侧不读取。
 	Currency        string             `json:"currency"`
 	OfficialPricing map[string]float64 `json:"official_pricing"`
-	LongContext     *struct {
+	// PriceUnit 计价单位覆写（"second" / "token"），供覆盖层新增的按秒计费模型声明量纲；
+	// 空 = 沿用插件内置声明。同样只影响展示，计费不读。
+	PriceUnit   string `json:"price_unit"`
+	LongContext *struct {
 		Threshold        int     `json:"threshold"`
 		InputMultiplier  float64 `json:"input_multiplier"`
 		CachedMultiplier float64 `json:"cached_multiplier"`
@@ -159,6 +188,11 @@ func (s *Service) PublicModelPricing(ctx context.Context) []PublicPlatformPricin
 		for i := range models {
 			if models[i].Category == "" {
 				models[i].Category = categoryOf(models[i].Capabilities)
+			}
+			// 单位缺省统一在此收口（覆盖层新增条目不经 parseBuiltinPricing），
+			// 保证对外契约里 price_unit 永远有值，展示端不必猜。
+			if models[i].PriceUnit == "" {
+				models[i].PriceUnit = PriceUnitToken
 			}
 		}
 		if len(models) > 0 {
@@ -225,6 +259,11 @@ func (s *Service) applyOverlay(ctx context.Context, platform string, models []Pu
 		}
 		if entry.Category != "" {
 			target.Category = entry.Category
+		}
+		// 计价单位须在图片/视频分支的 continue 之前落地，否则按秒计费的桶价模型
+		// 在覆盖层里改一次价就把单位丢回 token。
+		if entry.PriceUnit != "" {
+			target.PriceUnit = normalizePriceUnit(entry.PriceUnit)
 		}
 		// 图片模型：基座已有按张桶价，或新增条目显式声明 kind=image。
 		// 桶价 map 逐桶覆盖（价>0 覆盖、=0 收回该桶），忽略 token/长上下文字段。
@@ -381,6 +420,7 @@ func parseBuiltinPricing(id, name string, contextWindow int, capabilities []stri
 			Vendor:        metadata["vendor"],
 			Series:        metadata["series"],
 			Image:         buckets,
+			PriceUnit:     normalizePriceUnit(metadata["price.unit"]),
 		}, metadata), true
 	}
 	// 视频生成模型：价格主要在 price.video_tokens.<bucket> 桶价，同上一并保留 token 价。
@@ -393,6 +433,7 @@ func parseBuiltinPricing(id, name string, contextWindow int, capabilities []stri
 			Vendor:        metadata["vendor"],
 			Series:        metadata["series"],
 			VideoTokens:   buckets,
+			PriceUnit:     normalizePriceUnit(metadata["price.unit"]),
 		}, metadata), true
 	}
 	input, okIn := parsePriceValue(metadata["price.input"])
@@ -412,6 +453,7 @@ func parseBuiltinPricing(id, name string, contextWindow int, capabilities []stri
 		CachedInput:   cached,
 		Output:        output,
 		Currency:      metadata["price.currency"],
+		PriceUnit:     normalizePriceUnit(metadata["price.unit"]),
 	}
 	// 官方直付参考价（price.official_*，美元）：input/output 齐备才生效，与主价同规则。
 	if offIn, ok := parsePriceValue(metadata["price.official_input"]); ok {
@@ -456,7 +498,8 @@ func parsePriceValue(raw string) (float64, bool) {
 	return value, true
 }
 
-// videoTokenPricePrefix 视频桶价 metadata 键前缀（seedance 等视频插件上报）。
+// videoTokenPricePrefix 视频桶价 metadata 键前缀（seedance / 可灵 / 海螺 / 万相等视频插件上报）。
+// 键名是历史遗留，不代表量纲——一份是 token 还是一秒，由 price.unit 决定（见 PriceUnit）。
 const videoTokenPricePrefix = "price.video_tokens."
 
 // imagePricePrefix 图片按张桶价 metadata 键前缀（seedream 等生图插件上报）。

@@ -85,6 +85,44 @@ func TestMyModelPricingMapperIncludesFixedImageTiers(t *testing.T) {
 	}
 }
 
+// TestMyModelPricingMapperCarriesPriceUnit 计价单位必须活着穿过 dto 映射：
+// 视频桶键统一叫 video_tokens，但可灵/海螺/万相/快乐马的一份是「一秒」而非
+// 「百万 video_tokens」，前端只能靠 price_unit 区分；插件没声明时回落 token，
+// seedance 的既有展示零回归。
+func TestMyModelPricingMapperCarriesPriceUnit(t *testing.T) {
+	resp := toMyModelPricingResp(appmodelpricing.Result{Platforms: []appmodelpricing.PlatformQuotes{{
+		Platform: "kling",
+		Models: []appmodelpricing.ModelQuote{
+			{PublicPricingModel: apppluginadmin.PublicPricingModel{
+				ID:          "kling-v3",
+				VideoTokens: map[string]float64{"720p_silent_noref": 0.088235},
+				PriceUnit:   apppluginadmin.PriceUnitSecond,
+			}},
+			{PublicPricingModel: apppluginadmin.PublicPricingModel{
+				ID:          "dreamina-seedance-2-0-hc",
+				VideoTokens: map[string]float64{"480p_no_ref": 7},
+				PriceUnit:   apppluginadmin.PriceUnitToken,
+			}},
+		},
+	}}})
+
+	models := resp.Platforms[0].Models
+	if models[0].PriceUnit != "second" || models[1].PriceUnit != "token" {
+		t.Fatalf("price_unit 映射异常: %+v", models)
+	}
+	payload, err := json.Marshal(models[0])
+	if err != nil {
+		t.Fatalf("序列化模型报价失败: %v", err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(payload, &fields); err != nil {
+		t.Fatalf("解析模型报价失败: %v", err)
+	}
+	if fields["price_unit"] != "second" {
+		t.Fatalf("price_unit 未进 JSON: %s", payload)
+	}
+}
+
 func TestDomainMappersCopySimpleFields(t *testing.T) {
 	now := time.Date(2026, 5, 15, 10, 0, 0, 0, time.UTC)
 
