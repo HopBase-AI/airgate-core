@@ -54,7 +54,7 @@ func TestUserUsageTrendDepartmentManagerWidensToManagedDepartments(t *testing.T)
 	c.Set("user_id", 82)
 	c.Set(middleware.CtxKeyMemberID, 7)
 	c.Set(middleware.CtxKeyTeamOwnerID, 50)
-	c.Set(middleware.CtxKeyManagedDepartmentIDs, []int{3, 9})
+	c.Set(middleware.CtxKeyManagedDepartmentIDs, []int{3})
 
 	handler.UserUsageTrend(c)
 
@@ -71,8 +71,8 @@ func TestUserUsageTrendDepartmentManagerWidensToManagedDepartments(t *testing.T)
 	if f.Manager.MemberID != 7 {
 		t.Errorf("ManagerScope.MemberID = %d, want 7（本人始终可见）", f.Manager.MemberID)
 	}
-	if len(f.Manager.DepartmentIDs) != 2 || f.Manager.DepartmentIDs[0] != 3 || f.Manager.DepartmentIDs[1] != 9 {
-		t.Errorf("ManagerScope.DepartmentIDs = %v, want [3 9]", f.Manager.DepartmentIDs)
+	if len(f.Manager.DepartmentIDs) != 1 || f.Manager.DepartmentIDs[0] != 3 {
+		t.Errorf("ManagerScope.DepartmentIDs = %v, want [3]", f.Manager.DepartmentIDs)
 	}
 	// 没有显式下钻时不该再钉死成员，否则又退回「只看自己」
 	if f.MemberID != nil {

@@ -27,8 +27,11 @@ type TeamIdentity struct {
 	Owner  *ent.User   // 成员所属企业主；Member 为 nil 时为 nil
 	// Department 成员所属部门；未分配或不是成员时为 nil。
 	Department *ent.Department
-	// ManagedDepartmentIDs 该成员担任负责人的部门 id（可多个，也可为空）。
-	// 负责人不是管理权限，只是可见性：能查本部门全员用量，不能改任何配置。
+	// ManagedDepartmentIDs 该成员担任负责人的部门 id。
+	//
+	// 产品上恒为 0 或 1 个：任命负责人要求他本身是该部门成员，而成员只能属于一个部门，
+	// 所以"一人管多个部门"走界面造不出来。这里仍用切片如实反映查询结果，
+	// 由调用方（middleware）按 len==1 做 fail-closed 判定——与 RequireTeamScope 同一条规则。
 	ManagedDepartmentIDs []int
 }
 

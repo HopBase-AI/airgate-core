@@ -139,7 +139,11 @@ func jwtAuth(jwtMgr *auth.JWTManager, db *ent.Client, allowAdminAPIKey bool) gin
 				c.Set(CtxKeyMemberID, identity.Member.ID)
 				c.Set(CtxKeyTeamOwnerID, identity.Owner.ID)
 				c.Set(CtxKeyMemberAllowedGroups, append([]int64(nil), identity.Member.AllowedGroupIds...))
-				if identity.ManagesDepartments() {
+				// 恰好负责一个部门才算负责人,与 RequireTeamScope 的 fail-closed 同一条规则
+				// （errAmbiguousDepartmentScope）。产品上一个人只管一个部门:任命负责人要求
+				// 他本身是该部门成员,而成员只能属于一个部门,所以"管多个"只可能来自直接改库。
+				// 真出现了就一律按"不是负责人"处理,而不是让用量侧放行两个部门、团队页却 403。
+				if len(identity.ManagedDepartmentIDs) == 1 {
 					c.Set(CtxKeyManagedDepartmentIDs, append([]int(nil), identity.ManagedDepartmentIDs...))
 				}
 			}

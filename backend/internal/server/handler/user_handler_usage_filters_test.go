@@ -54,13 +54,12 @@ func TestUsageFilterFields(t *testing.T) {
 			want:      []string{dto.UsageFilterAPIKey, dto.UsageFilterMember},
 		},
 		{
-			// 负责多个部门时 resp.ManagedDepartmentID 会归 0（那条投影的 fail-closed），
-			// 但用量查询是按会话里的并集放行的。判据必须跟会话走，否则前端不给筛选、
-			// 后端却返回了多部门数据，记录混在一起无法归属。
-			name:      "负责多部门：投影归 0 但会话认定是负责人，仍给成员筛选",
+			// 「管多个部门」是产品造不出来的脏数据，middleware 按 len==1 fail-closed，
+			// 到这里 isManager 已经是 false，与团队页 403 同一条规则。
+			name:      "负责多部门（脏数据）：按非负责人处理，不给成员筛选",
 			resp:      dto.UserResp{Role: "user", MemberID: 7, ManagedDepartmentID: 0},
-			isManager: true,
-			want:      []string{dto.UsageFilterAPIKey, dto.UsageFilterMember},
+			isManager: false,
+			want:      []string{dto.UsageFilterAPIKey},
 		},
 	}
 
