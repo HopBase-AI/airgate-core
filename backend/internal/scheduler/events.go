@@ -84,6 +84,10 @@ func (sm *StateMachine) recordEvent(
 				sdk.LogFieldAccountID, accountID,
 				"event_type", eventType,
 				sdk.LogFieldError, err)
+			return
+		}
+		if sm.onAccountEvent != nil {
+			sm.onAccountEvent(accountID, reason, upstreamStatus)
 		}
 	}()
 }

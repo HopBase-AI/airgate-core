@@ -82,6 +82,11 @@ type StateMachine struct {
 	// 用来清 route 缓存，让下次 SelectAccount 立刻看到新状态；
 	// RateLimited / Degraded 这种"带 state_until 的临时状态"不走这里，由 TTL 兜底。
 	onCriticalTransition func()
+
+	// onAccountEvent 一条账号异常事件成功落库后的回调（由 Scheduler 注入）。
+	// 纯观测用途，目前接的是上游欠费预警。已经在 recordEvent 的 goroutine 里，
+	// 且外层有 recover，回调只需保证不长时间阻塞——它占着事件写入的并发槽位。
+	onAccountEvent func(accountID int, reason string, upstreamStatus int)
 }
 
 // NewStateMachine 构造状态机。fc 提供 (account, family) 维度的限流冷却，

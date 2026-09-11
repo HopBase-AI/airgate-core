@@ -35,6 +35,7 @@ import (
 	apprelaydetect "github.com/DouDOU-start/airgate-core/internal/app/relaydetect"
 	appsettings "github.com/DouDOU-start/airgate-core/internal/app/settings"
 	appsubscription "github.com/DouDOU-start/airgate-core/internal/app/subscription"
+	appupstreamalert "github.com/DouDOU-start/airgate-core/internal/app/upstreamalert"
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
@@ -167,6 +168,16 @@ func NewHTTPHandlers(dep HTTPDependencies) *HTTPHandlers {
 	})
 	if dep.Recorder != nil {
 		dep.Recorder.SetChargeHook(quotaAlertService.OnCharged)
+	}
+
+	// 上游欠费预警：账号因「我们欠上游钱」不可用时，给全部管理员投站内信。
+	// 单独做是因为这一类兜不住——上游挂了、限流、凭证失效换个号就能绕过，欠费不会自愈，
+	// 池子里的号还会接连欠。2026-09-10 组 1 的锦坤东欠了 9.5 小时没人知道，客户一直 502。
+	if dep.Scheduler != nil {
+		upstreamAlertService := appupstreamalert.NewService(store.NewUpstreamAlertStore(dep.DB), notificationService)
+		dep.Scheduler.SetAccountEventHook(func(accountID int, reason string, upstreamStatus int) {
+			upstreamAlertService.OnAccountEvent(context.Background(), accountID, reason, upstreamStatus)
+		})
 	}
 
 	// 余额预警回调：发邮件（去重靠 balance_alert_notified 标记，余额回升自动重置）+ 投站内通知。

@@ -147,6 +147,14 @@ func NewScheduler(db *ent.Client, rdb *redis.Client) *Scheduler {
 	return s
 }
 
+// SetAccountEventHook 注入「账号异常事件已落库」的观测回调，目前接上游欠费预警。
+//
+// 回调在事件写入的 goroutine 内同步执行，占着 recordEvent 的并发槽位，必须尽快返回；
+// 外层已有 recover，回调 panic 不会带崩进程，但也不会被重试。
+func (s *Scheduler) SetAccountEventHook(fn func(accountID int, reason string, upstreamStatus int)) {
+	s.state.onAccountEvent = fn
+}
+
 // InvalidateRouteCache 清除指定分组的 route 缓存。admin 改分组 / 增删账号时调用。
 // groupID <= 0 时清空所有缓存。
 func (s *Scheduler) InvalidateRouteCache(groupID int) {

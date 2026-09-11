@@ -2,7 +2,9 @@ package scheduler
 
 import (
 	"context"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -334,5 +336,68 @@ func TestTruncateReasonUTF8Safe(t *testing.T) {
 	}
 	if !utf8.ValidString(got) {
 		t.Fatalf("截断结果不是合法 UTF-8")
+	}
+}
+
+// 事件落库后要把 (账号, 原因, 上游状态码) 交给观测回调——上游欠费预警挂在这里。
+// 这条链路断了不会有任何报错，只会静悄悄地不再报警，所以单独钉住。
+func TestStateMachineAccountEventHook(t *testing.T) {
+	db := enttestOpenEvents(t)
+	ctx := context.Background()
+	acc := createEventTestAccount(t, db, entaccount.StateActive)
+
+	type call struct {
+		accountID      int
+		reason         string
+		upstreamStatus int
+	}
+	var mu sync.Mutex
+	var calls []call
+
+	sm := NewStateMachine(db, nil, nil)
+	sm.onAccountEvent = func(accountID int, reason string, upstreamStatus int) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls = append(calls, call{accountID, reason, upstreamStatus})
+	}
+
+	sm.Apply(ctx, acc.ID, Judgment{
+		Kind:           sdk.OutcomeAccountDead,
+		Reason:         "HTTP 403: 用户额度不足, 剩余额度: ¥-1.297390",
+		UpstreamStatus: 403,
+	})
+	sm.waitEvents()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(calls) != 1 {
+		t.Fatalf("回调次数 = %d, want 1", len(calls))
+	}
+	if calls[0].accountID != acc.ID {
+		t.Errorf("account_id = %d, want %d", calls[0].accountID, acc.ID)
+	}
+	if calls[0].upstreamStatus != 403 {
+		t.Errorf("upstream_status = %d, want 403", calls[0].upstreamStatus)
+	}
+	if !strings.Contains(calls[0].reason, "额度不足") {
+		t.Errorf("reason 未透传原文: %q", calls[0].reason)
+	}
+}
+
+// 不产生事件的判决也不该惊动回调。
+func TestStateMachineAccountEventHookSkippedWithoutEvent(t *testing.T) {
+	db := enttestOpenEvents(t)
+	ctx := context.Background()
+	acc := createEventTestAccount(t, db, entaccount.StateActive)
+
+	var fired int32
+	sm := NewStateMachine(db, nil, nil)
+	sm.onAccountEvent = func(int, string, int) { atomic.AddInt32(&fired, 1) }
+
+	sm.Apply(ctx, acc.ID, Judgment{Kind: sdk.OutcomeClientError, Reason: "bad request"})
+	sm.waitEvents()
+
+	if got := atomic.LoadInt32(&fired); got != 0 {
+		t.Fatalf("回调触发 %d 次, want 0", got)
 	}
 }
