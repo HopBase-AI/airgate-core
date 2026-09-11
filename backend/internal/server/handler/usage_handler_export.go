@@ -74,6 +74,11 @@ func (h *UsageHandler) UserUsageExport(c *gin.Context) {
 	// API Key 登录场景沿用列表接口的收敛规则：只能导出该 Key（或所属成员）自己的记录，
 	// 请求里带的筛选一概忽略。
 	apiKeyFilter, memberFilter, scoped := sessionUsageScope(c, filters.APIKeyID, filters.MemberID)
+	// 部门负责人导出的也是本人 ∪ 所负责部门，请求里的成员筛选作为下钻叠加。
+	managerScope := sessionManagerScope(c)
+	if managerScope != nil {
+		memberFilter = filters.MemberID
+	}
 
 	rows, truncated, err := h.collectExportRows(c, exportCollectParams{
 		userID:       int64(userID),
@@ -85,6 +90,7 @@ func (h *UsageHandler) UserUsageExport(c *gin.Context) {
 		memberFilter: memberFilter,
 		deptFilter:   sessionDepartmentFilter(scoped, filters.DepartmentID),
 		scoped:       scoped,
+		managerScope: managerScope,
 	})
 	if err != nil {
 		handleUsageError("导出用户使用明细失败", err)
@@ -107,6 +113,7 @@ type exportCollectParams struct {
 	apiKeyFilter *int64
 	memberFilter *int64
 	deptFilter   *int64
+	managerScope *appusage.ManagerScope
 	scoped       bool
 }
 
@@ -163,6 +170,7 @@ collect:
 			APIKeyID:     p.apiKeyFilter,
 			MemberID:     p.memberFilter,
 			DepartmentID: p.deptFilter,
+			Manager:      p.managerScope,
 			StartDate:    startDate,
 			EndDate:      endDate,
 			TZ:           p.tz,

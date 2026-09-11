@@ -772,6 +772,11 @@ func applyUsageListFilter(query *ent.UsageLogQuery, filter appusage.ListFilter) 
 	if filter.APIKeyID != nil {
 		query = query.Where(entusagelog.HasAPIKeyWith(entapikey.IDEQ(int(*filter.APIKeyID))))
 	}
+	// 负责人范围是外层强约束；请求里的成员/部门筛选继续 AND 上去，
+	// 越权筛选（组外成员、非本人负责的部门）自然落空，不需要额外校验。
+	if filter.Manager != nil {
+		query = query.Where(managerScopePredicate(*filter.Manager))
+	}
 	if filter.MemberID != nil {
 		query = query.Where(entusagelog.MemberIDEQ(int(*filter.MemberID)))
 	}
@@ -818,9 +823,39 @@ func excludeFailedUsage(query *ent.UsageLogQuery) *ent.UsageLogQuery {
 	return query.Where(entusagelog.StatusNEQ(appusage.StatusError))
 }
 
+// managerScopePredicate 部门负责人的可见范围谓词：本人的用量 ∪ 所负责部门的全部用量。
+//
+// 用 OR 而不是只按部门过滤，是因为负责人隶属的部门未必就是他负责的那个——只按部门筛
+// 会把他自己的消耗漏掉；只按成员筛又看不到组员。两者都要。
+func managerScopePredicate(scope appusage.ManagerScope) predicate.UsageLog {
+	clauses := make([]predicate.UsageLog, 0, 2)
+	if scope.MemberID > 0 {
+		clauses = append(clauses, entusagelog.MemberIDEQ(int(scope.MemberID)))
+	}
+	if len(scope.DepartmentIDs) > 0 {
+		ids := make([]int, 0, len(scope.DepartmentIDs))
+		for _, id := range scope.DepartmentIDs {
+			if id > 0 {
+				ids = append(ids, int(id))
+			}
+		}
+		if len(ids) > 0 {
+			clauses = append(clauses, entusagelog.DepartmentIDIn(ids...))
+		}
+	}
+	if len(clauses) == 0 {
+		// 兜底：范围为空时不该放行全企业，钉死成查不到任何记录。
+		return entusagelog.MemberIDEQ(-1)
+	}
+	return entusagelog.Or(clauses...)
+}
+
 func applyUsageStatsFilter(query *ent.UsageLogQuery, filter appusage.StatsFilter) *ent.UsageLogQuery {
 	if filter.APIKeyID != nil {
 		query = query.Where(entusagelog.HasAPIKeyWith(entapikey.IDEQ(int(*filter.APIKeyID))))
+	}
+	if filter.Manager != nil {
+		query = query.Where(managerScopePredicate(*filter.Manager))
 	}
 	if filter.MemberID != nil {
 		query = query.Where(entusagelog.MemberIDEQ(int(*filter.MemberID)))

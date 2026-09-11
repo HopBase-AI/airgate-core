@@ -29,6 +29,10 @@ const (
 	CtxKeyEmail    = "email"
 	CtxKeyKeyInfo  = "api_key_info"
 	CtxKeyAPIKeyID = "jwt_api_key_id" // JWT 中的 API Key ID（API Key 登录场景）
+	// CtxKeyManagedDepartmentIDs 该成员担任负责人的部门 id 列表（[]int）。
+	// 只在成员账号登录时设置；key 登录是客户视角，不放开负责人可见性。
+	CtxKeyManagedDepartmentIDs = "session_managed_department_ids"
+
 	// CtxKeyMemberID 会话所属的团队成员 ID（按 key / 账号实时解析，不进 JWT）。
 	// >0 时用户侧用量查询按成员范围收敛（成员名下全部 key），而非单把 key。
 	// 两种来源：API Key 登录会话的 key 归属成员；成员账号（members.account）本人登录。
@@ -135,6 +139,9 @@ func jwtAuth(jwtMgr *auth.JWTManager, db *ent.Client, allowAdminAPIKey bool) gin
 				c.Set(CtxKeyMemberID, identity.Member.ID)
 				c.Set(CtxKeyTeamOwnerID, identity.Owner.ID)
 				c.Set(CtxKeyMemberAllowedGroups, append([]int64(nil), identity.Member.AllowedGroupIds...))
+				if identity.ManagesDepartments() {
+					c.Set(CtxKeyManagedDepartmentIDs, append([]int(nil), identity.ManagedDepartmentIDs...))
+				}
 			}
 		}
 
