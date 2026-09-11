@@ -221,6 +221,55 @@ func TestRequireTeamScopeResolution(t *testing.T) {
 	}
 }
 
+// 成员账号即便被误置 is_enterprise_owner，也只能按部门负责人范围进来；
+// 不是负责人的成员则两道门都进不去（口径与前端 shared/teamAccess.ts 一致）。
+func TestMemberAccountNeverTakesOwnerScope(t *testing.T) {
+	f := newTeamScopeFixture(t, "mw_team_scope_member_flag")
+	ctx := t.Context()
+	for _, u := range []int{f.managerUser.ID, f.plainMember.ID} {
+		if err := f.db.User.UpdateOneID(u).SetIsEnterpriseOwner(true).Exec(ctx); err != nil {
+			t.Fatalf("set enterprise owner flag: %v", err)
+		}
+	}
+
+	// 负责人：仍是单部门范围，不能因为标志位拿到全企业视图
+	code, scope, _ := runScopeGuard(t, RequireTeamScope(f.db), func(c *gin.Context) {
+		c.Set(CtxKeyRole, "user")
+		c.Set(CtxKeyUserID, f.managerUser.ID)
+	})
+	if code != http.StatusOK {
+		t.Fatalf("状态码 = %d, want 200", code)
+	}
+	if !scope.IsDepartmentManager() || scope.ScopedDepartmentID() != f.deptA.ID {
+		t.Fatalf("成员账号拿到了非部门范围: %+v", scope)
+	}
+	if scope.OwnerID != f.owner.ID {
+		t.Fatalf("scope.OwnerID = %d, want 部门所属企业主 %d", scope.OwnerID, f.owner.ID)
+	}
+
+	// 不负责任何部门的成员：两道门都拒
+	for name, guard := range map[string]gin.HandlerFunc{
+		"RequireTeamScope":       RequireTeamScope(f.db),
+		"RequireEnterpriseOwner": RequireEnterpriseOwner(f.db),
+	} {
+		code, _, _ := runScopeGuard(t, guard, func(c *gin.Context) {
+			c.Set(CtxKeyRole, "user")
+			c.Set(CtxKeyUserID, f.plainMember.ID)
+		})
+		if code != http.StatusForbidden {
+			t.Fatalf("%s 状态码 = %d, want 403", name, code)
+		}
+	}
+
+	// 组织结构 / 账期 / 审计那道门对负责人同样恒闭
+	if code, _, _ := runScopeGuard(t, RequireEnterpriseOwner(f.db), func(c *gin.Context) {
+		c.Set(CtxKeyRole, "user")
+		c.Set(CtxKeyUserID, f.managerUser.ID)
+	}); code != http.StatusForbidden {
+		t.Fatalf("RequireEnterpriseOwner 状态码 = %d, want 403", code)
+	}
+}
+
 // 范围里的 OwnerID 必须是**部门所属企业主**，不是负责人自己的 user id：
 // service 全部按 ownerID 限定归属，取错会静默读写另一个租户。
 func TestDepartmentManagerScopeUsesDepartmentOwner(t *testing.T) {

@@ -73,12 +73,21 @@ func TeamScopeFrom(c *gin.Context) (teamscope.Scope, bool) {
 
 // ownerScope 判定「管理员 或 被授予 is_enterprise_owner 的用户」，是则返回其全企业范围。
 // 管理员用 admin-xxx API Key 时 user id 为 0，沿用既有口径（读到空数据而非报错）。
+//
+// **成员账号一律不走这条分支**：成员的 users 行即便被误置 is_enterprise_owner，也只能按部门
+// 负责人范围进来。口径与前端 shared/teamAccess.ts 一致（成员账号拿不到全企业视图）；同时
+// 保证 RequireEnterpriseOwner 那道门对成员账号恒闭——组织结构 / 账期 / 审计不因一个错配的
+// 标志位而敞开。归属解析走 ResolveTeamIdentity（5s 缓存，本请求的 JWT 中间件刚查过，近乎零成本）。
 func ownerScope(c *gin.Context, db *ent.Client) (teamscope.Scope, bool) {
 	userID := currentSessionUserID(c)
 	if role, _ := c.Get(CtxKeyRole); role == "admin" {
 		return teamscope.Owner(userID), true
 	}
 	if db == nil || userID <= 0 {
+		return teamscope.Scope{}, false
+	}
+	identity, err := auth.ResolveTeamIdentity(c.Request.Context(), db, userID)
+	if err != nil || identity.IsMember() {
 		return teamscope.Scope{}, false
 	}
 	u, err := db.User.Get(c.Request.Context(), userID)

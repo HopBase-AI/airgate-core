@@ -409,7 +409,7 @@ func (s *Service) departmentOverview(ctx context.Context, scope teamscope.Scope,
 		return Overview{}, err
 	}
 	start, end := s.periodWindow(anchor)
-	actual, billed, err := s.repo.DepartmentPeriodUsage(ctx, departmentID, start)
+	actual, billed, err := s.repo.DepartmentPeriodUsage(ctx, scope.OwnerID, departmentID, start)
 	if err != nil {
 		logger.Error("team_overview_failed", sdk.LogFieldUserID, scope.OwnerID, sdk.LogFieldReason, "department_usage", sdk.LogFieldError, err)
 		return Overview{}, err

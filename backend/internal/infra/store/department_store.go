@@ -399,13 +399,19 @@ func (s *DepartmentStore) OwnerPeriodUsage(ctx context.Context, ownerID int, sta
 }
 
 // DepartmentPeriodUsage 单个部门在 [start, now) 的真实/账面消耗（按快照列 department_id）。
-func (s *DepartmentStore) DepartmentPeriodUsage(ctx context.Context, departmentID int, start time.Time) (float64, float64, error) {
+// 同时带企业主谓词：department_id 是裸快照列，只按它过滤等于信任调用方传对了部门；
+// 加一道租户闸门，任何调用路径都不可能读到别家的用量。
+func (s *DepartmentStore) DepartmentPeriodUsage(ctx context.Context, ownerID, departmentID int, start time.Time) (float64, float64, error) {
 	var rows []struct {
 		Actual float64 `json:"actual_cost"`
 		Billed float64 `json:"billed_cost"`
 	}
 	err := s.db.UsageLog.Query().
-		Where(entusagelog.DepartmentIDEQ(departmentID), entusagelog.CreatedAtGTE(start)).
+		Where(
+			usageUserPredicate(int64(ownerID)),
+			entusagelog.DepartmentIDEQ(departmentID),
+			entusagelog.CreatedAtGTE(start),
+		).
 		Aggregate(
 			ent.As(ent.Sum(entusagelog.FieldActualCost), "actual_cost"),
 			ent.As(ent.Sum(entusagelog.FieldBilledCost), "billed_cost"),

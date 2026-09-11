@@ -385,9 +385,19 @@ func (s *Service) Update(ctx context.Context, scope teamscope.Scope, id int, inp
 	}
 	// 登录邮箱是该成员的全站唯一凭证，改它等于换人；负责人可原样回传（表单整体提交），
 	// 但不能真的改动。
+	//
+	// ⚠️ 比对基准只认 **AccountEmail（users.email，登录身份的唯一权威）**：members.email 只是
+	// 展示/联系列，且与账号邮箱分两条非事务语句写入（UpdateAccountOwned 后 UpdateOwned），中途
+	// 失败就会漂移；一旦漂移，拿 members.email 当放行依据就等于"传个旧值即可改掉别人的登录邮箱"
+	// ——那是一条完整的账号接管链（改邮箱 → 走找回密码）。无账号的老模型成员没有登录身份，
+	// 比对 members.email 即可。
 	if scope.IsDepartmentManager() && input.Email != nil {
-		next := strings.ToLower(strings.TrimSpace(*input.Email))
-		if next != strings.ToLower(current.Email) && next != strings.ToLower(current.AccountEmail) {
+		next := strings.TrimSpace(*input.Email)
+		authoritative := current.Email
+		if current.AccountUserID > 0 {
+			authoritative = current.AccountEmail
+		}
+		if !strings.EqualFold(next, authoritative) {
 			return Member{}, ErrOutOfScope
 		}
 	}

@@ -171,6 +171,10 @@ func TestOverviewScopedForDepartmentManager(t *testing.T) {
 	if repo.periodUsageDept != managedDeptID {
 		t.Fatalf("本期消耗问的是部门 %d，want %d", repo.periodUsageDept, managedDeptID)
 	}
+	// 租户闸门：department_id 是裸快照列，聚合必须同时按企业主限定。
+	if repo.periodUsageOwner != scopeOwnerID {
+		t.Fatalf("本期消耗未带企业主闸门: ownerID = %d, want %d", repo.periodUsageOwner, scopeOwnerID)
+	}
 	// 账期沿用企业口径（三层同窗）
 	if got.BillingDay != repo.anchor.Day() {
 		t.Fatalf("账期日 = %d, want 企业锚点日 %d", got.BillingDay, repo.anchor.Day())

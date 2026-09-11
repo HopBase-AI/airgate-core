@@ -240,6 +240,77 @@ func TestMemberServiceScopeMatrix(t *testing.T) {
 	}
 }
 
+// 登录邮箱守卫只认 users.email（AccountEmail）：members.email 是展示列，与账号邮箱分两条
+// 非事务语句写入，中途失败会漂移——拿漂移后的旧值当放行依据就是一条账号接管链
+// （改掉他人登录邮箱 → 走找回密码）。
+func TestManagerEmailGuardTrustsAccountEmailOnly(t *testing.T) {
+	// members.email 停在旧值、users.email 才是真身份（模拟两条语句之间失败留下的漂移）
+	diverged := Member{
+		ID: peerMemberID, OwnerID: scopeOwnerID, Name: "本部门同事", DepartmentID: managedDeptID,
+		QuotaUSD: 20, AccountUserID: 902,
+		Email:        "stale@example.com",
+		AccountEmail: "real@example.com",
+	}
+	newRepo := func() *scopeRepo {
+		repo := newScopeRepo()
+		repo.members[peerMemberID] = diverged
+		return repo
+	}
+
+	t.Run("传漂移的展示邮箱=改登录邮箱，必须拒", func(t *testing.T) {
+		repo := newRepo()
+		_, err := NewService(repo, nil).Update(context.Background(), managerScope(), peerMemberID,
+			UpdateInput{Email: ptr("stale@example.com")})
+		if !errors.Is(err, ErrOutOfScope) {
+			t.Fatalf("err = %v, want ErrOutOfScope", err)
+		}
+		if repo.accountPatch != nil || repo.updated.Email != nil {
+			t.Fatalf("拒绝后不应有任何写入: account=%+v member=%+v", repo.accountPatch, repo.updated.Email)
+		}
+	})
+
+	t.Run("传攻击者邮箱同样拒", func(t *testing.T) {
+		repo := newRepo()
+		_, err := NewService(repo, nil).Update(context.Background(), managerScope(), peerMemberID,
+			UpdateInput{Email: ptr("attacker@example.com")})
+		if !errors.Is(err, ErrOutOfScope) {
+			t.Fatalf("err = %v, want ErrOutOfScope", err)
+		}
+		if repo.accountPatch != nil {
+			t.Fatalf("拒绝后不应打账号补丁: %+v", repo.accountPatch)
+		}
+	})
+
+	t.Run("原样回传登录邮箱（大小写不同）放行且不改凭证", func(t *testing.T) {
+		repo := newRepo()
+		if _, err := NewService(repo, nil).Update(context.Background(), managerScope(), peerMemberID,
+			UpdateInput{Email: ptr("REAL@Example.com"), QuotaUSD: ptr(30.0)}); err != nil {
+			t.Fatalf("同址回传应放行: %v", err)
+		}
+		if repo.accountPatch != nil {
+			t.Fatalf("同址回传不应打账号补丁: %+v", repo.accountPatch)
+		}
+	})
+
+	t.Run("老模型成员（无账号）按展示列比对", func(t *testing.T) {
+		repo := newScopeRepo()
+		repo.members[peerMemberID] = Member{
+			ID: peerMemberID, OwnerID: scopeOwnerID, Name: "老成员", DepartmentID: managedDeptID,
+			QuotaUSD: 20, Email: "legacy@example.com",
+		}
+		if _, err := NewService(repo, nil).Update(context.Background(), managerScope(), peerMemberID,
+			UpdateInput{Email: ptr("legacy@example.com")}); err != nil {
+			t.Fatalf("同址回传应放行: %v", err)
+		}
+		repo2 := newScopeRepo()
+		repo2.members[peerMemberID] = repo.members[peerMemberID]
+		if _, err := NewService(repo2, nil).Update(context.Background(), managerScope(), peerMemberID,
+			UpdateInput{Email: ptr("other@example.com")}); !errors.Is(err, ErrOutOfScope) {
+			t.Fatalf("err = %v, want ErrOutOfScope", err)
+		}
+	})
+}
+
 // 越界不能留下任何写入痕迹：拒绝必须发生在落库之前。
 func TestMemberScopeDenialLeavesNoWrite(t *testing.T) {
 	t.Run("改自己", func(t *testing.T) {

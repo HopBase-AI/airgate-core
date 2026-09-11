@@ -111,8 +111,15 @@ func (s *MemberStore) Create(ctx context.Context, mutation appmember.Mutation) (
 	return s.loadByID(ctx, item.ID)
 }
 
-// UpdateOwned 更新主账号名下的成员。调岗（部门变化）时，若该成员是原部门负责人则同事务清空
-// ——负责人必须是本部门成员这一不变量由此保住。
+// UpdateOwned 更新主账号名下的成员。**真的调岗**（部门确实变了）时，若该成员是原部门负责人
+// 则同事务清空——负责人必须是本部门成员这一不变量由此保住。
+//
+// 两条守卫（2026-09-11 加固）：
+//  1. 部门没变就完全不清。调用方（含前端表单）习惯每次都回传 department_id，此前会让
+//     "同部门内的普通编辑"顺手把该成员在别处的负责人身份摘掉——部门负责人的日常改额度就是
+//     这种请求，等于绕过 app/department 那条"负责人不能改 department_manager"的边界。
+//  2. 清除范围限定在本企业主名下的部门。department_manager 是裸外键，脏数据可以让别的企业主
+//     的部门指到这个成员身上；没有这条谓词，一次调岗就会写到别的租户的行上。
 func (s *MemberStore) UpdateOwned(ctx context.Context, ownerID, id int, mutation appmember.Mutation) (appmember.Member, error) {
 	if err := s.ensureOwned(ctx, ownerID, id); err != nil {
 		return appmember.Member{}, err
@@ -123,12 +130,25 @@ func (s *MemberStore) UpdateOwned(ctx context.Context, ownerID, id int, mutation
 	}
 	defer func() { _ = tx.Rollback() }()
 	if mutation.HasDepartmentID {
-		clear := tx.Department.Update().Where(entdepartment.HasManagerWith(entmember.IDEQ(id)))
-		if mutation.DepartmentID != nil {
-			clear = clear.Where(entdepartment.IDNEQ(*mutation.DepartmentID))
-		}
-		if _, err := clear.ClearManager().Save(ctx); err != nil {
+		currentDept, err := memberDepartmentID(ctx, tx.Client(), id)
+		if err != nil {
 			return appmember.Member{}, err
+		}
+		target := 0
+		if mutation.DepartmentID != nil {
+			target = *mutation.DepartmentID
+		}
+		if target != currentDept {
+			clear := tx.Department.Update().Where(
+				entdepartment.HasManagerWith(entmember.IDEQ(id)),
+				entdepartment.HasOwnerWith(entuser.IDEQ(ownerID)),
+			)
+			if target > 0 {
+				clear = clear.Where(entdepartment.IDNEQ(target))
+			}
+			if _, err := clear.ClearManager().Save(ctx); err != nil {
+				return appmember.Member{}, err
+			}
 		}
 	}
 	builder := tx.Member.UpdateOneID(id)
@@ -143,6 +163,18 @@ func (s *MemberStore) UpdateOwned(ctx context.Context, ownerID, id int, mutation
 		return appmember.Member{}, err
 	}
 	return s.loadByID(ctx, id)
+}
+
+// memberDepartmentID 成员当前所属部门 id；未分配返回 0。
+func memberDepartmentID(ctx context.Context, client *ent.Client, memberID int) (int, error) {
+	ids, err := client.Member.Query().Where(entmember.IDEQ(memberID)).QueryDepartment().IDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	return ids[0], nil
 }
 
 // DeleteOwned 删除成员及其名下全部 API Key；使用记录保留（api_key 边置空）。

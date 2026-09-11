@@ -15,6 +15,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/DouDOU-start/airgate-core/ent"
+	entdepartment "github.com/DouDOU-start/airgate-core/ent/department"
 	"github.com/DouDOU-start/airgate-core/ent/enttest"
 	appaudit "github.com/DouDOU-start/airgate-core/internal/app/audit"
 	appdepartment "github.com/DouDOU-start/airgate-core/internal/app/department"
@@ -341,6 +342,66 @@ func TestTeamRoutesReadsScopedToDepartment(t *testing.T) {
 	}
 	if overview.Data.Balance != 1234 || overview.Data.DepartmentCount != 2 || overview.Data.MemberCount != 3 {
 		t.Fatalf("企业主总览被改坏了: %s", w.Body.String())
+	}
+}
+
+// managerOf 部门当前的负责人成员 id；未设返回 0。
+func (e teamRoutesEnv) managerOf(t *testing.T, departmentID int) int {
+	t.Helper()
+	ids, err := e.db.Department.Query().Where(entdepartment.IDEQ(departmentID)).QueryManager().IDs(t.Context())
+	if err != nil {
+		t.Fatalf("query manager: %v", err)
+	}
+	if len(ids) == 0 {
+		return 0
+	}
+	return ids[0]
+}
+
+// 负责人的普通编辑不得摘掉该成员在别处的负责人身份：
+// 前端每次编辑都会回传 department_id，若 store 见到 department_id 就无条件清 department_manager，
+// 一次"改额度"就等于替企业主换了别的部门的负责人——而"负责人不能改 department_manager"
+// 正是本 PR 的边界之一。真调岗时的清除必须保留，且绝不能跨租户。
+func TestTeamRoutesManagerEditKeepsForeignManagerPointers(t *testing.T) {
+	env := newTeamRoutesEnv(t)
+	ctx := t.Context()
+
+	// 脏数据（现有流程走不出来，但 department_manager 是裸外键，允许）：
+	// 本部门的同事同时挂着 B 部门的负责人，另一个企业主的部门也误指到他身上。
+	if err := env.db.Department.UpdateOneID(env.deptB).SetManagerID(env.peerMID).Exec(ctx); err != nil {
+		t.Fatalf("set dept B manager: %v", err)
+	}
+	otherOwner := mustUser(t, env.db, "other-owner@example.com", true)
+	foreignDept, err := env.db.Department.Create().SetOwnerID(otherOwner.ID).SetName("别家的部门").
+		SetManagerID(env.peerMID).Save(ctx)
+	if err != nil {
+		t.Fatalf("create foreign department: %v", err)
+	}
+
+	// 负责人在本部门内的普通编辑（带 department_id，值与现状相同）
+	w := env.do(t, env.managerUID, "user", http.MethodPut, "/api/v1/members/"+strconv.Itoa(env.peerMID),
+		map[string]any{"quota_usd": 30, "department_id": env.deptA})
+	if w.Code != http.StatusOK {
+		t.Fatalf("改额度状态码 = %d: %s", w.Code, w.Body.String())
+	}
+	if got := env.managerOf(t, env.deptB); got != env.peerMID {
+		t.Fatalf("负责人的普通编辑摘掉了 B 部门的负责人: manager = %d, want %d", got, env.peerMID)
+	}
+	if got := env.managerOf(t, foreignDept.ID); got != env.peerMID {
+		t.Fatalf("动到了别的企业主的部门: manager = %d, want %d", got, env.peerMID)
+	}
+
+	// 企业主真调岗（调出部门）：本企业内的旧指针照清，别家的照旧不动。
+	w = env.do(t, env.ownerID, "user", http.MethodPut, "/api/v1/members/"+strconv.Itoa(env.peerMID),
+		map[string]any{"department_id": 0})
+	if w.Code != http.StatusOK {
+		t.Fatalf("调岗状态码 = %d: %s", w.Code, w.Body.String())
+	}
+	if got := env.managerOf(t, env.deptB); got != 0 {
+		t.Fatalf("真调岗后本企业的负责人指针应清空，实际 = %d", got)
+	}
+	if got := env.managerOf(t, foreignDept.ID); got != env.peerMID {
+		t.Fatalf("调岗写到了别的企业主的部门: manager = %d, want %d", got, env.peerMID)
 	}
 }
 

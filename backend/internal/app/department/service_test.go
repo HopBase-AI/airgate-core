@@ -21,8 +21,10 @@ type stubRepo struct {
 	setAnchor *time.Time
 	deleted   int
 	audits    []audit.Entry
-	// periodUsageDept 记录 DepartmentPeriodUsage 被问到的部门，校验负责人总览按部门聚合。
-	periodUsageDept int
+	// periodUsage* 记录 DepartmentPeriodUsage 被问到的租户与部门，校验负责人总览按部门聚合
+	// 且带企业主闸门。
+	periodUsageOwner int
+	periodUsageDept  int
 }
 
 func (s *stubRepo) ListByOwner(_ context.Context, _ int, _ ListFilter) ([]Department, int64, error) {
@@ -93,8 +95,8 @@ func (s *stubRepo) OwnerOverview(_ context.Context, _ int) (float64, int, float6
 func (s *stubRepo) OwnerPeriodUsage(_ context.Context, _ int, _ time.Time) (float64, float64, error) {
 	return 55, 60, nil
 }
-func (s *stubRepo) DepartmentPeriodUsage(_ context.Context, id int, _ time.Time) (float64, float64, error) {
-	s.periodUsageDept = id
+func (s *stubRepo) DepartmentPeriodUsage(_ context.Context, ownerID, id int, _ time.Time) (float64, float64, error) {
+	s.periodUsageOwner, s.periodUsageDept = ownerID, id
 	return 11, 12, nil
 }
 func (s *stubRepo) Record(_ context.Context, e audit.Entry) { s.audits = append(s.audits, e) }
