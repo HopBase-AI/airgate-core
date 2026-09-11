@@ -10,10 +10,14 @@ import type { DepartmentOption, MemberForm } from './types';
 
 // 成员表单：成员是真实登录账号——新建时邮箱+密码必填；编辑时邮箱可改、密码留空不动。
 // 分组白名单从企业主自己可见的分组里勾选，一个都不勾 = 继承全部。
+//
+// canEditIdentity=false（部门负责人编辑他人）时藏起邮箱与密码两栏：邮箱是该成员的全站唯一
+// 登录身份、重置密码等于可冒用其账号，这两件事留给企业主（服务端同样会拒）。
 export function EditMemberModal({
   open,
   isEdit,
   hasAccount,
+  canEditIdentity = true,
   form,
   setForm,
   onClose,
@@ -25,6 +29,8 @@ export function EditMemberModal({
   isEdit: boolean;
   /** 编辑的成员是否有登录账号（老模型成员没有，此时不展示密码栏） */
   hasAccount: boolean;
+  /** 是否可改登录凭证（邮箱 / 密码）；部门负责人编辑他人时为 false */
+  canEditIdentity?: boolean;
   form: MemberForm;
   setForm: (form: MemberForm) => void;
   onClose: () => void;
@@ -51,7 +57,7 @@ export function EditMemberModal({
   const noneItem = { id: 'none', label: t('team.period_none'), hint: t('team.period_none_hint') };
   const periodItems = [monthlyItem, noneItem];
   const selectedPeriod = form.quota_period === 'none' ? noneItem : monthlyItem;
-  const showPassword = !isEdit || hasAccount;
+  const showPassword = canEditIdentity && (!isEdit || hasAccount);
   const quotaRequired = !isEdit || hasAccount;
 
   const toggleGroup = (groupId: number, selected: boolean) => {
@@ -88,18 +94,26 @@ export function EditMemberModal({
             required
           />
         </HeroTextField>
-        <HeroTextField fullWidth isRequired={!isEdit || hasAccount}>
-          <Label>{t('team.email')}</Label>
-          <Input
-            type="email"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-            placeholder={t('team.email_placeholder')}
-            maxLength={255}
-            autoComplete="off"
-          />
-          <Description>{t('team.email_hint')}</Description>
-        </HeroTextField>
+        {canEditIdentity ? (
+          <HeroTextField fullWidth isRequired={!isEdit || hasAccount}>
+            <Label>{t('team.email')}</Label>
+            <Input
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              placeholder={t('team.email_placeholder')}
+              maxLength={255}
+              autoComplete="off"
+            />
+            <Description>{t('team.email_hint')}</Description>
+          </HeroTextField>
+        ) : form.email ? (
+          <HeroTextField fullWidth isDisabled>
+            <Label>{t('team.email')}</Label>
+            <Input value={form.email} readOnly />
+            <Description>{t('team.email_locked_hint')}</Description>
+          </HeroTextField>
+        ) : null}
         {showPassword ? (
           <HeroTextField fullWidth isRequired={!isEdit}>
             <Label>{isEdit ? t('team.password_reset') : t('team.password')}</Label>

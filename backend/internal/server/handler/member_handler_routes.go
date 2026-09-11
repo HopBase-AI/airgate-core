@@ -4,15 +4,17 @@ import (
 	"github.com/gin-gonic/gin"
 
 	appmember "github.com/DouDOU-start/airgate-core/internal/app/member"
+	"github.com/DouDOU-start/airgate-core/internal/app/teamscope"
 	"github.com/DouDOU-start/airgate-core/internal/server/dto"
+	"github.com/DouDOU-start/airgate-core/internal/server/middleware"
 	"github.com/DouDOU-start/airgate-core/internal/server/response"
 )
 
 // ListMembers 查询当前用户名下的团队成员。
 func (h *MemberHandler) ListMembers(c *gin.Context) {
-	userID, ok := currentUserID(c)
+	scope, ok := teamScope(c)
 	if !ok {
-		response.Unauthorized(c, "用户未认证")
+		response.Forbidden(c, "无权管理团队成员")
 		return
 	}
 	var query dto.MemberListQuery
@@ -30,7 +32,7 @@ func (h *MemberHandler) ListMembers(c *gin.Context) {
 		departmentID := int(*query.DepartmentID)
 		filter.DepartmentID = &departmentID
 	}
-	result, err := h.service.List(c.Request.Context(), userID, filter, c.Query("tz"))
+	result, err := h.service.List(c.Request.Context(), scope, filter, c.Query("tz"))
 	if err != nil {
 		httpCode, message := h.handleError("查询团队成员失败", "查询失败", err)
 		response.Error(c, httpCode, httpCode, message)
@@ -45,9 +47,9 @@ func (h *MemberHandler) ListMembers(c *gin.Context) {
 
 // CreateMember 创建团队成员。
 func (h *MemberHandler) CreateMember(c *gin.Context) {
-	userID, ok := currentUserID(c)
+	scope, ok := teamScope(c)
 	if !ok {
-		response.Unauthorized(c, "用户未认证")
+		response.Forbidden(c, "无权管理团队成员")
 		return
 	}
 	var req dto.CreateMemberReq
@@ -55,7 +57,7 @@ func (h *MemberHandler) CreateMember(c *gin.Context) {
 		response.BindError(c, err)
 		return
 	}
-	item, err := h.service.Create(auditContext(c).Request.Context(), userID, appmember.CreateInput{
+	item, err := h.service.Create(auditContext(c).Request.Context(), scope, appmember.CreateInput{
 		Name:            req.Name,
 		Email:           req.Email,
 		Password:        req.Password,
@@ -75,9 +77,9 @@ func (h *MemberHandler) CreateMember(c *gin.Context) {
 
 // UpdateMember 更新团队成员。
 func (h *MemberHandler) UpdateMember(c *gin.Context) {
-	userID, ok := currentUserID(c)
+	scope, ok := teamScope(c)
 	if !ok {
-		response.Unauthorized(c, "用户未认证")
+		response.Forbidden(c, "无权管理团队成员")
 		return
 	}
 	id, err := parseMemberID(c.Param("id"))
@@ -90,7 +92,7 @@ func (h *MemberHandler) UpdateMember(c *gin.Context) {
 		response.BindError(c, err)
 		return
 	}
-	item, err := h.service.Update(auditContext(c).Request.Context(), userID, id, appmember.UpdateInput{
+	item, err := h.service.Update(auditContext(c).Request.Context(), scope, id, appmember.UpdateInput{
 		Name:            req.Name,
 		Email:           req.Email,
 		Password:        req.Password,
@@ -111,9 +113,9 @@ func (h *MemberHandler) UpdateMember(c *gin.Context) {
 
 // DeleteMember 删除团队成员及其名下密钥。
 func (h *MemberHandler) DeleteMember(c *gin.Context) {
-	userID, ok := currentUserID(c)
+	scope, ok := teamScope(c)
 	if !ok {
-		response.Unauthorized(c, "用户未认证")
+		response.Forbidden(c, "无权管理团队成员")
 		return
 	}
 	id, err := parseMemberID(c.Param("id"))
@@ -121,7 +123,7 @@ func (h *MemberHandler) DeleteMember(c *gin.Context) {
 		response.BadRequest(c, "无效的成员 ID")
 		return
 	}
-	if err := h.service.Delete(auditContext(c).Request.Context(), userID, id); err != nil {
+	if err := h.service.Delete(auditContext(c).Request.Context(), scope, id); err != nil {
 		httpCode, message := h.handleError("删除团队成员失败", "删除失败", err)
 		response.Error(c, httpCode, httpCode, message)
 		return
@@ -131,9 +133,9 @@ func (h *MemberHandler) DeleteMember(c *gin.Context) {
 
 // ResetMemberPeriod 手动把成员本期已用清零。
 func (h *MemberHandler) ResetMemberPeriod(c *gin.Context) {
-	userID, ok := currentUserID(c)
+	scope, ok := teamScope(c)
 	if !ok {
-		response.Unauthorized(c, "用户未认证")
+		response.Forbidden(c, "无权管理团队成员")
 		return
 	}
 	id, err := parseMemberID(c.Param("id"))
@@ -141,11 +143,17 @@ func (h *MemberHandler) ResetMemberPeriod(c *gin.Context) {
 		response.BadRequest(c, "无效的成员 ID")
 		return
 	}
-	item, err := h.service.ResetPeriod(auditContext(c).Request.Context(), userID, id)
+	item, err := h.service.ResetPeriod(auditContext(c).Request.Context(), scope, id)
 	if err != nil {
 		httpCode, message := h.handleError("重置成员额度周期失败", "重置失败", err)
 		response.Error(c, httpCode, httpCode, message)
 		return
 	}
 	response.Success(c, toMemberResp(item))
+}
+
+// teamScope 取本次请求的团队管理范围（由 RequireTeamScope / RequireEnterpriseOwner 写入）。
+// 取不到说明路由漏挂了门禁：宁可 403 也不回落成"按会话用户当企业主"，那是静默越权。
+func teamScope(c *gin.Context) (teamscope.Scope, bool) {
+	return middleware.TeamScopeFrom(c)
 }

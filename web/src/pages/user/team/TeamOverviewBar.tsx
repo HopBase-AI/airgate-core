@@ -10,7 +10,17 @@ import { useToast } from '../../../shared/ui';
 // 企业层账本条：一块发丝线面板，一行五项（余额 / 已分配给部门 / 已分配给成员 / 本期消耗 / 账期），
 // 项与项之间用发丝线分隔。企业余额是唯一真实扣费点；分配给部门 / 成员的额度是限额之和，允许超发只提示。
 // 三层额度的「剩余」口径在后端统一，这里只展示；账期日的修改入口就放在账期项里。
-export function TeamOverviewBar() {
+//
+// 部门负责人视角（isDepartmentManager）：后端返回的是**部门口径**的同形投影——不含企业余额，
+// 消耗按本部门聚合。此时隐去余额项与账期修改入口（账期是全企业口径，只有企业主能改），
+// 「已分配给部门」改叫「本部门额度」。
+export function TeamOverviewBar({
+  isDepartmentManager = false,
+  departmentName = '',
+}: {
+  isDepartmentManager?: boolean;
+  departmentName?: string;
+} = {}) {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -41,7 +51,8 @@ export function TeamOverviewBar() {
   });
 
   if (!data) return null;
-  const overAllocated = data.department_quota_total > data.balance;
+  // 超发提示要拿企业余额比，负责人看不到余额也就无从提示。
+  const overAllocated = !isDepartmentManager && data.department_quota_total > data.balance;
   const fmt = (value: number) => `$${value.toFixed(2)}`;
   const fmtDate = (value: string) => new Date(value).toLocaleDateString(i18n.language);
   const openBilling = () => {
@@ -60,12 +71,18 @@ export function TeamOverviewBar() {
   return (
     <>
       <dl className="ag-team-overview mb-5">
+        {!isDepartmentManager ? (
+          <div className="ag-team-overview-item">
+            <dt className="ag-team-overview-label">{t('team.overview_balance')}</dt>
+            <dd className="ag-team-overview-value">{fmt(data.balance)}</dd>
+          </div>
+        ) : null}
         <div className="ag-team-overview-item">
-          <dt className="ag-team-overview-label">{t('team.overview_balance')}</dt>
-          <dd className="ag-team-overview-value">{fmt(data.balance)}</dd>
-        </div>
-        <div className="ag-team-overview-item">
-          <dt className="ag-team-overview-label">{t('team.overview_department_quota')}</dt>
+          <dt className="ag-team-overview-label">
+            {isDepartmentManager
+              ? t('team.overview_my_department_quota', { name: departmentName })
+              : t('team.overview_department_quota')}
+          </dt>
           <dd className="ag-team-overview-value">{fmt(data.department_quota_total)}</dd>
           {overAllocated ? (
             <dd className="ag-team-overview-hint" data-tone="warning" title={t('team.overview_over_allocated_hint')}>
@@ -91,9 +108,11 @@ export function TeamOverviewBar() {
           <dd className="ag-team-overview-value" data-kind="date">{`${fmtDate(data.period_start)} – ${fmtDate(data.period_end)}`}</dd>
           <dd className="ag-team-overview-hint">
             <span>{t('team.overview_billing_day', { day: data.billing_day })}</span>
-            <button type="button" className="ag-team-overview-link" onClick={openBilling}>
-              {t('team.billing_day_edit')}
-            </button>
+            {!isDepartmentManager ? (
+              <button type="button" className="ag-team-overview-link" onClick={openBilling}>
+                {t('team.billing_day_edit')}
+              </button>
+            ) : null}
           </dd>
         </div>
       </dl>

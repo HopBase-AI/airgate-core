@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/DouDOU-start/airgate-core/internal/app/teamscope"
 )
 
 type stubRepo struct {
@@ -67,7 +69,7 @@ func (s *stubRepo) OwnerBillingAnchor(_ context.Context, _ int) (time.Time, erro
 func TestCreateDefaultsToMonthlyAndTrimsName(t *testing.T) {
 	repo := &stubRepo{}
 	svc := NewService(repo, nil)
-	item, err := svc.Create(context.Background(), 7, CreateInput{Name: "  张三 ", Email: " a@b.c ", QuotaUSD: 50})
+	item, err := svc.Create(context.Background(), teamscope.Owner(7), CreateInput{Name: "  张三 ", Email: " a@b.c ", QuotaUSD: 50})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -92,21 +94,21 @@ func TestCreateDefaultsToMonthlyAndTrimsName(t *testing.T) {
 func TestCreateAndUpdateValidation(t *testing.T) {
 	svc := NewService(&stubRepo{}, nil)
 	ctx := context.Background()
-	if _, err := svc.Create(ctx, 1, CreateInput{Name: "   "}); !errors.Is(err, ErrNameRequired) {
+	if _, err := svc.Create(ctx, teamscope.Owner(1), CreateInput{Name: "   "}); !errors.Is(err, ErrNameRequired) {
 		t.Fatalf("blank name error = %v", err)
 	}
-	if _, err := svc.Create(ctx, 1, CreateInput{Name: "x", QuotaUSD: -1}); !errors.Is(err, ErrInvalidQuota) {
+	if _, err := svc.Create(ctx, teamscope.Owner(1), CreateInput{Name: "x", QuotaUSD: -1}); !errors.Is(err, ErrInvalidQuota) {
 		t.Fatalf("negative quota error = %v", err)
 	}
-	if _, err := svc.Create(ctx, 1, CreateInput{Name: "x", QuotaPeriod: "weekly"}); !errors.Is(err, ErrInvalidQuotaPeriod) {
+	if _, err := svc.Create(ctx, teamscope.Owner(1), CreateInput{Name: "x", QuotaPeriod: "weekly"}); !errors.Is(err, ErrInvalidQuotaPeriod) {
 		t.Fatalf("bad period error = %v", err)
 	}
 	bad := "paused"
-	if _, err := svc.Update(ctx, 1, 2, UpdateInput{Status: &bad}); !errors.Is(err, ErrInvalidStatus) {
+	if _, err := svc.Update(ctx, teamscope.Owner(1), 2, UpdateInput{Status: &bad}); !errors.Is(err, ErrInvalidStatus) {
 		t.Fatalf("bad status error = %v", err)
 	}
 	empty := ""
-	if _, err := svc.Update(ctx, 1, 2, UpdateInput{Name: &empty}); !errors.Is(err, ErrNameRequired) {
+	if _, err := svc.Update(ctx, teamscope.Owner(1), 2, UpdateInput{Name: &empty}); !errors.Is(err, ErrNameRequired) {
 		t.Fatalf("empty name on update error = %v", err)
 	}
 }
@@ -124,7 +126,7 @@ func TestListDecoratesDerivedFields(t *testing.T) {
 	}}
 	svc := NewService(repo, nil)
 	svc.now = func() time.Time { return now }
-	result, err := svc.List(context.Background(), 1, ListFilter{}, "UTC")
+	result, err := svc.List(context.Background(), teamscope.Owner(1), ListFilter{}, "UTC")
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

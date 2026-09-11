@@ -398,6 +398,28 @@ func (s *DepartmentStore) OwnerPeriodUsage(ctx context.Context, ownerID int, sta
 	return rows[0].Actual, rows[0].Billed, nil
 }
 
+// DepartmentPeriodUsage 单个部门在 [start, now) 的真实/账面消耗（按快照列 department_id）。
+func (s *DepartmentStore) DepartmentPeriodUsage(ctx context.Context, departmentID int, start time.Time) (float64, float64, error) {
+	var rows []struct {
+		Actual float64 `json:"actual_cost"`
+		Billed float64 `json:"billed_cost"`
+	}
+	err := s.db.UsageLog.Query().
+		Where(entusagelog.DepartmentIDEQ(departmentID), entusagelog.CreatedAtGTE(start)).
+		Aggregate(
+			ent.As(ent.Sum(entusagelog.FieldActualCost), "actual_cost"),
+			ent.As(ent.Sum(entusagelog.FieldBilledCost), "billed_cost"),
+		).
+		Scan(ctx, &rows)
+	if err != nil {
+		return 0, 0, err
+	}
+	if len(rows) == 0 {
+		return 0, 0, nil
+	}
+	return rows[0].Actual, rows[0].Billed, nil
+}
+
 // ownerBillingAnchor 企业账期锚点的单一口径：users.billing_period_anchor ?? users.created_at。
 // 部门与成员创建时都从这里继承，保证三层同窗。
 func ownerBillingAnchor(ctx context.Context, db *ent.Client, ownerID int) (time.Time, error) {

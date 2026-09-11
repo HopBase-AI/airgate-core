@@ -32,4 +32,8 @@ var (
 	ErrQuotaRequired = errors.New("成员额度必填，请填写大于 0 的额度")
 	// ErrDepartmentNotFound 指定的部门不存在或不属于当前企业主。
 	ErrDepartmentNotFound = errors.New("部门不存在")
+	// ErrOutOfScope 部门负责人越界：跨部门调岗、改自己那条成员记录、或改他人登录凭证。
+	// 与 ErrMemberNotFound 的分工：跨部门取成员按"不存在"回 404（不泄露存在性），
+	// 其余越界动作是明确的权限边界，回 403 并说清原因。
+	ErrOutOfScope = errors.New("超出您的管理范围，请联系企业管理员")
 )

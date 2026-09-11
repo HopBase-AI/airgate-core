@@ -13,7 +13,7 @@ import { ErrorBoundary } from './providers/ErrorBoundary';
 import { getToken, getTokenRole } from '../shared/api/client';
 import { getInviteCodeFromURL } from '../shared/inviteCode';
 import { ChatPageLoading, FullPageLoading, PageLoading } from '../shared/components/PageLoading';
-import { checkAdmin, checkBlogAuthor, checkEnterpriseOwner, withSetupCheck } from './routeGuards';
+import { checkAdmin, checkBlogAuthor, checkEnterpriseOwner, checkTeamAccess, withSetupCheck } from './routeGuards';
 import {
   AccountEventsPage,
   AccountsPage,
@@ -341,11 +341,12 @@ const teamRoute = createRoute({
   path: '/team',
   beforeLoad: () => {
     accountPageBeforeLoad();
-    return checkEnterpriseOwner();
+    return checkTeamAccess();
   },
   component: renderPage(TeamPage),
 });
-// 操作记录独立成页(不再是 /team 的页签):侧栏「团队」段下的兄弟项,权限与 /team 完全一致。
+// 操作记录独立成页(不再是 /team 的页签):侧栏「团队」段下的兄弟项。
+// 权限比 /team 严一档——审计是企业主能力,部门负责人看不到(后端 RequireEnterpriseOwner)。
 const teamAuditRoute = createRoute({
   getParentRoute: () => authLayout,
   path: '/team/audit',

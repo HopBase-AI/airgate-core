@@ -30,6 +30,8 @@ func (h *DepartmentHandler) handleError(logMessage, publicMessage string, err er
 	switch {
 	case errors.Is(err, appdepartment.ErrDepartmentNotFound):
 		return 404, err.Error()
+	case errors.Is(err, appdepartment.ErrOutOfScope):
+		return 403, err.Error()
 	case errors.Is(err, appdepartment.ErrNameTaken):
 		return 409, err.Error()
 	case errors.Is(err, appdepartment.ErrNameRequired),

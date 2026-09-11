@@ -9,6 +9,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/DouDOU-start/airgate-core/internal/app/audit"
+	"github.com/DouDOU-start/airgate-core/internal/app/teamscope"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/pkg/pagination"
 	"github.com/DouDOU-start/airgate-core/internal/pkg/period"
@@ -17,6 +18,10 @@ import (
 )
 
 // Service 团队成员应用服务：主账号侧的成员管理。
+//
+// 每个方法的首个业务参数是 teamscope.Scope 而不是裸 ownerID：企业主 / 管理员传全企业范围，
+// 部门负责人传单部门范围。**范围校验落在本层**（不是 handler，也不是路由），任何新调用方
+// 都绕不过去；跨部门一律按"不存在"处理（404 语义），不泄露别的部门有没有这个成员。
 //
 // 成员改额度 / 停用 / 删除后要立刻反映到转发闸门，而鉴权结果有 5s 缓存，
 // 因此写操作完成后会按成员名下 key 的 hash 逐个失效缓存；失效失败不影响写入结果
@@ -37,11 +42,17 @@ func NewService(repo Repository, recorder audit.Recorder) *Service {
 
 // List 查询当前用户名下的成员，并附带本期已用 / 密钥数 / 今日与近 30 天成本。
 // tz 决定"今日"的起点；为空时回退到服务器本地时区。
-func (s *Service) List(ctx context.Context, ownerID int, filter ListFilter, tz string) (ListResult, error) {
+func (s *Service) List(ctx context.Context, scope teamscope.Scope, filter ListFilter, tz string) (ListResult, error) {
 	logger := sdk.LoggerFromContext(ctx)
+	ownerID := scope.OwnerID
 	page, pageSize := pagination.Normalize(filter.Page, filter.PageSize)
 	filter.Page = page
 	filter.PageSize = pageSize
+	// 部门负责人：无视客户端传来的 department_id，一律钉死本部门。
+	if scope.IsDepartmentManager() {
+		departmentID := scope.ScopedDepartmentID()
+		filter.DepartmentID = &departmentID
+	}
 
 	list, total, err := s.repo.ListByOwner(ctx, ownerID, filter)
 	if err != nil {
@@ -76,22 +87,61 @@ func (s *Service) List(ctx context.Context, ownerID int, filter ListFilter, tz s
 	return ListResult{List: list, Total: total, Page: page, PageSize: pageSize}, nil
 }
 
-// Get 查询当前用户名下的单个成员（含派生字段，不含成本聚合）。
-func (s *Service) Get(ctx context.Context, ownerID, id int) (Member, error) {
-	item, err := s.repo.FindOwned(ctx, ownerID, id)
+// Get 查询范围内的单个成员（含派生字段，不含成本聚合）。
+func (s *Service) Get(ctx context.Context, scope teamscope.Scope, id int) (Member, error) {
+	item, err := s.repo.FindOwned(ctx, scope.OwnerID, id)
 	if err != nil {
+		return Member{}, err
+	}
+	if err := ensureMemberInScope(scope, item); err != nil {
 		return Member{}, err
 	}
 	Decorate(&item, s.now())
 	return item, nil
 }
 
+// ensureMemberInScope 读路径的范围校验：部门负责人只看得到本部门成员（含自己那条，
+// 否则列表里有、单查却没有，前后不一致）。
+//
+// 跨部门按 ErrMemberNotFound 返回（404 语义）：负责人显式拿别的部门的成员 id 来试探时，
+// 不该从"403 还是 404"里读出那个成员到底存不存在。
+func ensureMemberInScope(scope teamscope.Scope, m Member) error {
+	if !scope.IsDepartmentManager() {
+		return nil
+	}
+	if !scope.AllowsDepartment(m.DepartmentID) {
+		return ErrMemberNotFound
+	}
+	return nil
+}
+
+// ensureMemberWritableInScope 写路径的范围校验：在读的基础上再禁掉"改 / 删自己那条记录"
+// ——自己抬自己的额度、或把自己停用锁死，都必须回到企业主手里。
+func ensureMemberWritableInScope(scope teamscope.Scope, m Member) error {
+	if err := ensureMemberInScope(scope, m); err != nil {
+		return err
+	}
+	if scope.IsSelfMember(m.ID) {
+		return ErrOutOfScope
+	}
+	return nil
+}
+
 // Create 创建成员。额度周期默认 monthly，锚点取创建时刻。
 //
 // 传了密码即同时创建成员的登录账号（邮箱必填且全站唯一，额度必填）：成员用邮箱+密码正常登录，
 // 与普通用户唯一的差别是消耗与归属落在企业主名下。
-func (s *Service) Create(ctx context.Context, ownerID int, input CreateInput) (Member, error) {
+func (s *Service) Create(ctx context.Context, scope teamscope.Scope, input CreateInput) (Member, error) {
 	logger := sdk.LoggerFromContext(ctx)
+	ownerID := scope.OwnerID
+	// 部门负责人只能往自己部门加人：显式传了别的部门直接拒，没传则钉死本部门。
+	if scope.IsDepartmentManager() {
+		if input.DepartmentID != nil && int(*input.DepartmentID) != scope.ScopedDepartmentID() {
+			return Member{}, ErrOutOfScope
+		}
+		departmentID := int64(scope.ScopedDepartmentID())
+		input.DepartmentID = &departmentID
+	}
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
 		return Member{}, ErrNameRequired
@@ -263,8 +313,22 @@ func (s *Service) normalizeAllowedGroups(ctx context.Context, ownerID int, ids [
 
 // Update 更新成员资料 / 额度 / 周期 / 状态。改周期不动锚点：从 none 切回 monthly 时
 // 仍按原创建日对齐换期，避免每改一次周期就漂一次账期。
-func (s *Service) Update(ctx context.Context, ownerID, id int, input UpdateInput) (Member, error) {
+func (s *Service) Update(ctx context.Context, scope teamscope.Scope, id int, input UpdateInput) (Member, error) {
 	logger := sdk.LoggerFromContext(ctx)
+	ownerID := scope.OwnerID
+	if scope.IsDepartmentManager() {
+		// 调岗（跨部门搬人）是企业主的动作，负责人只能在本部门内改人。
+		if input.DepartmentID != nil && int(*input.DepartmentID) != scope.ScopedDepartmentID() {
+			return Member{}, ErrOutOfScope
+		}
+		// 重置他人登录密码 = 可直接冒用其账号，留给企业主。
+		if input.Password != nil && *input.Password != "" {
+			return Member{}, ErrOutOfScope
+		}
+		if scope.IsSelfMember(id) {
+			return Member{}, ErrOutOfScope
+		}
+	}
 	mutation := Mutation{QuotaUSD: input.QuotaUSD}
 	if input.Name != nil {
 		name := strings.TrimSpace(*input.Name)
@@ -315,6 +379,17 @@ func (s *Service) Update(ctx context.Context, ownerID, id int, input UpdateInput
 	current, err := s.repo.FindOwned(ctx, ownerID, id)
 	if err != nil {
 		return Member{}, err
+	}
+	if err := ensureMemberWritableInScope(scope, current); err != nil {
+		return Member{}, err
+	}
+	// 登录邮箱是该成员的全站唯一凭证，改它等于换人；负责人可原样回传（表单整体提交），
+	// 但不能真的改动。
+	if scope.IsDepartmentManager() && input.Email != nil {
+		next := strings.ToLower(strings.TrimSpace(*input.Email))
+		if next != strings.ToLower(current.Email) && next != strings.ToLower(current.AccountEmail) {
+			return Member{}, ErrOutOfScope
+		}
 	}
 	// 有账号的成员不允许把额度改回 0（不限），口径同 Create；老模型成员不受限。
 	if current.AccountUserID > 0 && input.QuotaUSD != nil && *input.QuotaUSD <= 0 {
@@ -396,17 +471,27 @@ func (s *Service) Update(ctx context.Context, ownerID, id int, input UpdateInput
 }
 
 // Delete 删除成员、其登录账号及名下全部 API Key（使用记录保留）。
-func (s *Service) Delete(ctx context.Context, ownerID, id int) error {
+func (s *Service) Delete(ctx context.Context, scope teamscope.Scope, id int) error {
 	logger := sdk.LoggerFromContext(ctx)
-	// 先取 hash / 账号再删：删完就查不到了，而缓存里仍可能放行至多 5s。
-	hashes, err := s.repo.KeyHashesByMember(ctx, id)
-	if err != nil {
-		logger.Warn("member_key_hash_lookup_failed", "member_id", id, sdk.LogFieldError, err)
+	ownerID := scope.OwnerID
+	if scope.IsSelfMember(id) {
+		return ErrOutOfScope
 	}
 	accountUserID := 0
 	current, findErr := s.repo.FindOwned(ctx, ownerID, id)
 	if findErr == nil {
 		accountUserID = current.AccountUserID
+		if err := ensureMemberWritableInScope(scope, current); err != nil {
+			return err
+		}
+	} else if scope.IsDepartmentManager() {
+		// 负责人范围下取不到成员就别删：范围校验依赖这一行，查不到一律失败。
+		return findErr
+	}
+	// 先取 hash / 账号再删：删完就查不到了，而缓存里仍可能放行至多 5s。
+	hashes, err := s.repo.KeyHashesByMember(ctx, id)
+	if err != nil {
+		logger.Warn("member_key_hash_lookup_failed", "member_id", id, sdk.LogFieldError, err)
 	}
 	if err := s.repo.DeleteOwned(ctx, ownerID, id); err != nil {
 		logger.Error("member_delete_failed", sdk.LogFieldUserID, ownerID, "member_id", id, sdk.LogFieldError, err)
@@ -427,8 +512,19 @@ func (s *Service) Delete(ctx context.Context, ownerID, id int) error {
 }
 
 // ResetPeriod 手动把成员本期已用清零（不改锚点与周期）。
-func (s *Service) ResetPeriod(ctx context.Context, ownerID, id int) (Member, error) {
+func (s *Service) ResetPeriod(ctx context.Context, scope teamscope.Scope, id int) (Member, error) {
 	logger := sdk.LoggerFromContext(ctx)
+	ownerID := scope.OwnerID
+	// 清零本期已用等于给自己续额度，负责人不能对自己做；跨部门同样拦在这里。
+	if scope.IsDepartmentManager() {
+		current, err := s.repo.FindOwned(ctx, ownerID, id)
+		if err != nil {
+			return Member{}, err
+		}
+		if err := ensureMemberWritableInScope(scope, current); err != nil {
+			return Member{}, err
+		}
+	}
 	now := s.now()
 	updated, err := s.repo.ResetPeriodOwned(ctx, ownerID, id, now)
 	if err != nil {

@@ -31,6 +31,9 @@ import {
   UsersRound,
 } from 'lucide-react';
 import type { CreateMemberReq, MemberResp, UpdateMemberReq } from '../../shared/types';
+import { useAuth } from '../../app/providers/AuthProvider';
+import { getTokenRole } from '../../shared/api/client';
+import { canEditMemberRow, resolveTeamAccess } from '../../shared/teamAccess';
 import { EditMemberModal } from './team/EditMemberModal';
 import { DepartmentsTab } from './team/DepartmentsTab';
 import { TeamOverviewBar } from './team/TeamOverviewBar';
@@ -43,11 +46,19 @@ const UNASSIGNED_DEPARTMENT_FILTER = '__unassigned__';
 // 三层的额度 / 已用 / 剩余 / 使用率 / 周期全部可见可下钻；组织调整、成员变更、额度调整、
 // 密钥操作全程进操作记录。成员用自己的账号正常登录、功能与普通用户一致，只是消耗从企业主余额扣、
 // 用量归属到成员与部门。
+//
+// 部门负责人（成员账号且是某部门的 department_manager）进的是同一个页面的**收敛版**：
+// 只有成员页签、只看得到本部门、改不了组织结构与账期、也动不了自己那条成员记录。
+// 这里的隐藏只是别把按钮摆出来——真正的拦截在服务端（RequireTeamScope + service 层范围校验）。
 export default function TeamPage() {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+
+  const { user } = useAuth();
+  const access = resolveTeamAccess(user, getTokenRole());
+  const isManager = access.isDepartmentManager;
 
   const [tab, setTab] = useState<TeamTab>('members');
   const [departmentFilter, setDepartmentFilter] = useState('');
@@ -66,16 +77,20 @@ export default function TeamPage() {
     placeholderData: keepPreviousData,
   });
   // 部门下拉：成员表单归属 + 成员列表筛选共用；没建过部门的企业主看不到这些控件。
+  // 负责人只有一个部门、且成员归属被钉死，这份下拉对他毫无用处，干脆不请求。
   const { data: departmentsData } = useQuery({
     queryKey: queryKeys.departmentsAll(),
     queryFn: () => departmentsApi.list(FETCH_ALL_PARAMS),
+    enabled: !isManager,
     staleTime: 60_000,
   });
   const departmentOptions = useMemo(
     () => (departmentsData?.list ?? []).map((dept) => ({ id: String(dept.id), label: dept.name })),
     [departmentsData?.list],
   );
-  const hasDepartments = departmentOptions.length > 0;
+  // 负责人只管一个部门：部门列 / 部门筛选 / 表单里的部门选择一律不出现（所有人都在本部门），
+  // 归属由 departmentPayload 钉死，不给"落到未分配"留口子。
+  const hasDepartments = !isManager && departmentOptions.length > 0;
   const departmentFilterOptions = useMemo(() => ([
     { id: '', label: t('common.all') },
     ...departmentOptions,
@@ -185,7 +200,7 @@ export default function TeamPage() {
     // 有登录账号的成员额度必填(成员控制台的"余额"就是本期剩余额度,0 = 不限没有意义);
     // 老模型无账号成员(has_account === false)沿用 0 = 不限。
     if (!editing || editing.has_account) {
-      if (!email) {
+      if (!email && !(editing && isManager)) {
         toast('error', t('team.email_required'));
         return;
       }
@@ -198,19 +213,25 @@ export default function TeamPage() {
       toast('error', t('team.password_hint'));
       return;
     }
-    if (editing && password && password.length < 6) {
+    if (editing && !isManager && password && password.length < 6) {
       toast('error', t('team.password_hint'));
       return;
     }
-    // 0 = 调出部门（未分配）；只有建过部门时表单才出现这一项
-    const departmentPayload = hasDepartments ? { department_id: form.department_id ? Number(form.department_id) : 0 } : {};
+    // 0 = 调出部门（未分配）；只有建过部门时表单才出现这一项。
+    // 负责人一律钉死本部门：跨部门调岗是企业主的动作，服务端也会拒。
+    const departmentPayload = isManager
+      ? { department_id: access.managedDepartmentId }
+      : hasDepartments
+        ? { department_id: form.department_id ? Number(form.department_id) : 0 }
+        : {};
     if (editing) {
+      // 负责人改不了他人的登录凭证（邮箱是全站唯一身份、密码等于可冒用其账号），两项都不提交。
+      const identityPayload = isManager ? {} : { email, ...(password ? { password } : {}) };
       updateMutation.mutate({
         id: editing.id,
         data: {
           name,
-          email,
-          ...(password ? { password } : {}),
+          ...identityPayload,
           note: form.note.trim(),
           quota_usd: quota,
           quota_period: form.quota_period,
@@ -239,16 +260,20 @@ export default function TeamPage() {
   const formatDate = (value?: string) => (value ? new Date(value).toLocaleDateString(i18n.language) : '');
   const tabs: Array<{ key: TeamTab; label: string; icon: typeof UsersRound }> = [
     { key: 'members', label: t('team.members_tab'), icon: UsersRound },
-    { key: 'departments', label: t('team.departments_tab'), icon: Building2 },
+    ...(access.canManageDepartments ? [{ key: 'departments' as const, label: t('team.departments_tab'), icon: Building2 }] : []),
   ];
   const membersColSpan = hasDepartments ? 10 : 9;
 
   return (
     <div className="p-6">
       {/* 标题下一行弱化说明，替代原来的整条提示横幅；完整引导只在成员为空时出现 */}
-      <p className="mb-4 text-[13px] leading-5 text-text-tertiary">{t('team.intro')}</p>
+      <p className="mb-4 text-[13px] leading-5 text-text-tertiary">
+        {isManager
+          ? t('team.manager_intro', { name: access.managedDepartmentName })
+          : t('team.intro')}
+      </p>
 
-      <TeamOverviewBar />
+      <TeamOverviewBar isDepartmentManager={isManager} departmentName={access.managedDepartmentName} />
 
       {/* Tabs 只做页签切换：HeroUI 的 Select 放进 Tabs 内会拿不到 listbox 状态而崩，
           筛选控件与各面板内容一律放在 Tabs 之外按 tab 条件渲染 */}
@@ -313,7 +338,7 @@ export default function TeamPage() {
                 <Plus className="h-4 w-4" />
                 {t('team.create')}
               </Button>
-            ) : tab === 'departments' ? (
+            ) : tab === 'departments' && access.canManageDepartments ? (
               <Button variant="primary" onPress={() => setDeptCreateOpen(true)}>
                 <Plus className="h-4 w-4" />
                 {t('team.dept_create')}
@@ -322,7 +347,7 @@ export default function TeamPage() {
         </div>
       </div>
 
-      {tab === 'departments' ? (
+      {tab === 'departments' && access.canManageDepartments ? (
         <DepartmentsTab createOpen={deptCreateOpen} onCreateClose={() => setDeptCreateOpen(false)} onViewMembers={showMembersOfDepartment} />
       ) : null}
       {tab === 'members' ? (
@@ -435,29 +460,48 @@ export default function TeamPage() {
                     </span>
                   </CommonTable.Cell>
                   <CommonTable.Cell>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onPress={() => navigate({ to: '/keys', search: { member_id: row.id } })}
-                    >
-                      <KeyRound className="h-3.5 w-3.5" />
-                      {t('team.keys_count', { count: row.key_count })}
-                    </Button>
+                    {/* 密钥 / 用量的下钻页都是「看自己」的用户页：负责人点过去只会看到自己的数据，
+                        与其给个会误导的入口，不如只显示数字（跨成员的用量视图仍是企业主能力）。 */}
+                    {isManager ? (
+                      <span className="ag-usage-line">
+                        <KeyRound className="h-3.5 w-3.5" />
+                        <b data-zero={row.key_count === 0}>{t('team.keys_count', { count: row.key_count })}</b>
+                      </span>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onPress={() => navigate({ to: '/keys', search: { member_id: row.id } })}
+                      >
+                        <KeyRound className="h-3.5 w-3.5" />
+                        {t('team.keys_count', { count: row.key_count })}
+                      </Button>
+                    )}
                   </CommonTable.Cell>
                   <CommonTable.Cell>
                     <div className="flex items-center gap-1">
-                      <Button isIconOnly aria-label={t('team.edit')} size="sm" variant="ghost" onPress={() => openEdit(row)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        isIconOnly
-                        aria-label={t('team.view_usage')}
-                        size="sm"
-                        variant="ghost"
-                        onPress={() => navigate({ to: '/usage', search: { member_id: row.id } })}
-                      >
-                        <ReceiptText className="h-4 w-4" />
-                      </Button>
+                      {/* 负责人自己那条记录只读：额度与停用都得回到企业主手里（服务端同样拒绝） */}
+                      {canEditMemberRow(access, user, row.id) ? (
+                        <Button isIconOnly aria-label={t('team.edit')} size="sm" variant="ghost" onPress={() => openEdit(row)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      ) : null}
+                      {!isManager ? (
+                        <Button
+                          isIconOnly
+                          aria-label={t('team.view_usage')}
+                          size="sm"
+                          variant="ghost"
+                          onPress={() => navigate({ to: '/usage', search: { member_id: row.id } })}
+                        >
+                          <ReceiptText className="h-4 w-4" />
+                        </Button>
+                      ) : null}
+                      {!canEditMemberRow(access, user, row.id) ? (
+                        <span className="text-xs text-text-tertiary" title={t('team.self_row_readonly_hint')}>
+                          {t('team.self_row_readonly')}
+                        </span>
+                      ) : (
                       <Dropdown>
                         <Button isIconOnly aria-label={t('common.more')} size="sm" variant="ghost">
                           <MoreHorizontal className="h-4 w-4" />
@@ -492,6 +536,7 @@ export default function TeamPage() {
                           </Dropdown.Menu>
                         </Dropdown.Popover>
                       </Dropdown>
+                      )}
                     </div>
                   </CommonTable.Cell>
                 </CommonTable.Row>
@@ -506,12 +551,13 @@ export default function TeamPage() {
         open={modalOpen}
         isEdit={!!editing}
         hasAccount={!!editing?.has_account}
+        canEditIdentity={!isManager || !editing}
         form={form}
         setForm={setForm}
         onClose={closeModal}
         onSubmit={handleSubmit}
         loading={saving}
-        departmentOptions={departmentOptions}
+        departmentOptions={hasDepartments ? departmentOptions : []}
       />
 
       {/* 重置本期确认 */}
