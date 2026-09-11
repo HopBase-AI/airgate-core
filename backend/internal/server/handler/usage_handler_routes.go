@@ -27,6 +27,11 @@ func (h *UsageHandler) UserUsage(c *gin.Context) {
 
 	// API Key 登录场景：强制只查该 Key（或其所属团队成员名下全部 Key）的记录，并打开 ScopedToKey 标志
 	apiKeyFilter, memberFilter, scoped := sessionUsageScope(c, query.APIKeyID, query.MemberID)
+	// 部门负责人：放宽到本人 ∪ 所负责部门全员，请求里的成员/部门筛选作为下钻叠加。
+	managerScope := sessionManagerScope(c)
+	if managerScope != nil {
+		memberFilter = query.MemberID
+	}
 
 	// account_id 不接受用户侧筛选：响应体已不含上游账号身份，若还留着这个筛选，
 	// 用户可以按 ID 逐个试出「哪条请求由哪个上游账号供货」，等于换个姿势拿回同样的信息。
@@ -44,6 +49,7 @@ func (h *UsageHandler) UserUsage(c *gin.Context) {
 		Result:       query.Result,
 		TZ:           c.Query("tz"),
 		ScopedToKey:  scoped,
+		Manager:      managerScope,
 	})
 	if err != nil {
 		handleUsageError("查询用户使用记录失败", err)
@@ -85,11 +91,18 @@ func (h *UsageHandler) UserUsageStats(c *gin.Context) {
 	}
 
 	apiKeyFilter, memberFilter, scoped := sessionUsageScope(c, query.APIKeyID, query.MemberID)
+	managerScope := sessionManagerScope(c)
+	if managerScope != nil {
+		memberFilter = query.MemberID
+	}
 
 	tz := c.Query("tz")
-	// 分层下钻只对完整用户视角开放；客户视角（key 登录）与成员会话不返回。
+	// 分层下钻只对完整用户视角开放；客户视角（key 登录）与普通成员会话不返回。
+	// 部门负责人是例外：范围内的聚合他有权拿。控制台目前还没有传 breakdown 的调用方，
+	// 「本部门谁花得多」是靠列表的成员列与成员筛选回答的；这里先把接口口径放开，
+	// 免得将来加下钻时又要回来改一遍权限。
 	var breakdowns []string
-	if !scoped && middleware.TeamOwnerID(c) == 0 {
+	if !scoped && (middleware.TeamOwnerID(c) == 0 || managerScope != nil) {
 		breakdowns = parseUsageBreakdown(query.Breakdown)
 	}
 	result, err := h.service.UserStatsWithModels(c.Request.Context(), int64(userID), appusage.StatsFilter{
@@ -102,6 +115,7 @@ func (h *UsageHandler) UserUsageStats(c *gin.Context) {
 		EndDate:      query.EndDate,
 		TZ:           tz,
 		ScopedToKey:  scoped,
+		Manager:      managerScope,
 	}, breakdowns...)
 	if err != nil {
 		handleUsageError("统计用户使用记录失败", err)
@@ -226,6 +240,10 @@ func (h *UsageHandler) UserUsageTrend(c *gin.Context) {
 
 	// 趋势同样跟随请求里的密钥/成员筛选；API Key 登录场景则被 sessionUsageScope 收敛掉。
 	scopedKeyTrend, scopedMemberTrend, scoped := sessionUsageScope(c, query.APIKeyID, query.MemberID)
+	managerScope := sessionManagerScope(c)
+	if managerScope != nil {
+		scopedMemberTrend = query.MemberID
+	}
 
 	result, err := h.service.AdminTrend(c.Request.Context(), appusage.TrendFilter{
 		StatsFilter: appusage.StatsFilter{
@@ -239,6 +257,7 @@ func (h *UsageHandler) UserUsageTrend(c *gin.Context) {
 			EndDate:      query.EndDate,
 			TZ:           c.Query("tz"),
 			ScopedToKey:  scoped,
+			Manager:      managerScope,
 		},
 		Granularity: granularity,
 	})
@@ -384,6 +403,7 @@ func scopedMemberID(c *gin.Context) int64 {
 
 // sessionUsageScope 把请求方的筛选与会话范围合并：
 //   - 普通登录：原样使用请求里的 api_key_id / member_id；
+//   - 部门负责人账号登录：放宽到「本人 ∪ 所负责部门全员」（见 managerScope）；
 //   - 成员账号登录（members.account 本人）：收敛到该成员（成员名下全部 key），
 //     但仍是完整的用户视角（不剥费用拆分）——成员是正常账号，只是归属不同；
 //   - 成员的 key 登录：收敛到该成员名下全部 key（忽略请求里的 key 筛选）；
@@ -393,7 +413,10 @@ func scopedMemberID(c *gin.Context) int64 {
 func sessionUsageScope(c *gin.Context, requestedKey, requestedMember *int64) (apiKeyFilter, memberFilter *int64, scoped bool) {
 	if mid := scopedMemberID(c); mid > 0 {
 		if middleware.TeamOwnerID(c) > 0 && scopedAPIKeyID(c) == 0 {
-			return nil, &mid, false
+			// 成员账号本人登录：保留请求里的密钥筛选。它与 user=owner、成员/负责人范围
+			// 是 AND 关系，筛别人的 key 只会落空，越不了界；丢掉反而让「按密钥筛」
+			// 变成静默无效——负责人选中自己一把 key 却拿到全部门记录，金额会误导对账。
+			return requestedKey, &mid, false
 		}
 		return nil, &mid, true
 	}
@@ -401,6 +424,35 @@ func sessionUsageScope(c *gin.Context, requestedKey, requestedMember *int64) (ap
 		return &sk, nil, true
 	}
 	return requestedKey, requestedMember, false
+}
+
+// sessionManagerScope 部门负责人的可见范围；不是负责人返回 nil。
+//
+// 只对成员账号登录生效：key 登录是客户视角，本就被收敛到单把 key，
+// 放开负责人可见性等于让一把 key 看到同部门别人的消耗。
+func sessionManagerScope(c *gin.Context) *appusage.ManagerScope {
+	mid := scopedMemberID(c)
+	if mid <= 0 || middleware.TeamOwnerID(c) <= 0 || scopedAPIKeyID(c) > 0 {
+		return nil
+	}
+	raw, exists := c.Get(middleware.CtxKeyManagedDepartmentIDs)
+	if !exists {
+		return nil
+	}
+	ids, ok := raw.([]int)
+	if !ok || len(ids) == 0 {
+		return nil
+	}
+	departments := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id > 0 {
+			departments = append(departments, int64(id))
+		}
+	}
+	if len(departments) == 0 {
+		return nil
+	}
+	return &appusage.ManagerScope{MemberID: mid, DepartmentIDs: departments}
 }
 
 // usageUserID 用量查询的主体用户：成员账号的用量记在企业主名下（usage_logs.user=owner、

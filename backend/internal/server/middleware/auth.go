@@ -29,6 +29,10 @@ const (
 	CtxKeyEmail    = "email"
 	CtxKeyKeyInfo  = "api_key_info"
 	CtxKeyAPIKeyID = "jwt_api_key_id" // JWT 中的 API Key ID（API Key 登录场景）
+	// CtxKeyManagedDepartmentIDs 该成员担任负责人的部门 id 列表（[]int）。
+	// 只在成员账号登录时设置；key 登录是客户视角，不放开负责人可见性。
+	CtxKeyManagedDepartmentIDs = "session_managed_department_ids"
+
 	// CtxKeyMemberID 会话所属的团队成员 ID（按 key / 账号实时解析，不进 JWT）。
 	// >0 时用户侧用量查询按成员范围收敛（成员名下全部 key），而非单把 key。
 	// 两种来源：API Key 登录会话的 key 归属成员；成员账号（members.account）本人登录。
@@ -135,6 +139,13 @@ func jwtAuth(jwtMgr *auth.JWTManager, db *ent.Client, allowAdminAPIKey bool) gin
 				c.Set(CtxKeyMemberID, identity.Member.ID)
 				c.Set(CtxKeyTeamOwnerID, identity.Owner.ID)
 				c.Set(CtxKeyMemberAllowedGroups, append([]int64(nil), identity.Member.AllowedGroupIds...))
+				// 恰好负责一个部门才算负责人,与 RequireTeamScope 的 fail-closed 同一条规则
+				// （errAmbiguousDepartmentScope）。产品上一个人只管一个部门:任命负责人要求
+				// 他本身是该部门成员,而成员只能属于一个部门,所以"管多个"只可能来自直接改库。
+				// 真出现了就一律按"不是负责人"处理,而不是让用量侧放行两个部门、团队页却 403。
+				if len(identity.ManagedDepartmentIDs) == 1 {
+					c.Set(CtxKeyManagedDepartmentIDs, append([]int(nil), identity.ManagedDepartmentIDs...))
+				}
 			}
 		}
 
@@ -482,6 +493,17 @@ func TeamOwnerID(c *gin.Context) int {
 		}
 	}
 	return 0
+}
+
+// ManagedDepartmentIDs 该会话担任负责人的部门 id；不是负责人或断言失败返回 nil。
+// 与用量查询的 ManagerScope 同源，避免「谁能看」与「谁能筛」两套判据漂移。
+func ManagedDepartmentIDs(c *gin.Context) []int {
+	if v, ok := c.Get(CtxKeyManagedDepartmentIDs); ok {
+		if ids, ok := v.([]int); ok {
+			return ids
+		}
+	}
+	return nil
 }
 
 // BillingUserID 返回"按谁付钱"的用户 id：成员账号取企业主，其余取会话用户本人。

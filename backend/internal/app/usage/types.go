@@ -17,6 +17,21 @@ const (
 	ResultFilterError   = "error"
 )
 
+// ManagerScope 部门负责人的可见范围。
+//
+// 负责人不是管理权限，只是可见性：能查自己负责的部门里全员的用量，别的部门看不到，
+// 也不能改任何配置。可见集合 = 本人的用量 ∪ 所负责部门的全部用量——一个人可能同时
+// 负责 A 部门、却隶属 B 部门，两边都得能看到。
+//
+// 非 nil 即生效，且与 MemberID / DepartmentID 互斥：会话已经定死了范围，
+// 请求里再带这两个筛选会被忽略（见 handler 的 sessionUsageScope）。
+type ManagerScope struct {
+	// MemberID 负责人本人的成员 id，始终包含在可见范围里。
+	MemberID int64
+	// DepartmentIDs 他负责的部门 id，非空。
+	DepartmentIDs []int64
+}
+
 // ListFilter 使用记录列表筛选。
 type ListFilter struct {
 	Page         int
@@ -39,6 +54,8 @@ type ListFilter struct {
 	// handler 必须根据 CtxKeyAPIKeyID 强制设置 APIKeyID 并打开此标志，
 	// 后续 mapper 据此切换到 CustomerUsageLogResp，避免泄漏平台真实成本。
 	ScopedToKey bool
+	// Manager 部门负责人可见范围；非 nil 时覆盖 MemberID / DepartmentID。
+	Manager *ManagerScope
 }
 
 // StatsFilter 聚合统计筛选。
@@ -53,6 +70,8 @@ type StatsFilter struct {
 	EndDate      string
 	TZ           string // IANA 时区名，用于解析 StartDate/EndDate
 	ScopedToKey  bool   // 与 ListFilter.ScopedToKey 同义
+	// Manager 部门负责人可见范围；非 nil 时覆盖 MemberID / DepartmentID。
+	Manager *ManagerScope
 }
 
 // 分层聚合维度（用户侧 /usage/stats 的 breakdown 参数）。

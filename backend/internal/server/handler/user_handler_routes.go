@@ -61,6 +61,12 @@ func (h *UserHandler) GetMe(c *gin.Context) {
 			slog.Warn("membership_lookup_failed", "user_id", userID, "error", err)
 		}
 	}
+	// 放在成员投影之后：MemberID 是在那里填的，提前算会漏判成员身份。
+	// 负责人判定刻意取会话里的那份（middleware 由 auth.ResolveTeamIdentity 写入），
+	// 与 usage 查询用的 ManagerScope 同源——resp.ManagedDepartmentID 来自另一条
+	// 「负责多个部门就归 0」的投影，拿它当判据会出现「后端放行两个部门、前端连成员
+	// 筛选都不给」的漂移，而消灭这种漂移正是下发 usage_filters 的目的。
+	resp.UsageFilters = usageFilterFields(resp, len(middleware.ManagedDepartmentIDs(c)) > 0)
 	response.Success(c, resp)
 }
 

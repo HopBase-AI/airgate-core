@@ -94,6 +94,12 @@ export interface UserResp {
   role: SessionRole;
   can_author_blog?: boolean; // 是否可进入后台写博客(管理员天然可)
   is_enterprise_owner?: boolean; // 是否为企业主(可建团队成员;管理员天然可)
+  /**
+   * 「使用记录」页可用的筛选字段，由后端按身份下发（'api_key' | 'member' | 'department'）。
+   * 前端照这个列表渲染筛选框，不要再自行按 role / is_enterprise_owner 推断——
+   * 同一套权限规则前后端各写一遍，加字段或调权限时两边必然漂移。
+   */
+  usage_filters?: string[];
   max_concurrency: number;
   // 注册来源站点 ID（ToC 落地页 ?site= 归因），用于品牌/文档链接兜底
   signup_source?: string;

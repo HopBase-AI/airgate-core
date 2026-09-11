@@ -27,10 +27,19 @@ type TeamIdentity struct {
 	Owner  *ent.User   // 成员所属企业主；Member 为 nil 时为 nil
 	// Department 成员所属部门；未分配或不是成员时为 nil。
 	Department *ent.Department
+	// ManagedDepartmentIDs 该成员担任负责人的部门 id。
+	//
+	// 产品上恒为 0 或 1 个：任命负责人要求他本身是该部门成员，而成员只能属于一个部门，
+	// 所以"一人管多个部门"走界面造不出来。这里仍用切片如实反映查询结果，
+	// 由调用方（middleware）按 len==1 做 fail-closed 判定——与 RequireTeamScope 同一条规则。
+	ManagedDepartmentIDs []int
 }
 
 // IsMember 是否成员账号。
 func (t TeamIdentity) IsMember() bool { return t.Member != nil }
+
+// ManagesDepartments 该成员是否担任了至少一个部门的负责人。
+func (t TeamIdentity) ManagesDepartments() bool { return len(t.ManagedDepartmentIDs) > 0 }
 
 // AllowsGroup 成员是否可用该分组：白名单为空即继承 owner 全部可见分组。
 func (t TeamIdentity) AllowsGroup(groupID int) bool {
@@ -92,7 +101,20 @@ func ResolveTeamIdentity(ctx context.Context, db *ent.Client, userID int) (TeamI
 	if err != nil {
 		return TeamIdentity{}, err
 	}
-	identity := TeamIdentity{Member: m, Owner: owner, Department: m.Edges.Department}
+	// 负责人身份：一个成员可能同时负责多个部门，也可能负责的不是自己所在的那个。
+	// 只认同一企业主名下的部门，跨企业不可见。
+	managed, err := db.Department.Query().
+		Where(
+			entdepartment.HasManagerWith(entmember.IDEQ(m.ID)),
+			entdepartment.HasOwnerWith(entuser.IDEQ(owner.ID)),
+		).
+		Order(ent.Asc(entdepartment.FieldID)).
+		IDs(ctx)
+	if err != nil {
+		return TeamIdentity{}, err
+	}
+
+	identity := TeamIdentity{Member: m, Owner: owner, Department: m.Edges.Department, ManagedDepartmentIDs: managed}
 	teamIdentityCache.Store(userID, teamIdentityEntry{identity: identity, expiresAt: time.Now().Add(teamIdentityCacheTTL)})
 	return identity, nil
 }
