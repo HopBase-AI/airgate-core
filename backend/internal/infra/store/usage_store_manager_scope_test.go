@@ -29,6 +29,9 @@ func seedManagerScopeLogs(t *testing.T, db *ent.Client, ownerID int) {
 		{"owner-direct", 0, 0},
 		// 未分配部门的成员：不属于任何部门，负责人同样不该看到
 		{"unassigned", 30, 0},
+		// 企业主把自己的一把 key 直挂到部门 3：member=0 但 department=3。
+		// 部门额度就是按这个口径扣的，负责人**应该**看得到，否则部门账对不平。
+		{"owner-key-in-dept", 0, 3},
 	}
 	for _, r := range rows {
 		if _, err := db.UsageLog.Create().
@@ -72,8 +75,8 @@ func TestUsageStoreManagerScope(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListUser: %v", err)
 		}
-		if total != 3 {
-			t.Fatalf("total = %d, want 3（本人 + 部门 3 的两名组员）", total)
+		if total != 4 {
+			t.Fatalf("total = %d, want 4（本人 + 部门 3 的两名组员 + 企业主直挂该部门的 key）", total)
 		}
 		got := modelsOf(records)
 		for _, want := range []string{"self", "teammate-a", "teammate-b"} {
@@ -99,14 +102,29 @@ func TestUsageStoreManagerScope(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListUser: %v", err)
 		}
-		if total != 4 {
-			t.Fatalf("total = %d, want 4（本人 + 两个部门全员，不含企业主本人与未分配）", total)
+		if total != 5 {
+			t.Fatalf("total = %d, want 5（本人 + 两个部门全员 + 企业主直挂部门 3 的 key）", total)
 		}
 	})
 
 	// 最敏感的一条：负责人是下级，绝不能看到企业主自己的消耗。
 	// 企业主直接消耗的 member_id 与 department_id 都是 0，两个子句都不该命中。
-	t.Run("负责人看不到企业主本人的消耗", func(t *testing.T) {
+	// 口径澄清：不可见的是「企业主不挂任何部门的消耗」，不是「所有 member=0 的记录」。
+	// 企业主把 key 直挂到某部门时，那笔消耗计入该部门额度，负责人看得到才对得上账。
+	t.Run("企业主直挂本部门的 key 负责人看得到", func(t *testing.T) {
+		records, _, err := store.ListUser(ctx, int64(owner.ID), appusage.ListFilter{
+			Page: 1, PageSize: 50,
+			Manager: &appusage.ManagerScope{MemberID: 7, DepartmentIDs: []int64{3}},
+		})
+		if err != nil {
+			t.Fatalf("ListUser: %v", err)
+		}
+		if !modelsOf(records)["owner-key-in-dept"] {
+			t.Fatal("企业主直挂本部门的 key 其消耗应可见，否则部门账对不平")
+		}
+	})
+
+	t.Run("负责人看不到企业主未挂部门的消耗", func(t *testing.T) {
 		records, _, err := store.ListUser(ctx, int64(owner.ID), appusage.ListFilter{
 			Page: 1, PageSize: 50,
 			Manager: &appusage.ManagerScope{MemberID: 7, DepartmentIDs: []int64{3, 5, 9}},
@@ -194,8 +212,8 @@ func TestUsageStoreManagerScope(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListUser: %v", err)
 		}
-		if total != 6 {
-			t.Fatalf("total = %d, want 6（企业主看全员，含自己与未分配）", total)
+		if total != 7 {
+			t.Fatalf("total = %d, want 7（企业主看全员，含自己、未分配与直挂部门的 key）", total)
 		}
 	})
 }

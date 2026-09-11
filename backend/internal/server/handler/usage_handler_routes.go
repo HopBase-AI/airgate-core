@@ -98,7 +98,9 @@ func (h *UsageHandler) UserUsageStats(c *gin.Context) {
 
 	tz := c.Query("tz")
 	// 分层下钻只对完整用户视角开放；客户视角（key 登录）与普通成员会话不返回。
-	// 部门负责人是例外：他要的正是「本部门谁花得多」，没有下钻等于没给可见性。
+	// 部门负责人是例外：范围内的聚合他有权拿。控制台目前还没有传 breakdown 的调用方，
+	// 「本部门谁花得多」是靠列表的成员列与成员筛选回答的；这里先把接口口径放开，
+	// 免得将来加下钻时又要回来改一遍权限。
 	var breakdowns []string
 	if !scoped && (middleware.TeamOwnerID(c) == 0 || managerScope != nil) {
 		breakdowns = parseUsageBreakdown(query.Breakdown)
@@ -411,7 +413,10 @@ func scopedMemberID(c *gin.Context) int64 {
 func sessionUsageScope(c *gin.Context, requestedKey, requestedMember *int64) (apiKeyFilter, memberFilter *int64, scoped bool) {
 	if mid := scopedMemberID(c); mid > 0 {
 		if middleware.TeamOwnerID(c) > 0 && scopedAPIKeyID(c) == 0 {
-			return nil, &mid, false
+			// 成员账号本人登录：保留请求里的密钥筛选。它与 user=owner、成员/负责人范围
+			// 是 AND 关系，筛别人的 key 只会落空，越不了界；丢掉反而让「按密钥筛」
+			// 变成静默无效——负责人选中自己一把 key 却拿到全部门记录，金额会误导对账。
+			return requestedKey, &mid, false
 		}
 		return nil, &mid, true
 	}

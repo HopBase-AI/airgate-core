@@ -10,7 +10,18 @@ import (
 )
 
 // userToResp 将认证域 User 转换为 DTO 响应。
+//
+// 这里也要填 UsageFilters：前端登录后会先用这份响应 setUser、再异步用 /users/me 覆盖，
+// 不填的话那段窗口里筛选能力是 undefined，使用记录页的筛选框会先消失再出现。
+// 本响应没有成员投影（MemberID 为 0），成员身份要等 /users/me 才判得出，
+// 所以负责人的成员筛选仍晚一拍出现——只影响渲染，越权边界始终在服务端。
 func userToResp(user appauth.User) dto.UserResp {
+	resp := userRespWithoutFilters(user)
+	resp.UsageFilters = usageFilterFields(resp, false)
+	return resp
+}
+
+func userRespWithoutFilters(user appauth.User) dto.UserResp {
 	return dto.UserResp{
 		ID:             int64(user.ID),
 		Email:          user.Email,

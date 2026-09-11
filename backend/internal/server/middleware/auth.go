@@ -491,6 +491,17 @@ func TeamOwnerID(c *gin.Context) int {
 	return 0
 }
 
+// ManagedDepartmentIDs 该会话担任负责人的部门 id；不是负责人或断言失败返回 nil。
+// 与用量查询的 ManagerScope 同源，避免「谁能看」与「谁能筛」两套判据漂移。
+func ManagedDepartmentIDs(c *gin.Context) []int {
+	if v, ok := c.Get(CtxKeyManagedDepartmentIDs); ok {
+		if ids, ok := v.([]int); ok {
+			return ids
+		}
+	}
+	return nil
+}
+
 // BillingUserID 返回"按谁付钱"的用户 id：成员账号取企业主，其余取会话用户本人。
 // 用量 / 可用分组 / 报价 / 余额展示都应以它为主体。
 func BillingUserID(c *gin.Context) (int, bool) {

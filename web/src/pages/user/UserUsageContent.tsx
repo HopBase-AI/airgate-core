@@ -235,6 +235,7 @@ export default function UserUsageContent() {
   // 企业主/管理员拿到成员+部门，部门负责人只拿成员（他名下只有一个部门），其余只有密钥。
   // 成员列表数据源 /members 自身已按 teamscope 收敛，负责人调到的就是本部门成员。
   const usageFilters = user?.usage_filters ?? [];
+  const canListKeys = !customerScope && usageFilters.includes('api_key');
   const canListMembers = !customerScope && usageFilters.includes('member');
   const canListDepartments = !customerScope && usageFilters.includes('department');
   const { page, setPage, pageSize, setPageSize } = usePagination(20, 'user.usage');
@@ -279,7 +280,7 @@ export default function UserUsageContent() {
   const { data: apiKeysData } = useQuery({
     queryKey: queryKeys.userKeys('usage-filter'),
     queryFn: () => apikeysApi.list(FETCH_ALL_PARAMS),
-    enabled: !customerScope,
+    enabled: canListKeys,
   });
   const apiKeyOptions = [
     { id: '', label: t('common.all') },
@@ -293,11 +294,13 @@ export default function UserUsageContent() {
     enabled: canListMembers,
     staleTime: 60_000,
   });
-  // member_id=0 是「企业主本人 / 未归属」这一有效取值，要有对应选项
+  // member_id=0 是「企业主本人 / 未归属」这一有效取值，但只对看得到全企业的人有意义：
+  // 部门负责人选它必然查不到东西（范围里没有 member=0 这一支），摆出来只会被读成
+  // 「企业主这段时间没花钱」。用部门筛选能力位判定，它等价于「是不是全企业视角」。
   const memberOptions = [
     { id: '', label: t('common.all') },
     ...(membersData?.list ?? []).map((member) => ({ id: String(member.id), label: member.name })),
-    { id: '0', label: t('usage.owner_self') },
+    ...(canListDepartments ? [{ id: '0', label: t('usage.owner_self') }] : []),
   ];
   const hasMembers = (membersData?.list?.length ?? 0) > 0;
   const selectedMemberLabel = memberOptions.find((item) => item.id === String(filters.member_id ?? ''))?.label ?? t('common.all');
