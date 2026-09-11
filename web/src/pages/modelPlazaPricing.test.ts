@@ -3,11 +3,18 @@ import {
   formatModelPrice,
   hasFixedImagePricingBuckets,
   hasFixedImageTierPrices,
+  isPerSecondPricing,
+  priceUnitOf,
   resolveBucketDiscount,
   officialPriceSymbol,
   resolveFixedImageTierPrices,
   resolvePlazaFixedImageTiers,
+  videoBucketLabel,
+  videoBucketRank,
+  videoPriceCopyKeys,
 } from './modelPlazaPricing';
+import en from '../i18n/en.json';
+import zh from '../i18n/zh.json';
 
 describe('model plaza price formatting', () => {
   it('preserves sub-cent image prices and their discounts', () => {
@@ -113,5 +120,91 @@ describe('基准价币种符号', () => {
   it('官方美元价模型与未声明币种的模型用 $', () => {
     expect(officialPriceSymbol({ currency: 'USD' })).toBe('$');
     expect(officialPriceSymbol({})).toBe('$');
+  });
+});
+
+// ──────────────────────── 视频计价单位 ────────────────────────
+//
+// 回归的是一条真实的客户侧错价展示：wan3.0-video 720P 的 $0.088235 其实是
+// **每秒**，广场却统一标「/ 1M video tokens」——15 秒的片子实际 $1.32，
+// 按 token 读会被少估两个数量级。单位由插件经 price.unit 声明、core 下发 price_unit，
+// seedance 不声明则回落 token，既有展示零回归。
+function translator(pack: Record<string, Record<string, string>>) {
+  return (key: string): string => {
+    const [namespace, leaf] = key.split('.');
+    return pack[namespace ?? '']?.[leaf ?? ''] ?? key;
+  };
+}
+
+const tZh = translator(zh as unknown as Record<string, Record<string, string>>);
+const tEn = translator(en as unknown as Record<string, Record<string, string>>);
+
+describe('视频计价单位', () => {
+  const perSecondModel = { price_unit: 'second' };
+  const tokenModel = { price_unit: 'token' };
+
+  it('未下发 price_unit 的老后端按 token 兜底', () => {
+    expect(priceUnitOf({})).toBe('token');
+    expect(priceUnitOf({ price_unit: ' Second ' })).toBe('second');
+    expect(isPerSecondPricing({})).toBe(false);
+    expect(isPerSecondPricing(perSecondModel)).toBe(true);
+  });
+
+  it('按秒计费的模型给出「每秒」抬头与秒数脚注，绝不出现 video tokens', () => {
+    const { unitKey, noteKey } = videoPriceCopyKeys(perSecondModel);
+    expect(tZh(unitKey)).toBe('计费单价 · 每秒');
+    expect(tZh(noteKey)).toContain('单价 × 计费秒数');
+    expect(tZh(unitKey)).not.toContain('video tokens');
+    expect(tEn(unitKey)).toBe('Billing rate · per second');
+    expect(tEn(unitKey).toLowerCase()).not.toContain('token');
+  });
+
+  it('按 token 计费的模型（seedance）维持原文案', () => {
+    const { unitKey, noteKey } = videoPriceCopyKeys(tokenModel);
+    expect(tZh(unitKey)).toBe('计费单价 · / 1M video tokens');
+    expect(tZh(noteKey)).toContain('video tokens');
+    expect(videoPriceCopyKeys({})).toEqual(videoPriceCopyKeys(tokenModel));
+  });
+});
+
+describe('视频桶标签', () => {
+  it('seedance 的参考图维度维持文生 / 图生视频文案', () => {
+    expect(videoBucketLabel('480p_no_ref', tZh)).toBe('480P · 文生视频');
+    expect(videoBucketLabel('1080p_with_ref', tZh)).toBe('1080P · 图生视频');
+  });
+
+  it('可灵的有无声 / 有无参考视频维度不再被压成同一行', () => {
+    expect(videoBucketLabel('720p_silent_noref', tZh)).toBe('720P · 无声 · 无参考视频');
+    expect(videoBucketLabel('720p_audio_noref', tZh)).toBe('720P · 有声 · 无参考视频');
+    expect(videoBucketLabel('1080p_silent_ref', tZh)).toBe('1080P · 无声 · 含参考视频');
+    expect(videoBucketLabel('4k_voice_noref', tEn)).toBe('4K · Preset voice · No reference video');
+  });
+
+  it('特例桶与只带分辨率的桶不再硬套「文生视频」', () => {
+    expect(videoBucketLabel('motion_control_1080p', tZh)).toBe('动作控制 · 1080P');
+    expect(videoBucketLabel('multi_elements_720p', tZh)).toBe('多元素编辑 · 720P');
+    expect(videoBucketLabel('avatar_720p', tZh)).toBe('数字人 · 720P');
+    expect(videoBucketLabel('lip_sync', tZh)).toBe('对口型');
+    expect(videoBucketLabel('reference_image', tZh)).toBe('参考图 / 张');
+    // 海螺 / 万相 / 快乐马：桶名只有分辨率
+    expect(videoBucketLabel('768p', tZh)).toBe('768P');
+    expect(videoBucketLabel('480p', tZh)).toBe('480P');
+    // Grok：桶名自带 per_second，单位由抬头统一说明
+    expect(videoBucketLabel('720p_per_second', tZh)).toBe('720P');
+    // 认不出的桶原样大写，不编造维度
+    expect(videoBucketLabel('mystery_bucket', tZh)).toBe('MYSTERY_BUCKET');
+  });
+
+  it('展示序：分辨率低→高、无声→有声、无参考→有参考，特例桶垫底', () => {
+    const sorted = [
+      'motion_control_720p', '4k_silent_noref', '720p_audio_noref',
+      '720p_silent_noref', 'lip_sync', '1080p_silent_noref', '768p',
+    ].sort((a, b) => videoBucketRank(a) - videoBucketRank(b));
+    expect(sorted).toEqual([
+      '720p_silent_noref', '720p_audio_noref', '768p', '1080p_silent_noref',
+      '4k_silent_noref', 'motion_control_720p', 'lip_sync',
+    ]);
+    expect(['480p_with_ref', '480p_no_ref'].sort((a, b) => videoBucketRank(a) - videoBucketRank(b)))
+      .toEqual(['480p_no_ref', '480p_with_ref']);
   });
 });

@@ -44,11 +44,18 @@ export interface PublicPricingModel {
   currency?: string;
   official?: { input: number; cached_input?: number; output: number };
   long_context?: PublicModelLongContext;
-  // 视频生成模型的桶价：bucket（<分辨率>_{no,with}_ref）→ $/1M video_tokens。
-  // 有值时按桶铺价，无 input/output。
+  // 视频生成模型的桶价：bucket（如 <分辨率>_{no,with}_ref、<分辨率>_<有无声>_<有无参考>）
+  // → $ / price_unit 指定的一份。有值时按桶铺价，无 input/output。
+  //
+  // ⚠️ 键名里的 video_tokens 是历史遗留，**不代表量纲**：seedance 是每百万 video_tokens，
+  // 可灵 / 海螺 / 万相 / 快乐马是每秒，必须看 price_unit。
   video_tokens?: Record<string, number>;
   // 图片生成模型的按张价：像素档位及参考图（如 le_261w / gt_261w / input_reference）→ $/张。
   image?: Record<string, number>;
+  // 价格的计量单位（core 下发，缺省 "token"）："token" = $/1M token（视频模型即
+  // $/1M video_tokens）；"second" = $/秒（按视频时长计费）；生图模型可为 "image"。
+  // 老后端不下发该字段，展示端按 "token" 兜底（与改动前行为一致）。
+  price_unit?: string;
 }
 
 export interface PublicPlatformPricing {
