@@ -25,6 +25,10 @@ func seedManagerScopeLogs(t *testing.T, db *ent.Client, ownerID int) {
 		{"teammate-a", 11, 3},
 		{"teammate-b", 12, 3},
 		{"outsider", 20, 5},
+		// 企业主本人直接消耗：member_id / department_id 都是 0，负责人绝不该看到
+		{"owner-direct", 0, 0},
+		// 未分配部门的成员：不属于任何部门，负责人同样不该看到
+		{"unassigned", 30, 0},
 	}
 	for _, r := range rows {
 		if _, err := db.UsageLog.Create().
@@ -80,6 +84,11 @@ func TestUsageStoreManagerScope(t *testing.T) {
 		if got["outsider"] {
 			t.Error("看到了别的部门的记录，越权")
 		}
+		for _, forbidden := range []string{"owner-direct", "unassigned"} {
+			if got[forbidden] {
+				t.Errorf("看到了 %q，越权——企业主本人与未分配部门的消耗不属于任何部门", forbidden)
+			}
+		}
 	})
 
 	t.Run("负责多个部门时取并集", func(t *testing.T) {
@@ -91,7 +100,37 @@ func TestUsageStoreManagerScope(t *testing.T) {
 			t.Fatalf("ListUser: %v", err)
 		}
 		if total != 4 {
-			t.Fatalf("total = %d, want 4（本人 + 两个部门全员）", total)
+			t.Fatalf("total = %d, want 4（本人 + 两个部门全员，不含企业主本人与未分配）", total)
+		}
+	})
+
+	// 最敏感的一条：负责人是下级，绝不能看到企业主自己的消耗。
+	// 企业主直接消耗的 member_id 与 department_id 都是 0，两个子句都不该命中。
+	t.Run("负责人看不到企业主本人的消耗", func(t *testing.T) {
+		records, _, err := store.ListUser(ctx, int64(owner.ID), appusage.ListFilter{
+			Page: 1, PageSize: 50,
+			Manager: &appusage.ManagerScope{MemberID: 7, DepartmentIDs: []int64{3, 5, 9}},
+		})
+		if err != nil {
+			t.Fatalf("ListUser: %v", err)
+		}
+		if modelsOf(records)["owner-direct"] {
+			t.Fatal("负责人看到了企业主本人的消耗")
+		}
+	})
+
+	// 负责人的部门 id 万一带上 0，也不能把「未分配」整片捞进来。
+	t.Run("范围里混入部门 0 不得捞出未分配记录", func(t *testing.T) {
+		records, _, err := store.ListUser(ctx, int64(owner.ID), appusage.ListFilter{
+			Page: 1, PageSize: 50,
+			Manager: &appusage.ManagerScope{MemberID: 7, DepartmentIDs: []int64{0, 3}},
+		})
+		if err != nil {
+			t.Fatalf("ListUser: %v", err)
+		}
+		got := modelsOf(records)
+		if got["unassigned"] || got["owner-direct"] {
+			t.Fatalf("部门 0 被当成有效范围捞出了未分配记录：%v", got)
 		}
 	})
 
@@ -155,8 +194,8 @@ func TestUsageStoreManagerScope(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListUser: %v", err)
 		}
-		if total != 4 {
-			t.Fatalf("total = %d, want 4（企业主看全员）", total)
+		if total != 6 {
+			t.Fatalf("total = %d, want 6（企业主看全员，含自己与未分配）", total)
 		}
 	})
 }
