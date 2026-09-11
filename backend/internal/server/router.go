@@ -13,8 +13,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/internal/plugin"
 	"github.com/DouDOU-start/airgate-core/internal/server/blogssr"
+	"github.com/DouDOU-start/airgate-core/internal/server/handler"
 	"github.com/DouDOU-start/airgate-core/internal/server/middleware"
 	"github.com/DouDOU-start/airgate-core/internal/setup"
 	webfs "github.com/DouDOU-start/airgate-core/internal/web"
@@ -30,6 +32,37 @@ const (
 	registerPerHourPerIP = 5.0
 	registerBurstPerIP   = 5
 )
+
+// registerTeamRoutes 注册团队成员与企业组织（部门）路由，并划清两道门禁的边界。
+//
+//   - RequireTeamScope：成员增删改 / 重置本期 + 部门只读 + 企业总览。放行「管理员 / 企业主
+//     （全企业）」与「部门负责人（限本部门）」，把范围写进 context 供 handler 传给 service；
+//     范围本身在 service 层二次校验——路由分组是第一道门，不是唯一一道。
+//   - RequireEnterpriseOwner：组织结构写操作（建 / 改 / 删部门、重置部门本期——含改部门额度
+//     天花板与换负责人）、企业账期、操作审计。部门负责人到不了这里。
+//
+// 审计刻意留在企业主一侧：审计行按 target_type/target_id 记录，要做到"只看本部门"得把成员
+// 改名、调岗、删号后的历史行也可靠地归属回部门，按现有表结构做不到。
+func registerTeamRoutes(parent *gin.RouterGroup, db *ent.Client, member *handler.MemberHandler, department *handler.DepartmentHandler) {
+	scoped := parent.Group("")
+	scoped.Use(middleware.RequireTeamScope(db))
+	scoped.GET("/members", member.ListMembers)
+	scoped.POST("/members", member.CreateMember)
+	scoped.PUT("/members/:id", member.UpdateMember)
+	scoped.DELETE("/members/:id", member.DeleteMember)
+	scoped.POST("/members/:id/reset-period", member.ResetMemberPeriod)
+	scoped.GET("/departments", department.ListDepartments)
+	scoped.GET("/team/overview", department.TeamOverview)
+
+	ownerOnly := parent.Group("")
+	ownerOnly.Use(middleware.RequireEnterpriseOwner(db))
+	ownerOnly.POST("/departments", department.CreateDepartment)
+	ownerOnly.PUT("/departments/:id", department.UpdateDepartment)
+	ownerOnly.DELETE("/departments/:id", department.DeleteDepartment)
+	ownerOnly.POST("/departments/:id/reset-period", department.ResetDepartmentPeriod)
+	ownerOnly.PUT("/team/billing-period", department.UpdateBillingPeriod)
+	ownerOnly.GET("/team/audit-logs", department.ListTeamAuditLogs)
+}
 
 // registerRoutes 注册所有 API 路由
 func (s *Server) registerRoutes() {
@@ -129,24 +162,8 @@ func (s *Server) registerRoutes() {
 		accountGroup.GET("/notifications/me/unread-count", handlers.Notification.UnreadCount)
 		accountGroup.POST("/notifications/me/read", handlers.Notification.MarkRead)
 
-		// 团队成员（企业子账号）：主账号侧增删改、分配额度、重置本期。
-		// 企业客户专属能力,须管理员授予 is_enterprise_owner(管理员天然可用)。
-		memberGroup := accountGroup.Group("")
-		memberGroup.Use(middleware.RequireEnterpriseOwner(s.db))
-		memberGroup.GET("/members", handlers.Member.ListMembers)
-		memberGroup.POST("/members", handlers.Member.CreateMember)
-		memberGroup.PUT("/members/:id", handlers.Member.UpdateMember)
-		memberGroup.DELETE("/members/:id", handlers.Member.DeleteMember)
-		memberGroup.POST("/members/:id/reset-period", handlers.Member.ResetMemberPeriod)
-		// 企业组织（部门）：三层额度的中间层；企业总览 / 账期 / 操作审计同属企业主能力。
-		memberGroup.GET("/departments", handlers.Department.ListDepartments)
-		memberGroup.POST("/departments", handlers.Department.CreateDepartment)
-		memberGroup.PUT("/departments/:id", handlers.Department.UpdateDepartment)
-		memberGroup.DELETE("/departments/:id", handlers.Department.DeleteDepartment)
-		memberGroup.POST("/departments/:id/reset-period", handlers.Department.ResetDepartmentPeriod)
-		memberGroup.GET("/team/overview", handlers.Department.TeamOverview)
-		memberGroup.PUT("/team/billing-period", handlers.Department.UpdateBillingPeriod)
-		memberGroup.GET("/team/audit-logs", handlers.Department.ListTeamAuditLogs)
+		// 团队成员 / 企业组织：两道门禁的边界见 registerTeamRoutes。
+		registerTeamRoutes(accountGroup, s.db, handlers.Member, handlers.Department)
 
 		// API Key 管理
 		accountGroup.GET("/api-keys", handlers.APIKey.ListKeys)

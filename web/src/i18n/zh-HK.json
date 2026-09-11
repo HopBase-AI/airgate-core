@@ -1789,7 +1789,7 @@
     "dept_delete_success": "部門已刪除",
     "dept_manager": "部門負責人",
     "dept_manager_none": "不設負責人",
-    "dept_manager_hint": "負責人只接收本部門及其成員的額度預警，不擁有管理權限",
+    "dept_manager_hint": "負責人接收本部門及其成員的額度預警，並可管理本部門成員（新增 / 修改 / 移除 / 額度 / 停用 / 分組），但不能更改部門額度、帳期與負責人本身。",
     "dept_manager_label": "負責人：{{name}}",
     "remaining": "剩餘 ${{amount}}",
     "overview_balance": "企業餘額",
@@ -1845,7 +1845,12 @@
     "audit_field_billing_day": "帳期日",
     "audit_field_password_reset": "重設密碼",
     "audit_field_note": "備註",
-    "usage_rate": "使用率 {{pct}}%"
+    "usage_rate": "使用率 {{pct}}%",
+    "manager_intro": "你正在管理「{{name}}」部門：可新增、修改與移除本部門成員及其額度；部門額度、帳期與組織架構由企業主設定。",
+    "overview_my_department_quota": "本部門額度",
+    "self_row_readonly": "本人",
+    "self_row_readonly_hint": "你自己的成員紀錄由企業主維護，不能自行調整額度或停用。",
+    "email_locked_hint": "登入電郵由企業主維護，部門負責人不可修改。"
   },
   "setup": {
     "title": "系統安裝向導",

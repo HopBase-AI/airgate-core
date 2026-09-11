@@ -6,13 +6,15 @@ import (
 	"testing"
 
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/DouDOU-start/airgate-core/internal/app/teamscope"
 )
 
 // 带密码即建账号：邮箱小写、密码 bcrypt、白名单去重并只能选企业主可见分组（stub 可见 [1 2 3]）。
 func TestCreateWithPasswordCreatesAccount(t *testing.T) {
 	repo := &stubRepo{}
 	svc := NewService(repo, nil)
-	item, err := svc.Create(context.Background(), 7, CreateInput{
+	item, err := svc.Create(context.Background(), teamscope.Owner(7), CreateInput{
 		Name: "张三", Email: " Zhang.San@Example.com ", Password: "secret6", QuotaUSD: 10,
 		AllowedGroupIDs: []int64{2, 2, 3},
 	})
@@ -53,7 +55,7 @@ func TestCreateWithPasswordValidation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := &stubRepo{emailTaken: tc.taken}
-			_, err := NewService(repo, nil).Create(context.Background(), 7, tc.input)
+			_, err := NewService(repo, nil).Create(context.Background(), teamscope.Owner(7), tc.input)
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("err = %v, want %v", err, tc.want)
 			}
@@ -67,7 +69,7 @@ func TestCreateWithPasswordValidation(t *testing.T) {
 // 不带密码沿用老模型：不建账号，白名单为空表示继承全部。
 func TestCreateWithoutPasswordKeepsLegacyModel(t *testing.T) {
 	repo := &stubRepo{}
-	item, err := NewService(repo, nil).Create(context.Background(), 7, CreateInput{Name: "老成员"})
+	item, err := NewService(repo, nil).Create(context.Background(), teamscope.Owner(7), CreateInput{Name: "老成员"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -86,7 +88,7 @@ func TestUpdateAccountFieldsAndGroups(t *testing.T) {
 	newEmail := "New@Example.com"
 	pw := "newpass6"
 	groups := []int64{1}
-	if _, err := svc.Update(context.Background(), 7, 3, UpdateInput{Email: &newEmail, Password: &pw, AllowedGroupIDs: &groups}); err != nil {
+	if _, err := svc.Update(context.Background(), teamscope.Owner(7), 3, UpdateInput{Email: &newEmail, Password: &pw, AllowedGroupIDs: &groups}); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
 	if repo.accountPatch == nil || repo.accountPatch.Email == nil || *repo.accountPatch.Email != "new@example.com" || repo.accountPatch.PasswordHash == nil {
@@ -103,7 +105,7 @@ func TestUpdateAccountFieldsAndGroups(t *testing.T) {
 	repo2 := &stubRepo{find: Member{ID: 3, OwnerID: 7, AccountUserID: 42, AccountEmail: "old@example.com"}}
 	empty := ""
 	same := "old@example.com"
-	if _, err := NewService(repo2, nil).Update(context.Background(), 7, 3, UpdateInput{Email: &same, Password: &empty}); err != nil {
+	if _, err := NewService(repo2, nil).Update(context.Background(), teamscope.Owner(7), 3, UpdateInput{Email: &same, Password: &empty}); err != nil {
 		t.Fatalf("Update(noop): %v", err)
 	}
 	if repo2.accountPatch != nil {
@@ -112,13 +114,13 @@ func TestUpdateAccountFieldsAndGroups(t *testing.T) {
 
 	// 老模型成员改密码 → ErrMemberNoAccount
 	repo3 := &stubRepo{find: Member{ID: 4, OwnerID: 7}}
-	if _, err := NewService(repo3, nil).Update(context.Background(), 7, 4, UpdateInput{Password: &pw}); !errors.Is(err, ErrMemberNoAccount) {
+	if _, err := NewService(repo3, nil).Update(context.Background(), teamscope.Owner(7), 4, UpdateInput{Password: &pw}); !errors.Is(err, ErrMemberNoAccount) {
 		t.Fatalf("err = %v, want ErrMemberNoAccount", err)
 	}
 	// 清空白名单 = 继承全部
 	repo4 := &stubRepo{find: Member{ID: 5, OwnerID: 7}}
 	none := []int64{}
-	if _, err := NewService(repo4, nil).Update(context.Background(), 7, 5, UpdateInput{AllowedGroupIDs: &none}); err != nil {
+	if _, err := NewService(repo4, nil).Update(context.Background(), teamscope.Owner(7), 5, UpdateInput{AllowedGroupIDs: &none}); err != nil {
 		t.Fatalf("Update(clear groups): %v", err)
 	}
 	if !repo4.updated.HasAllowedGroupIDs || len(repo4.updated.AllowedGroupIDs) != 0 {
@@ -130,26 +132,26 @@ func TestUpdateAccountFieldsAndGroups(t *testing.T) {
 // 编辑时有账号的成员不能把额度改回 0，老成员不受限。
 func TestQuotaRequiredOnlyForAccountMembers(t *testing.T) {
 	ctx := context.Background()
-	if _, err := NewService(&stubRepo{}, nil).Create(ctx, 7, CreateInput{Name: "a", Email: "a@b.co", Password: "secret6"}); !errors.Is(err, ErrQuotaRequired) {
+	if _, err := NewService(&stubRepo{}, nil).Create(ctx, teamscope.Owner(7), CreateInput{Name: "a", Email: "a@b.co", Password: "secret6"}); !errors.Is(err, ErrQuotaRequired) {
 		t.Fatalf("带密码额度 0 err = %v, want ErrQuotaRequired", err)
 	}
-	if _, err := NewService(&stubRepo{}, nil).Create(ctx, 7, CreateInput{Name: "a", Email: "a@b.co", Password: "secret6", QuotaUSD: 10}); err != nil {
+	if _, err := NewService(&stubRepo{}, nil).Create(ctx, teamscope.Owner(7), CreateInput{Name: "a", Email: "a@b.co", Password: "secret6", QuotaUSD: 10}); err != nil {
 		t.Fatalf("带密码额度 10 应成功: %v", err)
 	}
-	if _, err := NewService(&stubRepo{}, nil).Create(ctx, 7, CreateInput{Name: "老成员"}); err != nil {
+	if _, err := NewService(&stubRepo{}, nil).Create(ctx, teamscope.Owner(7), CreateInput{Name: "老成员"}); err != nil {
 		t.Fatalf("老模型额度 0 应成功: %v", err)
 	}
 
 	zero := 0.0
 	repo := &stubRepo{find: Member{ID: 3, OwnerID: 7, AccountUserID: 42, AccountEmail: "old@example.com", QuotaUSD: 10}}
-	if _, err := NewService(repo, nil).Update(ctx, 7, 3, UpdateInput{QuotaUSD: &zero}); !errors.Is(err, ErrQuotaRequired) {
+	if _, err := NewService(repo, nil).Update(ctx, teamscope.Owner(7), 3, UpdateInput{QuotaUSD: &zero}); !errors.Is(err, ErrQuotaRequired) {
 		t.Fatalf("有账号成员改额度 0 err = %v, want ErrQuotaRequired", err)
 	}
 	if repo.updated.QuotaUSD != nil {
 		t.Fatalf("校验失败不应落库: %+v", repo.updated)
 	}
 	legacy := &stubRepo{find: Member{ID: 4, OwnerID: 7, QuotaUSD: 10}}
-	if _, err := NewService(legacy, nil).Update(ctx, 7, 4, UpdateInput{QuotaUSD: &zero}); err != nil {
+	if _, err := NewService(legacy, nil).Update(ctx, teamscope.Owner(7), 4, UpdateInput{QuotaUSD: &zero}); err != nil {
 		t.Fatalf("老模型成员改额度 0 应成功: %v", err)
 	}
 	if legacy.updated.QuotaUSD == nil || *legacy.updated.QuotaUSD != 0 {

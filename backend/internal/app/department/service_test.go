@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/DouDOU-start/airgate-core/internal/app/audit"
+	"github.com/DouDOU-start/airgate-core/internal/app/teamscope"
 )
 
 type stubRepo struct {
@@ -20,6 +21,10 @@ type stubRepo struct {
 	setAnchor *time.Time
 	deleted   int
 	audits    []audit.Entry
+	// periodUsage* 记录 DepartmentPeriodUsage 被问到的租户与部门，校验负责人总览按部门聚合
+	// 且带企业主闸门。
+	periodUsageOwner int
+	periodUsageDept  int
 }
 
 func (s *stubRepo) ListByOwner(_ context.Context, _ int, _ ListFilter) ([]Department, int64, error) {
@@ -90,6 +95,10 @@ func (s *stubRepo) OwnerOverview(_ context.Context, _ int) (float64, int, float6
 func (s *stubRepo) OwnerPeriodUsage(_ context.Context, _ int, _ time.Time) (float64, float64, error) {
 	return 55, 60, nil
 }
+func (s *stubRepo) DepartmentPeriodUsage(_ context.Context, ownerID, id int, _ time.Time) (float64, float64, error) {
+	s.periodUsageOwner, s.periodUsageDept = ownerID, id
+	return 11, 12, nil
+}
 func (s *stubRepo) Record(_ context.Context, e audit.Entry) { s.audits = append(s.audits, e) }
 
 func TestCreateInheritsOwnerAnchorAndAlignsPeriodStart(t *testing.T) {
@@ -97,7 +106,7 @@ func TestCreateInheritsOwnerAnchorAndAlignsPeriodStart(t *testing.T) {
 	repo := &stubRepo{anchor: anchor}
 	svc := NewService(repo, repo)
 	svc.now = func() time.Time { return time.Date(2026, 9, 9, 10, 0, 0, 0, time.UTC) }
-	item, err := svc.Create(context.Background(), 7, CreateInput{Name: " 研发部 ", QuotaUSD: 600})
+	item, err := svc.Create(context.Background(), teamscope.Owner(7), CreateInput{Name: " 研发部 ", QuotaUSD: 600})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -122,16 +131,16 @@ func TestCreateInheritsOwnerAnchorAndAlignsPeriodStart(t *testing.T) {
 func TestCreateRejectsDuplicateNameAndBadInput(t *testing.T) {
 	repo := &stubRepo{nameTaken: true, anchor: time.Now()}
 	svc := NewService(repo, nil)
-	if _, err := svc.Create(context.Background(), 7, CreateInput{Name: "研发部"}); !errors.Is(err, ErrNameTaken) {
+	if _, err := svc.Create(context.Background(), teamscope.Owner(7), CreateInput{Name: "研发部"}); !errors.Is(err, ErrNameTaken) {
 		t.Fatalf("err = %v, want ErrNameTaken", err)
 	}
-	if _, err := svc.Create(context.Background(), 7, CreateInput{Name: "  "}); !errors.Is(err, ErrNameRequired) {
+	if _, err := svc.Create(context.Background(), teamscope.Owner(7), CreateInput{Name: "  "}); !errors.Is(err, ErrNameRequired) {
 		t.Fatalf("err = %v, want ErrNameRequired", err)
 	}
-	if _, err := svc.Create(context.Background(), 7, CreateInput{Name: "x", QuotaUSD: -1}); !errors.Is(err, ErrInvalidQuota) {
+	if _, err := svc.Create(context.Background(), teamscope.Owner(7), CreateInput{Name: "x", QuotaUSD: -1}); !errors.Is(err, ErrInvalidQuota) {
 		t.Fatalf("err = %v, want ErrInvalidQuota", err)
 	}
-	if _, err := svc.Create(context.Background(), 7, CreateInput{Name: "x", QuotaPeriod: "weekly"}); !errors.Is(err, ErrInvalidQuotaPeriod) {
+	if _, err := svc.Create(context.Background(), teamscope.Owner(7), CreateInput{Name: "x", QuotaPeriod: "weekly"}); !errors.Is(err, ErrInvalidQuotaPeriod) {
 		t.Fatalf("err = %v, want ErrInvalidQuotaPeriod", err)
 	}
 }
@@ -146,7 +155,7 @@ func TestListDecoratesCountsAndUsage(t *testing.T) {
 	}}
 	svc := NewService(repo, nil)
 	svc.now = func() time.Time { return now }
-	result, err := svc.List(context.Background(), 7, ListFilter{}, "Asia/Shanghai")
+	result, err := svc.List(context.Background(), teamscope.Owner(7), ListFilter{}, "Asia/Shanghai")
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -162,10 +171,10 @@ func TestSetBillingDayValidatesAndSyncsAnchor(t *testing.T) {
 	repo := &stubRepo{anchor: time.Date(2026, 7, 3, 14, 22, 0, 0, time.UTC)}
 	svc := NewService(repo, repo)
 	svc.now = func() time.Time { return time.Date(2026, 9, 9, 10, 0, 0, 0, time.UTC) }
-	if _, err := svc.SetBillingDay(context.Background(), 7, 31, "UTC"); !errors.Is(err, ErrInvalidBillingDay) {
+	if _, err := svc.SetBillingDay(context.Background(), teamscope.Owner(7), 31, "UTC"); !errors.Is(err, ErrInvalidBillingDay) {
 		t.Fatalf("day 31 must be rejected: %v", err)
 	}
-	overview, err := svc.SetBillingDay(context.Background(), 7, 15, "Asia/Shanghai")
+	overview, err := svc.SetBillingDay(context.Background(), teamscope.Owner(7), 15, "Asia/Shanghai")
 	if err != nil {
 		t.Fatalf("SetBillingDay: %v", err)
 	}
@@ -193,10 +202,10 @@ func TestUpdateAndDeleteRecordAudit(t *testing.T) {
 	svc := NewService(repo, repo)
 	name := "新名"
 	quota := 20.0
-	if _, err := svc.Update(context.Background(), 7, 3, UpdateInput{Name: &name, QuotaUSD: &quota}); err != nil {
+	if _, err := svc.Update(context.Background(), teamscope.Owner(7), 3, UpdateInput{Name: &name, QuotaUSD: &quota}); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
-	if err := svc.Delete(context.Background(), 7, 3); err != nil {
+	if err := svc.Delete(context.Background(), teamscope.Owner(7), 3); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if repo.deleted != 3 || len(repo.audits) != 2 {
@@ -216,14 +225,14 @@ func TestUpdateManagerMustBeMemberOfDepartment(t *testing.T) {
 	svc := NewService(repo, repo)
 	ctx := context.Background()
 	outsider := int64(9)
-	if _, err := svc.Update(ctx, 7, 3, UpdateInput{ManagerMemberID: &outsider}); !errors.Is(err, ErrManagerNotInDepartment) {
+	if _, err := svc.Update(ctx, teamscope.Owner(7), 3, UpdateInput{ManagerMemberID: &outsider}); !errors.Is(err, ErrManagerNotInDepartment) {
 		t.Fatalf("err = %v, want ErrManagerNotInDepartment", err)
 	}
 	if repo.updated.HasManagerMemberID {
 		t.Fatalf("rejected manager must not reach the store")
 	}
 	repo.inDept = true
-	if _, err := svc.Update(ctx, 7, 3, UpdateInput{ManagerMemberID: &outsider}); err != nil {
+	if _, err := svc.Update(ctx, teamscope.Owner(7), 3, UpdateInput{ManagerMemberID: &outsider}); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
 	if !repo.updated.HasManagerMemberID || repo.updated.ManagerMemberID == nil || *repo.updated.ManagerMemberID != 9 {
@@ -233,14 +242,14 @@ func TestUpdateManagerMustBeMemberOfDepartment(t *testing.T) {
 		t.Fatalf("audit snapshot must carry manager_member_id, got %v", got)
 	}
 	clear := int64(0)
-	if _, err := svc.Update(ctx, 7, 3, UpdateInput{ManagerMemberID: &clear}); err != nil {
+	if _, err := svc.Update(ctx, teamscope.Owner(7), 3, UpdateInput{ManagerMemberID: &clear}); err != nil {
 		t.Fatalf("Update clear: %v", err)
 	}
 	if !repo.updated.HasManagerMemberID || repo.updated.ManagerMemberID != nil {
 		t.Fatalf("clear mutation = %+v", repo.updated)
 	}
 	// nil = 不动
-	if _, err := svc.Update(ctx, 7, 3, UpdateInput{}); err != nil {
+	if _, err := svc.Update(ctx, teamscope.Owner(7), 3, UpdateInput{}); err != nil {
 		t.Fatalf("Update noop: %v", err)
 	}
 	if repo.updated.HasManagerMemberID {

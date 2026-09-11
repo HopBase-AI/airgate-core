@@ -38,6 +38,10 @@ type UserResp struct {
 	MemberAllowedGroupIDs []int64 `json:"member_allowed_group_ids,omitempty"`
 	TeamOwnerEmail        string  `json:"team_owner_email,omitempty"`
 	TeamOwnerID           int64   `json:"team_owner_id,omitempty"`
+	// ManagedDepartment* 部门负责人（该成员是某部门的 department_manager）：可管理该部门的成员。
+	// 缺省/0 = 不是负责人。前端据此放行「团队」入口并把页面收敛到这一个部门。
+	ManagedDepartmentID   int64  `json:"managed_department_id,omitempty"`
+	ManagedDepartmentName string `json:"managed_department_name,omitempty"`
 	// 部门层（成员账号）：所属部门与部门本期额度口径；未分配部门时为空。
 	MemberDepartmentID   int64   `json:"member_department_id,omitempty"`
 	MemberDepartmentName string  `json:"member_department_name,omitempty"`

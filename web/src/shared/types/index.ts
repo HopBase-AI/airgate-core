@@ -125,6 +125,12 @@ export interface UserResp {
   team_owner_email?: string;
   /** 后台列表：成员账号所属企业主 id（0/缺省 = 不是成员账号） */
   team_owner_id?: number;
+  /**
+   * 部门负责人：该成员负责的部门（0/缺省 = 不是负责人）。负责人可管理**本部门**成员
+   * （增删改 / 额度 / 停用 / 分组白名单 / 重置本期），但改不了部门本身与自己那条成员记录。
+   */
+  managed_department_id?: number;
+  managed_department_name?: string;
   /** 成员所属部门（0/缺省 = 未分配）与部门本期额度口径（部门不限额时缺省） */
   member_department_id?: number;
   member_department_name?: string;
@@ -680,7 +686,10 @@ export interface DepartmentResp {
   member_quota_total: number;
   today_cost: number;
   thirty_day_cost: number;
-  /** 部门负责人（成员 ID），0 = 未设；只接收本部门额度预警，无管理权限 */
+  /**
+   * 部门负责人（成员 ID），0 = 未设。接收本部门额度预警，并可管理本部门成员；
+   * 改不了部门本身（额度天花板 / 负责人 / 账期），也碰不到别的部门与自己那条成员记录。
+   */
   manager_member_id: number;
   manager_name: string;
   created_at: string;

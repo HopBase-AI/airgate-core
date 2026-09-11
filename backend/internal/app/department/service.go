@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/DouDOU-start/airgate-core/internal/app/audit"
+	"github.com/DouDOU-start/airgate-core/internal/app/teamscope"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/pkg/pagination"
 	"github.com/DouDOU-start/airgate-core/internal/pkg/period"
@@ -14,6 +15,11 @@ import (
 )
 
 // Service 企业组织（部门）应用服务：企业主侧的部门管理、企业总览与账期设置。
+//
+// 每个方法都收 teamscope.Scope：组织结构写操作（建 / 改 / 删部门、重置部门本期）与企业账期
+// **只允许全企业范围**，部门负责人一律 ErrOutOfScope——路由已经拦过一层，这里是第二层，
+// 保证将来任何新调用方都不可能绕过去。只读路径按范围收敛：负责人只看得到自己那个部门，
+// 总览也换成部门口径（企业余额不对负责人暴露）。
 //
 // 部门改额度 / 删除后要立刻反映到转发闸门（鉴权结果有 5s 缓存），因此写操作完成后按
 // 有效部门为该部门的 key 逐个失效缓存，并清空成员账号的团队归属缓存；失效失败不影响写入。
@@ -32,10 +38,20 @@ func NewService(repo Repository, recorder audit.Recorder) *Service {
 }
 
 // List 查询企业主名下的部门，并附带本期已用 / 成员数 / 密钥数 / 已分配 / 今日与近 30 天成本。
-func (s *Service) List(ctx context.Context, ownerID int, filter ListFilter, tz string) (ListResult, error) {
+func (s *Service) List(ctx context.Context, scope teamscope.Scope, filter ListFilter, tz string) (ListResult, error) {
 	logger := sdk.LoggerFromContext(ctx)
+	ownerID := scope.OwnerID
 	page, pageSize := pagination.Normalize(filter.Page, filter.PageSize)
 	filter.Page, filter.PageSize = page, pageSize
+
+	// 部门负责人：列表就是他那一个部门，直接按 id 取，不给分页/关键词留出扫描别人部门的口子。
+	if scope.IsDepartmentManager() {
+		item, err := s.scopedDepartment(ctx, scope, tz)
+		if err != nil {
+			return ListResult{}, err
+		}
+		return ListResult{List: []Department{item}, Total: 1, Page: page, PageSize: pageSize}, nil
+	}
 
 	list, total, err := s.repo.ListByOwner(ctx, ownerID, filter)
 	if err != nil {
@@ -49,9 +65,16 @@ func (s *Service) List(ctx context.Context, ownerID int, filter ListFilter, tz s
 	return ListResult{List: list, Total: total, Page: page, PageSize: pageSize}, nil
 }
 
-// All 企业主名下全部部门（下拉/筛选用，含派生字段）。
-func (s *Service) All(ctx context.Context, ownerID int, tz string) ([]Department, error) {
-	list, err := s.repo.AllByOwner(ctx, ownerID)
+// All 范围内的全部部门（下拉/筛选用，含派生字段）；部门负责人只有自己那一个。
+func (s *Service) All(ctx context.Context, scope teamscope.Scope, tz string) ([]Department, error) {
+	if scope.IsDepartmentManager() {
+		item, err := s.scopedDepartment(ctx, scope, tz)
+		if err != nil {
+			return nil, err
+		}
+		return []Department{item}, nil
+	}
+	list, err := s.repo.AllByOwner(ctx, scope.OwnerID)
 	if err != nil {
 		return nil, err
 	}
@@ -100,9 +123,13 @@ func (s *Service) decorateAll(ctx context.Context, list []Department, tz string)
 	return nil
 }
 
-// Get 查询单个部门（含派生字段，不含成本聚合）。
-func (s *Service) Get(ctx context.Context, ownerID, id int) (Department, error) {
-	item, err := s.repo.FindOwned(ctx, ownerID, id)
+// Get 查询范围内的单个部门（含派生字段，不含成本聚合）。
+// 范围外的部门按"不存在"返回，不泄露该企业还有哪些部门。
+func (s *Service) Get(ctx context.Context, scope teamscope.Scope, id int) (Department, error) {
+	if !scope.AllowsDepartment(id) {
+		return Department{}, ErrDepartmentNotFound
+	}
+	item, err := s.repo.FindOwned(ctx, scope.OwnerID, id)
 	if err != nil {
 		return Department{}, err
 	}
@@ -110,10 +137,27 @@ func (s *Service) Get(ctx context.Context, ownerID, id int) (Department, error) 
 	return item, nil
 }
 
+// scopedDepartment 取部门负责人自己那个部门（含派生字段）。
+func (s *Service) scopedDepartment(ctx context.Context, scope teamscope.Scope, tz string) (Department, error) {
+	item, err := s.repo.FindOwned(ctx, scope.OwnerID, scope.ScopedDepartmentID())
+	if err != nil {
+		return Department{}, err
+	}
+	list := []Department{item}
+	if err := s.decorateAll(ctx, list, tz); err != nil {
+		return Department{}, err
+	}
+	return list[0], nil
+}
+
 // Create 创建部门。额度周期默认 monthly；锚点继承企业账期锚点，本期起点按锚点逐月对齐
 // ——三层「本期」严格同窗，否则会出现部门本期已用小于成员本期已用的父子矛盾。
-func (s *Service) Create(ctx context.Context, ownerID int, input CreateInput) (Department, error) {
+func (s *Service) Create(ctx context.Context, scope teamscope.Scope, input CreateInput) (Department, error) {
 	logger := sdk.LoggerFromContext(ctx)
+	if scope.IsDepartmentManager() {
+		return Department{}, ErrOutOfScope
+	}
+	ownerID := scope.OwnerID
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
 		return Department{}, ErrNameRequired
@@ -166,8 +210,13 @@ func (s *Service) Create(ctx context.Context, ownerID int, input CreateInput) (D
 }
 
 // Update 更新部门资料 / 额度 / 周期 / 负责人。改周期不动锚点；负责人必须是当前在本部门的成员。
-func (s *Service) Update(ctx context.Context, ownerID, id int, input UpdateInput) (Department, error) {
+func (s *Service) Update(ctx context.Context, scope teamscope.Scope, id int, input UpdateInput) (Department, error) {
 	logger := sdk.LoggerFromContext(ctx)
+	// 部门额度天花板是企业主分给该部门的钱，负责人改不得；负责人换人更不能自己改。
+	if scope.IsDepartmentManager() {
+		return Department{}, ErrOutOfScope
+	}
+	ownerID := scope.OwnerID
 	current, err := s.repo.FindOwned(ctx, ownerID, id)
 	if err != nil {
 		return Department{}, err
@@ -236,8 +285,12 @@ func (s *Service) Update(ctx context.Context, ownerID, id int, input UpdateInput
 }
 
 // Delete 删除部门：成员与密钥回落「未分配」，历史用量按快照留在原部门。
-func (s *Service) Delete(ctx context.Context, ownerID, id int) error {
+func (s *Service) Delete(ctx context.Context, scope teamscope.Scope, id int) error {
 	logger := sdk.LoggerFromContext(ctx)
+	if scope.IsDepartmentManager() {
+		return ErrOutOfScope
+	}
+	ownerID := scope.OwnerID
 	current, err := s.repo.FindOwned(ctx, ownerID, id)
 	if err != nil {
 		return err
@@ -264,8 +317,13 @@ func (s *Service) Delete(ctx context.Context, ownerID, id int) error {
 }
 
 // ResetPeriod 手动把部门本期已用清零（不改锚点与周期）。
-func (s *Service) ResetPeriod(ctx context.Context, ownerID, id int) (Department, error) {
+func (s *Service) ResetPeriod(ctx context.Context, scope teamscope.Scope, id int) (Department, error) {
 	logger := sdk.LoggerFromContext(ctx)
+	// 清零部门本期已用 = 给本部门续一整期额度，只能是企业主。
+	if scope.IsDepartmentManager() {
+		return Department{}, ErrOutOfScope
+	}
+	ownerID := scope.OwnerID
 	now := s.now()
 	updated, err := s.repo.ResetPeriodOwned(ctx, ownerID, id, now)
 	if err != nil {
@@ -283,8 +341,13 @@ func (s *Service) ResetPeriod(ctx context.Context, ownerID, id int) (Department,
 }
 
 // Overview 企业层总览：余额、部门/成员数、已分配额度（限额之和）、账期与本期消耗。
-func (s *Service) Overview(ctx context.Context, ownerID int, tz string) (Overview, error) {
+// 部门负责人拿到的是**部门口径**的同形投影（见 departmentOverview）。
+func (s *Service) Overview(ctx context.Context, scope teamscope.Scope, tz string) (Overview, error) {
 	logger := sdk.LoggerFromContext(ctx)
+	if scope.IsDepartmentManager() {
+		return s.departmentOverview(ctx, scope, tz)
+	}
+	ownerID := scope.OwnerID
 	departments, err := s.repo.AllByOwner(ctx, ownerID)
 	if err != nil {
 		logger.Error("team_overview_failed", sdk.LogFieldUserID, ownerID, sdk.LogFieldReason, "departments", sdk.LogFieldError, err)
@@ -299,12 +362,8 @@ func (s *Service) Overview(ctx context.Context, ownerID int, tz string) (Overvie
 	if err != nil {
 		return Overview{}, err
 	}
-	now := s.now()
-	start, end := period.Containing(anchor, now)
-	if now.Before(anchor) {
-		// 过渡态（改了账期日、新锚点未到）：本期延续到新锚点，起点按新锚点往前推一个月近似。
-		start, end = period.AddMonths(anchor, -1), anchor
-	}
+	// 过渡态（改了账期日、新锚点未到）：本期延续到新锚点，起点按新锚点往前推一个月近似。
+	start, end := s.periodWindow(anchor)
 	actual, billed, err := s.repo.OwnerPeriodUsage(ctx, ownerID, start)
 	if err != nil {
 		logger.Error("team_overview_failed", sdk.LogFieldUserID, ownerID, sdk.LogFieldReason, "usage", sdk.LogFieldError, err)
@@ -331,10 +390,63 @@ func (s *Service) Overview(ctx context.Context, ownerID int, tz string) (Overvie
 	return overview, nil
 }
 
+// departmentOverview 部门负责人视角的总览：只算自己那个部门，且**不含企业余额**
+// （余额是企业主的钱，负责人无权知道）。账期沿用企业口径——三层同窗，部门没有自己的账期。
+func (s *Service) departmentOverview(ctx context.Context, scope teamscope.Scope, tz string) (Overview, error) {
+	logger := sdk.LoggerFromContext(ctx)
+	departmentID := scope.ScopedDepartmentID()
+	item, err := s.repo.FindOwned(ctx, scope.OwnerID, departmentID)
+	if err != nil {
+		return Overview{}, err
+	}
+	members, _, memberQuota, err := s.repo.Counts(ctx, []int{departmentID})
+	if err != nil {
+		logger.Error("team_overview_failed", sdk.LogFieldUserID, scope.OwnerID, sdk.LogFieldReason, "counts", sdk.LogFieldError, err)
+		return Overview{}, err
+	}
+	anchor, err := s.repo.OwnerBillingAnchor(ctx, scope.OwnerID)
+	if err != nil {
+		return Overview{}, err
+	}
+	start, end := s.periodWindow(anchor)
+	actual, billed, err := s.repo.DepartmentPeriodUsage(ctx, scope.OwnerID, departmentID, start)
+	if err != nil {
+		logger.Error("team_overview_failed", sdk.LogFieldUserID, scope.OwnerID, sdk.LogFieldReason, "department_usage", sdk.LogFieldError, err)
+		return Overview{}, err
+	}
+	return Overview{
+		DepartmentCount:      1,
+		MemberCount:          members[departmentID],
+		DepartmentQuotaTotal: item.QuotaUSD,
+		MemberQuotaTotal:     memberQuota[departmentID],
+		PeriodAnchor:         anchor,
+		PeriodStart:          start,
+		PeriodEnd:            end,
+		BillingDay:           anchor.In(timezone.Resolve(tz)).Day(),
+		PeriodUsedActual:     actual,
+		PeriodUsedBilled:     billed,
+	}, nil
+}
+
+// periodWindow 企业本期窗口；过渡态（改了账期日、新锚点未到）与 Overview 同口径。
+func (s *Service) periodWindow(anchor time.Time) (time.Time, time.Time) {
+	now := s.now()
+	start, end := period.Containing(anchor, now)
+	if now.Before(anchor) {
+		return period.AddMonths(anchor, -1), anchor
+	}
+	return start, end
+}
+
 // SetBillingDay 把企业账期日改成每月固定日（1~28）：新锚点取严格晚于现在的下一个该日在企业主时区的零点，
 // 当前期延续到新锚点，之后按新账期日按月推进；名下全部部门与成员的锚点同步改动（闲置行先结转旧期）。
-func (s *Service) SetBillingDay(ctx context.Context, ownerID, day int, tz string) (Overview, error) {
+func (s *Service) SetBillingDay(ctx context.Context, scope teamscope.Scope, day int, tz string) (Overview, error) {
 	logger := sdk.LoggerFromContext(ctx)
+	// 账期是全企业口径（改一次全部部门/成员的"本期"都跟着动），只能是企业主。
+	if scope.IsDepartmentManager() {
+		return Overview{}, ErrOutOfScope
+	}
+	ownerID := scope.OwnerID
 	if day < 1 || day > 28 {
 		return Overview{}, ErrInvalidBillingDay
 	}
@@ -355,7 +467,7 @@ func (s *Service) SetBillingDay(ctx context.Context, ownerID, day int, tz string
 		Before: map[string]any{"billing_day": before.Day(), "period_anchor": before},
 		After:  map[string]any{"billing_day": day, "period_anchor": anchor},
 	})
-	return s.Overview(ctx, ownerID, tz)
+	return s.Overview(ctx, scope, tz)
 }
 
 func (s *Service) invalidateCaches(ctx context.Context, departmentID int) {

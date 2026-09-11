@@ -1789,7 +1789,7 @@
     "dept_delete_success": "Department deleted",
     "dept_manager": "Department manager",
     "dept_manager_none": "No manager",
-    "dept_manager_hint": "The manager only receives quota alerts for this department and its members; no management permissions are granted",
+    "dept_manager_hint": "The manager receives budget alerts for this department and its members, and can manage the members of this department (add / edit / remove / budget / disable / groups). They cannot change the department budget, the billing period, or who the manager is.",
     "dept_manager_label": "Manager: {{name}}",
     "remaining": "${{amount}} left",
     "overview_balance": "Company balance",
@@ -1845,7 +1845,12 @@
     "audit_field_billing_day": "Billing day",
     "audit_field_password_reset": "Password reset",
     "audit_field_note": "Note",
-    "usage_rate": "{{pct}}% used"
+    "usage_rate": "{{pct}}% used",
+    "manager_intro": "You manage the \"{{name}}\" department: you can add, edit and remove its members and their budgets. Department budget, billing period and org structure are set by the enterprise owner.",
+    "overview_my_department_quota": "Department budget",
+    "self_row_readonly": "You",
+    "self_row_readonly_hint": "Your own member record is maintained by the enterprise owner — you cannot change your own budget or disable yourself.",
+    "email_locked_hint": "Login emails are maintained by the enterprise owner; department managers cannot change them."
   },
   "setup": {
     "title": "System Setup",

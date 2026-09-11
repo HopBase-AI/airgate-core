@@ -396,26 +396,20 @@ func RequireBlogAuthor(db *ent.Client) gin.HandlerFunc {
 // RequireEnterpriseOwner 允许「管理员 或 被授予 is_enterprise_owner 的用户」访问(需在 JWTAuth 之后)。
 // 团队成员是企业客户专属能力,普通用户不该看到也不该调得动;role 在 JWT 里,
 // is_enterprise_owner 是 DB 字段,故非管理员需按 user_id 查库判定,防绕过前端直接调接口。
+//
+// 组织结构写操作(建/改/删部门、部门重置本期)、企业账期与操作审计只认这道门——部门负责人
+// 经 RequireTeamScope 拿到的是单部门范围,到不了这里。放行时同样写入全企业范围,
+// 让两组路由的 handler 取范围的方式一致。
 func RequireEnterpriseOwner(db *ent.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if role, _ := c.Get(CtxKeyRole); role == "admin" {
-			c.Next()
-			return
-		}
-		uid, ok := c.Get(CtxKeyUserID)
-		userID, ok2 := uid.(int)
-		if !ok || !ok2 || userID <= 0 {
+		scope, ok := ownerScope(c, db)
+		if !ok {
+			slog.Warn("enterprise_owner_access_denied", sdk.LogFieldUserID, currentSessionUserID(c), sdk.LogFieldRequestID, RequestIDFromGinContext(c))
 			response.Forbidden(c, "无权管理团队成员")
 			c.Abort()
 			return
 		}
-		u, err := db.User.Get(c.Request.Context(), userID)
-		if err != nil || !u.IsEnterpriseOwner {
-			slog.Warn("enterprise_owner_access_denied", sdk.LogFieldUserID, userID, sdk.LogFieldRequestID, RequestIDFromGinContext(c))
-			response.Forbidden(c, "无权管理团队成员")
-			c.Abort()
-			return
-		}
+		c.Set(CtxKeyTeamScope, scope)
 		c.Next()
 	}
 }

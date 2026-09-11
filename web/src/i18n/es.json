@@ -1789,7 +1789,7 @@
     "dept_delete_success": "Departamento eliminado",
     "dept_manager": "Responsable del departamento",
     "dept_manager_none": "Sin responsable",
-    "dept_manager_hint": "El responsable solo recibe las alertas de cuota de este departamento y sus miembros; no tiene permisos de administración",
+    "dept_manager_hint": "El responsable recibe las alertas de presupuesto del departamento y de sus miembros, y puede gestionar los miembros de este departamento (añadir / editar / eliminar / presupuesto / desactivar / grupos). No puede cambiar el presupuesto del departamento, el periodo de facturación ni quién es el responsable.",
     "dept_manager_label": "Responsable: {{name}}",
     "remaining": "Quedan ${{amount}}",
     "overview_balance": "Saldo de la empresa",
@@ -1845,7 +1845,12 @@
     "audit_field_billing_day": "Día de facturación",
     "audit_field_password_reset": "Restablecer contraseña",
     "audit_field_note": "Nota",
-    "usage_rate": "{{pct}}% usado"
+    "usage_rate": "{{pct}}% usado",
+    "manager_intro": "Gestionas el departamento «{{name}}»: puedes añadir, editar y eliminar sus miembros y sus presupuestos. El presupuesto del departamento, el periodo de facturación y la estructura organizativa los define el titular de la empresa.",
+    "overview_my_department_quota": "Presupuesto del departamento",
+    "self_row_readonly": "Tú",
+    "self_row_readonly_hint": "Tu propio registro de miembro lo mantiene el titular de la empresa: no puedes cambiar tu presupuesto ni desactivarte.",
+    "email_locked_hint": "Los correos de inicio de sesión los mantiene el titular de la empresa; los responsables de departamento no pueden cambiarlos."
   },
   "setup": {
     "title": "Configuración del sistema",

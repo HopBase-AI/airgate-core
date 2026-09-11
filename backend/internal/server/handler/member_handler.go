@@ -24,6 +24,8 @@ func (h *MemberHandler) handleError(logMessage, publicMessage string, err error)
 	switch {
 	case errors.Is(err, appmember.ErrMemberNotFound):
 		return 404, err.Error()
+	case errors.Is(err, appmember.ErrOutOfScope):
+		return 403, err.Error()
 	case errors.Is(err, appmember.ErrEmailAlreadyExists):
 		return 409, err.Error()
 	case errors.Is(err, appmember.ErrNameRequired),

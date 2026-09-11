@@ -145,4 +145,8 @@ type Repository interface {
 	OwnerOverview(ctx context.Context, ownerID int) (balance float64, memberCount int, memberQuotaTotal, unassignedMemberQuota float64, err error)
 	// OwnerPeriodUsage 企业在 [start, now) 内的真实/账面消耗（全部 usage_logs.user=owner）。
 	OwnerPeriodUsage(ctx context.Context, ownerID int, start time.Time) (actual, billed float64, err error)
+	// DepartmentPeriodUsage 单个部门在 [start, now) 内的真实/账面消耗（按 usage_logs.department_id
+	// 快照列聚合，口径同 Usage）；部门负责人的总览用它替代企业口径。
+	// ownerID 是租户闸门：department_id 是裸快照列，实现须同时按企业主限定。
+	DepartmentPeriodUsage(ctx context.Context, ownerID, departmentID int, start time.Time) (actual, billed float64, err error)
 }

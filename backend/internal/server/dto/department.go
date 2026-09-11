@@ -21,7 +21,9 @@ type DepartmentResp struct {
 	MemberQuotaTotal float64 `json:"member_quota_total"`
 	TodayCost        float64 `json:"today_cost"`
 	ThirtyDayCost    float64 `json:"thirty_day_cost"`
-	// ManagerMemberID 部门负责人（成员 ID），0 = 未设；只接收本部门额度预警，无管理权限。
+	// ManagerMemberID 部门负责人（成员 ID），0 = 未设。负责人接收本部门额度预警，
+	// 并可管理本部门成员（增删改 / 额度 / 停用 / 分组白名单 / 重置本期），
+	// 但改不了部门本身（额度天花板 / 负责人 / 账期），也碰不到别的部门与自己那条成员记录。
 	ManagerMemberID int64  `json:"manager_member_id"`
 	ManagerName     string `json:"manager_name"`
 	TimeMixin

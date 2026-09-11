@@ -5,6 +5,7 @@ import { useIsFetching, useQuery } from '@tanstack/react-query';
 import { Button, Dropdown, Link as HeroLink, Tooltip } from '@heroui/react';
 import { useAuth } from '../providers/AuthProvider';
 import { getTokenRole } from '../../shared/api/client';
+import { resolveTeamAccess } from '../../shared/teamAccess';
 import { pluginsApi } from '../../shared/api/plugins';
 import { queryKeys } from '../../shared/queryKeys';
 import { useTheme } from '../providers/ThemeProvider';
@@ -272,12 +273,16 @@ export function AppShell({ children }: AppShellProps) {
   // 团队成员账号：正常用户菜单，但不挂「团队管理」（不是企业主）与「我的邀请」（消耗记在企业主名下，不做分销主体）；
   // 插件页（充值 / 充值记录等）同样不挂——成员没有自己的余额，充值只会落到企业主名下。
   const isTeamMember = !isAPIKeySession && (user?.member_id ?? 0) > 0;
+  // 例外：部门负责人（成员账号 + managed_department_id）要挂「团队管理」，但只看得到自己那个部门，
+  // 也没有操作审计（审计是企业主能力，见 teamAccess）。
+  const teamAccess = resolveTeamAccess(user, getTokenRole());
   // 企业主(非管理员):挂「团队管理」,但与成员一样不挂「我的邀请」与充值类插件页——企业客户走对公结算。
   const isEnterpriseOwner = !isAPIKeySession && !isTeamMember && !isAdmin && !!user?.is_enterprise_owner;
   const hideBillingPages = isTeamMember || isEnterpriseOwner;
   const { adminItems: pluginAdminItems, userItems: pluginUserItems } = usePluginMenuItems(isAdmin, isAPIKeySession, hideBillingPages);
   const sections = useMemo(() => {
-    const showTeam = !isAPIKeySession && !isTeamMember && (isAdmin || !!user?.is_enterprise_owner);
+    const showTeam = teamAccess.canOpenTeam;
+    const teamItems = showTeam ? [teamMenuItem, ...(teamAccess.canViewAudit ? [teamAuditMenuItem] : [])] : [];
     const showInvite = site.referral_enabled && !hideBillingPages;
     // 插件页按 usePluginMenuItems 的约定拆成「工作台」与「账户」两段(账户段首项带 nav.section_account)。
     const accountStart = pluginUserItems.findIndex((item) => item.sectionKey === 'nav.section_account');
@@ -292,7 +297,7 @@ export function AppShell({ children }: AppShellProps) {
     // 管理员视图:管理分组 + 插件分组之后,个人项合成一个「个人中心」块(沿用旧结构,只是不再有个人资料)。
     const adminUserItems = [
       ...userMenuItems.filter((item) => item.path !== '/'),
-      ...(showTeam ? [teamMenuItem, teamAuditMenuItem] : []),
+      ...teamItems,
       ...accountSectionItems,
     ].map((item, i) => (i === 0 ? { ...stripSection(item), sectionKey: 'nav.personal' } : stripSection(item)));
     // 非管理员但被授予 can_author_blog 的用户,在个人菜单最后挂出「博客」入口(营销段)。
@@ -303,7 +308,7 @@ export function AppShell({ children }: AppShellProps) {
         ? [...adminMenuItems, ...pluginAdminItems, ...adminUserItems]
         : [
           ...userMenuItems,
-          ...(showTeam ? [teamMenuItem, teamAuditMenuItem] : []),
+          ...teamItems,
           ...pluginWorkspaceItems,
           ...accountSectionItems,
           ...(canBlog ? [blogAuthorMenuItem] : []),
@@ -325,7 +330,7 @@ export function AppShell({ children }: AppShellProps) {
     });
 
     return nextSections;
-  }, [isAPIKeySession, isTeamMember, hideBillingPages, isAdmin, user?.can_author_blog, user?.is_enterprise_owner, pluginAdminItems, pluginUserItems, site.referral_enabled]);
+  }, [isAPIKeySession, hideBillingPages, isAdmin, teamAccess.canOpenTeam, teamAccess.canViewAudit, user?.can_author_blog, pluginAdminItems, pluginUserItems, site.referral_enabled]);
 
   // 团队成员的密钥会话优先显示成员名，其次才是密钥名
   const displayName = user?.member_name || user?.api_key_name || user?.username || user?.email?.split('@')[0] || site.site_name || 'HopBase';

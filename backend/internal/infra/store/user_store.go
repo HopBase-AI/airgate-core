@@ -7,6 +7,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent"
 	entapikey "github.com/DouDOU-start/airgate-core/ent/apikey"
 	entbalancelog "github.com/DouDOU-start/airgate-core/ent/balancelog"
+	entdepartment "github.com/DouDOU-start/airgate-core/ent/department"
 	entmember "github.com/DouDOU-start/airgate-core/ent/member"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
 	entusagelog "github.com/DouDOU-start/airgate-core/ent/usagelog"
@@ -683,6 +684,18 @@ func (s *UserStore) MembershipBrief(ctx context.Context, userID int) (appuser.Me
 			brief.DepartmentLimited = true
 			brief.DepartmentUsedQuota = d.QuotaUsd - remaining
 		}
+	}
+	// 部门负责人：以该成员为负责人的部门（DB 未对 department_manager 加唯一约束，
+	// 查到多行按"范围不唯一"处理，与 middleware.RequireTeamScope 的 fail-closed 一致）。
+	managed, err := s.db.Department.Query().
+		Where(entdepartment.HasManagerWith(entmember.IDEQ(m.ID))).
+		All(ctx)
+	if err != nil {
+		return appuser.MembershipBrief{}, false, err
+	}
+	if len(managed) == 1 {
+		brief.ManagedDepartmentID = managed[0].ID
+		brief.ManagedDepartmentName = managed[0].Name
 	}
 	identity := auth.TeamIdentity{Member: m, Owner: m.Edges.Owner, Department: m.Edges.Department}
 	brief.EffectiveRemaining, brief.EffectiveLimited = identity.EffectiveRemaining(now)

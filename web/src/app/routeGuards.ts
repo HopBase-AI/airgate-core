@@ -2,6 +2,7 @@ import { redirect } from '@tanstack/react-router';
 import { getToken, getTokenRole } from '../shared/api/client';
 import { setupApi } from '../shared/api/setup';
 import { usersApi } from '../shared/api/users';
+import { resolveTeamAccess } from '../shared/teamAccess';
 
 // 缓存安装状态，避免每次路由跳转都请求 /setup/status。
 const SETUP_COMPLETE_STORAGE_KEY = 'airgate:setup:complete';
@@ -110,7 +111,44 @@ export function checkAdmin(): void | Promise<void> {
   });
 }
 
-// 团队成员守卫：管理员 或 被授予 is_enterprise_owner 的用户可进入 /team。
+// 团队页守卫：管理员 / 企业主 / 部门负责人可进入 /team（与后端 RequireTeamScope 一致）。
+// /team/audit 仍只对管理员与企业主开放（后端 RequireEnterpriseOwner），见 checkEnterpriseOwner。
+let teamAccessVerified = false;
+let teamAccessVerifiedToken: string | null = null;
+let teamAccessCheckPromise: Promise<void> | null = null;
+let teamAccessCheckToken: string | null = null;
+
+export function checkTeamAccess(): void | Promise<void> {
+  const token = getToken();
+  if (getTokenRole(token) === 'admin') {
+    teamAccessVerified = true;
+    teamAccessVerifiedToken = token;
+    return;
+  }
+
+  if (teamAccessVerified && teamAccessVerifiedToken === token) return;
+  if (teamAccessCheckPromise && teamAccessCheckToken === token) return teamAccessCheckPromise;
+
+  teamAccessCheckToken = token;
+  teamAccessCheckPromise = (async () => {
+    const user = await usersApi.me();
+    if (!resolveTeamAccess(user, getTokenRole(token)).canOpenTeam) {
+      throw redirect({ to: '/' });
+    }
+    teamAccessVerified = true;
+    teamAccessVerifiedToken = token;
+  })();
+
+  const p = teamAccessCheckPromise;
+  return p.finally(() => {
+    if (teamAccessCheckPromise === p) {
+      teamAccessCheckPromise = null;
+      teamAccessCheckToken = null;
+    }
+  });
+}
+
+// 企业主守卫：管理员 或 被授予 is_enterprise_owner 的用户（团队操作审计 /team/audit）。
 // 与后端 RequireEnterpriseOwner 一致，防止直接敲 URL 进到一个必然 403 的空页面。
 let enterpriseOwnerVerified = false;
 let enterpriseOwnerVerifiedToken: string | null = null;
@@ -188,6 +226,14 @@ export function resetAdminCache() {
   adminVerifiedToken = null;
   adminCheckPromise = null;
   adminCheckToken = null;
+  teamAccessVerified = false;
+  teamAccessVerifiedToken = null;
+  teamAccessCheckPromise = null;
+  teamAccessCheckToken = null;
+  enterpriseOwnerVerified = false;
+  enterpriseOwnerVerifiedToken = null;
+  enterpriseOwnerCheckPromise = null;
+  enterpriseOwnerCheckToken = null;
   blogAuthorVerified = false;
   blogAuthorVerifiedToken = null;
   blogAuthorCheckPromise = null;

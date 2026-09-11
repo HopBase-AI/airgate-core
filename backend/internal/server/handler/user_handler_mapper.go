@@ -104,6 +104,8 @@ func applyMembershipToUserResp(resp *dto.UserResp, brief appuser.MembershipBrief
 	resp.TeamOwnerEmail = brief.OwnerEmail
 	resp.MemberDepartmentID = int64(brief.DepartmentID)
 	resp.MemberDepartmentName = brief.DepartmentName
+	resp.ManagedDepartmentID = int64(brief.ManagedDepartmentID)
+	resp.ManagedDepartmentName = brief.ManagedDepartmentName
 	if brief.DepartmentLimited {
 		resp.DepartmentQuotaUSD = brief.DepartmentQuotaUSD
 		resp.DepartmentUsedQuota = brief.DepartmentUsedQuota

@@ -255,6 +255,11 @@ type MembershipBrief struct {
 	OwnerEmail      string
 	OwnerBalance    float64
 	OwnerMaxConc    int
+	// ManagedDepartmentID 该成员负责（departments.department_manager 指向自己）的部门，
+	// 0 = 不是部门负责人。前端据此放行「团队」入口并把页面收敛到这一个部门；
+	// 负责多个部门时刻意返回 0，与后端 RequireTeamScope 的 fail-closed 判定保持一致。
+	ManagedDepartmentID   int
+	ManagedDepartmentName string
 	// 部门层：成员所属部门（0=未分配）与部门本期剩余（DepartmentLimited=false 表示部门不限额）。
 	DepartmentID        int
 	DepartmentName      string

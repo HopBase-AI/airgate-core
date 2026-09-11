@@ -1789,7 +1789,7 @@
     "dept_delete_success": "部门已删除",
     "dept_manager": "部门负责人",
     "dept_manager_none": "不设负责人",
-    "dept_manager_hint": "负责人只接收本部门及其成员的额度预警，不拥有管理权限",
+    "dept_manager_hint": "负责人接收本部门及其成员的额度预警，并可管理本部门成员（增删改 / 额度 / 停用 / 分组），但不能改部门额度、账期与负责人本身。",
     "dept_manager_label": "负责人：{{name}}",
     "remaining": "剩余 ${{amount}}",
     "overview_balance": "企业余额",
@@ -1845,7 +1845,12 @@
     "audit_field_billing_day": "账期日",
     "audit_field_password_reset": "重置密码",
     "audit_field_note": "备注",
-    "usage_rate": "使用率 {{pct}}%"
+    "usage_rate": "使用率 {{pct}}%",
+    "manager_intro": "你在管理「{{name}}」部门：可增删改本部门成员与其额度；部门额度、账期与组织结构由企业主设置。",
+    "overview_my_department_quota": "本部门额度",
+    "self_row_readonly": "本人",
+    "self_row_readonly_hint": "你自己的成员记录由企业主维护，不能自行改额度或停用。",
+    "email_locked_hint": "登录邮箱由企业主维护，部门负责人不可修改。"
   },
   "setup": {
     "title": "系统安装向导",
