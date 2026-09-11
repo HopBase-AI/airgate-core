@@ -47,8 +47,24 @@ type UserResp struct {
 	MemberDepartmentName string  `json:"member_department_name,omitempty"`
 	DepartmentQuotaUSD   float64 `json:"department_quota_usd,omitempty"`
 	DepartmentUsedQuota  float64 `json:"department_used_quota,omitempty"`
+	// UsageFilters 「使用记录」页可用的筛选字段，由后端按身份下发。
+	// 前端照这个列表渲染筛选框即可，不要再自行按 role / is_enterprise_owner 判断——
+	// 同一套权限规则前后端各写一遍，加字段或调权限时两边必然漂移。
+	UsageFilters []string `json:"usage_filters,omitempty"`
 	TimeMixin
 }
+
+// 「使用记录」页的筛选字段标识（UserResp.UsageFilters 的取值）。
+const (
+	// UsageFilterAPIKey 按 API Key 筛选：任何非密钥会话都有。
+	UsageFilterAPIKey = "api_key"
+	// UsageFilterMember 按团队成员筛选：企业主看全企业成员，部门负责人看本部门成员
+	// （数据源 /members 自身已按 teamscope 收敛，前端直接调即可）。
+	UsageFilterMember = "member"
+	// UsageFilterDepartment 按部门筛选：只有企业主 / 管理员有。
+	// 部门负责人只负责自己那个部门，给了等于没给。
+	UsageFilterDepartment = "department"
+)
 
 // APIKeySessionUserResp 是 API Key 登录会话唯一允许返回的用户态投影。
 // 这里故意不嵌入 UserResp，避免未来给用户 DTO 增加字段时意外把 reseller

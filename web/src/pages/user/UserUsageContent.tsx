@@ -231,8 +231,12 @@ export default function UserUsageContent() {
   const { toast } = useToast();
   const { user } = useAuth();
   const customerScope = !!user?.api_key_id;
-  // 成员筛选只有企业主/管理员才有数据；成员账号本人调 /members 会被 403，直接不请求
-  const canListMembers = !customerScope && (user?.role === 'admin' || !!user?.is_enterprise_owner) && !((user?.member_id ?? 0) > 0);
+  // 筛选能力由后端下发（UserResp.usage_filters），前端不再自己按角色推断：
+  // 企业主/管理员拿到成员+部门，部门负责人只拿成员（他名下只有一个部门），其余只有密钥。
+  // 成员列表数据源 /members 自身已按 teamscope 收敛，负责人调到的就是本部门成员。
+  const usageFilters = user?.usage_filters ?? [];
+  const canListMembers = !customerScope && usageFilters.includes('member');
+  const canListDepartments = !customerScope && usageFilters.includes('department');
   const { page, setPage, pageSize, setPageSize } = usePagination(20, 'user.usage');
   // 团队成员页「查看用量」经 ?member_id= 跳入、部门 Tab 经 ?department_id= 跳入：预置对应筛选
   const search: { member_id?: number | string; department_id?: number | string } = useSearch({ strict: false });
@@ -301,7 +305,7 @@ export default function UserUsageContent() {
   const { data: departmentsData } = useQuery({
     queryKey: queryKeys.departmentsAll(),
     queryFn: () => departmentsApi.list(FETCH_ALL_PARAMS),
-    enabled: canListMembers,
+    enabled: canListDepartments,
     staleTime: 60_000,
   });
   const departmentOptions = [

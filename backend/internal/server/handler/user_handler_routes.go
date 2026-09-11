@@ -61,6 +61,8 @@ func (h *UserHandler) GetMe(c *gin.Context) {
 			slog.Warn("membership_lookup_failed", "user_id", userID, "error", err)
 		}
 	}
+	// 放在成员投影之后：MemberID / ManagedDepartmentID 是在那里填的，提前算会漏判负责人。
+	resp.UsageFilters = usageFilterFields(resp)
 	response.Success(c, resp)
 }
 

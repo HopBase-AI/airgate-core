@@ -91,6 +91,31 @@ func toAPIKeyRespFromUserDomain(item appuser.APIKey, userID int) dto.APIKeyResp 
 	return resp
 }
 
+// usageFilterFields 当前身份在「使用记录」页可用的筛选字段。
+//
+// 这是筛选权限的**唯一**判定处。前端按返回值渲染，不再自己按角色推断，
+// 于是「谁能按什么筛」以后只要改这一个函数。
+//
+// 口径：
+//   - 任何非密钥会话都能按 API Key 筛（密钥会话走的是另一个 DTO，本函数不参与）；
+//   - 企业主 / 管理员：再加成员与部门；
+//   - 部门负责人：只加成员——他名下只有一个部门，部门筛选选了等于没选；
+//   - 普通成员 / 普通用户：只有 API Key，他们本来就只看得到自己。
+//
+// 成员身份优先于 is_enterprise_owner：成员账号即便被误置该标志，也不该拿到全企业筛选。
+func usageFilterFields(resp dto.UserResp) []string {
+	fields := []string{dto.UsageFilterAPIKey}
+	switch {
+	case resp.MemberID > 0:
+		if resp.ManagedDepartmentID > 0 {
+			fields = append(fields, dto.UsageFilterMember)
+		}
+	case resp.Role == "admin" || resp.IsEnterpriseOwner:
+		fields = append(fields, dto.UsageFilterMember, dto.UsageFilterDepartment)
+	}
+	return fields
+}
+
 // applyMembershipToUserResp 把成员账号的团队投影叠加到 /users/me 响应。
 func applyMembershipToUserResp(resp *dto.UserResp, brief appuser.MembershipBrief) {
 	resp.MemberID = int64(brief.MemberID)
