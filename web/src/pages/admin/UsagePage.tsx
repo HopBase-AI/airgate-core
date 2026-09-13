@@ -715,9 +715,12 @@ export default function UsagePage() {
     const leadingSharedColumns = sharedColumns.slice(0, modelIdx + 1).flatMap((column) => (
       column.key === 'status' ? [column, failureDiagnosticsColumn, accountColumn] : [column]
     ));
+    // 时间放最前，用户/分组紧随其后，结果及其后列顺延——与共享列表 created_at 排在 status 之前保持一致。
+    const timeSplitIdx = leadingSharedColumns.findIndex((column) => column.key === 'created_at') + 1;
     return [
+      ...leadingSharedColumns.slice(0, timeSplitIdx),
       ...adminColumns,
-      ...leadingSharedColumns,
+      ...leadingSharedColumns.slice(timeSplitIdx),
       ...(streamColumn ? [streamColumn] : []),
       ...timingColumns,
       ...sharedColumnsAfterModel,
