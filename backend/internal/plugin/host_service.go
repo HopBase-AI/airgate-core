@@ -1080,6 +1080,11 @@ func (h *HostService) listEligibleGroups(ctx context.Context, req hostListGroups
 		if prices := resolvedFixedImagePrices(u.GroupPluginSettings[int64(g.ID)], g.PluginSettings); prices != nil {
 			item["fixed_image_prices"] = prices
 		}
+		// 工作坊行标签的通道限定词（数据契约 plugin_settings.studio.channel）：只投影这一个
+		// 键，封闭词表归一在插件侧；plugin_settings 其余内容仍不外泄。
+		if channel := strings.TrimSpace(g.PluginSettings["studio"]["channel"]); channel != "" {
+			item["channel"] = channel
+		}
 		items = append(items, item)
 	}
 	return map[string]interface{}{"groups": items}, nil
