@@ -501,8 +501,12 @@ func extensionForContentType(ct string) string {
 		return ".svg"
 	case "video/mp4":
 		return ".mp4"
-	case "audio/mpeg":
+	case "video/quicktime":
+		return ".mov"
+	case "audio/mpeg", "audio/mp3":
 		return ".mp3"
+	case "audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave":
+		return ".wav"
 	case "application/pdf":
 		return ".pdf"
 	case "text/markdown":
@@ -528,6 +532,16 @@ func contentTypeForAssetKey(objectKey string) string {
 		return "image/webp"
 	case ".gif":
 		return "image/gif"
+	// 工作坊视频模式的参考视频 / 音频落成 task-input 资产，由上游按公网地址拉取；
+	// 回 octet-stream 时部分上游会拒收。
+	case ".mp4":
+		return "video/mp4"
+	case ".mov":
+		return "video/quicktime"
+	case ".mp3":
+		return "audio/mpeg"
+	case ".wav":
+		return "audio/wav"
 	case ".pdf":
 		return "application/pdf"
 	case ".md":
