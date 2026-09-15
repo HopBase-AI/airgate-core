@@ -676,8 +676,12 @@ func contentTypeFromExt(name string) string {
 		return "image/gif"
 	case strings.HasSuffix(name, ".mp4"):
 		return "video/mp4"
+	case strings.HasSuffix(name, ".mov"):
+		return "video/quicktime"
 	case strings.HasSuffix(name, ".mp3"):
 		return "audio/mpeg"
+	case strings.HasSuffix(name, ".wav"):
+		return "audio/wav"
 	case strings.HasSuffix(name, ".woff2"):
 		return "font/woff2"
 	default:

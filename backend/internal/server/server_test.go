@@ -18,6 +18,10 @@ func TestContentTypeFromExt(t *testing.T) {
 		{"data.json", "application/json"},
 		{"logo.svg", "image/svg+xml"},
 		{"image.png", "image/png"},
+		{"clip.mp4", "video/mp4"},
+		{"clip.mov", "video/quicktime"},
+		{"voice.mp3", "audio/mpeg"},
+		{"voice.wav", "audio/wav"},
 		{"font.woff2", "font/woff2"},
 		{"file.bin", "application/octet-stream"},
 	}
