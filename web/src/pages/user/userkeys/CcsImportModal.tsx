@@ -104,6 +104,38 @@ function executeCcsImport(
   }
 }
 
+// 客户端选择卡。用原生 button 而不是 HeroUI Button：后者按 size 固定高度并裁切溢出，
+// 图标 + 标题 + 描述的竖排内容会被切成只剩一条色边（2026-09-16 用户截图）。
+function ClientCard({
+  title,
+  desc,
+  iconClassName,
+  disabled = false,
+  onSelect,
+}: {
+  title: string;
+  desc: string;
+  iconClassName: string;
+  disabled?: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-disabled={disabled}
+      onClick={onSelect}
+      className="flex w-full flex-col items-center gap-2 rounded-lg border border-glass-border bg-surface p-4 text-center transition-colors hover:border-accent hover:bg-bg-hover focus-visible:border-accent focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-glass-border disabled:hover:bg-surface"
+    >
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${iconClassName}`}>
+        <Terminal className="h-5 w-5" />
+      </span>
+      <span className="text-sm font-medium text-text">{title}</span>
+      <span className="text-xs leading-4 text-text-tertiary">{desc}</span>
+    </button>
+  );
+}
+
 export function useCcsImportModal(groupMap: Map<number, UserGroupResp>) {
   const { toast } = useToast();
   const { t } = useTranslation();
@@ -158,6 +190,7 @@ export function CcsImportModal({
   const { t } = useTranslation();
   const { toast } = useToast();
   const baseUrl = window.location.origin;
+  const codexAvailable = ccsPlatform === 'openai';
   const modalState = useOverlayState({
     isOpen: open,
     onOpenChange: (nextOpen) => {
@@ -179,45 +212,35 @@ export function CcsImportModal({
       {ccsKeyValue ? (
         ccsPlatform ? (
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              {/* Claude Code */}
-              <Button
-                variant="secondary"
-                className="h-auto flex-col gap-2 p-4"
-                onPress={() => {
+            <p className="text-sm text-text-secondary">{t('user_keys.ccs_select_desc')}</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <ClientCard
+                title="Claude Code"
+                desc={t('user_keys.ccs_claude_desc')}
+                iconClassName="bg-info-subtle text-info"
+                onSelect={() => {
                   executeCcsImport(baseUrl, ccsKeyValue, 'claude', ccsPlatform, toast, t);
                   onClose();
                 }}
-              >
-                <div className="w-10 h-10 rounded-lg bg-info-subtle flex items-center justify-center">
-                  <Terminal className="w-5 h-5 text-info" />
-                </div>
-                <span className="text-sm font-medium text-text">Claude Code</span>
-                <span className="text-xs text-text-tertiary text-center">
-                  {t('user_keys.ccs_claude_desc')}
-                </span>
-              </Button>
-
-              {/* OpenAI 平台额外显示 Codex CLI */}
-              {ccsPlatform === 'openai' && (
-                <Button
-                  variant="secondary"
-                  className="h-auto flex-col gap-2 p-4"
-                  onPress={() => {
-                    executeCcsImport(baseUrl, ccsKeyValue, 'codex', ccsPlatform, toast, t);
-                    onClose();
-                  }}
-                >
-                  <div className="w-10 h-10 rounded-lg bg-success-subtle flex items-center justify-center">
-                    <Terminal className="w-5 h-5 text-success" />
-                  </div>
-                  <span className="text-sm font-medium text-text">Codex CLI</span>
-                  <span className="text-xs text-text-tertiary text-center">
-                    {t('user_keys.ccs_codex_desc')}
-                  </span>
-                </Button>
-              )}
+              />
+              {/* Codex CLI 仅 openai 平台分组的密钥可用。与一键接入弹窗同一口径：常显、
+                  不可用时置灰并注明原因——隐藏会让拿着 Claude 套餐密钥的用户以为没有 Codex 功能。 */}
+              <ClientCard
+                title="Codex CLI"
+                desc={t('user_keys.ccs_codex_desc')}
+                iconClassName="bg-success-subtle text-success"
+                disabled={!codexAvailable}
+                onSelect={() => {
+                  executeCcsImport(baseUrl, ccsKeyValue, 'codex', ccsPlatform, toast, t);
+                  onClose();
+                }}
+              />
             </div>
+            {!codexAvailable && (
+              <p className="text-[11px] leading-4 text-text-tertiary">
+                {t('user_keys.one_click_codex_unavailable')}
+              </p>
+            )}
           </div>
         ) : (
           <div className="rounded-md border border-glass-border bg-surface p-4 text-sm text-text-secondary">
