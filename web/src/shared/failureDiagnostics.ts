@@ -24,17 +24,36 @@ const UPSTREAM_USAGE_CODES = new Set([
   'upstream_error',
   'upstream_timeout',
   'upstream_transient',
+  // 工作坊 / 异步任务的上游分类（gateway-openai / gemini / seedance 图片，seedance 视频）。
+  'auth_failed',
+  'rate_limited',
+  'server_error',
+  'task_timeout',
+  'upstream_no_image',
+  'upstream_forward_failed',
+  'submission_failed',
+  'submission_response_invalid',
+  'submission_rejected',
+  'studio_submit_failed',
 ]);
 
 // client_error is the upstream's classification of a bad client request, not
 // an upstream availability incident. Keep it distinct in diagnostics.
 const CLIENT_USAGE_CODES = new Set([
   'client_error',
+  'bad_request',
+  'safety_rejected',
+  'input_sensitive',
+  'output_video_sensitive',
+  'output_video_copyright',
+  'output_audio_sensitive',
+  'output_audio_copyright',
 ]);
 
 // This is rejected by Core before an upstream account is selected.
 const QUOTA_USAGE_CODES = new Set([
   'insufficient_quota',
+  'insufficient_balance',
 ]);
 
 const VALIDATION_USAGE_CODES = new Set([
@@ -45,6 +64,23 @@ const VALIDATION_USAGE_CODES = new Set([
   'model_not_found',
   'model_not_served',
   'request_too_large',
+  // 工作坊任务提交期的确定性失败（各视频插件 studioFail / 图片任务的参数校验）。
+  'model_not_in_catalog',
+  'unsupported_model',
+  'wrong_model_kind',
+  'unsupported_task_type',
+  'group_missing',
+  'missing_billing_group',
+  'prompt_required',
+  'missing_prompt',
+  'reference_image_invalid',
+  'reference_input_invalid',
+  'reference_image_required',
+  'reference_image_unsupported',
+  'reference_media_unsupported',
+  'reference_image_too_many',
+  'too_many_images',
+  'mask_unsupported',
 ]);
 
 const GATEWAY_USAGE_CODES = new Set([
@@ -65,7 +101,7 @@ export function usageFailureSource(row: {
   if (SCHEDULER_USAGE_CODES.has(code)) return 'scheduler';
   if (QUOTA_USAGE_CODES.has(code)) return 'quota';
   if (CLIENT_USAGE_CODES.has(code)) return 'client';
-  if (UPSTREAM_USAGE_CODES.has(code)) return 'upstream';
+  if (UPSTREAM_USAGE_CODES.has(code) || /^http_\d{3}$/.test(code)) return 'upstream';
   if (VALIDATION_USAGE_CODES.has(code)) return 'validation';
   if (GATEWAY_USAGE_CODES.has(code)) return 'gateway';
   if ((row.account_id ?? 0) > 0) return 'upstream';
