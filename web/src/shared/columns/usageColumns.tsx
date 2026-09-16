@@ -150,7 +150,73 @@ export const ERROR_CODE_META: Record<string, { labelKey: string; tone: 'danger' 
   metadata_scope_failed: { labelKey: 'usage.error_metadata_scope_failed', tone: 'danger' },
   client_canceled: { labelKey: 'usage.error_client_canceled', tone: 'warning' },
   request_timeout: { labelKey: 'usage.error_request_timeout', tone: 'danger' },
+
+  // ── 工作坊 / 异步任务落进使用记录的分类码（各网关插件的任务失败码，英文原文进 tooltip）──
+  // gateway-openai / gemini / seedance 图片任务：classifyUpstreamTaskError 一族。
+  safety_rejected: { labelKey: 'usage.error_safety_rejected', tone: 'warning' },
+  bad_request: { labelKey: 'usage.error_client_error', tone: 'warning' },
+  rate_limited: { labelKey: 'usage.error_account_rate_limited', tone: 'warning' },
+  auth_failed: { labelKey: 'usage.error_account_dead', tone: 'danger' },
+  server_error: { labelKey: 'usage.error_upstream_transient', tone: 'danger' },
+  upstream_forward_failed: { labelKey: 'usage.error_upstream_transient', tone: 'danger' },
+  upstream_no_image: { labelKey: 'usage.error_no_output', tone: 'danger' },
+  image_store_failed: { labelKey: 'usage.error_no_output', tone: 'danger' },
+  task_interrupted: { labelKey: 'usage.error_task_interrupted', tone: 'danger' },
+  task_canceled: { labelKey: 'usage.error_task_interrupted', tone: 'warning' },
+  task_timeout: { labelKey: 'usage.error_upstream_timeout', tone: 'danger' },
+  stale_timeout: { labelKey: 'usage.error_request_timeout', tone: 'danger' },
+  // 余额预检（videobudget）。
+  insufficient_balance: { labelKey: 'usage.error_insufficient_quota', tone: 'warning' },
+  // gateway-seedance 视频：内容审核六类 + 上游分类。
+  input_sensitive: { labelKey: 'usage.error_safety_rejected', tone: 'warning' },
+  output_video_sensitive: { labelKey: 'usage.error_content_policy', tone: 'warning' },
+  output_video_copyright: { labelKey: 'usage.error_content_policy', tone: 'warning' },
+  output_audio_sensitive: { labelKey: 'usage.error_content_policy', tone: 'warning' },
+  output_audio_copyright: { labelKey: 'usage.error_content_policy', tone: 'warning' },
+  upstream_rate_limited: { labelKey: 'usage.error_account_rate_limited', tone: 'warning' },
+  upstream_authentication_failed: { labelKey: 'usage.error_account_dead', tone: 'danger' },
+  upstream_unavailable: { labelKey: 'usage.error_upstream_transient', tone: 'danger' },
+  upstream_generation_failed: { labelKey: 'usage.error_upstream_transient', tone: 'danger' },
+  upstream_submit_transport: { labelKey: 'usage.error_upstream_transient', tone: 'danger' },
+  upstream_response_invalid: { labelKey: 'usage.error_upstream_transient', tone: 'danger' },
+  upstream_submit_rejected: { labelKey: 'usage.error_submission_rejected', tone: 'warning' },
+  studio_submit_failed: { labelKey: 'usage.error_upstream_transient', tone: 'danger' },
+  // gateway-bailian / minimax / kling 视频：studioFail 的提交期确定性失败码。
+  submission_rejected: { labelKey: 'usage.error_submission_rejected', tone: 'warning' },
+  submission_failed: { labelKey: 'usage.error_upstream_transient', tone: 'danger' },
+  submission_response_invalid: { labelKey: 'usage.error_upstream_transient', tone: 'danger' },
+  submit_state_persist_failed: { labelKey: 'usage.error_upstream_transient', tone: 'danger' },
+  no_output: { labelKey: 'usage.error_no_output', tone: 'danger' },
+  model_not_in_catalog: { labelKey: 'usage.error_model_not_found', tone: 'warning' },
+  unsupported_model: { labelKey: 'usage.error_model_not_found', tone: 'warning' },
+  wrong_model_kind: { labelKey: 'usage.error_wrong_model_kind', tone: 'warning' },
+  unsupported_task_type: { labelKey: 'usage.error_wrong_model_kind', tone: 'warning' },
+  group_missing: { labelKey: 'usage.error_group_missing', tone: 'warning' },
+  missing_billing_group: { labelKey: 'usage.error_group_missing', tone: 'warning' },
+  prompt_required: { labelKey: 'usage.error_prompt_required', tone: 'warning' },
+  missing_prompt: { labelKey: 'usage.error_prompt_required', tone: 'warning' },
+  reference_image_invalid: { labelKey: 'usage.error_reference_media_invalid', tone: 'warning' },
+  reference_input_invalid: { labelKey: 'usage.error_reference_media_invalid', tone: 'warning' },
+  reference_image_required: { labelKey: 'usage.error_reference_media_invalid', tone: 'warning' },
+  reference_image_unsupported: { labelKey: 'usage.error_reference_media_unsupported', tone: 'warning' },
+  reference_media_unsupported: { labelKey: 'usage.error_reference_media_unsupported', tone: 'warning' },
+  mask_unsupported: { labelKey: 'usage.error_reference_media_unsupported', tone: 'warning' },
+  reference_image_too_many: { labelKey: 'usage.error_reference_media_too_many', tone: 'warning' },
+  too_many_images: { labelKey: 'usage.error_reference_media_too_many', tone: 'warning' },
 };
+
+/**
+ * 按 error_code 取失败分类元数据：大小写不敏感；图片任务对未归类的上游状态码写
+ * http_<n>，统一按上游异常展示。映射不到的码返回 undefined，调用方回落到原始 code。
+ */
+export function usageErrorCodeMeta(code: string | undefined): { labelKey: string; tone: 'danger' | 'warning' } | undefined {
+  const normalized = (code ?? '').trim().toLowerCase();
+  if (!normalized) return undefined;
+  const meta = ERROR_CODE_META[normalized];
+  if (meta) return meta;
+  if (/^http_\d{3}$/.test(normalized)) return ERROR_CODE_META.upstream_transient;
+  return undefined;
+}
 
 /**
  * 客户侧(非管理员视图)对服务侧故障统一给中性文案,不露上游 / 调度 / 账号等内部架构词,
@@ -171,10 +237,29 @@ const CUSTOMER_NEUTRAL_ERROR_LABEL: Record<string, string> = {
   upstream_timeout: 'usage.error_customer_timeout',
   request_timeout: 'usage.error_customer_timeout',
   stream_aborted: 'usage.error_customer_interrupted',
+  // 任务类的服务侧故障同样中性化（不露「账号 / 上游」）。
+  auth_failed: 'usage.error_customer_busy',
+  rate_limited: 'usage.error_customer_busy',
+  server_error: 'usage.error_customer_busy',
+  upstream_forward_failed: 'usage.error_customer_busy',
+  upstream_rate_limited: 'usage.error_customer_busy',
+  upstream_authentication_failed: 'usage.error_customer_busy',
+  upstream_unavailable: 'usage.error_customer_busy',
+  upstream_generation_failed: 'usage.error_customer_busy',
+  upstream_submit_transport: 'usage.error_customer_busy',
+  upstream_response_invalid: 'usage.error_customer_busy',
+  studio_submit_failed: 'usage.error_customer_busy',
+  submission_failed: 'usage.error_customer_busy',
+  submission_response_invalid: 'usage.error_customer_busy',
+  task_timeout: 'usage.error_customer_timeout',
+  stale_timeout: 'usage.error_customer_timeout',
 };
 
 export function customerNeutralErrorLabelKey(code: string | undefined): string | undefined {
-  return code ? CUSTOMER_NEUTRAL_ERROR_LABEL[code] : undefined;
+  const normalized = (code ?? '').trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (/^http_\d{3}$/.test(normalized)) return 'usage.error_customer_busy';
+  return CUSTOMER_NEUTRAL_ERROR_LABEL[normalized];
 }
 
 /** 本行是否是一次失败请求。判据是 error_code：被上游计了费的 4xx 仍是计费行，但同样算失败。 */
@@ -221,12 +306,24 @@ function errorToneColor(tone: 'danger' | 'warning'): string {
   return tone === 'danger' ? 'var(--ag-danger)' : 'var(--ag-warning)';
 }
 
+/**
+ * 失败行的当前语言标签：客户视图先中性化服务侧故障，其余按 error_code 查五语文案；
+ * 映射不到的码原样返回 code（插件原文只在 tooltip 里）。
+ */
+export function usageErrorLabel(row: UsageRow, adminView: boolean, t: TFunction): string {
+  const code = row.error_code ?? '';
+  const neutralKey = adminView ? undefined : customerNeutralErrorLabelKey(code);
+  if (neutralKey) return t(neutralKey);
+  const meta = usageErrorCodeMeta(code);
+  return meta ? t(meta.labelKey, code) : code;
+}
+
 /** 失败原因面板：HTTP 状态码 + 分类 + （可展示时的）原文。 */
 function ErrorDetail({ adminView, row, t }: { adminView: boolean; row: UsageRow; t: TFunction }) {
   const code = row.error_code ?? '';
-  const meta = ERROR_CODE_META[code];
+  const meta = usageErrorCodeMeta(code);
   const neutralKey = adminView ? undefined : customerNeutralErrorLabelKey(code);
-  const label = neutralKey ? t(neutralKey) : (meta ? t(meta.labelKey, code) : code);
+  const label = usageErrorLabel(row, adminView, t);
   const message = neutralKey ? '' : row.error_message?.trim();
   const adminRow = adminView ? row as UsageLogResp : null;
   const traceID = row.usage_metadata?.trace_id?.trim();
@@ -280,7 +377,7 @@ export function UsageErrorIndicator({ adminView, row }: { adminView: boolean; ro
   if (!isFailedUsageRow(row)) {
     return <span className="text-text-tertiary">-</span>;
   }
-  const meta = ERROR_CODE_META[row.error_code ?? ''];
+  const meta = usageErrorCodeMeta(row.error_code);
   const color = errorToneColor(meta?.tone ?? 'danger');
 
   return (
@@ -750,9 +847,12 @@ export function useUsageColumns(opts?: { customerScope?: boolean; adminView?: bo
           );
         }
 
-        const meta = ERROR_CODE_META[row.error_code ?? ''];
+        const meta = usageErrorCodeMeta(row.error_code);
         const color = errorToneColor(meta?.tone ?? 'danger');
         const source = usageFailureSource(row);
+        // 管理端第二行给「错误来源」（排障视角）；用户 / 客户视图给按 error_code 查到的
+        // 当前语言分类标签——插件写的英文原文只进 tooltip，界面语言下不再裸显英文。
+        const secondary = adminView ? t(failureSourceLabelKey(source)) : usageErrorLabel(row, adminView, t);
 
         return (
           <RichTooltip placement="right" content={() => <ErrorDetail adminView={adminView} row={row} t={t} />}>
@@ -767,9 +867,9 @@ export function useUsageColumns(opts?: { customerScope?: boolean; adminView?: bo
               >
                 {row.error_status ? row.error_status : t('usage.result_failed', 'Failed')}
               </span>
-              {adminView ? (
-                <span className="max-w-full truncate text-[10px] font-medium leading-none text-text-secondary">
-                  {t(failureSourceLabelKey(source))}
+              {secondary ? (
+                <span className="max-w-full truncate text-[10px] font-medium leading-none text-text-secondary" title={secondary}>
+                  {secondary}
                 </span>
               ) : null}
             </span>
