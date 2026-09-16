@@ -1,4 +1,5 @@
 import { get, getToken } from './client';
+import { acceptLanguage } from '../../i18n';
 import type { UsageLogResp, UserUsageLogResp, CustomerUsageLogResp, UsageQuery, UsageStatsResp, UsageTrendBucket, PagedData } from '../types';
 
 type UsageRequestOptions = {
@@ -18,6 +19,10 @@ export const usageApi = {
   // 后端要求 start_time(RFC3339)，end_time 缺省为「现在」；筛选参数与列表页同名同义，
   // 所以「页面上筛了哪个成员，导出就只有那个成员」。
   // 返回 CSV 而非 JSON，不能走 get<T>：这里自己 fetch 拿 blob，并沿用同一套鉴权头。
+  // 表头 / 说明栏 / 汇总行由后端按 Accept-Language 渲染（i18n.Tc(c, "export.*")，缺省英文），
+  // 所以必须显式带上控制台当前的界面语言：不带的话浏览器的 Accept-Language 说了算，
+  // 「控制台切成日文、浏览器是 zh-CN」的用户会拿到一份中文表头的账单。
+  // 同口径修复见 airgate-epay #11。
   exportCsv: async (params: {
     start_time: string;
     end_time?: string;
@@ -31,9 +36,9 @@ export const usageApi = {
       if (value !== undefined && value !== null && value !== '') query.set(key, String(value));
     });
     const token = getToken();
-    const resp = await fetch(`/api/v1/usage/export?${query.toString()}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
+    const headers: Record<string, string> = { 'Accept-Language': acceptLanguage() };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const resp = await fetch(`/api/v1/usage/export?${query.toString()}`, { headers });
     if (!resp.ok) {
       // 失败时后端回的是 JSON 错误体，尽量把 message 抛出去而不是丢个裸状态码
       let message = `HTTP ${resp.status}`;

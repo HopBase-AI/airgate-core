@@ -135,4 +135,23 @@ function syncDocumentLang(lang: string) {
 syncDocumentLang(i18n.language);
 i18n.on('languageChanged', syncDocumentLang);
 
+/**
+ * 当前界面语言对应的 Accept-Language 头值。
+ *
+ * 用于请求那些由后端渲染文案的接口(如消耗明细 CSV 导出):不带这个头时后端只能读
+ * 浏览器的 Accept-Language,于是「控制台切成日文、浏览器是 zh-CN」的用户导出后
+ * 拿到的是一份中文表头的账单——界面语言开关形同虚设。
+ *
+ * 取值 zh / zh-HK / en / ja / es 与后端 internal/i18n.DetectLanguage 认的标签完全
+ * 一致(它按前缀匹配 en / zh-hk|zh-tw|zh-hant|zh-mo / zh / es / ja,且大小写不敏感),
+ * 所以归一化后直接当头值发即可,不需要额外的标签映射表。带地区后缀的取值(如
+ * ja-JP)先退回主语言再归一化;仍无法识别时回落 en,与后端网关口径一致。
+ */
+export function acceptLanguage(lang?: string | null): string {
+  const raw = lang ?? i18n.resolvedLanguage ?? i18n.language;
+  return normalizeLanguage(raw)
+    ?? normalizeLanguage((raw ?? '').split('-')[0])
+    ?? DEFAULT_LANGUAGE;
+}
+
 export default i18n;
