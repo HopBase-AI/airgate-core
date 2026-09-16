@@ -3045,6 +3045,13 @@ func hostForwardHeaders(req hostForwardRequest, route routing.Candidate) http.He
 	if req.UserID > 0 {
 		headers.Set("X-Airgate-User-ID", strconv.FormatInt(req.UserID, 10))
 	}
+	// X-Airgate-User-ID 是付费身份（成员发起时已改写为企业主）；提交人本人另给一个头。
+	// 视频插件登记影子任务时要用它当 user_id：影子任务挂在提交人名下，后续按影子
+	// 轮询结算经 ResolveTeamIdentity 才能带上 member_id / department_id——挂企业主名下
+	// 的影子结算出来 member_id=0，成员与部门负责人都看不到（2026-09-16 testbird 实锤）。
+	if req.submitterID > 0 {
+		headers.Set("X-Airgate-Submitter-ID", strconv.Itoa(req.submitterID))
+	}
 	if route.GroupID > 0 {
 		headers.Set("X-Airgate-Group-ID", strconv.Itoa(route.GroupID))
 	}
