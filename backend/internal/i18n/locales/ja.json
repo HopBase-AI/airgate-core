@@ -82,7 +82,7 @@
   "export.official_cost_native": "公式料金（現地通貨）",
   "export.discount": "割引率",
   "export.list_fx": "換算レート",
-  "export.actual_cost_usd": "請求額（$）",
+  "export.actual_cost": "請求額（%s）",
   "export.note": "備考",
   "export.official_cost_total": "公式料金合計",
   "export.note_failed_free": "リクエスト失敗のため未課金",

@@ -82,7 +82,7 @@
   "export.official_cost_native": "Official Cost (List Currency)",
   "export.discount": "Discount",
   "export.list_fx": "Exchange Rate",
-  "export.actual_cost_usd": "Charged (USD)",
+  "export.actual_cost": "Charged (%s)",
   "export.note": "Note",
   "export.official_cost_total": "Official Cost Total",
   "export.note_failed_free": "Request failed, not charged",
