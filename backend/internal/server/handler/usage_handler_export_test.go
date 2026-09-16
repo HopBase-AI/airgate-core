@@ -10,8 +10,9 @@ import (
 	"testing"
 	"time"
 
-	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 	"github.com/gin-gonic/gin"
+
+	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	"github.com/DouDOU-start/airgate-core/internal/i18n"
