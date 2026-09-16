@@ -20,6 +20,7 @@ import {
 import {
   formatModelPrice,
   hasFixedImagePricingBuckets,
+  isPerCharacterPricing,
   resolveBucketDiscount,
   officialPriceSymbol,
   resolvePlazaFixedImageTiers,
@@ -358,13 +359,25 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode, 
     );
   }
   if (!price) return null;
+  // 语音合成按每百万计费字符收费（price_unit=character）：只有 input 一份单价、output 恒为 0，
+  // 只铺一格并加脚注说明量纲；照 token 模型铺三格会把字符价标成 token 价，还多出两格 $0。
+  // resolveUserPrice / resolveStandardPrice 的 officialOnly 与折扣只看倍率和 input，
+  // output=0 不影响，沿用即可。
+  const perCharacter = isPerCharacterPricing(model);
   return (
     <div className="ag-model-price-wrap">
       <dl className="ag-model-price-grid">
-        <PriceCell label={t('model_plaza.input')} quoteMode={quoteMode} sale={price.input} official={price.official.input} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
-        <PriceCell label={t('model_plaza.cached_input')} quoteMode={quoteMode} sale={price.cachedInput} official={price.official.cachedInput} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
-        <PriceCell label={t('model_plaza.output')} quoteMode={quoteMode} sale={price.output} official={price.official.output} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
+        {perCharacter ? (
+          <PriceCell label={t('model_plaza.character_price_unit')} quoteMode={quoteMode} sale={price.input} official={price.official.input} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
+        ) : (
+          <>
+            <PriceCell label={t('model_plaza.input')} quoteMode={quoteMode} sale={price.input} official={price.official.input} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
+            <PriceCell label={t('model_plaza.cached_input')} quoteMode={quoteMode} sale={price.cachedInput} official={price.official.cachedInput} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
+            <PriceCell label={t('model_plaza.output')} quoteMode={quoteMode} sale={price.output} official={price.official.output} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
+          </>
+        )}
       </dl>
+      {perCharacter ? <p className="ag-model-video-price-note">{t('model_plaza.character_price_note')}</p> : null}
       {discountMeta(price.zhe, price.groupName, price.groupNameI18n)}
       {price.officialOnly ? <p className="ag-model-official-label">{t('model_plaza.official_price')}</p> : null}
       {/^gpt-5\.6-(?:luna|sol|terra)$/.test(model.id) && model.long_context?.threshold ? (

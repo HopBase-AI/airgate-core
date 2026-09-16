@@ -207,6 +207,8 @@
     "video_price_note": "単価は 100 万 video tokens あたり。実際の料金 = 単価 × 生成時に消費した video tokens。",
     "video_price_unit_second": "課金単価 · 1 秒あたり",
     "video_price_note_second": "単価は 1 秒あたり。実際の料金 = 単価 × 課金秒数（動画の長さ）で、video tokens 換算ではありません。",
+    "character_price_unit": "課金単価 · 100 万文字あたり",
+    "character_price_note": "単価は課金対象 100 万文字あたり。実際の料金 = 単価 × 今回の合成で課金された文字数（レスポンスの usage に基づく）。",
     "video_audio_silent": "音声なし",
     "video_audio_on": "音声あり",
     "video_audio_voice": "指定ボイス",

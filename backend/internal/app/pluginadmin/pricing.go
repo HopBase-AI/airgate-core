@@ -80,6 +80,9 @@ const (
 	PriceUnitToken = "token"
 	// PriceUnitSecond 每秒（按视频时长计费的模型：可灵 / 海螺 / 万相 / 快乐马）。
 	PriceUnitSecond = "second"
+	// PriceUnitCharacter 每百万计费字符（语音合成：MiniMax speech-2.8 hd / turbo）。
+	// 这类模型只有 price.input 一份单价、price.output 恒为 0，展示端只铺一格。
+	PriceUnitCharacter = "character"
 )
 
 // normalizePriceUnit 归一化插件声明的计价单位；未声明回落 token，与历史行为一致。
