@@ -35,9 +35,13 @@ const (
 // token 已经产出，这类记录会以 status=success 带错误码落库且确实计了费
 // （见 plugin/outcome.go recordUsageWithFailureOverride）。
 // 对这类行宣称"未计费"会让明细与扣费金额对不上，因此措辞按实际扣费分两种。
+//
+// ⚠️ 文案一律经 key 取（locales/*.json 五份），禁止在本文件里写裸中文：
+// 表头是英文、说明栏是中文的混排表，日/西语客户拿到手根本读不了（2026-09-16）。
 const (
-	exportFailedFreeNote = "请求未成功，未计费"
-	exportFailedNote     = "请求中断，按已产生用量计费"
+	exportFailedFreeNoteKey = "export.note_failed_free"
+	exportFailedNoteKey     = "export.note_failed_charged"
+	exportNonTextNoteKey    = "export.note_non_text"
 )
 
 // UserUsageExport 导出当前用户在指定时间区间内的使用明细（CSV）。
@@ -133,7 +137,8 @@ type exportRow struct {
 	// 与用户侧使用记录 tooltip 同一份计算（officialNativeCost），三处展示不会各算一遍。
 	//
 	// nil = 本行没有牌价快照：历史行、官方价本就是美元的模型、以及 API Key 会话。
-	// 此时对应的三列**留空**而不是写 0——"官方费用 0.0000" 会被读成"这次官方不要钱"。
+	// 此时对应的四列（币种 / 官方费用 / 折扣 / 折算率）**留空**而不是写 0——
+	// "官方费用 0.0000" 会被读成"这次官方不要钱"。
 	Official *dto.OfficialNativeCostResp
 }
 
@@ -360,12 +365,28 @@ func exportRate(v float64) string {
 	return strconv.FormatFloat(v, 'f', 4, 64)
 }
 
-// exportHeader 表头（八列，列序见 docs/pricing-list-verification-sop.md §4.4，勿随意调换：
+// exportFX 折算率反过来用最短表示：它是写入时快照的字面量（"6.8" / "150"），
+// ParseFloat → FormatFloat(-1) 原样往返，客户在表里看到的就是插件当时用的那个常数。
+// 补成 "6.8000" 只会让人误以为折算率精确到万分位。
+func exportFX(v float64) string {
+	if v <= 0 {
+		return ""
+	}
+	return strconv.FormatFloat(v, 'f', -1, 64)
+}
+
+// exportHeader 表头（九列，列序见 docs/pricing-list-verification-sop.md §4.4，勿随意调换：
 // epay 订单页「导出明细」复用同一端点，客户也按列序对账）。
 //
-// ⚠️ 语言按 Accept-Language 解析（i18n.Tc → 默认英文）。同一文件里的失败行说明、
-// 汇总行标签与截断提示仍是硬编码中文——SOP 只定义了 export.* 九键，扩到整份 CSV
-// 需要另外一批键，登记为后续 PR。
+// 「折算率」夹在折扣与扣费金额之间，是为了让四列从左到右正好读成验算式本身：
+//
+//	官方费用（原币） × 折扣 ÷ 折算率 = 扣费金额（$）
+//
+// 少了折算率这一列，客户手里只有 ¥ 和 $ 两个数、缺中间那个 6.8，验算根本做不下去——
+// 整层「可验算账单」也就白做了。
+//
+// 语言按 Accept-Language 解析（i18n.Tc → 默认英文），整份 CSV（含说明栏、汇总标签、
+// 提示行）统一走 key，不留硬编码中文。
 func exportHeader(c *gin.Context) []string {
 	return []string{
 		i18n.Tc(c, "export.time"),
@@ -374,25 +395,60 @@ func exportHeader(c *gin.Context) []string {
 		i18n.Tc(c, "export.list_currency"),
 		i18n.Tc(c, "export.official_cost_native"),
 		i18n.Tc(c, "export.discount"),
+		i18n.Tc(c, "export.list_fx"),
 		i18n.Tc(c, "export.actual_cost_usd"),
 		i18n.Tc(c, "export.note"),
 	}
 }
 
-// exportColumns 表头列数，汇总行按它对齐——写少了 Excel 会把后面的列错位读成上一列。
-const exportColumns = 8
+// 列索引：汇总行与提示行按下标填格，散在各处写字面量早晚错位。
+const (
+	exportColTime = iota
+	exportColModel
+	exportColUsage
+	exportColListCurrency
+	exportColOfficialCost
+	exportColDiscount
+	exportColListFX
+	exportColActualCost
+	exportColNote
+	// exportColumns 表头列数，汇总行按它对齐——写少了 Excel 会把后面的列错位读成上一列。
+	exportColumns
+)
 
 // officialTotals 按币种累加官方牌价费用。
 //
 // **必须按币种分桶**：不同币种相加得到的是一个没有量纲的数字，比不给合计更糟。
 // 现网只有 CNY 一种，但别的原生币牌价随时可能进来，届时不该悄悄加成一堆。
-type officialTotals map[string]float64
+type officialTotals map[string]*officialTotal
+
+// officialTotal 一个币种的官方费用累计，外加该币种的折算率。
+type officialTotal struct {
+	cost float64
+	// fx 该币种各行的折算率；mixedFX 为真时这些行的折算率并不一致。
+	fx float64
+	// mixedFX 同币种内出现了不同折算率（改价前后的行同框）。此时合计行的折算率列
+	// 留空：随手挑一个填进去，客户用它去除合计只会算出一个对不上的数。
+	mixedFX bool
+}
 
 func (t officialTotals) add(block *dto.OfficialNativeCostResp) {
 	if block == nil || block.Currency == "" {
 		return
 	}
-	t[block.Currency] += block.Cost
+	entry, ok := t[block.Currency]
+	if !ok {
+		entry = &officialTotal{}
+		t[block.Currency] = entry
+	}
+	entry.cost += block.Cost
+	switch {
+	case block.FX <= 0:
+	case entry.fx == 0:
+		entry.fx = block.FX
+	case entry.fx != block.FX:
+		entry.mixedFX = true
+	}
 }
 
 // currencies 返回按字母序排好的币种，保证同一份数据每次导出的行序一致（便于 diff 对账）。
@@ -429,24 +485,26 @@ func writeUsageExportCSV(c *gin.Context, filename string, rows []exportRow, note
 		if row.Failed {
 			failed++
 			if row.Cost > 0 {
-				note = exportFailedNote
+				note = i18n.Tc(c, exportFailedNoteKey)
 				failedCharged++
 			} else {
-				note = exportFailedFreeNote
+				note = i18n.Tc(c, exportFailedFreeNoteKey)
 			}
 		}
 		// 图像 / 视频等非文本调用没有 token，只看数字会像是凭空扣费。
 		if note == "" && row.Cost > 0 && row.Tokens == 0 {
-			note = "非文本调用，按次计费"
+			note = i18n.Tc(c, exportNonTextNoteKey)
 		}
 		total += row.Cost
 
-		// 三列同生共死：没有牌价快照的行一律留空，不写 0（见 exportRow.Official）。
-		listCurrency, officialCost, discount := "", "", ""
+		// 四列同生共死：没有牌价快照的行一律留空，不写 0（见 exportRow.Official）。
+		// 折算率也在其中——单给一个 6.8 而没有官方费用，客户只会更糊涂。
+		listCurrency, officialCost, discount, listFX := "", "", "", ""
 		if row.Official != nil {
 			listCurrency = row.Official.Currency
 			officialCost = exportMoney(row.Official.Cost)
 			discount = exportRate(row.Official.Discount)
+			listFX = exportFX(row.Official.FX)
 			totals.add(row.Official)
 		}
 
@@ -458,6 +516,7 @@ func writeUsageExportCSV(c *gin.Context, filename string, rows []exportRow, note
 			listCurrency,
 			officialCost,
 			discount,
+			listFX,
 			exportMoney(row.Cost),
 			note,
 		})
@@ -468,43 +527,48 @@ func writeUsageExportCSV(c *gin.Context, filename string, rows []exportRow, note
 	summary := ""
 	switch {
 	case failedCharged > 0:
-		summary = fmt.Sprintf("其中 %d 条请求未成功且未计费，另 %d 条中途中断按已产生用量计费", failed-failedCharged, failedCharged)
+		summary = i18n.Tc(c, "export.summary_failed_mixed", failed-failedCharged, failedCharged)
 	case failed > 0:
-		summary = fmt.Sprintf("其中 %d 条请求未成功，均未计费", failed)
+		summary = i18n.Tc(c, "export.summary_failed_free", failed)
 	}
-	label := "合计"
+	label := i18n.Tc(c, "export.summary_total")
 	if notes.Truncated {
 		// 取数是倒序的，触顶时留下的是最近一批，最早的那段被丢掉了——
 		// 必须说清楚，否则客户会拿这个偏小的金额来质疑扣费。
-		label = "部分合计"
+		label = i18n.Tc(c, "export.summary_partial_total")
 		if summary != "" {
-			summary += "；"
+			// 分隔符随语言走：中文用「；」、英文用「; 」，硬编码一个就会在另一种语言里刺眼。
+			summary += i18n.Tc(c, "export.summary_separator")
 		}
-		summary += fmt.Sprintf("记录过多，本文件仅含最近 %d 条，金额不代表该区间全部消耗", exportMaxRows)
+		summary += i18n.Tc(c, "export.summary_truncated", exportMaxRows)
 	}
 	_ = w.Write(nil)
 	summaryRow := make([]string, exportColumns)
-	summaryRow[0] = label
-	summaryRow[1] = fmt.Sprintf("%d 条记录", len(rows))
-	summaryRow[6] = exportMoney(total)
-	summaryRow[7] = summary
+	summaryRow[exportColTime] = label
+	summaryRow[exportColModel] = i18n.Tc(c, "export.summary_row_count", len(rows))
+	summaryRow[exportColActualCost] = exportMoney(total)
+	summaryRow[exportColNote] = summary
 	_ = w.Write(summaryRow)
 
-	// 官方费用合计按币种各出一行，落在「官方牌价币种 / 官方费用(原币)」两列下。
+	// 官方费用合计按币种各出一行，落在「官方牌价币种 / 官方费用(原币) / 折算率」三列下。
 	// 验算口径：Σ官方费用(原币) × 折 ÷ 折算率 ≈ Σ扣费($)——整体成立的前提是这批行折扣相同
-	// （同一分组），跨分组请按行验（SOP §7 末行的注）。
+	// （同一分组），跨分组请按行验（SOP §7 末行的注）。折扣列不填：合计行的折扣无法定义。
 	for _, currency := range totals.currencies() {
+		entry := totals[currency]
 		officialRow := make([]string, exportColumns)
-		officialRow[0] = i18n.Tc(c, "export.official_cost_total")
-		officialRow[3] = currency
-		officialRow[4] = exportMoney(totals[currency])
+		officialRow[exportColTime] = i18n.Tc(c, "export.official_cost_total")
+		officialRow[exportColListCurrency] = currency
+		officialRow[exportColOfficialCost] = exportMoney(entry.cost)
+		if !entry.mixedFX {
+			officialRow[exportColListFX] = exportFX(entry.fx)
+		}
 		_ = w.Write(officialRow)
 	}
 
 	if notes.WindowClamped {
 		clampRow := make([]string, exportColumns)
-		clampRow[0] = "提示"
-		clampRow[1] = fmt.Sprintf("导出区间过长，本文件仅含起点后 %d 天内的消耗", int(exportMaxWindow.Hours()/24))
+		clampRow[exportColTime] = i18n.Tc(c, "export.note_hint")
+		clampRow[exportColModel] = i18n.Tc(c, "export.note_window_clamped", int(exportMaxWindow.Hours()/24))
 		_ = w.Write(clampRow)
 	}
 

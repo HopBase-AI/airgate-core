@@ -81,7 +81,20 @@
   "export.list_currency": "官方牌价币种",
   "export.official_cost_native": "官方费用（原币）",
   "export.discount": "折扣",
+  "export.list_fx": "折算率",
   "export.actual_cost_usd": "扣费金额（$）",
   "export.note": "说明",
-  "export.official_cost_total": "官方费用合计"
+  "export.official_cost_total": "官方费用合计",
+  "export.note_failed_free": "请求未成功，未计费",
+  "export.note_failed_charged": "请求中断，按已产生用量计费",
+  "export.note_non_text": "非文本调用，按次计费",
+  "export.note_hint": "提示",
+  "export.note_window_clamped": "导出区间过长，本文件仅含起点后 %d 天内的消耗",
+  "export.summary_total": "合计",
+  "export.summary_partial_total": "部分合计",
+  "export.summary_row_count": "%d 条记录",
+  "export.summary_failed_free": "其中 %d 条请求未成功，均未计费",
+  "export.summary_failed_mixed": "其中 %d 条请求未成功且未计费，另 %d 条中途中断按已产生用量计费",
+  "export.summary_truncated": "记录过多，本文件仅含最近 %d 条，金额不代表该区间全部消耗",
+  "export.summary_separator": "；"
 }

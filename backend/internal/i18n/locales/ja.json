@@ -81,7 +81,20 @@
   "export.list_currency": "公式価格の通貨",
   "export.official_cost_native": "公式料金（現地通貨）",
   "export.discount": "割引率",
+  "export.list_fx": "換算レート",
   "export.actual_cost_usd": "請求額（$）",
   "export.note": "備考",
-  "export.official_cost_total": "公式料金合計"
+  "export.official_cost_total": "公式料金合計",
+  "export.note_failed_free": "リクエスト失敗のため未課金",
+  "export.note_failed_charged": "リクエスト中断のため、発生済みの使用量で課金",
+  "export.note_non_text": "テキスト以外のリクエストのため、回数で課金",
+  "export.note_hint": "ご案内",
+  "export.note_window_clamped": "期間が長すぎるため、このファイルには開始時点から %d 日間の利用分のみが含まれます",
+  "export.summary_total": "合計",
+  "export.summary_partial_total": "一部合計",
+  "export.summary_row_count": "%d 件",
+  "export.summary_failed_free": "うち %d 件のリクエストが失敗し、いずれも未課金です",
+  "export.summary_failed_mixed": "うち %d 件は失敗のため未課金、別の %d 件は中断され発生済みの使用量で課金されています",
+  "export.summary_truncated": "レコードが多すぎるため、このファイルには直近 %d 件のみが含まれます。合計額はこの期間のすべての利用を表しません",
+  "export.summary_separator": "、"
 }

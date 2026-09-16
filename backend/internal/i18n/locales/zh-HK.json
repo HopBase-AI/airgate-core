@@ -81,7 +81,20 @@
   "export.list_currency": "官方牌價幣種",
   "export.official_cost_native": "官方費用（原幣）",
   "export.discount": "折扣",
+  "export.list_fx": "折算率",
   "export.actual_cost_usd": "扣費金額（$）",
   "export.note": "說明",
-  "export.official_cost_total": "官方費用合計"
+  "export.official_cost_total": "官方費用合計",
+  "export.note_failed_free": "請求未成功，未計費",
+  "export.note_failed_charged": "請求中斷，按已產生用量計費",
+  "export.note_non_text": "非文本調用，按次計費",
+  "export.note_hint": "提示",
+  "export.note_window_clamped": "匯出區間過長，本檔案僅含起點後 %d 天內的消耗",
+  "export.summary_total": "合計",
+  "export.summary_partial_total": "部分合計",
+  "export.summary_row_count": "%d 條記錄",
+  "export.summary_failed_free": "其中 %d 條請求未成功，均未計費",
+  "export.summary_failed_mixed": "其中 %d 條請求未成功且未計費，另 %d 條中途中斷按已產生用量計費",
+  "export.summary_truncated": "記錄過多，本檔案僅含最近 %d 條，金額不代表該區間全部消耗",
+  "export.summary_separator": "；"
 }

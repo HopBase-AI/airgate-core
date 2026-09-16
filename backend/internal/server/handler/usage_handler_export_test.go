@@ -20,7 +20,8 @@ import (
 )
 
 // usage_handler_export_test.go —— 充值消耗明细导出：
-// 区间解析与收窄、边界归属、成本口径、文件名安全、失败行措辞、官方牌价验算列与汇总口径。
+// 区间解析与收窄、边界归属、成本口径、文件名安全、失败行措辞、官方牌价验算列与汇总口径，
+// 以及整份 CSV（表头 / 说明栏 / 汇总标签 / 提示行）的五语覆盖。
 
 // TestMain 载入内嵌翻译：表头走 i18n.Tc，不加载的话取到的是键名本身（"export.time"），
 // 断言会全绿而线上给客户的是一份表头写着变量名的账单。
@@ -261,9 +262,20 @@ func TestCSVSafeCell(t *testing.T) {
 
 func renderCSV(t *testing.T, rows []exportRow, notes exportNotes) string {
 	t.Helper()
+	return renderCSVLang(t, rows, notes, "zh-CN,zh;q=0.9")
+}
+
+// renderCSVLang 按指定 Accept-Language 渲染。缺省测试用中文：i18n.Tc 不带头时回退英文，
+// 而绝大多数断言写的是中文文案。
+func renderCSVLang(t *testing.T, rows []exportRow, notes exportNotes, acceptLanguage string) string {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/usage/export", nil)
+	if acceptLanguage != "" {
+		c.Request.Header.Set("Accept-Language", acceptLanguage)
+	}
 	writeUsageExportCSV(c, "usage-test.csv", rows, notes, time.Local)
 	return w.Body.String()
 }
@@ -279,6 +291,8 @@ func TestWriteUsageExportCSV(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/usage/export", nil)
+	c.Request.Header.Set("Accept-Language", "zh-CN,zh;q=0.9")
 	writeUsageExportCSV(c, "usage-test.csv", rows, exportNotes{}, time.Local)
 
 	body := w.Body.String()
@@ -291,7 +305,7 @@ func TestWriteUsageExportCSV(t *testing.T) {
 	if !strings.Contains(body, "12258") {
 		t.Error("缺少 tokens 数值")
 	}
-	if !strings.Contains(body, exportFailedFreeNote) {
+	if !strings.Contains(body, i18n.T("zh", exportFailedFreeNoteKey)) {
 		t.Error("零费用失败行应标注未计费")
 	}
 	// 不得泄漏 error_code / 上游报错原文。
@@ -311,7 +325,7 @@ func TestWriteUsageExportCSVChargedFailure(t *testing.T) {
 		{CreatedAt: time.Now(), Model: "m", Cost: 0.5, Failed: true},
 	}
 	body := renderCSV(t, rows, exportNotes{})
-	if strings.Contains(body, exportFailedFreeNote) {
+	if strings.Contains(body, i18n.T("zh", exportFailedFreeNoteKey)) {
 		t.Error("已计费的失败行不应标注未计费")
 	}
 	if !strings.Contains(body, "另 1 条中途中断按已产生用量计费") {
@@ -456,18 +470,19 @@ func TestWriteUsageExportCSVMixedListPrice(t *testing.T) {
 	if got := len(records[1]); got != exportColumns {
 		t.Fatalf("表头应为 %d 列，实际 %d: %v", exportColumns, got, records[0])
 	}
-	// 第 2 行（索引 1）= 通义：币种 / 官方费用 / 折扣 三列都在。
-	if records[1][3] != "CNY" || records[1][4] != "0.1200" || records[1][5] != "0.7000" {
-		t.Fatalf("有牌价行的三列错误: %v", records[1])
+	// 第 2 行（索引 1）= 通义：币种 / 官方费用 / 折扣 / 折算率 四列都在。
+	if records[1][exportColListCurrency] != "CNY" || records[1][exportColOfficialCost] != "0.1200" ||
+		records[1][exportColDiscount] != "0.7000" || records[1][exportColListFX] != "6.8" {
+		t.Fatalf("有牌价行的四列错误: %v", records[1])
 	}
-	// 第 3 行（索引 2）= 美元基准价模型：三列留空，不能是 0.0000。
-	for _, idx := range []int{3, 4, 5} {
+	// 第 3 行（索引 2）= 美元基准价模型：四列留空，不能是 0.0000。
+	for _, idx := range []int{exportColListCurrency, exportColOfficialCost, exportColDiscount, exportColListFX} {
 		if records[2][idx] != "" {
 			t.Fatalf("无牌价行第 %d 列应留空，实际 %q（写 0 会被读成官方不要钱）", idx, records[2][idx])
 		}
 	}
 	// 扣费列仍在最后第二列。
-	if records[1][6] != "0.0124" || records[2][6] != "0.0300" {
+	if records[1][exportColActualCost] != "0.0124" || records[2][exportColActualCost] != "0.0300" {
 		t.Fatalf("扣费列错位: %v / %v", records[1], records[2])
 	}
 	// 官方费用合计只累加有快照的行。
@@ -520,26 +535,32 @@ func TestWriteUsageExportCSVVerificationIdentity(t *testing.T) {
 	records := parseExportCSV(t, renderCSV(t, rows, exportNotes{}))
 
 	var sumNative, sumCharged float64
-	var officialTotal, chargedTotal float64
+	var officialTotal, chargedTotal, totalFX float64
 	for _, record := range records {
 		if len(record) != exportColumns {
 			continue
 		}
 		switch {
-		case record[3] == "CNY" && record[1] == "" && record[6] == "":
-			officialTotal = mustParseFloat(t, record[4])
-		case record[0] == "合计":
-			chargedTotal = mustParseFloat(t, record[6])
-		case record[3] == "CNY":
-			native := mustParseFloat(t, record[4])
-			charged := mustParseFloat(t, record[6])
+		case record[exportColListCurrency] == "CNY" && record[exportColModel] == "" && record[exportColActualCost] == "":
+			officialTotal = mustParseFloat(t, record[exportColOfficialCost])
+			totalFX = mustParseFloat(t, record[exportColListFX])
+		case record[exportColTime] == i18n.T("zh", "export.summary_total"):
+			chargedTotal = mustParseFloat(t, record[exportColActualCost])
+		case record[exportColListCurrency] == "CNY":
+			native := mustParseFloat(t, record[exportColOfficialCost])
+			charged := mustParseFloat(t, record[exportColActualCost])
 			sumNative += native
 			sumCharged += charged
-			// 逐行验算：跨分组（折扣不同）时只有这条成立。
-			if math.Abs(native*mustParseFloat(t, record[5])/fx-charged) > 0.0001 {
+			// 逐行验算全部取自表格本身（含折算率列）：客户手里只有这张表，
+			// 任何一个数要靠外部知识补，这层「可验算」就没落地。
+			rowFX := mustParseFloat(t, record[exportColListFX])
+			if math.Abs(native*mustParseFloat(t, record[exportColDiscount])/rowFX-charged) > 0.0001 {
 				t.Fatalf("行级验算不闭合: %v", record)
 			}
 		}
+	}
+	if totalFX != fx {
+		t.Fatalf("官方费用合计行的折算率 = %g，期望 %g", totalFX, fx)
 	}
 	if math.Abs(officialTotal-sumNative) > 1e-6 {
 		t.Fatalf("官方费用合计 %g ≠ 明细累加 %g", officialTotal, sumNative)
@@ -556,11 +577,11 @@ func TestWriteUsageExportCSVVerificationIdentity(t *testing.T) {
 // 客户拿到的就是一份表头写着变量名的账单。
 func TestExportHeaderFiveLocales(t *testing.T) {
 	want := map[string][]string{
-		"zh":    {"时间", "模型", "用量", "官方牌价币种", "官方费用（原币）", "折扣", "扣费金额（$）", "说明"},
-		"zh-HK": {"時間", "模型", "用量", "官方牌價幣種", "官方費用（原幣）", "折扣", "扣費金額（$）", "說明"},
-		"en":    {"Time", "Model", "Usage", "Official List Price Currency", "Official Cost (List Currency)", "Discount", "Charged (USD)", "Note"},
-		"ja":    {"日時", "モデル", "使用量", "公式価格の通貨", "公式料金（現地通貨）", "割引率", "請求額（$）", "備考"},
-		"es":    {"Fecha y hora", "Modelo", "Uso", "Moneda del precio oficial", "Importe oficial (moneda original)", "Descuento", "Importe cobrado ($)", "Nota"},
+		"zh":    {"时间", "模型", "用量", "官方牌价币种", "官方费用（原币）", "折扣", "折算率", "扣费金额（$）", "说明"},
+		"zh-HK": {"時間", "模型", "用量", "官方牌價幣種", "官方費用（原幣）", "折扣", "折算率", "扣費金額（$）", "說明"},
+		"en":    {"Time", "Model", "Usage", "Official List Price Currency", "Official Cost (List Currency)", "Discount", "Exchange Rate", "Charged (USD)", "Note"},
+		"ja":    {"日時", "モデル", "使用量", "公式価格の通貨", "公式料金（現地通貨）", "割引率", "換算レート", "請求額（$）", "備考"},
+		"es":    {"Fecha y hora", "Modelo", "Uso", "Moneda del precio oficial", "Importe oficial (moneda original)", "Descuento", "Tipo de cambio", "Importe cobrado ($)", "Nota"},
 	}
 	headers := map[string]string{"zh": "zh-CN,zh;q=0.9", "zh-HK": "zh-HK", "en": "en-US,en;q=0.9", "ja": "ja", "es": "es-ES,es;q=0.9"}
 
@@ -585,6 +606,151 @@ func TestExportHeaderFiveLocales(t *testing.T) {
 	}
 }
 
+// TestWriteUsageExportCSVListFXFallsBackToBlank 折算率列与其余三列同生共死：
+// 无牌价快照的行留空。单给 6.8 而没有官方费用，客户只会更糊涂。
+func TestWriteUsageExportCSVListFXFallsBackToBlank(t *testing.T) {
+	rows := []exportRow{{CreatedAt: time.Now(), Model: "gpt-5.6-sol", Tokens: 100, Cost: 0.03}}
+	records := parseExportCSV(t, renderCSV(t, rows, exportNotes{}))
+	if records[1][exportColListFX] != "" {
+		t.Fatalf("无牌价行的折算率列应留空，实际 %q", records[1][exportColListFX])
+	}
+}
+
+// TestExportFXKeepsSnapshotLiteral 折算率写快照原貌：6.8 不能被补成 "6.8000"
+// （客户会以为折算率精确到万分位），150 也不该带小数尾巴。
+func TestExportFXKeepsSnapshotLiteral(t *testing.T) {
+	cases := map[float64]string{6.8: "6.8", 150: "150", 7.25: "7.25", 0: "", -1: ""}
+	for in, want := range cases {
+		if got := exportFX(in); got != want {
+			t.Errorf("exportFX(%g) = %q，期望 %q", in, got, want)
+		}
+	}
+}
+
+// TestWriteUsageExportCSVOfficialTotalsMixedFX 同币种内折算率不一致（改价前后的行同框）时，
+// 合计行的折算率必须留空：随手挑一个填进去，客户拿它去除合计只会算出一个对不上的数。
+func TestWriteUsageExportCSVOfficialTotalsMixedFX(t *testing.T) {
+	base := time.Date(2026, 9, 16, 16, 0, 0, 0, time.Local)
+	rows := []exportRow{
+		{CreatedAt: base, Model: "qwen3-max", Cost: 0.0124,
+			Official: &dto.OfficialNativeCostResp{Currency: "CNY", FX: 6.8, Cost: 0.12, Discount: 0.7}},
+		{CreatedAt: base.Add(time.Minute), Model: "qwen3-max", Cost: 0.0117,
+			Official: &dto.OfficialNativeCostResp{Currency: "CNY", FX: 7.2, Cost: 0.12, Discount: 0.7}},
+	}
+	records := parseExportCSV(t, renderCSV(t, rows, exportNotes{}))
+
+	for _, record := range records {
+		if len(record) != exportColumns || record[exportColListCurrency] == "" || record[exportColActualCost] != "" {
+			continue
+		}
+		if record[exportColOfficialCost] != "0.2400" {
+			t.Fatalf("官方费用合计 = %q，期望 0.2400", record[exportColOfficialCost])
+		}
+		if record[exportColListFX] != "" {
+			t.Fatalf("折算率不一致时合计行的折算率应留空，实际 %q", record[exportColListFX])
+		}
+		return
+	}
+	t.Fatalf("未找到官方费用合计行:\n%v", records)
+}
+
+// ── 整份 CSV 的五语覆盖 ───────────────────────────────────────
+
+// exportFullSampleRows 一份把所有文案分支都踩到的样本：成功行、零费用失败行、
+// 已计费的中断行、零 token 的按次计费行，外加牌价快照撑起官方费用合计。
+func exportFullSampleRows() []exportRow {
+	base := time.Date(2026, 9, 16, 16, 0, 0, 0, time.Local)
+	return []exportRow{
+		{CreatedAt: base, Model: "qwen3-max", Tokens: 10000, Cost: 0.012353,
+			Official: &dto.OfficialNativeCostResp{Currency: "CNY", FX: 6.8, Cost: 0.12, Discount: 0.7}},
+		{CreatedAt: base.Add(time.Minute), Model: "claude-sonnet-5", Failed: true},
+		{CreatedAt: base.Add(2 * time.Minute), Model: "glm-5.3", Tokens: 800, Cost: 0.0676, Failed: true},
+		{CreatedAt: base.Add(3 * time.Minute), Model: "gpt-image-2", Cost: 0.2},
+	}
+}
+
+// TestWriteUsageExportCSVAllLocales 整份 CSV（表头 / 说明栏 / 汇总标签 / 截断与收窄提示）
+// 五语齐活。这是 2026-09-16 的欠账：表头已经五语了，说明栏与汇总行还是硬编码中文，
+// 日 / 西语客户导出拿到的是一张中英混排表。
+func TestWriteUsageExportCSVAllLocales(t *testing.T) {
+	headers := map[string]string{
+		"zh": "zh-CN,zh;q=0.9", "zh-HK": "zh-HK", "en": "en-US,en;q=0.9", "ja": "ja", "es": "es-ES,es;q=0.9",
+	}
+	// 每种语言都必须出现的文案：说明栏两种失败措辞 + 按次计费 + 汇总标签 + 条数 +
+	// 混合失败汇总 + 截断 + 收窄提示 + 官方费用合计。
+	keys := []string{
+		"export.note_failed_free", "export.note_failed_charged", "export.note_non_text",
+		"export.summary_partial_total", "export.summary_row_count",
+		"export.summary_failed_mixed", "export.summary_truncated",
+		"export.note_hint", "export.note_window_clamped", "export.official_cost_total",
+	}
+
+	for lang, header := range headers {
+		body := renderCSVLang(t, exportFullSampleRows(),
+			exportNotes{Truncated: true, WindowClamped: true}, header)
+
+		for _, key := range keys {
+			text := i18n.T(lang, key)
+			// T 在缺 key 时回退键名本身，这正是"表头写着变量名的账单"的成因。
+			if text == key {
+				t.Fatalf("locales/%s.json 缺 key %s", lang, key)
+			}
+			want := longestLiteral(text)
+			if want == "" {
+				// 纯占位符文案（ja 的 "%d 件"）没有可比对的固定片段，交给键名退化断言兜。
+				continue
+			}
+			if !strings.Contains(body, want) {
+				t.Errorf("%s 导出缺少 %s 对应文案 %q:\n%s", lang, key, want, body)
+			}
+		}
+		// 汇总行的条数与失败统计按语言渲染，不能退化成键名。
+		if strings.Contains(body, "export.summary_") || strings.Contains(body, "export.note_") {
+			t.Errorf("%s 导出出现未翻译的键名:\n%s", lang, body)
+		}
+	}
+}
+
+// TestWriteUsageExportCSVNoChineseLeakInWesternLocales 英 / 西语导出里不许出现中日韩字符。
+// 一个漏网的硬编码中文足以让整张账单在客户那里变成乱码格——这条断言就是防它回来的。
+func TestWriteUsageExportCSVNoChineseLeakInWesternLocales(t *testing.T) {
+	for lang, header := range map[string]string{"en": "en-US,en;q=0.9", "es": "es-ES,es;q=0.9"} {
+		body := renderCSVLang(t, exportFullSampleRows(),
+			exportNotes{Truncated: true, WindowClamped: true}, header)
+		for _, r := range body {
+			if isCJKRune(r) {
+				t.Fatalf("%s 导出出现中日韩字符 %q（硬编码中文漏网）:\n%s", lang, string(r), body)
+			}
+		}
+	}
+}
+
+// longestLiteral 取文案里最长的固定片段（去掉 %d 占位符与首尾空白），
+// 用于在整份 CSV 里定位这条文案。ja 的 "%d 件" 这类几乎全是占位符的返回空串。
+func longestLiteral(text string) string {
+	longest := ""
+	for _, part := range strings.Split(text, "%d") {
+		part = strings.TrimSpace(part)
+		if len(part) > len(longest) {
+			longest = part
+		}
+	}
+	return longest
+}
+
+// isCJKRune 覆盖汉字与中文全角标点（，；（）等）——后者最容易随句子一起漏进英文文案。
+func isCJKRune(r rune) bool {
+	switch {
+	case r >= 0x4E00 && r <= 0x9FFF: // CJK 统一表意文字
+		return true
+	case r >= 0x3000 && r <= 0x303F: // CJK 标点
+		return true
+	case r >= 0xFF01 && r <= 0xFF60: // 全角 ASCII 变体（，：；（））
+		return true
+	}
+	return false
+}
+
 // parseExportCSV 解析导出内容（去掉 BOM），返回全部行。
 func parseExportCSV(t *testing.T, body string) [][]string {
 	t.Helper()
@@ -607,8 +773,8 @@ func officialTotalRowsOf(records [][]string) map[string]string {
 		if len(record) != exportColumns {
 			continue
 		}
-		if record[3] != "" && record[6] == "" {
-			out[record[3]] = record[4]
+		if record[exportColListCurrency] != "" && record[exportColActualCost] == "" {
+			out[record[exportColListCurrency]] = record[exportColOfficialCost]
 		}
 	}
 	return out

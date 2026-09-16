@@ -81,7 +81,20 @@
   "export.list_currency": "Moneda del precio oficial",
   "export.official_cost_native": "Importe oficial (moneda original)",
   "export.discount": "Descuento",
+  "export.list_fx": "Tipo de cambio",
   "export.actual_cost_usd": "Importe cobrado ($)",
   "export.note": "Nota",
-  "export.official_cost_total": "Total del importe oficial"
+  "export.official_cost_total": "Total del importe oficial",
+  "export.note_failed_free": "Solicitud fallida, sin cargo",
+  "export.note_failed_charged": "Solicitud interrumpida, se cobra el uso ya generado",
+  "export.note_non_text": "Solicitud no textual, cobro por llamada",
+  "export.note_hint": "Aviso",
+  "export.note_window_clamped": "El rango solicitado es demasiado largo; este archivo solo cubre los %d días posteriores a la fecha de inicio",
+  "export.summary_total": "Total",
+  "export.summary_partial_total": "Total parcial",
+  "export.summary_row_count": "Registros: %d",
+  "export.summary_failed_free": "Solicitudes fallidas: %d, ninguna cobrada",
+  "export.summary_failed_mixed": "Solicitudes fallidas sin cargo: %d; solicitudes interrumpidas cobradas por el uso ya generado: %d",
+  "export.summary_truncated": "Demasiados registros; este archivo solo contiene los %d más recientes, por lo que el total no representa todo el consumo del rango",
+  "export.summary_separator": "; "
 }

@@ -81,7 +81,20 @@
   "export.list_currency": "Official List Price Currency",
   "export.official_cost_native": "Official Cost (List Currency)",
   "export.discount": "Discount",
+  "export.list_fx": "Exchange Rate",
   "export.actual_cost_usd": "Charged (USD)",
   "export.note": "Note",
-  "export.official_cost_total": "Official Cost Total"
+  "export.official_cost_total": "Official Cost Total",
+  "export.note_failed_free": "Request failed, not charged",
+  "export.note_failed_charged": "Request interrupted, charged for the usage already generated",
+  "export.note_non_text": "Non-text request, charged per call",
+  "export.note_hint": "Notice",
+  "export.note_window_clamped": "The requested range is too long; this file only covers the %d days after the start time",
+  "export.summary_total": "Total",
+  "export.summary_partial_total": "Partial Total",
+  "export.summary_row_count": "Records: %d",
+  "export.summary_failed_free": "Failed requests: %d, none charged",
+  "export.summary_failed_mixed": "Failed requests not charged: %d; interrupted requests charged for the usage already generated: %d",
+  "export.summary_truncated": "Too many records; this file only contains the most recent %d, so the total does not represent all usage in the range",
+  "export.summary_separator": "; "
 }
