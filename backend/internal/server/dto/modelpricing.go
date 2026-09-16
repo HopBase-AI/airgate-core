@@ -40,6 +40,32 @@ type PublicPricingModelResp struct {
 	// ⚠️ video_tokens 只是历史键名，**不代表量纲**。展示端必须按本字段选单位文案，
 	// 否则会把 $0.088/秒 标成 $0.088/1M video_tokens，15 秒的片子少估两个数量级。
 	PriceUnit string `json:"price_unit,omitempty"`
+	// Call 按次计价能力（$ / 次，键 = 能力名，如可灵人脸识别 face_detect）。
+	// 与 video_tokens / image 并列的第三种量纲，不受 price_unit 影响；无按次能力时省略。
+	Call map[string]float64 `json:"call,omitempty"`
+	// ListPrice 厂商官方牌价（原币）快照：国内厂商模型（可灵 / 万相 / 海螺 H3 / 国内 Seedance /
+	// 覆盖层登记的千问、Kimi）官网标价是 ¥，插件按 fx 折成上面的美元基准价计费，客户只看 $
+	// 对不上官网 ¥。本字段把原币牌价原样透出，展示端据此铺「官方 ¥12 / 1M」小字。
+	// 省略 = 该模型基准价本身就是官方美元价，无需换算。只作展示，不参与计费。
+	ListPrice *PublicListPriceResp `json:"list_price,omitempty"`
+}
+
+// PublicListPriceResp 官方牌价（原币）。恒等式 <价> ÷ fx ≈ 同名基准价字段；
+// 只含币种 / 折算率 / 单价，不含任何上游通道、账号或供应商信息。
+type PublicListPriceResp struct {
+	// Currency 原币币种（如 "CNY"）。
+	Currency string `json:"currency"`
+	// FX 折算率：1 USD = fx 原币（如 6.8）。
+	FX float64 `json:"fx"`
+	// Input / CachedInput / Output 原币 / 1M token，对应同名基准价字段。
+	Input       float64 `json:"input,omitempty"`
+	CachedInput float64 `json:"cached_input,omitempty"`
+	Output      float64 `json:"output,omitempty"`
+	// VideoTokens / Image / Call 原币桶价 / 按张价 / 按次价，键与同名基准价 map 一致；
+	// video_tokens 的「一份」量纲同样由 price_unit 决定，不要按键名猜。
+	VideoTokens map[string]float64 `json:"video_tokens,omitempty"`
+	Image       map[string]float64 `json:"image,omitempty"`
+	Call        map[string]float64 `json:"call,omitempty"`
 }
 
 // PublicOfficialPricingResp 官方直付参考价（美元 / 百万 token）。

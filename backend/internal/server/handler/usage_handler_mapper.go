@@ -155,6 +155,7 @@ func toUserUsageLogResp(record appusage.LogRecord) dto.UserUsageLogResp {
 		ErrorStatus:           record.ErrorStatus,
 		ErrorMessage:          userFacingErrorMessage(record),
 		CreatedAt:             record.CreatedAt,
+		OfficialNative:        officialNativeCost(record),
 	}
 }
 

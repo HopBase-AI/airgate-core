@@ -63,6 +63,10 @@ func (s *Service) Update(ctx context.Context, items []ItemInput) error {
 	cloned := make([]ItemInput, 0, len(items))
 	keys := make([]string, 0, len(items))
 	for _, item := range items {
+		// 模型目录覆盖层是「官方牌价 ¥ 原值正确」唯一的闸门，写入前先核恒等式。
+		if err := validateModelCatalogListPrice(item.Key, item.Value); err != nil {
+			return err
+		}
 		cloned = append(cloned, ItemInput{
 			Key:   item.Key,
 			Value: item.Value,

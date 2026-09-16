@@ -71,6 +71,13 @@ type PublicPricingModel struct {
 	// 少了这个字段，展示端只能把 $0.088/秒 读成 $0.088/1M video_tokens——
 	// 15 秒的片子会被少估两个数量级（$1.32 报成不到一分钱）。
 	PriceUnit string
+	// Call 按次计价的能力（插件 price.call.<key>，如可灵人脸识别：key → 美元 / 次）。
+	// 非按次模型为 nil；只作展示与牌价恒等式核对，不参与计费。
+	Call map[string]float64
+	// ListPrice 官方牌价（原币）快照：币种 / 折算率 / 原币单价，与上面各基准价一一对应
+	// （list ÷ FX ≈ 基准价）。nil = 插件未声明（基准价即官方美元价，无需换算展示）。
+	// 详见 ListPrice 类型注释；不参与计费。
+	ListPrice *ListPrice
 }
 
 // 计价单位枚举（对外契约，展示端按此值取单位文案，勿随意改字面量）。
@@ -138,7 +145,10 @@ type overlayModel struct {
 	OfficialPricing map[string]float64 `json:"official_pricing"`
 	// PriceUnit 计价单位覆写（"second" / "token"），供覆盖层新增的按秒计费模型声明量纲；
 	// 空 = 沿用插件内置声明。同样只影响展示，计费不读。
-	PriceUnit   string `json:"price_unit"`
+	PriceUnit string `json:"price_unit"`
+	// ListPrice 官方牌价（原币）同义字段：{"currency":"CNY","fx":6.8,"input":12,...} 或桶价同构。
+	// 键与 pricing 同名；合并规则见 mergeOverlayListPrice。只影响展示/验算，计费不读。
+	ListPrice   map[string]json.RawMessage `json:"list_price"`
 	LongContext *struct {
 		Threshold        int     `json:"threshold"`
 		InputMultiplier  float64 `json:"input_multiplier"`
@@ -197,6 +207,9 @@ func (s *Service) PublicModelPricing(ctx context.Context) []PublicPlatformPricin
 			if models[i].PriceUnit == "" {
 				models[i].PriceUnit = PriceUnitToken
 			}
+			// 牌价恒等式在内置 + 覆盖层合并之后核一次：两边都可能改数，
+			// 不一致只告警不剔除（插件/运营是价格权威，core 不替它改）。
+			verifyListPrice(item.Platform, models[i])
 		}
 		if len(models) > 0 {
 			result = append(result, PublicPlatformPricing{Platform: item.Platform, Models: models})
@@ -268,6 +281,8 @@ func (s *Service) applyOverlay(ctx context.Context, platform string, models []Pu
 		if entry.PriceUnit != "" {
 			target.PriceUnit = normalizePriceUnit(entry.PriceUnit)
 		}
+		// 牌价同样须在图片/视频分支的 continue 之前合并；桶归属判定与下面 pricing 分支同源。
+		mergeOverlayListPrice(target, entry.ListPrice, (target.Image != nil || strings.EqualFold(entry.Kind, "image")) && !isTokenPricing(pricing))
 		// 图片模型：基座已有按张桶价，或新增条目显式声明 kind=image。
 		// 桶价 map 逐桶覆盖（价>0 覆盖、=0 收回该桶），忽略 token/长上下文字段。
 		//
@@ -424,6 +439,8 @@ func parseBuiltinPricing(id, name string, contextWindow int, capabilities []stri
 			Series:        metadata["series"],
 			Image:         buckets,
 			PriceUnit:     normalizePriceUnit(metadata["price.unit"]),
+			Call:          parseCallPrices(metadata),
+			ListPrice:     parseBuiltinListPrice(metadata),
 		}, metadata), true
 	}
 	// 视频生成模型：价格主要在 price.video_tokens.<bucket> 桶价，同上一并保留 token 价。
@@ -437,6 +454,8 @@ func parseBuiltinPricing(id, name string, contextWindow int, capabilities []stri
 			Series:        metadata["series"],
 			VideoTokens:   buckets,
 			PriceUnit:     normalizePriceUnit(metadata["price.unit"]),
+			Call:          parseCallPrices(metadata),
+			ListPrice:     parseBuiltinListPrice(metadata),
 		}, metadata), true
 	}
 	input, okIn := parsePriceValue(metadata["price.input"])
@@ -457,6 +476,8 @@ func parseBuiltinPricing(id, name string, contextWindow int, capabilities []stri
 		Output:        output,
 		Currency:      metadata["price.currency"],
 		PriceUnit:     normalizePriceUnit(metadata["price.unit"]),
+		Call:          parseCallPrices(metadata),
+		ListPrice:     parseBuiltinListPrice(metadata),
 	}
 	// 官方直付参考价（price.official_*，美元）：input/output 齐备才生效，与主价同规则。
 	if offIn, ok := parsePriceValue(metadata["price.official_input"]); ok {
@@ -507,6 +528,14 @@ const videoTokenPricePrefix = "price.video_tokens."
 
 // imagePricePrefix 图片按张桶价 metadata 键前缀（seedream 等生图插件上报）。
 const imagePricePrefix = "price.image."
+
+// callPricePrefix 按次计价 metadata 键前缀（可灵人脸识别等）。
+const callPricePrefix = "price.call."
+
+// parseCallPrices 从 metadata 抽取所有 price.call.<key> 按次价（无则 nil）。
+func parseCallPrices(metadata map[string]string) map[string]float64 {
+	return parsePrefixedPrices(metadata, callPricePrefix)
+}
 
 // parseImageBuckets 从 metadata 抽取所有 price.image.<bucket> 按张价（无则 nil）。
 func parseImageBuckets(metadata map[string]string) map[string]float64 {

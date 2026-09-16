@@ -95,7 +95,20 @@ func toPublicPricingModelResp(m apppluginadmin.PublicPricingModel) dto.PublicPri
 		Currency:      m.Currency,
 		VideoTokens:   m.VideoTokens,
 		Image:         m.Image,
+		Call:          m.Call,
 		PriceUnit:     m.PriceUnit,
+	}
+	if m.ListPrice != nil {
+		resp.ListPrice = &dto.PublicListPriceResp{
+			Currency:    m.ListPrice.Currency,
+			FX:          m.ListPrice.FX,
+			Input:       m.ListPrice.Input,
+			CachedInput: m.ListPrice.CachedInput,
+			Output:      m.ListPrice.Output,
+			VideoTokens: m.ListPrice.VideoTokens,
+			Image:       m.ListPrice.Image,
+			Call:        m.ListPrice.Call,
+		}
 	}
 	if m.Official != nil {
 		resp.Official = &dto.PublicOfficialPricingResp{
