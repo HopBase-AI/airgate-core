@@ -74,5 +74,14 @@
   "gw.internal_error": "内部エラーによりリクエストを完了できませんでした。しばらくしてから再試行してください",
   "gw.group_offline_generic": "選択したグループはオフラインになり、リクエストを受け付けなくなりました。別のグループを選択してください",
   "gw.model_not_served_generic": "選択したグループでは、要求されたモデルを提供していません。別のモデルまたはグループを選択してください",
-  "gw.task_stale_timeout": "タスクが 24 時間以内に完了しなかったため、自動的に終了しました"
+  "gw.task_stale_timeout": "タスクが 24 時間以内に完了しなかったため、自動的に終了しました",
+  "export.time": "日時",
+  "export.model": "モデル",
+  "export.usage": "使用量",
+  "export.list_currency": "公式価格の通貨",
+  "export.official_cost_native": "公式料金（現地通貨）",
+  "export.discount": "割引率",
+  "export.actual_cost_usd": "請求額（$）",
+  "export.note": "備考",
+  "export.official_cost_total": "公式料金合計"
 }

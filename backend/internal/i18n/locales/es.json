@@ -74,5 +74,14 @@
   "gw.internal_error": "No se pudo completar la solicitud debido a un error interno, inténtelo de nuevo más tarde",
   "gw.group_offline_generic": "El grupo seleccionado ha sido dado de baja y ya no atiende solicitudes, elija otro grupo",
   "gw.model_not_served_generic": "El grupo seleccionado no ofrece el modelo solicitado, elija otro modelo u otro grupo",
-  "gw.task_stale_timeout": "La tarea no finalizó en 24 horas y se terminó automáticamente"
+  "gw.task_stale_timeout": "La tarea no finalizó en 24 horas y se terminó automáticamente",
+  "export.time": "Fecha y hora",
+  "export.model": "Modelo",
+  "export.usage": "Uso",
+  "export.list_currency": "Moneda del precio oficial",
+  "export.official_cost_native": "Importe oficial (moneda original)",
+  "export.discount": "Descuento",
+  "export.actual_cost_usd": "Importe cobrado ($)",
+  "export.note": "Nota",
+  "export.official_cost_total": "Total del importe oficial"
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	"github.com/DouDOU-start/airgate-core/internal/pkg/timezone"
 	"github.com/DouDOU-start/airgate-core/internal/server/dto"
 	"github.com/DouDOU-start/airgate-core/internal/server/response"
@@ -128,6 +129,12 @@ type exportRow struct {
 	Tokens int
 	Cost   float64
 	Failed bool
+	// Official 是厂商官方牌价口径的只读验算块（币种 / 折算率 / 原币费用 / 折扣），
+	// 与用户侧使用记录 tooltip 同一份计算（officialNativeCost），三处展示不会各算一遍。
+	//
+	// nil = 本行没有牌价快照：历史行、官方价本就是美元的模型、以及 API Key 会话。
+	// 此时对应的三列**留空**而不是写 0——"官方费用 0.0000" 会被读成"这次官方不要钱"。
+	Official *dto.OfficialNativeCostResp
 }
 
 // exportRowVerdict 是一条记录相对导出区间的判定结果。
@@ -236,12 +243,22 @@ func classifyExportRow(item appusage.LogRecord, start, end time.Time, scoped boo
 	if scoped {
 		cost = item.BilledCost
 	}
+
+	// 牌价验算块对 API Key 会话一律不给（与 CustomerUsageLogResp 同口径，SOP §6.3）：
+	// discount 就是分销商拿到的折扣，露给终端客户等于把毛利写进账单；而且该视图导出的是
+	// billed_cost，"官方费用 × 折 ÷ 折算率 = 扣费"这条等式本来也不成立。
+	var official *dto.OfficialNativeCostResp
+	if !scoped {
+		official = officialNativeCost(item)
+	}
+
 	return exportRow{
 		ID:        item.ID,
 		CreatedAt: createdAt,
 		Model:     item.Model,
 		Tokens:    item.InputTokens + item.CachedInputTokens + item.CacheCreationTokens + item.OutputTokens,
 		Cost:      cost,
+		Official:  official,
 		// 与控制台「只看失败」同口径：判据是 error_code 而非 status。
 		// 上游对失败请求也计费时，记录会以 status=success 落库但带错误码，
 		// 只看 status 会把这类行当成正常调用展示给客户。
@@ -337,6 +354,57 @@ func exportMoney(v float64) string {
 	return strconv.FormatFloat(v, 'f', 4, 64)
 }
 
+// exportRate 折扣同样定长 4 位小数：0.7 这类值直接 FormatFloat(-1) 会被浮点误差
+// 写成 0.7000000000000001，客户看到的验算式就不像人算得出来的。
+func exportRate(v float64) string {
+	return strconv.FormatFloat(v, 'f', 4, 64)
+}
+
+// exportHeader 表头（八列，列序见 docs/pricing-list-verification-sop.md §4.4，勿随意调换：
+// epay 订单页「导出明细」复用同一端点，客户也按列序对账）。
+//
+// ⚠️ 语言按 Accept-Language 解析（i18n.Tc → 默认英文）。同一文件里的失败行说明、
+// 汇总行标签与截断提示仍是硬编码中文——SOP 只定义了 export.* 九键，扩到整份 CSV
+// 需要另外一批键，登记为后续 PR。
+func exportHeader(c *gin.Context) []string {
+	return []string{
+		i18n.Tc(c, "export.time"),
+		i18n.Tc(c, "export.model"),
+		i18n.Tc(c, "export.usage"),
+		i18n.Tc(c, "export.list_currency"),
+		i18n.Tc(c, "export.official_cost_native"),
+		i18n.Tc(c, "export.discount"),
+		i18n.Tc(c, "export.actual_cost_usd"),
+		i18n.Tc(c, "export.note"),
+	}
+}
+
+// exportColumns 表头列数，汇总行按它对齐——写少了 Excel 会把后面的列错位读成上一列。
+const exportColumns = 8
+
+// officialTotals 按币种累加官方牌价费用。
+//
+// **必须按币种分桶**：不同币种相加得到的是一个没有量纲的数字，比不给合计更糟。
+// 现网只有 CNY 一种，但别的原生币牌价随时可能进来，届时不该悄悄加成一堆。
+type officialTotals map[string]float64
+
+func (t officialTotals) add(block *dto.OfficialNativeCostResp) {
+	if block == nil || block.Currency == "" {
+		return
+	}
+	t[block.Currency] += block.Cost
+}
+
+// currencies 返回按字母序排好的币种，保证同一份数据每次导出的行序一致（便于 diff 对账）。
+func (t officialTotals) currencies() []string {
+	out := make([]string, 0, len(t))
+	for currency := range t {
+		out = append(out, currency)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func writeUsageExportCSV(c *gin.Context, filename string, rows []exportRow, notes exportNotes, loc *time.Location) {
 	if loc == nil {
 		loc = time.Local
@@ -350,11 +418,12 @@ func writeUsageExportCSV(c *gin.Context, filename string, rows []exportRow, note
 
 	w := csv.NewWriter(c.Writer)
 
-	_ = w.Write([]string{"时间", "模型", "tokens", "扣费金额", "说明"})
+	_ = w.Write(exportHeader(c))
 
 	var total float64
 	failed := 0
 	failedCharged := 0
+	totals := officialTotals{}
 	for _, row := range rows {
 		note := ""
 		if row.Failed {
@@ -371,11 +440,24 @@ func writeUsageExportCSV(c *gin.Context, filename string, rows []exportRow, note
 			note = "非文本调用，按次计费"
 		}
 		total += row.Cost
+
+		// 三列同生共死：没有牌价快照的行一律留空，不写 0（见 exportRow.Official）。
+		listCurrency, officialCost, discount := "", "", ""
+		if row.Official != nil {
+			listCurrency = row.Official.Currency
+			officialCost = exportMoney(row.Official.Cost)
+			discount = exportRate(row.Official.Discount)
+			totals.add(row.Official)
+		}
+
 		_ = w.Write([]string{
 			// 用调用方声明的时区渲染，与前端表格里显示的时间保持一致。
 			row.CreatedAt.In(loc).Format("2006-01-02 15:04:05"),
 			csvSafeCell(row.Model),
 			strconv.Itoa(row.Tokens),
+			listCurrency,
+			officialCost,
+			discount,
 			exportMoney(row.Cost),
 			note,
 		})
@@ -401,9 +483,29 @@ func writeUsageExportCSV(c *gin.Context, filename string, rows []exportRow, note
 		summary += fmt.Sprintf("记录过多，本文件仅含最近 %d 条，金额不代表该区间全部消耗", exportMaxRows)
 	}
 	_ = w.Write(nil)
-	_ = w.Write([]string{label, fmt.Sprintf("%d 条记录", len(rows)), "", exportMoney(total), summary})
+	summaryRow := make([]string, exportColumns)
+	summaryRow[0] = label
+	summaryRow[1] = fmt.Sprintf("%d 条记录", len(rows))
+	summaryRow[6] = exportMoney(total)
+	summaryRow[7] = summary
+	_ = w.Write(summaryRow)
+
+	// 官方费用合计按币种各出一行，落在「官方牌价币种 / 官方费用(原币)」两列下。
+	// 验算口径：Σ官方费用(原币) × 折 ÷ 折算率 ≈ Σ扣费($)——整体成立的前提是这批行折扣相同
+	// （同一分组），跨分组请按行验（SOP §7 末行的注）。
+	for _, currency := range totals.currencies() {
+		officialRow := make([]string, exportColumns)
+		officialRow[0] = i18n.Tc(c, "export.official_cost_total")
+		officialRow[3] = currency
+		officialRow[4] = exportMoney(totals[currency])
+		_ = w.Write(officialRow)
+	}
+
 	if notes.WindowClamped {
-		_ = w.Write([]string{"提示", fmt.Sprintf("导出区间过长，本文件仅含起点后 %d 天内的消耗", int(exportMaxWindow.Hours()/24)), "", "", ""})
+		clampRow := make([]string, exportColumns)
+		clampRow[0] = "提示"
+		clampRow[1] = fmt.Sprintf("导出区间过长，本文件仅含起点后 %d 天内的消耗", int(exportMaxWindow.Hours()/24))
+		_ = w.Write(clampRow)
 	}
 
 	// 状态码在首字节前已提交，中途断开无法改写响应；至少把写入失败记进日志，
