@@ -3,10 +3,13 @@
 //
 // 为什么需要这个常量
 //
-// 全站倍率语义是「倍率 = 每消耗官方 $1 扣多少余额」。¥ 账本下余额是人民币，所以
-// 倍率 = 折 × 6.8（75 折的可灵分组倍率 5.1、8 折的 MiniMax H3 分组 5.44，均为生产实配）；
-// USD 账本下余额与基准价同币，倍率 = 纯折扣比（0.75）。同一个 rate_multiplier 列在两种
-// 账本下量纲不同，只看一行数据无法把「折」与「汇率」拆开——必须有一个外部常量。
+// 全站倍率语义是「倍率 = 每消耗官方 $1 扣多少余额」。USD 账本下余额与基准价同币，
+// 倍率 = 纯折扣比（0.75）；割接前的 ¥ 账本下余额是人民币，倍率 = 折 × 6.8（75 折的可灵
+// 分组倍率 5.1、8 折的 MiniMax H3 分组 5.44）。同一个 rate_multiplier 列在两种账本下
+// 量纲不同，只看一行数据无法把「折」与「汇率」拆开——必须有一个外部常量。
+//
+// ⚠️ 割接只翻转本文件与 DEFAULT_QUOTE_FX 两处；牌价折算率 price.list.fx 与每笔用量的
+// list_fx 快照是价格定义与历史事实，与账本无关，割接后老行照常验算（除数由 1 变回 fx）。
 //
 // 没有它会怎样
 //
@@ -14,20 +17,20 @@
 // 「折扣 5.10」。等式照样闭合（cost × rate_multiplier ÷ fx ≡ actual_cost 对任意倍率恒成立），
 // 但 5.10 不是折扣，客户读不懂，还把内部倍率口径漏了出去。
 //
-// ⚠️ 割接联动：USD 割接（airgate-core#154）把余额与分组倍率整体 ÷6.8 的同一批，
-// 必须把本文件的 RateBase 改成 1、Currency 改成 "USD"，与前端 web/src/shared/quoteMath.ts
-// 的 DEFAULT_QUOTE_FX 同步。两者是同一个参数在前后端的两个副本，consistency_test 会
-// 拦住只改一半的情况。
+// 割接已完成（2026-09 USD 割接，airgate-core#154）：余额与分组倍率整体 ÷6.8 的同一批，
+// 本文件的 RateBase 改成 1、Currency 改成 "USD"，与前端 web/src/shared/quoteMath.ts 的
+// DEFAULT_QUOTE_FX 同步。两者是同一个参数在前后端的两个副本，没有编译期约束，
+// 改一处必须同时改另一处；本包的 TestRateBaseAndCurrencyAgree 拦住只改一半的情况。
 package ledger
 
 // RateBase 是 usage_logs.rate_multiplier 里烘进的汇率：倍率 = 折 × RateBase。
 //
-// ¥ 账本 6.8；USD 割接后改 1。显式标 float64：割接后取值是 1，不标类型会让
-// `listFX / RateBase` 这类表达式退化成整数常量除法，编译期才发现。
-const RateBase float64 = 6.8
+// USD 账本下余额与基准价同币，倍率就是纯折扣比，故为 1；割接前是 6.8。
+// 显式标 float64：取值 1 若不标类型，`listFX / RateBase` 会退化成整数常量除法。
+const RateBase float64 = 1
 
 // Currency 账本币种：余额与 actual_cost 的计价单位。随 RateBase 一同切换。
-const Currency = "CNY"
+const Currency = "USD"
 
 // Discount 把快照倍率还原成客户能读的「折」（0.75 = 75 折），两种账本下量纲一致。
 //

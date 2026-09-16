@@ -25,9 +25,10 @@ func TestDiscountRestoresZhe(t *testing.T) {
 		want  float64
 		about string
 	}{
-		// 生产实配：组 27 可灵 5.1 = 75 折、组 30 MiniMax H3 5.44 = 8 折（¥ 账本）。
-		{"可灵 75 折", 5.1, 5.1 / RateBase, "组 27"},
-		{"MiniMax H3 8 折", 5.44, 5.44 / RateBase, "组 30"},
+		// 割接脚本把分组倍率整体 ÷6.8 后，倍率就是折本身：
+		// 组 27 可灵 5.1 → 0.75、组 30 MiniMax H3 5.44 → 0.8。
+		{"可灵 75 折", 0.75, 0.75 / RateBase, "组 27"},
+		{"MiniMax H3 8 折", 0.8, 0.8 / RateBase, "组 30"},
 		{"倍率缺失按原价", 0, 1 / RateBase, "固定图价分组配 0"},
 		{"负值同样按原价", -1, 1 / RateBase, "脏数据"},
 	}
@@ -45,7 +46,7 @@ func TestDivisorIsListFXOverRateBase(t *testing.T) {
 	if got := Divisor(RateBase); math.Abs(got-1) > epsilon {
 		t.Fatalf("牌价折算率与账本口径相同时除数应为 1, got %g", got)
 	}
-	// 日元牌价（listFX 150）在 ¥ 账本下不是 1——写死 1 的实现会在这里红。
+	// 日元牌价（listFX 150）：除数始终是 listFX ÷ RateBase——写死 1 的实现会在这里红。
 	if got, want := Divisor(150), 150/RateBase; math.Abs(got-want) > epsilon {
 		t.Fatalf("Divisor(150) = %g, want %g", got, want)
 	}
