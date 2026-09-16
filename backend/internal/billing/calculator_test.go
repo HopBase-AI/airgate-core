@@ -303,8 +303,8 @@ func TestEnrichUsageCostDetails_ResponseFixedImagePriceKeepsTokenUserCost(t *tes
 	if got := items[2].Metadata["fixed_unit_price"]; got != "0.1" {
 		t.Fatalf("fixed_unit_price = %q, want 0.1", got)
 	}
-	if got := items[2].Metadata["fixed_unit"]; got != "CNY/image" {
-		t.Fatalf("fixed_unit = %q, want CNY/image", got)
+	if got := items[2].Metadata["fixed_unit"]; got != "USD/image" {
+		t.Fatalf("fixed_unit = %q, want USD/image", got)
 	}
 }
 
@@ -460,7 +460,7 @@ func TestEnrichUsageCostDetails_FreeFixedImagePriceDoesNotFallBackToTokenCost(t 
 	if got := items[1].Metadata["fixed_unit_price"]; got != "0" {
 		t.Fatalf("fixed_unit_price = %q, want 0", got)
 	}
-	if got := items[1].Metadata["fixed_unit"]; got != "CNY/image" {
-		t.Fatalf("fixed_unit = %q, want CNY/image", got)
+	if got := items[1].Metadata["fixed_unit"]; got != "USD/image" {
+		t.Fatalf("fixed_unit = %q, want USD/image", got)
 	}
 }

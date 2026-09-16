@@ -23,11 +23,12 @@ import en from '../i18n/en.json';
 import zh from '../i18n/zh.json';
 
 describe('model plaza price formatting', () => {
+  // USD 账本：倍率即折扣比（seedream 0.68），官方 $/张 × 0.68 即实付。
   it('preserves sub-cent image prices and their discounts', () => {
     expect(formatModelPrice(0.035)).toBe('$0.035');
-    expect(formatModelPrice(0.035 * 4.624 / 6.8)).toBe('$0.0238');
-    expect(formatModelPrice(0.04 * 4.624 / 6.8)).toBe('$0.0272');
-    expect(formatModelPrice(0.045 * 4.624 / 6.8)).toBe('$0.0306');
+    expect(formatModelPrice(0.035 * 0.68)).toBe('$0.0238');
+    expect(formatModelPrice(0.04 * 0.68)).toBe('$0.0272');
+    expect(formatModelPrice(0.045 * 0.68)).toBe('$0.0306');
   });
 
   it('keeps ordinary prices compact', () => {
@@ -45,29 +46,48 @@ describe('model plaza price formatting', () => {
   });
 });
 
+// 固定图价与余额同为美元（2026-09 账本割接起）；fx 是遗留参数、割接后固定 1。
 describe('fixed image prices', () => {
-  it('displays all effective 1K/2K/4K prices in CNY without a token multiplier', () => {
+  it('USD 视图按 fx=1 原值铺出 1K/2K/4K，不套 token 倍率', () => {
     expect(resolveFixedImageTierPrices({
       image_price_1k: 0.08,
       image_price_2k: 0.12,
       image_price_4k: 0.15,
-    }, 6.8, 'CNY')).toEqual([
+    }, 1, 'USD')).toEqual([
       { tier: '1k', sale: 0.08, billingMode: 'fixed' },
       { tier: '2k', sale: 0.12, billingMode: 'fixed' },
       { tier: '4k', sale: 0.15, billingMode: 'fixed' },
     ]);
   });
 
-  it('converts fixed balance prices and marks missing tiers as token fallback', () => {
+  it('遗留 CNY 视图直接展示原值', () => {
+    expect(resolveFixedImageTierPrices({
+      image_price_1k: 0.08,
+      image_price_2k: 0.12,
+      image_price_4k: 0.15,
+    }, 1, 'CNY')).toEqual([
+      { tier: '1k', sale: 0.08, billingMode: 'fixed' },
+      { tier: '2k', sale: 0.12, billingMode: 'fixed' },
+      { tier: '4k', sale: 0.15, billingMode: 'fixed' },
+    ]);
+  });
+
+  it('缺档标记为 token 回退；非法 fx 回落缺省 1 而不是旧汇率', () => {
     const prices = resolveFixedImageTierPrices({
-      image_price_1k: 0.068,
+      image_price_1k: 0.01,
       image_price_2k: Number.NaN,
-    }, 6.8, 'USD');
+    }, Number.NaN, 'USD');
     expect(prices).toEqual([
       { tier: '1k', sale: 0.01, billingMode: 'fixed' },
       { tier: '2k', sale: null, billingMode: 'token' },
       { tier: '4k', sale: null, billingMode: 'token' },
     ]);
+  });
+
+  it('遗留 fx≠1 时 USD 视图仍按 price ÷ fx 换算（只为兼容签名）', () => {
+    expect(resolveFixedImageTierPrices({ image_price_1k: 0.068 }, 6.8, 'USD')[0]).toEqual({
+      tier: '1k', sale: 0.01, billingMode: 'fixed',
+    });
   });
 
   it('treats zero as a configured fixed tier and rejects non-finite tiers', () => {
@@ -76,14 +96,14 @@ describe('fixed image prices', () => {
       image_price_1k: Number.NaN,
       image_price_2k: Number.POSITIVE_INFINITY,
     })).toBe(false);
-    expect(resolveFixedImageTierPrices({ image_price_1k: 0 }, 6.8, 'CNY')[0]).toEqual({
+    expect(resolveFixedImageTierPrices({ image_price_1k: 0 }, 1, 'USD')[0]).toEqual({
       tier: '1k', sale: 0, billingMode: 'fixed',
     });
   });
 
   it('never derives a token discount for fixed image pricing', () => {
-    expect(resolveBucketDiscount(0.6, 6.8, true)).toBeNull();
-    expect(resolveBucketDiscount(0.6, 6.8, false)).toBeCloseTo(0.6 / 6.8);
+    expect(resolveBucketDiscount(0.6, 1, true)).toBeNull();
+    expect(resolveBucketDiscount(0.6, 1, false)).toBeCloseTo(0.6);
   });
 
   it('keeps the discount path for ordinary per-image pricing buckets', () => {
@@ -91,7 +111,7 @@ describe('fixed image prices', () => {
       { imageBillingMode: undefined },
       { imageBillingMode: undefined },
     ])).toBe(false);
-    expect(resolveBucketDiscount(0.6, 6.8, false)).toBeCloseTo(0.6 / 6.8);
+    expect(resolveBucketDiscount(0.6, 1, false)).toBeCloseTo(0.6);
     expect(hasFixedImagePricingBuckets([{ imageBillingMode: 'fixed' }])).toBe(true);
   });
 });
@@ -103,7 +123,7 @@ describe('官方基准价口径下的固定图价', () => {
   const model = { image_price_1k: 0.4, image_price_2k: 0.4, image_price_4k: 0.4 };
 
   it('展示实付价时照常铺出三档', () => {
-    expect(resolvePlazaFixedImageTiers(model, 6.8, 'CNY', true)).toEqual([
+    expect(resolvePlazaFixedImageTiers(model, 1, 'USD', true)).toEqual([
       { tier: '1k', sale: 0.4, billingMode: 'fixed' },
       { tier: '2k', sale: 0.4, billingMode: 'fixed' },
       { tier: '4k', sale: 0.4, billingMode: 'fixed' },
@@ -111,15 +131,15 @@ describe('官方基准价口径下的固定图价', () => {
   });
 
   it('官方基准价口径下一张都不铺', () => {
-    expect(resolvePlazaFixedImageTiers(model, 6.8, 'CNY', false)).toEqual([]);
-    expect(resolvePlazaFixedImageTiers(model, 6.8, 'USD', false)).toEqual([]);
+    expect(resolvePlazaFixedImageTiers(model, 1, 'CNY', false)).toEqual([]);
+    expect(resolvePlazaFixedImageTiers(model, 1, 'USD', false)).toEqual([]);
   });
 });
 
-// 人民币牌价模型（GLM 等，currency="CNY"）的基准价数字本身就是 ¥。
-// 广场切到「只展示官方基准价」后全站都走这条路，标错币种就是把 ¥1.4 报成 $1.4。
+// 遗留的人民币牌价模型（GLM 等，currency="CNY"，¥ 账本时代按 1:1 记账）基准价数字本身就是 ¥。
+// USD 账本下写入口已拒绝新 CNY 条目，但存量读出仍要标对币种——标错就是把 ¥1.4 报成 $1.4。
 describe('基准价币种符号', () => {
-  it('人民币牌价模型用 ¥', () => {
+  it('遗留人民币牌价模型用 ¥', () => {
     expect(officialPriceSymbol({ currency: 'CNY' })).toBe('¥');
   });
 

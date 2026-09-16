@@ -10,7 +10,7 @@ import { parseQuoteFx, zheOfRate } from '../../shared/quoteMath';
 import { CommonTable } from '../../shared/components/CommonTable';
 import { TableLoadingRow } from '../../shared/components/TableLoadingRow';
 
-// 毛利率 = (卖价倍率 − 成本倍率) / 卖价倍率。两者同为「每官方 $1 扣 ¥」口径，可直接相减。
+// 毛利率 = (卖价倍率 − 成本倍率) / 卖价倍率。两者同为「官方美元价 × 倍率」口径（USD 账本下倍率即折扣比），可直接相减。
 function marginPct(sell: number, cost: number): number | null {
   if (!(sell > 0) || !(cost > 0)) return null;
   return ((sell - cost) / sell) * 100;

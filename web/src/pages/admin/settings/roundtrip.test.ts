@@ -20,11 +20,11 @@ import { isBlogSitesShapeValid, parseBlogSites, serializeBlogSites, validateBlog
 const t = (k: string, o?: Record<string, unknown>) => (o ? `${k}:${JSON.stringify(o)}` : k);
 
 describe('toc_landing_pricing 圆环往返', () => {
-  // 生产实际值（2026-07-27 ToC 实例）。
+  // 生产形态值（2026-09 账本切 USD 后：fx 固定 1，倍率为纯折扣比，原 ¥ 口径 ÷ 6.8 保留四位）。
   const prod =
-    '{"fx": 6.8, "board": [{"id": "glm-5.2", "multiplier": 0.55}, {"id": "seedream-4-5", "multiplier": 4.624}, '
-    + '{"id": "seedream-5-0-lite", "multiplier": 4.624}, {"id": "seedream-5-0-pro", "multiplier": 4.624}], '
-    + '"multipliers": {"kiro": 2.5, "claude": 2.13, "gemini": 5.1, "openai": 0.45, "seedance": 6.12}, '
+    '{"fx": 1, "board": [{"id": "glm-5.2", "multiplier": 0.0809}, {"id": "seedream-4-5", "multiplier": 0.68}, '
+    + '{"id": "seedream-5-0-lite", "multiplier": 0.68}, {"id": "seedream-5-0-pro", "multiplier": 0.68}], '
+    + '"multipliers": {"kiro": 0.3676, "claude": 0.3132, "gemini": 0.75, "openai": 0.0662, "seedance": 0.9}, '
     + '"plaza_currency": "USD"}';
 
   it('parse → serialize 语义等价', () => {
@@ -36,10 +36,11 @@ describe('toc_landing_pricing 圆环往返', () => {
     expect(validateTocPricing(parseTocPricing(prod), t)).toEqual([]);
   });
 
-  it('小数倍率不被截断', () => {
+  it('四位小数倍率不被截断', () => {
     const v = parseTocPricing(prod);
-    expect(v.board.find((r) => r.id === 'seedream-4-5')?.multiplier).toBe('4.624');
-    expect(v.multipliers['claude']).toBe('2.13');
+    expect(v.board.find((r) => r.id === 'glm-5.2')?.multiplier).toBe('0.0809');
+    expect(v.multipliers['claude']).toBe('0.3132');
+    expect(v.multipliers['openai']).toBe('0.0662');
   });
 
   it('空值序列化成空串而非空对象', () => {
@@ -49,16 +50,16 @@ describe('toc_landing_pricing 圆环往返', () => {
   // plaza_official_only 决定模型广场是否只展示官方基准价。它是个开关而非数值，
   // 最容易在 parse→serialize 里被静默丢掉——一丢，ToB 广场就退回展示实付价。
   it('官方基准价开关往返保真', () => {
-    const raw = '{"fx": 6.8, "plaza_currency": "USD", "plaza_official_only": true}';
+    const raw = '{"fx": 1, "plaza_currency": "USD", "plaza_official_only": true}';
     const v = parseTocPricing(raw);
     expect(v.plazaOfficialOnly).toBe(true);
     expect(JSON.parse(serializeTocPricing(v))).toEqual(JSON.parse(raw));
   });
 
   it('关闭时不写键，保持「留空＝走下游默认」', () => {
-    const v = parseTocPricing('{"fx": 6.8}');
+    const v = parseTocPricing('{"fx": 1}');
     expect(v.plazaOfficialOnly).toBe(false);
-    expect(JSON.parse(serializeTocPricing(v))).toEqual({ fx: 6.8 });
+    expect(JSON.parse(serializeTocPricing(v))).toEqual({ fx: 1 });
   });
 
   it('非布尔值当成配置损坏，而不是悄悄按 true 处理', () => {
@@ -68,16 +69,16 @@ describe('toc_landing_pricing 圆环往返', () => {
   });
 
   it('非法 JSON 不抛异常', () => {
-    expect(() => parseTocPricing('{"fx": 6.8,')).not.toThrow();
+    expect(() => parseTocPricing('{"fx": 1,')).not.toThrow();
   });
 
   it('非法 JSON 阻塞保存，而不是当成空配置', () => {
-    const errors = validateTocPricing(parseTocPricing('{"fx": 6.8,'), t);
+    const errors = validateTocPricing(parseTocPricing('{"fx": 1,'), t);
     expect(errors).toContain('settings.toc_landing_pricing_invalid');
   });
 
   it('倍率为 0 或负数被判错', () => {
-    const v = parseTocPricing('{"multipliers": {"claude": 2.13}}');
+    const v = parseTocPricing('{"multipliers": {"claude": 0.3132}}');
     v.multipliers['claude'] = '0';
     expect(validateTocPricing(v, t).length).toBeGreaterThan(0);
   });
@@ -88,14 +89,14 @@ describe('toc_landing_pricing 圆环往返', () => {
   });
 
   it('留空的平台倍率不会写成 0', () => {
-    const v = parseTocPricing('{"multipliers": {"claude": 2.13}}');
+    const v = parseTocPricing('{"multipliers": {"claude": 0.3132}}');
     v.multipliers['openai'] = '';
     const out = JSON.parse(serializeTocPricing(v)) as { multipliers: Record<string, number> };
     expect(out.multipliers).not.toHaveProperty('openai');
   });
 
   it('保留未知的扩展字段', () => {
-    const raw = '{"fx":6.8,"future_option":{"enabled":true}}';
+    const raw = '{"fx":1,"future_option":{"enabled":true}}';
     expect(JSON.parse(serializeTocPricing(parseTocPricing(raw)))).toEqual(JSON.parse(raw));
   });
 
@@ -113,10 +114,10 @@ describe('toc_landing_pricing 圆环往返', () => {
 
   it('价格偏差提示忽略已下架分组', () => {
     const rates = activeGroupRatesByPlatform([
-      { platform: 'seedance', rate_multiplier: 6.12, delisted: true },
-      { platform: 'seedance', rate_multiplier: 5.78, delisted: false },
+      { platform: 'seedance', rate_multiplier: 0.9, delisted: true },
+      { platform: 'seedance', rate_multiplier: 0.85, delisted: false },
     ]);
-    expect(rates.get('seedance')).toBe(5.78);
+    expect(rates.get('seedance')).toBe(0.85);
   });
 });
 

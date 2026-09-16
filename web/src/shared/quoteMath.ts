@@ -1,9 +1,12 @@
-// 报价单的折/倍率换算：全站统一语义「倍率 = 每官方 $1 扣 ¥，折 = 倍率 ÷ 汇率」。
+// 报价单的折/倍率换算。全站统一语义（2026-09 账本切 USD 起）：
+//   余额与官方基准价同为真实美元，倍率 = 纯折扣比 = 折 ÷ 10（7.5 折 ⇒ 0.75），不再含汇率。
+//   fx 仅为遗留兼容参数（toc_landing_pricing.fx，割接后固定为 1）：折 = 倍率 ÷ fx、倍率 = 折/10 × fx，
+//   fx=1 时即上面的纯折扣关系；保留参数只为不改所有调用方签名，勿再赋 6.8 之类的汇率值。
 // 报价 UI 只让人填「折数」（如 7.5 = 7.5 折），倍率一律由系统换算——
 // 历史上让人手填倍率导致过静默错价事故（6.5 折被配成 9.6 折），此处把入口焊死。
 // 折→倍率的换算规则全站只此一份，任何页面不得内联复制。
 
-export const DEFAULT_QUOTE_FX = 6.8;
+export const DEFAULT_QUOTE_FX = 1;
 
 export function parseQuoteFx(rawTocPricing: string | undefined): number {
   try {
@@ -14,13 +17,13 @@ export function parseQuoteFx(rawTocPricing: string | undefined): number {
   }
 }
 
-// 倍率 → 折数（5.5 折口径的 5.5），保留两位。
+// 倍率 → 折数（5.5 折口径的 5.5），保留两位。fx=1 时即 倍率 × 10。
 export function zheOfRate(rate: number, fx: number): number {
   if (!(rate > 0) || !(fx > 0)) return 0;
   return Math.round((rate / fx) * 1000) / 100;
 }
 
-// 折数 → 倍率，保留四位（7.5 折 × 6.8 = 5.1）。
+// 折数 → 倍率，保留四位（7.5 折 ⇒ 0.75；fx=1 时即 折 ÷ 10）。
 export function rateOfZhe(zhe: number, fx: number): number {
   if (!(zhe > 0) || !(fx > 0)) return 0;
   return Math.round((zhe / 10) * fx * 10000) / 10000;

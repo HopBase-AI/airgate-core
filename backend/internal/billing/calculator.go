@@ -88,6 +88,7 @@ func (c *Calculator) Calculate(input CalculateInput) CalculateResult {
 
 	billingRate := input.BillingRate
 	if billingRate <= 0 {
+		// USD 账本下 1.0 = 官方原价（不打折），对营收是安全侧回退，保留勿改。
 		billingRate = 1.0
 	}
 	accountRate := input.AccountRate

@@ -101,7 +101,8 @@ func TestPublicModelPricingMergesOverlay(t *testing.T) {
 }
 
 // TestPublicModelPricingCurrencyOfficial 货币口径与官方参考价：
-// 覆盖层新增 CNY 基准模型（GLM 形态）带 currency + official_pricing；
+// 覆盖层里的 CNY 基准模型（GLM 形态，¥ 账本时代的遗留数据；USD 账本下 settings 写入口
+// 已拒绝新写入，但存量必须仍能原样读出、不 panic）带 currency + official_pricing；
 // 内置 price.currency / price.official_* metadata 同样可解析；残缺参考价不生效。
 func TestPublicModelPricingCurrencyOfficial(t *testing.T) {
 	manager := &fakeCatalogManager{

@@ -82,8 +82,9 @@ func (f *fakeAPIKeys) FindOwned(_ context.Context, userID, id int) (appapikey.Ke
 	return f.key, nil
 }
 
-// 仿生产形态的目录/分组：Codex 双档显式路由 gpt 模型、GLM 分组只路由 glm-5.2（CNY 基准 + 官方美元参考价）、
-// Claude 分组空路由（不限制）。
+// 仿生产形态的目录/分组：Codex 双档显式路由 gpt 模型、GLM 分组只路由 glm-5.2（遗留 CNY 基准 +
+// 官方美元参考价——USD 账本下写入口已拒绝新 CNY 条目，存量读取路径仍须可用）、Claude 分组空路由（不限制）。
+// 倍率均为 ¥ 账本时代的历史数值，这里只锚定「最优分组选择 / 比值计算」的逻辑，与币种无关。
 func testService(userRates map[int64]float64) *Service {
 	return testServiceWithUser(appuser.User{GroupRates: userRates})
 }

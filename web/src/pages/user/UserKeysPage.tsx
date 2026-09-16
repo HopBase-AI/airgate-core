@@ -10,7 +10,7 @@ import { usePagination } from '../../shared/hooks/usePagination';
 import { groupsApi } from '../../shared/api/groups';
 import { modelsApi } from '../../shared/api/models';
 import { settingsApi } from '../../shared/api/settings';
-import { parseQuoteFx } from '../../shared/quoteMath';
+import { formatRate, parseQuoteFx } from '../../shared/quoteMath';
 import { useToast } from '../../shared/ui';
 import { AlertDialog, Alert, Button, Dropdown, EmptyState, Input, ListBox, Modal, Select, Spinner, TextField as HeroTextField, useOverlayState } from '@heroui/react';
 import { DialogTriggerShim } from '../../shared/components/DialogTriggerShim';
@@ -185,7 +185,7 @@ export default function UserKeysPage() {
     queryFn: () => groupsApi.listAvailable(FETCH_ALL_PARAMS),
   });
 
-  // 分组报价（折扣展示）：usd_multiplier ÷ fx = 对官方直付的折扣；获取失败时回退倍率文案
+  // 分组报价（折扣展示）：usd_multiplier ÷ fx = 对官方直付的折扣（fx 为遗留参数、割接后为 1，即倍率本身）；获取失败时回退倍率文案
   const { data: myPricing } = useQuery({
     queryKey: queryKeys.myModelPricing(),
     queryFn: modelsApi.myPricing,
@@ -358,7 +358,7 @@ export default function UserKeysPage() {
   const quoteMode = myPricing?.pricing_mode === 'quote';
 
   // 分组选项：右侧按统一口径展示报价与折扣。
-  // （倍率语义 = 每消耗官方 $1 扣多少 ¥ 余额；折 = 倍率 ÷ fx，全站同一定义）。
+  // （倍率语义 = 官方美元价 × 倍率 即实付美元，倍率本身就是折扣比；折 = 倍率 ÷ fx，fx 为遗留参数、割接后为 1，全站同一定义）。
   // 价格数据一律来自 /models/pricing/me 的分组摘要（权威口径，/groups 瘦投影不再带倍率），
   // 摘要请求失败时不展示价格后缀（宁缺勿错）。固定图价哨兵分组（标准倍率 0）不展示
   // token 倍率——后端摘要的 effective_rate 对这类分组是 billing 的 1.0 兜底值，不是真实报价。
@@ -749,7 +749,7 @@ export default function UserKeysPage() {
                             ...(quoteMode && rowUsdMult != null ? [{
                               color: 'default' as const,
                               label: t('user_keys.quote_price_short', 'Quote'),
-                              value: t('user_keys.group_quote_price', { m: rowUsdMult.toFixed(2) }),
+                              value: t('user_keys.group_quote_price', { m: formatRate(rowUsdMult) }),
                             }] : []),
                             ...(!quoteMode && rowEffectiveRate > 0 && rowStandardRate > 0 ? [{
                               color: 'default' as const,

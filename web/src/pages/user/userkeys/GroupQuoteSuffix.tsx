@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { formatRate } from '../../../shared/quoteMath';
 
 export interface GroupQuoteSuffixData {
   multiplier: number;
@@ -6,7 +7,7 @@ export interface GroupQuoteSuffixData {
   discountPercent: number;
   standardMultiplier?: number;
   hasOfficialDiscount: boolean;
-  // quoteOnly 报价客户模式：只显示「¥X.XX / $1」报价本身，
+  // quoteOnly 报价客户模式：只显示「×0.xxxx」倍率报价本身，
   // 不渲染划线标准价与折扣徽章（报价客户不该看到任何牌价锚点）。
   quoteOnly?: boolean;
 }
@@ -16,8 +17,9 @@ interface GroupQuoteSuffixProps {
   title?: string;
 }
 
-const formatMultiplier = (multiplier: number) =>
-  (Math.round(multiplier * 100) / 100).toString();
+// USD 账本下倍率是纯折扣比（0.0662 这种量级很常见），两位小数会把 0.0662 显示成 0.07，
+// 与报价单的 formatRate 同为四位。
+const formatMultiplier = (multiplier: number) => formatRate(multiplier);
 
 export function GroupQuoteSuffix({ data, title }: GroupQuoteSuffixProps) {
   const { t } = useTranslation();

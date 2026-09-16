@@ -11,8 +11,8 @@ import { SettingsSection, Field } from '../SettingsPage';
 // toc_landing_pricing 的表单化编辑器。
 //
 // 存储仍是单个 JSON setting（形如
-//   {"fx":6.8,"multipliers":{"claude":2.13},"board":[{"id":"glm-5.2","multiplier":0.55}],
-//    "plaza_currency":"USD"}），
+//   {"fx":1,"multipliers":{"claude":0.3132},"board":[{"id":"glm-5.2","multiplier":0.55}],
+//    "plaza_currency":"USD"}；fx 是 ¥ 账本时代的汇率参数，2026-09 切 USD 后固定 1、仅作遗留兼容），
 // 但管理员只面对数字输入框：解析 → 本地 state → commit 时序列化，与
 // ModelCatalogEditor 的做法一致（本地 state 承接输入，避免每键 parse→serialize
 // 吃掉小数点后的尾字符）。
@@ -301,7 +301,7 @@ export function TocPricingEditor({
             <Input
               value={form.fx}
               onChange={(e) => commit({ ...form, fx: e.target.value })}
-              placeholder="6.8"
+              placeholder="1"
               inputMode="decimal"
             />
           </Field>

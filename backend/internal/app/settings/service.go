@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net/smtp"
 	"strings"
@@ -57,15 +58,54 @@ func (s *Service) List(ctx context.Context, group string) ([]Setting, error) {
 	return items, err
 }
 
+// modelCatalogKeyPrefix 模型目录覆盖层的 settings key 前缀（models.catalog.<platform>），
+// 与 plugin.modelCatalogSettingKey 及后台「模型目录」编辑器三方共用此约定。
+const modelCatalogKeyPrefix = "models.catalog."
+
+// validateModelCatalog 校验模型目录覆盖层写入值。core 对覆盖层是哑存储、不解析各平台
+// 各异的价格 schema，这里只拦两件事：
+//  1. USD 账本（2026-09 割接）下 currency=CNY（人民币牌价按 1:1 记账）已无意义，
+//     再写进去会让展示端把 ¥ 数字当基准价铺出去 → ErrModelCatalogCurrency；
+//  2. 声明了官方牌价 list_price 却与 pricing 对不上恒等式（list ÷ fx ≈ 基准价），
+//     或缺 currency / fx ≤ 0 → ErrModelCatalogListPriceMismatch，
+//     实现见同包 model_catalog_listprice.go。
+//
+// 两道闸门都只校验写入：存量 CNY 条目不在此拦（读取侧按「无美元参考价」处理），
+// 没声明 list_price 的条目完全不受第 2 条影响。
+// 空值 = 清空覆盖层，直接放行；解析不出数组的值沿用哑存储语义原样放行（消费方插件自行容错），
+// 这里不额外收紧 schema。
+func validateModelCatalog(raw string) error {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var entries []struct {
+		ID       string `json:"id"`
+		Currency string `json:"currency"`
+	}
+	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+		return nil
+	}
+	for _, entry := range entries {
+		if strings.EqualFold(strings.TrimSpace(entry.Currency), "CNY") {
+			return fmt.Errorf("%w: model %q", ErrModelCatalogCurrency, entry.ID)
+		}
+	}
+	// 牌价恒等式闸门。同一份原文各解各的字段子集：两者的容错口径（未知字段放行、
+	// 解析不出数组放行）一致，合并成一个结构体反而会让 currency 与 list_price 互相牵制。
+	return validateModelCatalogListPrice(raw)
+}
+
 // Update 批量更新设置。
 func (s *Service) Update(ctx context.Context, items []ItemInput) error {
 	logger := sdk.LoggerFromContext(ctx)
 	cloned := make([]ItemInput, 0, len(items))
 	keys := make([]string, 0, len(items))
 	for _, item := range items {
-		// 模型目录覆盖层是「官方牌价 ¥ 原值正确」唯一的闸门，写入前先核恒等式。
-		if err := validateModelCatalogListPrice(item.Key, item.Value); err != nil {
-			return err
+		// 模型目录覆盖层是「币种口径 + 官方牌价 ¥ 原值正确」唯一守得住的闸门，写入前先校验。
+		if strings.HasPrefix(item.Key, modelCatalogKeyPrefix) {
+			if err := validateModelCatalog(item.Value); err != nil {
+				return err
+			}
 		}
 		cloned = append(cloned, ItemInput{
 			Key:   item.Key,

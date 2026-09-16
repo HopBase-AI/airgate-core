@@ -1102,8 +1102,9 @@ func resolvedFixedImagePrices(userSettings, groupSettings map[string]map[string]
 	if len(prices) == 0 {
 		return nil
 	}
-	// 固定图价沿用站内余额计价口径（人民币）；ToC 美元视图由展示端按站点汇率换算。
-	prices["currency"] = "CNY"
+	// 固定图价与站内余额同口径：账本自 2026-09 割接起为真实美元，按张价即 $/张，
+	// 展示端不再做汇率换算（toc_landing_pricing.fx 固定为 1，仅作遗留兼容参数）。
+	prices["currency"] = "USD"
 	return prices
 }
 

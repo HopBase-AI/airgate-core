@@ -1,3 +1,5 @@
+import { DEFAULT_QUOTE_FX } from '../shared/quoteMath';
+
 export function formatModelPrice(value: number, symbol: '$' | '¥' = '$', allowZero = false): string {
   if (!Number.isFinite(value) || value < 0 || (!allowZero && value === 0)) return '—';
 
@@ -30,13 +32,15 @@ export function hasFixedImageTierPrices(model: FixedImagePriceModel): boolean {
     .some(validFixedImagePrice);
 }
 
-// API 返回的固定图价是余额/CNY 单位；ToC 美元视图按站点汇率换算，ToB 人民币视图直接展示。
+// API 返回的固定图价与余额同币（美元 / 张，2026-09 账本割接起）。fx 为遗留兼容参数
+// （toc_landing_pricing.fx，割接后固定 1）：USD 视图仍按 price ÷ fx 走一遍换算，fx=1 即原值；
+// CNY 视图（遗留 plaza_currency=CNY）直接展示。
 export function resolveFixedImageTierPrices(
   model: FixedImagePriceModel,
   fx: number,
   saleCurrency: 'CNY' | 'USD',
 ): FixedImageTierPrice[] {
-  const safeFX = Number.isFinite(fx) && fx > 0 ? fx : 6.8;
+  const safeFX = Number.isFinite(fx) && fx > 0 ? fx : DEFAULT_QUOTE_FX;
   const tiers: Array<[FixedImageTierPrice['tier'], number | undefined]> = [
     ['1k', model.image_price_1k],
     ['2k', model.image_price_2k],
@@ -50,8 +54,9 @@ export function resolveFixedImageTierPrices(
 
 // officialPriceSymbol 基准价该用哪个币种符号。
 //
-// currency="CNY" 表示这批 input/output 数字本身就是人民币牌价（按 1:1 记账），
-// 其余是官方美元价。硬标 $ 会把 ¥1.4 说成 $1.4，凭空虚报一个汇率的倍数。
+// currency="CNY" 是 ¥ 账本时代的遗留取值：这批 input/output 数字本身是人民币牌价（按 1:1 记账）。
+// USD 账本下后台写入口已拒绝新的 CNY 条目，但存量条目仍可能读出——遇到仍要标 ¥，
+// 硬标 $ 会把 ¥1.4 说成 $1.4，凭空虚报一个汇率的倍数。其余一律官方美元价。
 export function officialPriceSymbol(model: { currency?: string }): '$' | '¥' {
   return model.currency === 'CNY' ? '¥' : '$';
 }

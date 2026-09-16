@@ -2,6 +2,7 @@ package settings
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -22,6 +23,70 @@ func TestUpdateClonesInput(t *testing.T) {
 	input[0].Value = "Changed"
 	if captured[0].Value != "Airgate" {
 		t.Fatalf("captured value = %q, want Airgate", captured[0].Value)
+	}
+}
+
+// USD 账本（2026-09 割接）下模型目录覆盖层不再接受 currency=CNY；其余键、空值、
+// 解析不出数组的值一律照旧放行（core 对覆盖层仍是哑存储）。
+func TestUpdateRejectsModelCatalogCNYCurrency(t *testing.T) {
+	tests := []struct {
+		name    string
+		items   []ItemInput
+		wantErr bool
+	}{
+		{
+			name:    "覆盖层 currency=CNY 拒写",
+			items:   []ItemInput{{Key: "models.catalog.openai", Value: `[{"id":"glm-5.2","currency":"CNY","pricing":{"input":8}}]`}},
+			wantErr: true,
+		},
+		{
+			name:    "大小写/空白不放过",
+			items:   []ItemInput{{Key: "models.catalog.openai", Value: `[{"id":"x","currency":" cny "}]`}},
+			wantErr: true,
+		},
+		{
+			name:  "USD / 未声明币种放行",
+			items: []ItemInput{{Key: "models.catalog.openai", Value: `[{"id":"a","currency":"USD"},{"id":"b","pricing":{"input":5}}]`}},
+		},
+		{
+			name:  "空值（清空覆盖层）放行",
+			items: []ItemInput{{Key: "models.catalog.claude", Value: "   "}},
+		},
+		{
+			name:  "解析不出数组的值沿用哑存储放行",
+			items: []ItemInput{{Key: "models.catalog.gemini", Value: `{"currency":"CNY"}`}},
+		},
+		{
+			name:  "非覆盖层键不校验",
+			items: []ItemInput{{Key: "toc_landing_pricing", Value: `[{"currency":"CNY"}]`}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upserted := false
+			service := NewService(settingsStubRepository{
+				upsertMany: func(context.Context, []ItemInput) error {
+					upserted = true
+					return nil
+				},
+			}, "")
+			err := service.Update(t.Context(), tt.items)
+			if tt.wantErr {
+				if !errors.Is(err, ErrModelCatalogCurrency) {
+					t.Fatalf("Update() error = %v, want ErrModelCatalogCurrency", err)
+				}
+				if upserted {
+					t.Fatal("被拒的写入不应落库")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Update() error = %v", err)
+			}
+			if !upserted {
+				t.Fatal("合法写入应落库")
+			}
+		})
 	}
 }
 
