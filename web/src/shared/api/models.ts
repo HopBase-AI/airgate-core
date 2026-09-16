@@ -56,6 +56,29 @@ export interface PublicPricingModel {
   // $/1M video_tokens）；"second" = $/秒（按视频时长计费）；生图模型可为 "image"。
   // 老后端不下发该字段，展示端按 "token" 兜底（与改动前行为一致）。
   price_unit?: string;
+  // 按次计价能力（$ / 次，键 = 能力名，如可灵人脸识别 face_detect）。
+  call?: Record<string, number>;
+  // 厂商官方牌价（原币）。国内厂商模型（可灵 / 万相 / 海螺 H3 / 国内 Seedance /
+  // 覆盖层登记的千问、Kimi）官网标价是 ¥，插件按 fx 折成上面的美元基准价计费，
+  // 客户只看 $ 对不上官网 ¥。缺省 = 基准价本身就是官方美元价，无需换算。
+  // 只作展示，不参与计费；键与同名基准价字段一一对应（docs/pricing-list-verification-sop.md §1.1）。
+  list_price?: PublicModelListPrice;
+}
+
+// PublicModelListPrice 官方牌价（原币）。恒等式 <价> ÷ fx ≈ 同名基准价字段。
+// 只含币种 / 折算率 / 单价，不含任何上游通道、账号或供应商信息。
+export interface PublicModelListPrice {
+  // 原币币种（如 "CNY"）。
+  currency: string;
+  // 折算率：1 USD = fx 原币（如 6.8）。
+  fx: number;
+  input?: number;
+  cached_input?: number;
+  output?: number;
+  // 键与同名基准价 map 一致；video_tokens 的「一份」量纲同样由 price_unit 决定。
+  video_tokens?: Record<string, number>;
+  image?: Record<string, number>;
+  call?: Record<string, number>;
 }
 
 export interface PublicPlatformPricing {

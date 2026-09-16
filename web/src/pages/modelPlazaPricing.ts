@@ -56,6 +56,73 @@ export function officialPriceSymbol(model: { currency?: string }): '$' | '¥' {
   return model.currency === 'CNY' ? '¥' : '$';
 }
 
+// ──────────────────────── 厂商官方牌价（原币）小字 ────────────────────────
+//
+// 账本切 USD 后，国内厂商模型（可灵 / 万相 / 海螺 H3 / 国内 Seedance / 覆盖层登记的
+// 千问、Kimi）在广场上只剩 ¥÷6.8 的美元数字，客户对不上厂商官网的 ¥ 牌价。
+// core 经 list_price 把原币牌价原样下发（docs/pricing-list-verification-sop.md §4.3），
+// 这里只做「取值 + 格式化」，一分钱都不换算——换算过的数字就不是牌价了。
+//
+// 与上面的 officialPriceSymbol / currency==="CNY" 分支互不干涉：那条是旧的
+// 「¥ 1:1 记账」存量口径，保留兼容；本节是新增的展示型牌价，两者可同时缺省。
+
+export interface ModelListPrice {
+  currency: string;
+  fx: number;
+  input?: number;
+  cached_input?: number;
+  output?: number;
+  video_tokens?: Record<string, number>;
+  image?: Record<string, number>;
+  call?: Record<string, number>;
+}
+
+/** 牌价币种符号；认不出的币种回退币种代码，绝不硬标 $。 */
+export function listPriceSymbol(currency: string | undefined): string {
+  const code = (currency ?? '').trim().toUpperCase();
+  if (!code) return '';
+  if (code === 'CNY' || code === 'RMB' || code === 'JPY') return '¥';
+  if (code === 'USD') return '$';
+  if (code === 'EUR') return '€';
+  if (code === 'GBP') return '£';
+  if (code === 'HKD') return 'HK$';
+  return `${code} `;
+}
+
+/** 牌价金额文案：¥12 / ¥0.6 / ¥0.055。整数不补小数位，避免「¥12.000000」这种噪音。 */
+export function formatListPrice(value: number, currency: string): string {
+  if (!Number.isFinite(value) || value <= 0) return '';
+  const rounded = Math.round((value + Number.EPSILON) * 1_000_000) / 1_000_000;
+  return `${listPriceSymbol(currency)}${rounded.toLocaleString(undefined, { maximumFractionDigits: 6 })}`;
+}
+
+/** 该模型是否带官方牌价；币种或折算率缺失视为契约缺失，整块不展示。 */
+export function hasListPrice(model: { list_price?: ModelListPrice }): boolean {
+  const list = model.list_price;
+  return !!list && !!(list.currency ?? '').trim() && Number.isFinite(list.fx) && list.fx > 0;
+}
+
+/** token 档官方牌价文案；无牌价或该档缺价返回空串（调用方据此不渲染小字）。 */
+export function listPriceText(
+  model: { list_price?: ModelListPrice },
+  tier: 'input' | 'cached_input' | 'output',
+): string {
+  if (!hasListPrice(model)) return '';
+  const list = model.list_price as ModelListPrice;
+  return formatListPrice(list[tier] ?? 0, list.currency);
+}
+
+/** 桶价（视频 / 生图 / 按次）官方牌价文案；桶名与同名基准价 map 一致。 */
+export function listBucketPriceText(
+  model: { list_price?: ModelListPrice },
+  kind: 'video_tokens' | 'image' | 'call',
+  bucket: string,
+): string {
+  if (!hasListPrice(model)) return '';
+  const list = model.list_price as ModelListPrice;
+  return formatListPrice(list[kind]?.[bucket] ?? 0, list.currency);
+}
+
 // resolvePlazaFixedImageTiers 是模型广场取固定图价的唯一入口。
 //
 // 固定图价是「分组配置的实付价」（groups.plugin_settings 的 image_price_1k/2k/4k），

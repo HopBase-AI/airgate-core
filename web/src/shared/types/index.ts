@@ -829,6 +829,26 @@ export interface UsageCostDetail {
   metadata?: Record<string, string>;
 }
 
+/**
+ * OfficialNativeCost 厂商官方牌价口径的单行费用（后端只读计算块，不落库、不参与计费）。
+ *
+ * 国内厂商模型的官网标价是 ¥、账本记 $，客户据此逐笔验算：
+ *   cost（原币官方费用）× discount（折扣）÷ fx（折算率）= actual_cost（实扣美元）
+ *
+ * 缺省 = 本行没有牌价快照（历史行、或官方价本就是美元的模型），前端不渲染验算块。
+ * API Key 会话的 CustomerUsageLogResp 按 SOP §6.3 不带该块（会暴露分销商折扣）。
+ */
+export interface OfficialNativeCost {
+  /** 原币币种（如 "CNY"）。 */
+  currency: string;
+  /** 折算率快照：1 USD = fx 原币。写入时的历史事实，不是当前汇率。 */
+  fx: number;
+  /** 按官方牌价算出的本次费用（原币，折扣前）。 */
+  cost: number;
+  /** 本次生效的折扣（= rate_multiplier）。 */
+  discount: number;
+}
+
 export interface UsageLogResp {
   id: number;
   request_id?: string;
@@ -978,6 +998,11 @@ export interface UserUsageLogResp {
   /** 失败原因。用户视角仅客户端类错误透出原文，上游故障只给分类 */
   error_message?: string;
   created_at: string;
+  /**
+   * 厂商官方牌价口径的本次费用（只读计算块，后端由 usage_cost_details 的 list_* 快照累加）。
+   * 缺省 = 本行无牌价快照，前端不渲染验算块。
+   */
+  official_native?: OfficialNativeCost;
 }
 
 /**
