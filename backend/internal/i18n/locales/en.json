@@ -74,5 +74,14 @@
   "gw.internal_error": "The request could not be completed due to an internal error, please retry later",
   "gw.group_offline_generic": "The selected group has been taken offline and no longer serves requests, please choose another group",
   "gw.model_not_served_generic": "The selected group does not provide the requested model, please choose another model or group",
-  "gw.task_stale_timeout": "The task did not finish within 24 hours and was terminated automatically"
+  "gw.task_stale_timeout": "The task did not finish within 24 hours and was terminated automatically",
+  "export.time": "Time",
+  "export.model": "Model",
+  "export.usage": "Usage",
+  "export.list_currency": "Official List Price Currency",
+  "export.official_cost_native": "Official Cost (List Currency)",
+  "export.discount": "Discount",
+  "export.actual_cost_usd": "Charged (USD)",
+  "export.note": "Note",
+  "export.official_cost_total": "Official Cost Total"
 }
