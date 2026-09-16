@@ -196,6 +196,31 @@ func TestHostForwardHeadersDropsCallerInternalTestMode(t *testing.T) {
 	if got := headers.Get("X-Airgate-Plugin-Claude-Claude-Code-Only"); got != "false" {
 		t.Fatalf("plugin setting header = %q, want false", got)
 	}
+	// 非成员发起：没有改写，不注入提交人头
+	if got := headers.Get("X-Airgate-Submitter-ID"); got != "" {
+		t.Fatalf("X-Airgate-Submitter-ID = %q, want empty for a plain user", got)
+	}
+}
+
+// 成员发起的 host 转发：X-Airgate-User-ID 是改写后的企业主，X-Airgate-Submitter-ID 才是提交人。
+// 视频插件登记影子任务要用后者，否则结算出的使用记录 member_id=0。
+func TestHostForwardHeadersCarrySubmitter(t *testing.T) {
+	t.Parallel()
+
+	headers := hostForwardHeaders(hostForwardRequest{
+		Path:        "/api/v1/services/aigc/video-generation/video-synthesis",
+		Method:      "POST",
+		UserID:      6985,
+		submitterID: 7020,
+		Headers:     map[string]interface{}{},
+	}, routing.Candidate{GroupID: 36})
+
+	if got := headers.Get("X-Airgate-User-ID"); got != "6985" {
+		t.Fatalf("X-Airgate-User-ID = %q, want 6985 (billing owner)", got)
+	}
+	if got := headers.Get("X-Airgate-Submitter-ID"); got != "7020" {
+		t.Fatalf("X-Airgate-Submitter-ID = %q, want 7020 (member login user)", got)
+	}
 }
 
 func TestHostInvokeRequiresDeclaredCapability(t *testing.T) {

@@ -161,6 +161,7 @@ func (m *Manager) resetProcessingTasks(ctx context.Context) {
 				slog.Error("task_startup_fail_failed", "task_id", st.ID, sdk.LogFieldError, err)
 			} else if updated {
 				failedCount++
+				m.RecordTaskFailureUsage(ctx, st.ID)
 			}
 		}
 	}
@@ -323,6 +324,8 @@ func (m *Manager) launchPluginTasks(ctx context.Context, pluginID, pluginName st
 				SetCompletedAt(time.Now()).
 				Exec(ctx); err != nil {
 				slog.Error("task_dispatch_unsupported_type_update_failed", "task_id", t.ID, sdk.LogFieldError, err)
+			} else {
+				m.RecordTaskFailureUsage(ctx, t.ID)
 			}
 			continue
 		}
@@ -393,7 +396,7 @@ func (m *Manager) processOneTask(ctx context.Context, pluginName string, process
 			}
 		} else {
 			now := time.Now()
-			if _, err := updateTaskWhileProcessing(ctx, db, t.ID, func(update *ent.TaskUpdate) {
+			updated, err := updateTaskWhileProcessing(ctx, db, t.ID, func(update *ent.TaskUpdate) {
 				update.SetStatus(enttask.StatusFailed).
 					SetStage("failed").
 					SetErrorMessage(errMsg).
@@ -401,8 +404,13 @@ func (m *Manager) processOneTask(ctx context.Context, pluginName string, process
 				if grpcCode != "" {
 					update.SetErrorType(grpcCode)
 				}
-			}); err != nil {
+			})
+			if err != nil {
 				slog.Error("task_fail_update_failed", "task_id", t.ID, sdk.LogFieldError, err)
+			} else if updated {
+				// 插件自己已经 tasks.update 置 failed 的情况 CAS 不会命中（状态已不是 processing），
+				// 那条记录由 updateTask 落；这里只覆盖「插件返回错误、由 core 判终态」的路径。
+				m.RecordTaskFailureUsage(ctx, t.ID)
 			}
 		}
 		return
@@ -421,6 +429,16 @@ func (m *Manager) processOneTask(ctx context.Context, pluginName string, process
 	}
 
 	slog.Info("task_process_completed", "task_id", t.ID, sdk.LogFieldPluginID, pluginName)
+}
+
+// RecordTaskFailureUsage 任务进入 failed 终态后落零费用使用记录（见 task_failure_usage.go）。
+// Manager 内四处由 core 判终态的落点（重启清理 / 不支持的任务类型 / 重试耗尽 / 僵尸超时）
+// 与卡死扫描共用；插件经 tasks.update 宣告的失败在 HostService.updateTask 里落。
+func (m *Manager) RecordTaskFailureUsage(ctx context.Context, taskID int) {
+	if m == nil || m.hostFactory == nil {
+		return
+	}
+	m.hostFactory.RecordTaskFailureUsage(ctx, taskID)
 }
 
 // taskRecoverLoop 定期恢复僵尸任务（processing 超时未完成）。
@@ -480,6 +498,7 @@ func (m *Manager) recoverStaleTasks(ctx context.Context) {
 			recoveredCount++
 		} else {
 			failedCount++
+			m.RecordTaskFailureUsage(ctx, st.ID)
 		}
 	}
 	if recoveredCount > 0 {

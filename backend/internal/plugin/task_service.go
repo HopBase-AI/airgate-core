@@ -313,6 +313,11 @@ func (h *HostService) updateTask(ctx context.Context, pluginID string, req hostU
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "update task: %v", err)
 	}
+	// 插件宣告的失败终态（工作坊提交期失败、生图上游拒绝、影子任务失败镜像等）
+	// 全部经这里落使用记录；只在本次真正发生 → failed 的跃迁时记一次。
+	if t.Status != enttask.StatusFailed && updated.Status == enttask.StatusFailed {
+		h.recordTaskFailureUsage(ctx, updated)
+	}
 	return map[string]interface{}{"task": taskToPayload(updated)}, nil
 }
 

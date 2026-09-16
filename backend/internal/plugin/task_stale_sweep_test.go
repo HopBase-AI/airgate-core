@@ -37,7 +37,7 @@ func TestSweepStaleTasks(t *testing.T) {
 		SetUserID(u.ID).SetStatus(enttask.StatusCompleted).
 		SetCreatedAt(now.Add(-72 * time.Hour)).SaveX(ctx)
 
-	failed, err := sweepStaleTasks(ctx, db, now)
+	failed, err := sweepStaleTasks(ctx, db, now, nil)
 	if err != nil {
 		t.Fatalf("sweepStaleTasks: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestSweepStaleTasks(t *testing.T) {
 	}
 
 	// 幂等：再扫一轮没有可扫的了
-	if failed, err := sweepStaleTasks(ctx, db, now); err != nil || failed != 0 {
+	if failed, err := sweepStaleTasks(ctx, db, now, nil); err != nil || failed != 0 {
 		t.Fatalf("第二轮 failed = %d err=%v, want 0", failed, err)
 	}
 }
@@ -96,7 +96,7 @@ func TestSweepStaleTasksCoversRetryingAndCancelling(t *testing.T) {
 	retrying := mk(enttask.StatusRetrying)
 	cancelling := mk(enttask.StatusCancelling)
 
-	failed, err := sweepStaleTasks(ctx, db, now)
+	failed, err := sweepStaleTasks(ctx, db, now, nil)
 	if err != nil {
 		t.Fatalf("sweepStaleTasks: %v", err)
 	}

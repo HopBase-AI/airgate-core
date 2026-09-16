@@ -36,15 +36,18 @@ func staleTaskErrorMessage() string {
 	return i18n.En("gw.task_stale_timeout")
 }
 
+// StaleTaskFailedHook 每终止一条卡死任务后的回调（落零费用使用记录）；nil 表示不回调。
+type StaleTaskFailedHook func(ctx context.Context, taskID int)
+
 // StartStaleTaskSweepLoop 启动卡死任务扫描循环（每小时一轮，启动即跑一轮）。
 // 与其他单例后台循环一样只在 leader 实例执行，蓝绿/多实例期间不会重复改状态。
-func StartStaleTaskSweepLoop(ctx context.Context, db *ent.Client, isLeader func() bool) {
+func StartStaleTaskSweepLoop(ctx context.Context, db *ent.Client, isLeader func() bool, onFailed StaleTaskFailedHook) {
 	if db == nil {
 		return
 	}
 	runIfLeader := func() {
 		if isLeader == nil || isLeader() {
-			runStaleTaskSweepOnce(ctx, db)
+			runStaleTaskSweepOnce(ctx, db, onFailed)
 		}
 	}
 	runIfLeader()
@@ -61,14 +64,14 @@ func StartStaleTaskSweepLoop(ctx context.Context, db *ent.Client, isLeader func(
 	}
 }
 
-func runStaleTaskSweepOnce(parent context.Context, db *ent.Client) {
+func runStaleTaskSweepOnce(parent context.Context, db *ent.Client, onFailed StaleTaskFailedHook) {
 	if err := parent.Err(); err != nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(parent, staleTaskSweepTimeout)
 	defer cancel()
 
-	failed, err := sweepStaleTasks(ctx, db, time.Now())
+	failed, err := sweepStaleTasks(ctx, db, time.Now(), onFailed)
 	if err != nil {
 		slog.Warn("task_stale_sweep_failed", "failed", failed, "error", err)
 		return
@@ -81,19 +84,45 @@ func runStaleTaskSweepOnce(parent context.Context, db *ent.Client) {
 // sweepStaleTasks 把创建超过 24 小时仍在途(pending/processing/retrying/cancelling)的任务批量判失败，
 // 返回被终止的条数。按 created_at 而不是 updated_at 判龄：预留是从提交那一刻占上的，
 // 中途有没有心跳不改变「这笔钱被占了多久」。
-func sweepStaleTasks(ctx context.Context, db *ent.Client, now time.Time) (int, error) {
+//
+// 逐条 CAS 终止而不是一条 UPDATE 批量扫：每条真正被本次终止的任务都要落一条失败使用记录，
+// 批量更新拿不到「哪些行是这次改的」。候选集先查出来，再按 id + 仍在途 条件逐条更新。
+func sweepStaleTasks(ctx context.Context, db *ent.Client, now time.Time, onFailed StaleTaskFailedHook) (int, error) {
 	if db == nil {
 		return 0, nil
 	}
 	cutoff := now.Add(-staleTaskMaxAge)
-	return db.Task.Update().
+	ids, err := db.Task.Query().
 		Where(
 			enttask.StatusIn(taskInFlightStatuses...),
 			enttask.CreatedAtLT(cutoff),
 		).
-		SetStatus(enttask.StatusFailed).
-		SetErrorCode(staleTaskErrorCode).
-		SetErrorMessage(staleTaskErrorMessage()).
-		SetCompletedAt(now).
-		Save(ctx)
+		IDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+	failed := 0
+	for _, id := range ids {
+		affected, err := db.Task.Update().
+			Where(
+				enttask.IDEQ(id),
+				enttask.StatusIn(taskInFlightStatuses...),
+			).
+			SetStatus(enttask.StatusFailed).
+			SetErrorCode(staleTaskErrorCode).
+			SetErrorMessage(staleTaskErrorMessage()).
+			SetCompletedAt(now).
+			Save(ctx)
+		if err != nil {
+			return failed, err
+		}
+		if affected == 0 {
+			continue
+		}
+		failed++
+		if onFailed != nil {
+			onFailed(ctx, id)
+		}
+	}
+	return failed, nil
 }
