@@ -21,6 +21,8 @@ import {
   formatModelPrice,
   hasFixedImagePricingBuckets,
   isPerCharacterPricing,
+  listBucketPriceText,
+  listPriceText,
   resolveBucketDiscount,
   officialPriceSymbol,
   resolvePlazaFixedImageTiers,
@@ -261,7 +263,7 @@ function formatZhe(zhe: number): string {
   return value < 1 ? value.toFixed(2) : value.toFixed(1);
 }
 
-function PriceCell({ label, sale, official, officialOnly, officialTitle, saleSymbol, officialSymbol, allowZero, fallbackLabel, quoteMode }: {
+function PriceCell({ label, sale, official, officialOnly, officialTitle, saleSymbol, officialSymbol, allowZero, fallbackLabel, quoteMode, listPrice, listPriceTitle, listPriceLabel }: {
   label: string;
   sale: number | null;
   official: number;
@@ -273,6 +275,12 @@ function PriceCell({ label, sale, official, officialOnly, officialTitle, saleSym
   fallbackLabel?: string;
   // quoteMode 报价客户：官方价降级为不划线的参考行——划线是「对比牌价」的锚点语义，报价客户不该看到
   quoteMode?: boolean;
+  // listPrice 厂商官方牌价（原币）文案，如 "¥12"；空串 = 该模型/该档无牌价，不渲染小字。
+  // 只是把厂商官网那个数原样摆出来，不参与任何换算（见 modelPlazaPricing 的牌价一节）。
+  listPrice?: string;
+  listPriceTitle?: string;
+  // listPriceLabel 牌价小字模板（i18n，含 {{price}} 占位），由调用方预先取好。
+  listPriceLabel?: (price: string) => string;
 }) {
   // 有售价换算时同格展示官方原价（标准用户划线对比；报价客户仅作参考行）
   const showOfficial = sale != null && !officialOnly && official > 0 && !(officialSymbol === saleSymbol && official === sale);
@@ -285,6 +293,11 @@ function PriceCell({ label, sale, official, officialOnly, officialTitle, saleSym
           quoteMode
             ? <span className="ag-model-official-ref" title={officialTitle}>{formatModelPrice(official, officialSymbol)}</span>
             : <del title={officialTitle}>{formatModelPrice(official, officialSymbol)}</del>
+        ) : null}
+        {listPrice ? (
+          <span className="ag-model-list-price" title={listPriceTitle}>
+            {listPriceLabel ? listPriceLabel(listPrice) : listPrice}
+          </span>
         ) : null}
       </dd>
     </div>
@@ -304,6 +317,9 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode, 
 }) {
   const { t, i18n } = useTranslation();
   const officialTitle = t('model_plaza.official_price');
+  // 厂商官方牌价（原币）小字：只有 core 下发了 list_price 的模型才有，其余一个字都不加。
+  const listPriceTitle = t('model_plaza.list_price_title');
+  const listPriceLabel = (price: string) => t('model_plaza.list_price', { price });
   const discountMeta = (
     zhe: number | null,
     groupName?: string,
@@ -350,6 +366,9 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode, 
               saleSymbol={videoSaleSymbol}
               allowZero={b.imageBillingMode === 'fixed'}
               fallbackLabel={b.imageBillingMode === 'token' ? t('model_plaza.token_pricing_fallback') : undefined}
+              listPrice={listBucketPriceText(model, video ? 'video_tokens' : 'image', b.bucket)}
+              listPriceTitle={listPriceTitle}
+              listPriceLabel={listPriceLabel}
             />
           ))}
         </dl>
@@ -368,12 +387,12 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode, 
     <div className="ag-model-price-wrap">
       <dl className="ag-model-price-grid">
         {perCharacter ? (
-          <PriceCell label={t('model_plaza.character_price_unit')} quoteMode={quoteMode} sale={price.input} official={price.official.input} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
+          <PriceCell label={t('model_plaza.character_price_unit')} quoteMode={quoteMode} sale={price.input} official={price.official.input} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} listPrice={listPriceText(model, 'input')} listPriceTitle={listPriceTitle} listPriceLabel={listPriceLabel} />
         ) : (
           <>
-            <PriceCell label={t('model_plaza.input')} quoteMode={quoteMode} sale={price.input} official={price.official.input} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
-            <PriceCell label={t('model_plaza.cached_input')} quoteMode={quoteMode} sale={price.cachedInput} official={price.official.cachedInput} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
-            <PriceCell label={t('model_plaza.output')} quoteMode={quoteMode} sale={price.output} official={price.official.output} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} />
+            <PriceCell label={t('model_plaza.input')} quoteMode={quoteMode} sale={price.input} official={price.official.input} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} listPrice={listPriceText(model, 'input')} listPriceTitle={listPriceTitle} listPriceLabel={listPriceLabel} />
+            <PriceCell label={t('model_plaza.cached_input')} quoteMode={quoteMode} sale={price.cachedInput} official={price.official.cachedInput} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} listPrice={listPriceText(model, 'cached_input')} listPriceTitle={listPriceTitle} listPriceLabel={listPriceLabel} />
+            <PriceCell label={t('model_plaza.output')} quoteMode={quoteMode} sale={price.output} official={price.official.output} officialOnly={price.officialOnly} officialTitle={officialTitle} saleSymbol={price.saleSymbol} officialSymbol={price.officialSymbol} listPrice={listPriceText(model, 'output')} listPriceTitle={listPriceTitle} listPriceLabel={listPriceLabel} />
           </>
         )}
       </dl>

@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  formatListPrice,
   formatModelPrice,
   hasFixedImagePricingBuckets,
   hasFixedImageTierPrices,
+  hasListPrice,
   isPerCharacterPricing,
   isPerSecondPricing,
+  listBucketPriceText,
+  listPriceSymbol,
+  listPriceText,
   priceUnitOf,
   resolveBucketDiscount,
   officialPriceSymbol,
@@ -231,5 +236,50 @@ describe('视频桶标签', () => {
     ]);
     expect(['480p_with_ref', '480p_no_ref'].sort((a, b) => videoBucketRank(a) - videoBucketRank(b)))
       .toEqual(['480p_no_ref', '480p_with_ref']);
+  });
+});
+
+describe('厂商官方牌价（原币）小字', () => {
+  // 账本切 USD 后，可灵 / 万相 / 千问这类模型广场上只剩 ¥÷6.8 的美元数字，
+  // 客户对不上厂商官网的 ¥ 牌价。core 经 list_price 下发原币牌价，这里只取值不换算。
+  const qwen = {
+    input: 1.7647,
+    cached_input: 0.3529,
+    output: 5.2941,
+    list_price: { currency: 'CNY', fx: 6.8, input: 12, cached_input: 2.4, output: 36 },
+  };
+
+  it('token 三档各取各的原币牌价', () => {
+    expect(listPriceText(qwen, 'input')).toBe('¥12');
+    expect(listPriceText(qwen, 'cached_input')).toBe('¥2.4');
+    expect(listPriceText(qwen, 'output')).toBe('¥36');
+  });
+
+  it('没有 list_price 的模型一个字都不加', () => {
+    expect(hasListPrice({ list_price: undefined })).toBe(false);
+    expect(listPriceText({}, 'input')).toBe('');
+    expect(listBucketPriceText({}, 'video_tokens', '720p')).toBe('');
+  });
+
+  it('币种或折算率缺失视为契约缺失，整块不展示', () => {
+    expect(hasListPrice({ list_price: { currency: '', fx: 6.8, input: 12 } })).toBe(false);
+    expect(hasListPrice({ list_price: { currency: 'CNY', fx: 0, input: 12 } })).toBe(false);
+    expect(listPriceText({ list_price: { currency: 'CNY', fx: 0, input: 12 } }, 'input')).toBe('');
+  });
+
+  it('该档缺价时只这一档不展示，其余照铺', () => {
+    const wan = { list_price: { currency: 'CNY', fx: 6.8, video_tokens: { '720p': 0.6 } } };
+    expect(listBucketPriceText(wan, 'video_tokens', '720p')).toBe('¥0.6');
+    expect(listBucketPriceText(wan, 'video_tokens', '1080p')).toBe('');
+    expect(listBucketPriceText(wan, 'image', '720p')).toBe('');
+    expect(listPriceText(wan, 'input')).toBe('');
+  });
+
+  it('币种符号按 currency 映射，认不出的币种不硬标 $', () => {
+    expect(listPriceSymbol('CNY')).toBe('¥');
+    expect(listPriceSymbol('usd')).toBe('$');
+    expect(listPriceSymbol('KRW')).toBe('KRW ');
+    expect(formatListPrice(0.055, 'CNY')).toBe('¥0.055');
+    expect(formatListPrice(0, 'CNY')).toBe('');
   });
 });

@@ -349,6 +349,18 @@
   font-weight: 400;
 }
 
+/* 厂商官方牌价（原币）小字：国内厂商模型的官网标价是 ¥，广场上的 $ 是按固定折算率
+   折算出来的基准价，客户对不上官网。这一行把原币牌价原样摆在旁边，不划线（它不是
+   我们的价，只是厂商官网那个数），比划线原价再弱一档。 */
+.ag-model-price-grid dd .ag-model-list-price {
+  display: block;
+  margin-top: 0.0625rem;
+  color: var(--muted);
+  font-size: 0.625rem;
+  font-weight: 400;
+  opacity: 0.85;
+}
+
 .ag-model-long-context {
   margin-top: 0.5rem;
   color: var(--warning);

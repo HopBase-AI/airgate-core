@@ -18,6 +18,15 @@ import type { UsageLogResp, UserUsageLogResp, CustomerUsageLogResp, UsageAttribu
 import { USAGE_TOKEN_COLORS } from '../constants';
 import { CostValue } from '../components/CostValue';
 import { failureSourceLabelKey, usageFailureSource } from '../failureDiagnostics';
+import {
+  buildUsageVerification,
+  formatDiscount,
+  formatFX,
+  formatNativeAmount,
+  verificationFormula,
+  type UsageRowWithOfficialNative,
+  type UsageVerification,
+} from '../usageListPrice';
 
 /**
  * 列定义统一使用一个宽松的行类型：管理端、普通用户与 API Key 登录用户
@@ -120,6 +129,77 @@ function TooltipRow({
 
 function TooltipDivider() {
   return <div className="my-0.5 border-t border-border" />;
+}
+
+/**
+ * 厂商官方牌价验算块（docs/pricing-list-verification-sop.md §4.1）。
+ *
+ * 国内厂商模型的官网标价是 ¥、账本记 $，客户拿到的 `$1.76 × 折` 对不上官网的 `¥12 × 折`。
+ * 这里把后端 `official_native` 的四个数与各档单价快照原样铺开，客户可逐笔验算：
+ *
+ *   官方费用 × 折扣 ÷ 折算率 = 实扣
+ *
+ * 数字全部来自写入时的快照，前端不自己算、也不查当前模型目录——模型改价后老行仍须
+ * 显示当时的牌价。没有快照的行（历史行 / 官方价本就是美元的模型 / API Key 会话）
+ * 一行都不渲染。
+ *
+ * ⚠️ 文案只提「厂商官方牌价」，不得出现上游通道、账号或供应商
+ * （docs/upstream-identity-egress-sop.md）。
+ *
+ * 本组件由 core 渲染并经费用明细 context 透传给插件渲染器（`official_native_block`），
+ * 这样各插件不必各自维护一份五语文案。
+ */
+export function OfficialNativeVerification({
+  leadingDivider = true,
+  t,
+  verification,
+}: {
+  /** 是否自带上分隔线。插件面板与紧跟分隔线的位置分别需要 true / false，避免双线。 */
+  leadingDivider?: boolean;
+  t: TFunction;
+  verification: UsageVerification;
+}) {
+  const { official, actualCost, unitPrices } = verification;
+
+  return (
+    <>
+      {leadingDivider ? <TooltipDivider /> : null}
+      <div className="px-2 pt-1 text-xs text-text-tertiary">
+        {t('usage.official_list_price', '官方牌价')}
+      </div>
+      {unitPrices.map((item) => (
+        <TooltipRow
+          key={`list-price-${item.rowKey}`}
+          label={item.labelKey ? t(item.labelKey) : item.fallbackLabel}
+          value={`${formatNativeAmount(item.price, item.currency)} ${t(item.unitKey)}`}
+        />
+      ))}
+      <TooltipRow
+        label={t('usage.official_cost_native', '官方费用')}
+        value={formatNativeAmount(official.cost, official.currency)}
+        tone="strong"
+      />
+      <TooltipRow label={t('usage.discount', '折扣')} value={formatDiscount(official.discount)} />
+      <TooltipRow label={t('usage.list_fx', '折算率')} value={formatFX(official.fx)} />
+      <TooltipRow
+        label={t('usage.actual_charged', '实扣')}
+        value={<CostValue value={actualCost} decimals={6} tone="actual" />}
+      />
+      <div className="px-2 pb-1 text-[11px] leading-relaxed text-text-tertiary">
+        <span className="mr-1">{t('usage.verify_formula', '验算')}</span>
+        <span className="font-mono">{verificationFormula(official)}</span>
+      </div>
+    </>
+  );
+}
+
+/** 本行的验算块；没有牌价快照时返回 null（调用方据此整块不渲染）。 */
+function officialNativeVerificationNode(row: UsageRow, t: TFunction, leadingDivider = true): ReactNode {
+  // UsageRow 三种视角里只有 UserUsageLogResp 带 official_native（API Key 会话按
+  // SOP §6.3 不下发，管理员视角走后台 DTO），结构上兼容，直接传。
+  const verification = buildUsageVerification(row);
+  if (!verification) return null;
+  return <OfficialNativeVerification leadingDivider={leadingDivider} t={t} verification={verification} />;
 }
 
 /** 失败分类 → i18n 键与色调。后端取值见 app/usage/errorcode.go。 */
@@ -648,9 +728,28 @@ function buildUsageRecordContext(row: UsageRow, customerScope: boolean) {
   return ctx;
 }
 
-function buildCostDetailContext(row: UsageLogResp | UserUsageLogResp, adminView: boolean) {
+/**
+ * 费用明细 context：在通用上下文之外，额外把「官方牌价验算块」作为**已渲染节点**
+ * 透传给插件（`officialNativeBlock` / `official_native_block`）。
+ *
+ * 刻意不让插件自己拼这块文案：插件前端没有 i18n 运行时（openai 的渲染器至今是硬编码
+ * 中文），验算块若由各插件各写一份，五语欠账会立刻铺开（docs/i18n-sop.md）。
+ * core 渲染、插件只负责把它放在自己「本次消费」行上方，语言与口径始终只有一份。
+ * 同时给出原始数据 `officialNative`，供确需自绘的插件使用。
+ */
+function buildCostDetailContext(row: UsageLogResp | UserUsageLogResp, adminView: boolean, t: TFunction) {
   const ctx = buildUsageRecordContext(row, false);
   ctx.adminView = adminView;
+  const officialNative = (row as UsageRowWithOfficialNative).official_native;
+  if (officialNative) {
+    ctx.officialNative = officialNative;
+    ctx.official_native = officialNative;
+  }
+  const block = officialNativeVerificationNode(row, t);
+  if (block) {
+    ctx.officialNativeBlock = block;
+    ctx.official_native_block = block;
+  }
   return ctx;
 }
 
@@ -697,6 +796,9 @@ function buildResellerCostColumn(t: TFunction, adminView: boolean): UsageColumnC
       if (isUnbilledFailure(raw)) return <UnbilledCell />;
       const row = raw as UsageLogResp;
       const PluginUsageCostDetail = getPluginUsageCostDetail(row.platform);
+      // 通用 tooltip 的紧邻上方已有一条分隔线（管理员视角在原始/账号计费之后），
+      // 这里不再自带，避免双线。
+      const verificationBlock = officialNativeVerificationNode(raw, t, false);
       return (
         <RichTooltip
           placement="right"
@@ -704,7 +806,7 @@ function buildResellerCostColumn(t: TFunction, adminView: boolean): UsageColumnC
             PluginUsageCostDetail ? (
               <PluginUsageCostDetail
                 recordId={row.id}
-                context={buildCostDetailContext(row, adminView)}
+                context={buildCostDetailContext(row, adminView, t)}
               />
             ) : (
               <TooltipPanel title={t('usage.cost_detail')} subtitle={row.model}>
@@ -737,6 +839,7 @@ function buildResellerCostColumn(t: TFunction, adminView: boolean): UsageColumnC
                 {adminView && (
                   <TooltipRow label={t('usage.account_cost', 'Account cost')} value={<CostValue value={row.account_cost} decimals={6} />} />
                 )}
+                {verificationBlock}
                 <TooltipRow label={t('usage.user_charged', 'User Charged')} value={<CostValue value={row.actual_cost} decimals={6} tone="actual" />} />
                 {row.sell_rate > 0 && row.billed_cost !== row.actual_cost && (
                   <>
