@@ -64,6 +64,10 @@ func (h *SettingsHandler) UpdateSettings(c *gin.Context) {
 
 	if err := h.service.Update(c.Request.Context(), items); err != nil {
 		// 管理员可修正的配置错误回 400 带原因，其余仍按内部错误处理。
+		if errors.Is(err, appsettings.ErrModelCatalogCurrency) {
+			response.BadRequest(c, "模型目录覆盖层不再接受 currency=CNY：账本已切换为美元，人民币牌价模型请在插件侧折算成美元基准价后登记（"+err.Error()+"）")
+			return
+		}
 		if errors.Is(err, appsettings.ErrModelCatalogListPriceMismatch) {
 			response.BadRequest(c, err.Error())
 			return

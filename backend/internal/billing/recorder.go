@@ -778,6 +778,7 @@ func enrichUsageCostDetails(rec UsageRecord) []sdk.UsageCostDetail {
 	}
 	rate := rec.RateMultiplier
 	if rate <= 0 {
+		// USD 账本下 1.0 = 官方原价（不打折），与 Calculator 的回退口径一致，保留勿改。
 		rate = 1
 	}
 	nonImageBaseCost := rec.InputCost + rec.OutputCost + rec.CachedInputCost + rec.CacheCreationCost
@@ -824,7 +825,8 @@ func enrichUsageCostDetails(rec UsageRecord) []sdk.UsageCostDetail {
 					items[i].Metadata["billing_mode"] = "fixed_image_price"
 					if imageCount := parseCostMetadataPositiveInt(items[i].Metadata, "image_count"); imageCount > 0 {
 						items[i].Metadata["fixed_unit_price"] = fmt.Sprintf("%.10g", items[i].UserCost/float64(imageCount))
-						items[i].Metadata["fixed_unit"] = "CNY/image"
+						// 固定图价与余额同为真实美元（2026-09 账本割接后），单位即 $/张。
+						items[i].Metadata["fixed_unit"] = "USD/image"
 					}
 				} else {
 					items[i].Metadata["billing_mode"] = "image_token"

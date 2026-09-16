@@ -9,14 +9,6 @@ import (
 	"github.com/DouDOU-start/airgate-core/internal/pkg/listprice"
 )
 
-// modelCatalogKeyPrefix 模型目录覆盖层的 settings key 前缀（models.catalog.<platform>），
-// 与 plugin.modelCatalogSettingKey 及后台「模型目录」编辑器三方共用此约定。
-//
-// ⚠️ core #154（USD 割接）在 service.go 里引入了同名常量与 validateModelCatalog。
-// 两边合并时把本文件的校验并进 validateModelCatalog，常量只留一份——重复声明会直接编译不过，
-// 这是刻意留的响声，避免两套闸门各走各的。
-const modelCatalogKeyPrefix = "models.catalog."
-
 // ErrModelCatalogListPriceMismatch 覆盖层 list_price 与 pricing 对不上恒等式
 // （list ÷ fx ≠ 基准价），或 currency / fx 残缺。管理员可修正的配置错误。
 //
@@ -37,11 +29,15 @@ type listPriceEntry struct {
 
 // validateModelCatalogListPrice 校验一条 models.catalog.<platform> 写入值里的官方牌价。
 //
-// 非模型目录 key、空值（= 清空覆盖层）、解析不出数组的值一律放行：沿用覆盖层哑存储语义，
+// 由同包 service.go 的 validateModelCatalog 统一调用（key 前缀过滤在那里做，
+// 常量 modelCatalogKeyPrefix 也只在那里声明一份）：两道闸门共用一个入口，
+// 免得覆盖层写入出现两套各走各的校验。
+//
+// 空值（= 清空覆盖层）、解析不出数组的值一律放行：沿用覆盖层哑存储语义，
 // 这里只拦「声明了 list_price 但和 pricing 对不上」这一件事。
 // 没写 list_price 的条目完全不受影响。
-func validateModelCatalogListPrice(key, raw string) error {
-	if !strings.HasPrefix(key, modelCatalogKeyPrefix) || strings.TrimSpace(raw) == "" {
+func validateModelCatalogListPrice(raw string) error {
+	if strings.TrimSpace(raw) == "" {
 		return nil
 	}
 	var entries []listPriceEntry

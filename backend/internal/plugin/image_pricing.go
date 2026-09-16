@@ -81,6 +81,7 @@ func applyImageBillingOverride(
 	if override.applyRates {
 		rate := input.BillingRate
 		if rate <= 0 {
+			// USD 账本下 1.0 = 官方原价（不打折），与 Calculator 的回退口径一致，保留勿改。
 			rate = 1
 		}
 		actualCost *= rate

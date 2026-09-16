@@ -39,17 +39,18 @@ type PublicPricingModel struct {
 	// 由 core 统一下发而非各展示端自行推导:模型广场/主站价格表/ToC 站群三处消费同一份
 	// 目录,分类逻辑分散会漂移。取值见 categoryOf 的枚举;能力缺失时为空,展示端归"其他"。
 	Category string
-	// 计费基准价：余额单位（¥1=$1 平价）/ 百万 token。绝大多数模型基准价即官方美元价；
-	// Currency=CNY 的模型（如 GLM）基准价是官方人民币牌价数字按 1:1 记账，展示端须按
-	// Currency 换算，不能直接当美元标注。
+	// 计费基准价：美元 / 百万 token（余额自 2026-09 账本割接起即真实美元，基准价与余额同币）。
+	// 绝大多数模型基准价即官方美元价；人民币牌价模型须在插件侧折算成美元后再登记基准价。
 	Input       float64
 	CachedInput float64
 	Output      float64
-	// Currency 基准价的货币口径："" / "USD"（默认，官方美元价）或 "CNY"（官方人民币牌价 1:1 记账）。
-	// 只影响展示换算，计费永远直接用基准价数值。
+	// Currency 基准价的货币口径：仅 "" / "USD"（官方美元价）有意义。
+	// "CNY"（官方人民币牌价 1:1 记账）是 ¥ 账本时代的遗留取值：USD 账本下不再允许写入
+	// （settings 写入口拒绝，见 app/settings.validateModelCatalog），历史数据仍原样读出、
+	// 展示端按「无美元参考价」处理。只影响展示换算，计费永远直接用基准价数值。
 	Currency string
 	// Official 官方直付参考价（美元 / 百万 token），供展示端做划线对比与折扣计算。
-	// 为 nil 时视基准价本身为官方美元价（Currency=USD 的常规情形）。
+	// 为 nil 时视基准价本身为官方美元价（常规情形）。
 	Official *OfficialPricing
 	// 长上下文阶梯（无则 Threshold=0）。
 	LongContextThreshold        int
@@ -138,7 +139,8 @@ type overlayModel struct {
 	// Capabilities 能力标签整体替换（非追加）。插件漏标能力时由运营侧补，
 	// 空数组不生效（要清空能力请显式写 ["none"] 之外的合法值或停用该条目）。
 	Capabilities []string `json:"capabilities"`
-	// Currency 基准价货币口径（"CNY" 表示官方人民币牌价按 1:1 记账），
+	// Currency 基准价货币口径：USD 账本下只认 "" / "USD"；"CNY"（人民币牌价 1:1 记账）
+	// 是遗留取值，写入口已拒绝、存量仍可读（见 PublicPricingModel.Currency）。
 	// OfficialPricing 官方直付参考价（美元，键 input/cached_input/output）。
 	// 两者只影响展示换算，插件计费侧不读取。
 	Currency        string             `json:"currency"`

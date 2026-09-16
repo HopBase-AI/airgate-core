@@ -8,8 +8,9 @@ type PublicModelPricingResp struct {
 }
 
 // PublicPricingModelResp 单模型公开定价。input/cached_input/output 是计费基准价
-// （余额单位 / 百万 token；常规模型即官方美元价）。currency="CNY" 表示基准价是官方
-// 人民币牌价按 1:1 记账，展示端须按 official（官方美元参考价）做划线对比与折扣换算。
+// （美元 / 百万 token，与余额同币；常规模型即官方美元价）。currency="CNY" 是 ¥ 账本时代
+// 的遗留取值（人民币牌价按 1:1 记账），USD 账本下写入口已拒绝、存量仍可读出：展示端
+// 遇到它须按 official（官方美元参考价）做划线对比与折扣换算，缺参考价则不换算。
 // 视频生成模型无 input/output，价格在 video_tokens（桶 → $ / price_unit 指定的一份：
 // token 档=每百万 video_tokens，second 档=每秒）；图片生成模型价格在 image（像素档位 → $/张）。
 type PublicPricingModelResp struct {
@@ -100,7 +101,7 @@ type MyPlatformPricingResp struct {
 
 // MyPricingModelResp 单模型的用户报价：公开定价 + 最优可用分组的 token 实付倍率。
 // 部分图片尺寸有固定价时，user_rate 是未配置尺寸的 token 回退倍率；三个尺寸均
-// 有固定价或无可用 token 报价时为 0（省略）。固定图价使用余额/CNY 单位/张。
+// 有固定价或无可用 token 报价时为 0（省略）。固定图价与余额同币（美元）/ 张。
 type MyPricingModelResp struct {
 	PublicPricingModelResp
 	UserRate float64 `json:"user_rate,omitempty"`

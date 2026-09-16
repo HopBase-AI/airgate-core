@@ -141,6 +141,7 @@ func (h *HostService) checkSubmissionBudget(ctx context.Context, req *hostForwar
 		return nil
 	}
 	if rate <= 0 {
+		// USD 账本下 1.0 = 官方原价（不打折），预算门禁按最保守口径估，保留勿改。
 		rate = 1
 	}
 	estimate := req.EstimatedOfficialCost * rate

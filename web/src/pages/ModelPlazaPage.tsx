@@ -8,6 +8,7 @@ import { settingsApi } from '../shared/api/settings';
 import { ApiError } from '../shared/api/client';
 import { queryKeys } from '../shared/queryKeys';
 import { localizedGroupText } from '../shared/groupText';
+import { DEFAULT_QUOTE_FX } from '../shared/quoteMath';
 import { useToast } from '../shared/ui';
 import { useAuth } from '../app/providers/AuthProvider';
 import {
@@ -35,8 +36,8 @@ interface TocPricingConfig {
   fx?: number;
   multipliers?: Record<string, number>;
   board?: Array<{ id?: string; multiplier?: number }>;
-  // 实付价展示货币："CNY"（¥，余额 ¥1=$1 平价，ToB 主站）或缺省 "USD"
-  //（按 fx 折算的美元等值，ToC 美元余额站群的安全缺省）。
+  // 实付价展示货币：缺省 "USD"（$，余额自 2026-09 账本割接起即真实美元）；
+  // "CNY"（¥）是 ¥ 账本时代的遗留取值，割接后不应再配置。
   plaza_currency?: string;
   // true = 模型广场只展示官方基准价：不渲染实付价、折扣徽章、「经由分组」与固定图价。
   // ToB 是逐客户单独报价的，广场给出的「你的价格」既不是客户真正拿到的价，
@@ -46,9 +47,9 @@ interface TocPricingConfig {
 }
 
 // DisplayPrice 单模型价格展示态：
-//   user 模式（登录用户实付价）：sale 为 基准价 × 用户最优分组实付倍率（余额单位，¥1=$1，即 ¥）；
-//     official 为官方直付参考价（美元；纯人民币牌价模型退回 ¥ 基准价），zhe 为输入价口径折扣。
-//   standard 模式（回退）：沿用全站统一售价 = 官方价 × 售价倍率 ÷ fx（美元展示）。
+//   user 模式（登录用户实付价）：sale 为 基准价 × 用户最优分组实付倍率（美元，与余额同币）；
+//     official 为官方直付参考价（美元；遗留的纯人民币牌价模型退回 ¥ 基准价），zhe 为输入价口径折扣。
+//   standard 模式（回退）：沿用全站统一售价 = 官方价 × 售价倍率 ÷ fx（fx 为遗留参数，割接后为 1）。
 interface DisplayPrice {
   input: number;
   cachedInput: number;
@@ -76,10 +77,10 @@ function parsePricingConfig(raw: string | undefined): TocPricingConfig | null {
   }
 }
 
-// resolveMultiplier 解析该模型生效的售价倍率（board 单模型 > 平台 > default）与汇率。
+// resolveMultiplier 解析该模型生效的售价倍率（board 单模型 > 平台 > default）与遗留 fx 参数。
 // 无 config 或未命中倍率 → multiplier=null（展示端只显示官方原价）。
 function resolveMultiplier(model: ModelLedgerItem, config: TocPricingConfig | null): { multiplier: number | null; fx: number } {
-  const fx = typeof config?.fx === 'number' && config.fx > 0 ? config.fx : 6.8;
+  const fx = typeof config?.fx === 'number' && config.fx > 0 ? config.fx : DEFAULT_QUOTE_FX;
   if (!config) return { multiplier: null, fx };
   const modelMultiplier = config.board?.find((row) => row?.id === model.id)?.multiplier;
   const platformMultiplier = config.multipliers?.[model.platform];
@@ -99,10 +100,10 @@ function officialUsdOf(model: ModelLedgerItem): { input: number; cachedInput: nu
   return { input: model.input, cachedInput: model.cached_input ?? 0, output: model.output };
 }
 
-// resolveUserPrice 登录用户实付价：
-//   CNY 展示：sale = 基准价 × 实付倍率（余额 ¥1=$1 平价，即 ¥）；
-//   USD 展示：sale = 基准价 × 实付倍率 ÷ fx（美元等值，ToC 美元余额站群）。
-// 折 = 实付 ÷ 官方直付（同币比值，美元参考价按 fx 折算；人民币牌价直接比）。
+// resolveUserPrice 登录用户实付价（余额与基准价同为美元，2026-09 账本割接起）：
+//   USD 展示：sale = 基准价 × 实付倍率 ÷ fx（fx 为遗留参数、割接后为 1，即 基准价 × 倍率）；
+//   CNY 展示（遗留 plaza_currency=CNY）：sale = 基准价 × 实付倍率，不再除 fx。
+// 折 = 实付 ÷ 官方直付（同币比值；遗留人民币牌价模型直接比）。
 function resolveUserPrice(model: ModelLedgerItem, fx: number, saleCurrency: 'CNY' | 'USD'): DisplayPrice {
   const officialUsd = officialUsdOf(model);
   const official = officialUsd ?? { input: model.input, cachedInput: model.cached_input ?? 0, output: model.output };
@@ -170,7 +171,7 @@ function isVideoModel(model: ModelLedgerItem): boolean {
 }
 
 // resolveVideoPrices 把视频桶价（bucket→官方牌价）铺成有序展示行。
-// user 模式按用户实付倍率（CNY 展示 ×rate、USD 展示 ×rate÷fx），否则套用全站售价倍率。
+// user 模式按用户实付倍率（USD 展示 ×rate÷fx，fx 为遗留参数、割接后为 1；遗留 CNY 展示 ×rate），否则套用全站售价倍率。
 //
 // 换算本身与量纲无关（单价 × 倍率），但**单位文案必须按 price_unit 选**：
 // 桶价的一份可能是「每百万 video_tokens」（seedance），也可能是「每秒」
@@ -484,9 +485,10 @@ export default function ModelPlazaPage() {
     () => parsePricingConfig(settingsQuery.data?.toc_landing_pricing),
     [settingsQuery.data?.toc_landing_pricing],
   );
-  // fx 参考汇率：折扣换算用（实付 ¥ ÷ 官方直付 ¥），配置缺省 6.8
-  const fx = typeof pricingConfig?.fx === 'number' && pricingConfig.fx > 0 ? pricingConfig.fx : 6.8;
-  // 实付价展示货币：ToB 主站配 CNY（¥，余额平价）；缺省 USD 等值（ToC 美元余额站群安全缺省）
+  // fx 遗留兼容参数（toc_landing_pricing.fx，2026-09 账本切 USD 后固定 1）：折扣换算仍按
+  // 实付 ÷ (官方直付 × fx) 走一遍，fx=1 即同币直接比；配置缺省同为 1
+  const fx = typeof pricingConfig?.fx === 'number' && pricingConfig.fx > 0 ? pricingConfig.fx : DEFAULT_QUOTE_FX;
+  // 实付价展示货币：余额为美元，缺省 USD；CNY 为 ¥ 账本时代的遗留取值（割接后不应再配置）
   const plazaCurrency: 'CNY' | 'USD' = pricingConfig?.plaza_currency === 'CNY' ? 'CNY' : 'USD';
   // 官方基准价口径：仍按登录态取目录（模型可见范围照旧按分组授权裁剪），
   // 只是价格列换成官方牌价。传 null 给各 resolve* 即可让它们回落 officialOnly，

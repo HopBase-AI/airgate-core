@@ -133,44 +133,46 @@ const DEFAULT_OPENCLAW_MODELS_PRESET = `[
   }
 ]`;
 
-// 官网价格表默认模板：与 landing/index.html 2026-07-03 的硬编码表同构。
+// 官网价格表默认模板：与 landing/index.html 2026-07-03 的硬编码表同构，2026-09 账本切 USD 后
+// 全部金额改为美元（实付 = 官方美元价 × 分组折扣：claude-max 0.3132 / claude-aws 0.5147 /
+// claude-kiro 0.3676 / Codex Plus 0.0662 / Codex Pro 0.0882），JSON 形状与旧模板逐键一致。
 // 单元格词汇见 landing/assets/pricing-render.js 注释；留空 = 官网使用页面内置硬编码表。
 const DEFAULT_LANDING_PRICING_JSON = `{
   "tables": {
     "claude-max": [
-      {"hl":true,"cells":[{"model":"claude-fable-5","tag":"旗舰","tagStyle":"pri"},{"strike":"¥68 / ¥340","note":"官方 $10 / $50"},{"deal":true,"strong":"¥21.30 / ¥106.50","note":"读 ¥2.13 · 写 ¥26.63 / ¥42.60"},{"pill":"省约 69%"},{"text":"最新高推理模型"}]},
-      {"cells":[{"model":"claude-opus-4-8","tag":"主推","tagStyle":"pri"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥10.65 / ¥53.25","note":"读 ¥1.065 · 写 ¥13.31 / ¥21.30"},{"pill":"省约 69%"},{"text":"最高推理，Claude Code 重任务"}]},
-      {"cells":[{"model":"claude-opus-4-7"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥10.65 / ¥53.25","note":"读 ¥1.065 · 写 ¥13.31 / ¥21.30"},{"pill":"省约 69%"},{"text":"1M 上下文 Opus"}]},
-      {"cells":[{"model":"claude-opus-4-6"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥10.65 / ¥53.25","note":"读 ¥1.065 · 写 ¥13.31 / ¥21.30"},{"pill":"省约 69%"},{"text":"1M 上下文 Opus"}]},
-      {"cells":[{"model":"claude-opus-4-5-20251101"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥10.65 / ¥53.25","note":"读 ¥1.065 · 写 ¥13.31 / ¥21.30"},{"pill":"省约 69%"},{"text":"兼容短名 claude-opus-4-5"}]},
-      {"hl":true,"cells":[{"model":"claude-sonnet-5","tag":"新增","tagStyle":"key"},{"strike":"¥20.4 / ¥102","note":"官方 $3 / $15"},{"deal":true,"strong":"¥6.39 / ¥31.95","note":"读 ¥0.639 · 写 ¥7.99 / ¥12.78"},{"pill":"省约 69%"},{"text":"新一代 Sonnet 主力；官方引导价至 2026-08-31"}]},
-      {"cells":[{"model":"claude-sonnet-4-6","tag":"均衡","tagStyle":"key"},{"strike":"¥20.4 / ¥102","note":"官方 $3 / $15"},{"deal":true,"strong":"¥6.39 / ¥31.95","note":"读 ¥0.639 · 写 ¥7.99 / ¥12.78"},{"pill":"省约 69%"},{"text":"均衡主力，适合长上下文"}]},
-      {"cells":[{"model":"claude-sonnet-4-5-20250929"},{"strike":"¥20.4 / ¥102","note":"官方 $3 / $15"},{"deal":true,"strong":"¥6.39 / ¥31.95","note":"读 ¥0.639 · 写 ¥7.99 / ¥12.78"},{"pill":"省约 69%"},{"text":"兼容短名 claude-sonnet-4-5"}]},
-      {"cells":[{"model":"claude-sonnet-4-20250514","tag":"已停用 / 自动转 4.6","tagStyle":"warn"},{"strike":"¥20.4 / ¥102","note":"官方 $3 / $15"},{"deal":true,"strong":"¥6.39 / ¥31.95","note":"读 ¥0.639 · 写 ¥7.99 / ¥12.78"},{"pill":"省约 69%"},{"text":"旧 ID 自动转 claude-sonnet-4-6"}]},
-      {"cells":[{"model":"claude-haiku-4-5-20251001"},{"strike":"¥6.8 / ¥34","note":"官方 $1 / $5"},{"deal":true,"strong":"¥2.13 / ¥10.65","note":"读 ¥0.213 · 写 ¥2.66 / ¥4.26"},{"pill":"省约 69%"},{"text":"轻量低价模型"}]}
+      {"hl":true,"cells":[{"model":"claude-fable-5","tag":"旗舰","tagStyle":"pri"},{"strike":"$10 / $50","note":"官方直付价"},{"deal":true,"strong":"$3.13 / $15.66","note":"读 $0.313 · 写 $3.92 / $6.26"},{"pill":"省约 69%"},{"text":"最新高推理模型"}]},
+      {"cells":[{"model":"claude-opus-4-8","tag":"主推","tagStyle":"pri"},{"strike":"$5 / $25","note":"官方直付价"},{"deal":true,"strong":"$1.57 / $7.83","note":"读 $0.157 · 写 $1.96 / $3.13"},{"pill":"省约 69%"},{"text":"最高推理，Claude Code 重任务"}]},
+      {"cells":[{"model":"claude-opus-4-7"},{"strike":"$5 / $25","note":"官方直付价"},{"deal":true,"strong":"$1.57 / $7.83","note":"读 $0.157 · 写 $1.96 / $3.13"},{"pill":"省约 69%"},{"text":"1M 上下文 Opus"}]},
+      {"cells":[{"model":"claude-opus-4-6"},{"strike":"$5 / $25","note":"官方直付价"},{"deal":true,"strong":"$1.57 / $7.83","note":"读 $0.157 · 写 $1.96 / $3.13"},{"pill":"省约 69%"},{"text":"1M 上下文 Opus"}]},
+      {"cells":[{"model":"claude-opus-4-5-20251101"},{"strike":"$5 / $25","note":"官方直付价"},{"deal":true,"strong":"$1.57 / $7.83","note":"读 $0.157 · 写 $1.96 / $3.13"},{"pill":"省约 69%"},{"text":"兼容短名 claude-opus-4-5"}]},
+      {"hl":true,"cells":[{"model":"claude-sonnet-5","tag":"新增","tagStyle":"key"},{"strike":"$3 / $15","note":"官方直付价"},{"deal":true,"strong":"$0.94 / $4.70","note":"读 $0.094 · 写 $1.18 / $1.88"},{"pill":"省约 69%"},{"text":"新一代 Sonnet 主力；官方引导价至 2026-08-31"}]},
+      {"cells":[{"model":"claude-sonnet-4-6","tag":"均衡","tagStyle":"key"},{"strike":"$3 / $15","note":"官方直付价"},{"deal":true,"strong":"$0.94 / $4.70","note":"读 $0.094 · 写 $1.18 / $1.88"},{"pill":"省约 69%"},{"text":"均衡主力，适合长上下文"}]},
+      {"cells":[{"model":"claude-sonnet-4-5-20250929"},{"strike":"$3 / $15","note":"官方直付价"},{"deal":true,"strong":"$0.94 / $4.70","note":"读 $0.094 · 写 $1.18 / $1.88"},{"pill":"省约 69%"},{"text":"兼容短名 claude-sonnet-4-5"}]},
+      {"cells":[{"model":"claude-sonnet-4-20250514","tag":"已停用 / 自动转 4.6","tagStyle":"warn"},{"strike":"$3 / $15","note":"官方直付价"},{"deal":true,"strong":"$0.94 / $4.70","note":"读 $0.094 · 写 $1.18 / $1.88"},{"pill":"省约 69%"},{"text":"旧 ID 自动转 claude-sonnet-4-6"}]},
+      {"cells":[{"model":"claude-haiku-4-5-20251001"},{"strike":"$1 / $5","note":"官方直付价"},{"deal":true,"strong":"$0.313 / $1.57","note":"读 $0.031 · 写 $0.39 / $0.63"},{"pill":"省约 69%"},{"text":"轻量低价模型"}]}
     ],
     "claude-aws": [
-      {"cells":[{"model":"claude-opus-4-8","tag":"主推","tagStyle":"pri"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥17.50 / ¥87.50","save":"约 5.1 折 · 省约 49%"},{"strong":"读 ¥1.75","note":"写 5m ¥21.88 / 1h ¥35.00"},{"text":"最高推理，适合 Claude Code 重任务"}]},
-      {"cells":[{"model":"claude-opus-4-7 / 4-6"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥17.50 / ¥87.50","save":"约 5.1 折 · 省约 49%"},{"strong":"读 ¥1.75","note":"写 5m ¥21.88 / 1h ¥35.00"},{"text":"Opus 系列，复杂规划与长任务"}]},
-      {"cells":[{"model":"claude-opus-4-5-20251101"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥17.50 / ¥87.50","save":"约 5.1 折 · 省约 49%"},{"strong":"读 ¥1.75","note":"写 5m ¥21.88 / 1h ¥35.00"},{"text":"兼容短名 claude-opus-4-5"}]}
+      {"cells":[{"model":"claude-opus-4-8","tag":"主推","tagStyle":"pri"},{"strike":"$5 / $25","note":"官方直付价"},{"deal":true,"strong":"$2.57 / $12.87","save":"约 5.1 折 · 省约 49%"},{"strong":"读 $0.257","note":"写 5m $3.22 / 1h $5.15"},{"text":"最高推理，适合 Claude Code 重任务"}]},
+      {"cells":[{"model":"claude-opus-4-7 / 4-6"},{"strike":"$5 / $25","note":"官方直付价"},{"deal":true,"strong":"$2.57 / $12.87","save":"约 5.1 折 · 省约 49%"},{"strong":"读 $0.257","note":"写 5m $3.22 / 1h $5.15"},{"text":"Opus 系列，复杂规划与长任务"}]},
+      {"cells":[{"model":"claude-opus-4-5-20251101"},{"strike":"$5 / $25","note":"官方直付价"},{"deal":true,"strong":"$2.57 / $12.87","save":"约 5.1 折 · 省约 49%"},{"strong":"读 $0.257","note":"写 5m $3.22 / 1h $5.15"},{"text":"兼容短名 claude-opus-4-5"}]}
     ],
     "claude-kiro": [
-      {"hl":true,"cells":[{"model":"claude-fable-5","tag":"旗舰","tagStyle":"pri"},{"strike":"¥68 / ¥340","note":"官方 $10 / $50"},{"deal":true,"strong":"¥25.00 / ¥125.00","note":"读 ¥2.50 · 写 ¥31.25 / ¥50.00"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"最新高推理模型"}]},
-      {"cells":[{"model":"claude-opus-4-8","tag":"主推","tagStyle":"pri"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥12.50 / ¥62.50","note":"读 ¥1.25 · 写 ¥15.63 / ¥25.00"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"最高推理，Claude Code 重任务"}]},
-      {"cells":[{"model":"claude-opus-4-7 / 4-6"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥12.50 / ¥62.50","note":"读 ¥1.25 · 写 ¥15.63 / ¥25.00"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"1M 上下文 Opus"}]},
-      {"cells":[{"model":"claude-opus-4-5-20251101"},{"strike":"¥34 / ¥170","note":"官方 $5 / $25"},{"deal":true,"strong":"¥12.50 / ¥62.50","note":"读 ¥1.25 · 写 ¥15.63 / ¥25.00"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"兼容短名 claude-opus-4-5"}]},
-      {"hl":true,"cells":[{"model":"claude-sonnet-5","tag":"新增","tagStyle":"key"},{"strike":"¥20.4 / ¥102","note":"官方 $3 / $15"},{"deal":true,"strong":"¥7.50 / ¥37.50","note":"读 ¥0.75 · 写 ¥9.38 / ¥15.00"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"新一代 Sonnet 主力；官方引导价至 2026-08-31"}]},
-      {"cells":[{"model":"claude-sonnet-4-6","tag":"均衡","tagStyle":"key"},{"strike":"¥20.4 / ¥102","note":"官方 $3 / $15"},{"deal":true,"strong":"¥7.50 / ¥37.50","note":"读 ¥0.75 · 写 ¥9.38 / ¥15.00"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"均衡主力，适合长上下文"}]},
-      {"cells":[{"model":"claude-sonnet-4-5-20250929"},{"strike":"¥20.4 / ¥102","note":"官方 $3 / $15"},{"deal":true,"strong":"¥7.50 / ¥37.50","note":"读 ¥0.75 · 写 ¥9.38 / ¥15.00"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"兼容短名 claude-sonnet-4-5"}]},
-      {"cells":[{"model":"claude-sonnet-4-20250514","tag":"已停用 / 自动转 4.6","tagStyle":"warn"},{"strike":"¥20.4 / ¥102","note":"官方 $3 / $15"},{"deal":true,"strong":"¥7.50 / ¥37.50","note":"读 ¥0.75 · 写 ¥9.38 / ¥15.00"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"旧 ID 自动转 claude-sonnet-4-6"}]},
-      {"cells":[{"model":"claude-haiku-4-5-20251001"},{"strike":"¥6.8 / ¥34","note":"官方 $1 / $5"},{"deal":true,"strong":"¥2.50 / ¥12.50","note":"读 ¥0.25 · 写 ¥3.13 / ¥5.00"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"轻量低价模型"}]}
+      {"hl":true,"cells":[{"model":"claude-fable-5","tag":"旗舰","tagStyle":"pri"},{"strike":"$10 / $50","note":"官方直付价"},{"deal":true,"strong":"$3.68 / $18.38","note":"读 $0.368 · 写 $4.60 / $7.35"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"最新高推理模型"}]},
+      {"cells":[{"model":"claude-opus-4-8","tag":"主推","tagStyle":"pri"},{"strike":"$5 / $25","note":"官方直付价"},{"deal":true,"strong":"$1.84 / $9.19","note":"读 $0.184 · 写 $2.30 / $3.68"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"最高推理，Claude Code 重任务"}]},
+      {"cells":[{"model":"claude-opus-4-7 / 4-6"},{"strike":"$5 / $25","note":"官方直付价"},{"deal":true,"strong":"$1.84 / $9.19","note":"读 $0.184 · 写 $2.30 / $3.68"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"1M 上下文 Opus"}]},
+      {"cells":[{"model":"claude-opus-4-5-20251101"},{"strike":"$5 / $25","note":"官方直付价"},{"deal":true,"strong":"$1.84 / $9.19","note":"读 $0.184 · 写 $2.30 / $3.68"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"兼容短名 claude-opus-4-5"}]},
+      {"hl":true,"cells":[{"model":"claude-sonnet-5","tag":"新增","tagStyle":"key"},{"strike":"$3 / $15","note":"官方直付价"},{"deal":true,"strong":"$1.10 / $5.51","note":"读 $0.110 · 写 $1.38 / $2.21"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"新一代 Sonnet 主力；官方引导价至 2026-08-31"}]},
+      {"cells":[{"model":"claude-sonnet-4-6","tag":"均衡","tagStyle":"key"},{"strike":"$3 / $15","note":"官方直付价"},{"deal":true,"strong":"$1.10 / $5.51","note":"读 $0.110 · 写 $1.38 / $2.21"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"均衡主力，适合长上下文"}]},
+      {"cells":[{"model":"claude-sonnet-4-5-20250929"},{"strike":"$3 / $15","note":"官方直付价"},{"deal":true,"strong":"$1.10 / $5.51","note":"读 $0.110 · 写 $1.38 / $2.21"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"兼容短名 claude-sonnet-4-5"}]},
+      {"cells":[{"model":"claude-sonnet-4-20250514","tag":"已停用 / 自动转 4.6","tagStyle":"warn"},{"strike":"$3 / $15","note":"官方直付价"},{"deal":true,"strong":"$1.10 / $5.51","note":"读 $0.110 · 写 $1.38 / $2.21"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"旧 ID 自动转 claude-sonnet-4-6"}]},
+      {"cells":[{"model":"claude-haiku-4-5-20251001"},{"strike":"$1 / $5","note":"官方直付价"},{"deal":true,"strong":"$0.368 / $1.84","note":"读 $0.037 · 写 $0.46 / $0.74"},{"pill":"约 3.7 折 · 省约 63%"},{"text":"轻量低价模型"}]}
     ],
     "openai": [
-      {"hl":true,"cells":[{"model":"gpt-5.5","tag":"主力","tagStyle":"key"},{"strike":"¥34 / ¥204","note":"官方 $5 / $30 · 缓存 $0.5"},{"deal":true,"strong":"¥2.25 / ¥13.50","save":"约 0.66 折 · 缓存 ¥0.225"},{"strong":"¥3.00 / ¥18.00","note":"约 0.88 折 · 缓存 ¥0.30"},{"text":"复杂推理与 Codex 主力模型"}]},
-      {"cells":[{"model":"gpt-5.4"},{"strike":"¥17 / ¥102","note":"官方 $2.5 / $15 · 缓存 $0.25"},{"deal":true,"strong":"¥1.125 / ¥6.75","save":"约 0.66 折 · 缓存 ¥0.113"},{"strong":"¥1.50 / ¥9.00","note":"约 0.88 折 · 缓存 ¥0.15"},{"text":"通用推理模型"}]},
-      {"cells":[{"model":"gpt-5.4-mini"},{"strike":"¥5.1 / ¥30.6","note":"官方 $0.75 / $4.5 · 缓存 $0.075"},{"deal":true,"strong":"¥0.338 / ¥2.025","save":"约 0.66 折 · 缓存 ¥0.034"},{"strong":"¥0.45 / ¥2.70","note":"约 0.88 折 · 缓存 ¥0.045"},{"text":"低延迟低成本"}]},
-      {"cells":[{"model":"gpt-5.3-codex-spark"},{"strike":"¥11.9 / ¥95.2","note":"官方 $1.75 / $14 · 缓存 $0.175"},{"deal":true,"strong":"¥0.787 / ¥6.30","save":"约 0.66 折 · 缓存 ¥0.079"},{"strong":"¥1.05 / ¥8.40","note":"约 0.88 折 · 缓存 ¥0.105"},{"text":"Codex 轻量任务"}]},
-      {"cells":[{"model":"gpt-image-1 / 1.5 / 2","tag":"图像","tagStyle":"img"},{"strike":"¥34 / ¥204","note":"官方 $5 / $30 · 缓存 $0.5"},{"deal":true,"strong":"¥2.25 / ¥13.50","save":"约 0.66 折 · 缓存 ¥0.225"},{"strong":"¥3.00 / ¥18.00","note":"约 0.88 折 · 缓存 ¥0.30"},{"text":"图像接口 Token 计费；固定图价见「图像生成」"}]}
+      {"hl":true,"cells":[{"model":"gpt-5.5","tag":"主力","tagStyle":"key"},{"strike":"$5 / $30","note":"官方直付价 · 缓存 $0.5"},{"deal":true,"strong":"$0.331 / $1.99","save":"约 0.66 折 · 缓存 $0.033"},{"strong":"$0.441 / $2.65","note":"约 0.88 折 · 缓存 $0.044"},{"text":"复杂推理与 Codex 主力模型"}]},
+      {"cells":[{"model":"gpt-5.4"},{"strike":"$2.5 / $15","note":"官方直付价 · 缓存 $0.25"},{"deal":true,"strong":"$0.165 / $0.99","save":"约 0.66 折 · 缓存 $0.017"},{"strong":"$0.221 / $1.32","note":"约 0.88 折 · 缓存 $0.022"},{"text":"通用推理模型"}]},
+      {"cells":[{"model":"gpt-5.4-mini"},{"strike":"$0.75 / $4.5","note":"官方直付价 · 缓存 $0.075"},{"deal":true,"strong":"$0.050 / $0.298","save":"约 0.66 折 · 缓存 $0.005"},{"strong":"$0.066 / $0.397","note":"约 0.88 折 · 缓存 $0.007"},{"text":"低延迟低成本"}]},
+      {"cells":[{"model":"gpt-5.3-codex-spark"},{"strike":"$1.75 / $14","note":"官方直付价 · 缓存 $0.175"},{"deal":true,"strong":"$0.116 / $0.93","save":"约 0.66 折 · 缓存 $0.012"},{"strong":"$0.154 / $1.24","note":"约 0.88 折 · 缓存 $0.015"},{"text":"Codex 轻量任务"}]},
+      {"cells":[{"model":"gpt-image-1 / 1.5 / 2","tag":"图像","tagStyle":"img"},{"strike":"$5 / $30","note":"官方直付价 · 缓存 $0.5"},{"deal":true,"strong":"$0.331 / $1.99","save":"约 0.66 折 · 缓存 $0.033"},{"strong":"$0.441 / $2.65","note":"约 0.88 折 · 缓存 $0.044"},{"text":"图像接口 Token 计费；固定图价见「图像生成」"}]}
     ]
   },
   "panels": [
@@ -181,13 +183,13 @@ const DEFAULT_LANDING_PRICING_JSON = `{
       "title": "GLM 模型",
       "tag": "OpenAI 兼容",
       "tagStyle": "key",
-      "lead": "GLM 5.2 通过 OpenAI 兼容协议接入，按官方直付价 5.5 折结算（每官方 $1 扣 ¥3.74），适合中文推理、长上下文和高并发文本任务。",
+      "lead": "GLM 5.2 通过 OpenAI 兼容协议接入，按官方直付价 5.5 折结算（倍率 0.55，余额以美元计），适合中文推理、长上下文和高并发文本任务。",
       "minWidth": "900px",
       "headers": ["模型 ID", "官方直付价（$）", {"deal":true,"badge":"新品特惠","text":"GLM 专属通道"}, "折扣", "说明"],
       "rows": [
         {"hl":true,"cells":[{"model":"glm-5.2","tag":"1M 上下文","tagStyle":"key"},{"strike":"$1.40 / $4.40","note":"z.ai 官方牌价 · 缓存 $0.26"},{"deal":true,"strong":"$0.77 / $2.42","save":"5.5 折 · 缓存 $0.14"},{"pill":"省约 45%"},{"text":"OpenAI 兼容 /v1/chat/completions"}]}
       ],
-      "units": "› 价格单位：美元 / 百万 Token（输入 / 输出）。缓存为 Prompt Cache 命中读取价；折扣 = 实付价 ÷ 官方直付价（按 ¥6.8/$ 参考汇率，以输入价计）；价格会因汇率和渠道成本波动略有差异，实际可用模型与扣费以控制台为准。"
+      "units": "› 价格单位：美元 / 百万 Token（输入 / 输出）。缓存为 Prompt Cache 命中读取价；折扣 = 实付价 ÷ 官方直付价（以输入价计）；价格会因渠道成本波动略有差异，实际可用模型与扣费以控制台为准。"
     }
   ]
 }`;
@@ -1792,7 +1794,8 @@ interface CatalogRow {
   lcInputMult: string;
   lcCachedMult: string;
   lcOutputMult: string;
-  // 展示口径(不影响计费):currency="CNY" 表示基准价是官方人民币牌价按 1:1 记账;
+  // 展示口径(不影响计费):currency 只认 USD;"CNY"(人民币牌价按 1:1 记账)是 ¥ 账本时代的
+  // 遗留取值,2026-09 账本切 USD 后后端写入口拒绝,存量条目仍可读出编辑;
   // official* 为官方美元直付参考价,供前台划线对比与折扣换算
   currency: string;
   officialInput: string;
@@ -1939,7 +1942,8 @@ function serializeCatalogRows(rows: CatalogRow[], isOpenAI: boolean, isSeedance 
         if (Object.keys(rawLC).length > 0) entry.long_context = rawLC; else delete entry.long_context;
       }
 
-      // 展示口径(不影响计费):currency 仅在非默认(CNY)时落库;官方美元参考价同 raw 合并
+      // 展示口径(不影响计费):currency 仅在非默认(USD)时落库——USD 账本下 CNY 会被后端拒写;
+      // 官方美元参考价同 raw 合并
       if (r.currency.trim() && r.currency.trim().toUpperCase() !== 'USD') {
         entry.currency = r.currency.trim().toUpperCase();
       } else {

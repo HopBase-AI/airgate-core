@@ -314,8 +314,10 @@ func effectiveGroupRate(userGroupRates map[int64]float64, g appgroup.Group) (flo
 // 遍历该分组可路由的模型，比值 = 实付倍率 × 基准输入价 / 官方美元输入价，
 // 取最低者（最优惠口径）。完整固定图片档位会替代整单 token 计费，因此不参与
 // token 折扣摘要；部分固定档位仍需展示未覆盖尺寸的 token 回退。常规模型（基准价
-// 即官方美元价）与视频模型（桶价即官方美元牌价）比值即实付倍率；CNY 基准模型需
-// official_pricing 提供官方美元价，缺失则跳过（宁缺勿错，避免把 1:1 记账数值当美元换算）。
+// 即官方美元价）与视频模型（桶价即官方美元牌价）比值即实付倍率；遗留的 CNY 基准模型
+// （¥ 账本时代按 1:1 记账的人民币牌价，USD 账本下写入口已拒绝、存量仍可读出）需
+// official_pricing 提供官方美元价，缺失则跳过——它只表示「没有美元参考价」，
+// 宁缺勿错，避免把人民币数值当美元换算。
 func groupUSDMultiplier(
 	catalog []apppluginadmin.PublicPlatformPricing,
 	g appgroup.Group,
