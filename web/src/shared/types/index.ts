@@ -832,21 +832,29 @@ export interface UsageCostDetail {
 /**
  * OfficialNativeCost 厂商官方牌价口径的单行费用（后端只读计算块，不落库、不参与计费）。
  *
- * 国内厂商模型的官网标价是 ¥、账本记 $，客户据此逐笔验算：
- *   cost（原币官方费用）× discount（折扣）÷ fx（折算率）= actual_cost（实扣美元）
+ * 国内厂商模型的官网标价是 ¥，客户据此逐笔验算：
+ *   cost（原币官方费用）× discount（折）÷ divisor（账本除数）= actual_cost（实扣，ledger_currency 计价）
  *
- * 缺省 = 本行没有牌价快照（历史行、或官方价本就是美元的模型），前端不渲染验算块。
+ * 该等式与账本币种无关：discount 一律是客户读得懂的「折」，账本差异全部收进 divisor。
+ * ¥ 账本 + 牌价折算率 6.8 时 divisor = 1（不发生折算，展示层隐藏折算率那一行）。
+ *
+ * 缺省 = 本行没有牌价快照（历史行、或官方价本就是美元的模型），或本行计费本就不满足
+ * 该等式（固定图价等），前端不渲染验算块。
  * API Key 会话的 CustomerUsageLogResp 按 SOP §6.3 不带该块（会暴露分销商折扣）。
  */
 export interface OfficialNativeCost {
   /** 原币币种（如 "CNY"）。 */
   currency: string;
-  /** 折算率快照：1 USD = fx 原币。写入时的历史事实，不是当前汇率。 */
+  /** 牌价折算率快照：1 USD = fx 原币。价格定义的一部分，不是验算式里的除数。 */
   fx: number;
-  /** 按官方牌价算出的本次费用（原币，折扣前）。 */
+  /** 按官方牌价算出的本次费用（原币，折前）。 */
   cost: number;
-  /** 本次生效的折扣（= rate_multiplier）。 */
+  /** 本次生效的折（0.75 = 75 折）。后端已按账本口径还原，不是 rate_multiplier 原值。 */
   discount: number;
+  /** 验算式里的账本除数 = fx ÷ 账本口径。为 1 时不发生折算，展示层隐藏该行。 */
+  divisor: number;
+  /** 实扣金额的计价币种（账本币种）。 */
+  ledger_currency: string;
 }
 
 export interface UsageLogResp {

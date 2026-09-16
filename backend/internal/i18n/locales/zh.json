@@ -82,7 +82,7 @@
   "export.official_cost_native": "官方费用（原币）",
   "export.discount": "折扣",
   "export.list_fx": "折算率",
-  "export.actual_cost_usd": "扣费金额（$）",
+  "export.actual_cost": "扣费金额（%s）",
   "export.note": "说明",
   "export.official_cost_total": "官方费用合计",
   "export.note_failed_free": "请求未成功，未计费",

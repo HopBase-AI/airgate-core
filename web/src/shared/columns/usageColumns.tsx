@@ -21,7 +21,7 @@ import { failureSourceLabelKey, usageFailureSource } from '../failureDiagnostics
 import {
   buildUsageVerification,
   formatDiscount,
-  formatFX,
+  formatDivisor,
   formatNativeAmount,
   verificationFormula,
   type UsageRowWithOfficialNative,
@@ -134,14 +134,20 @@ function TooltipDivider() {
 /**
  * 厂商官方牌价验算块（docs/pricing-list-verification-sop.md §4.1）。
  *
- * 国内厂商模型的官网标价是 ¥、账本记 $，客户拿到的 `$1.76 × 折` 对不上官网的 `¥12 × 折`。
- * 这里把后端 `official_native` 的四个数与各档单价快照原样铺开，客户可逐笔验算：
+ * 国内厂商模型的官网标价是 ¥，客户拿到的基准价数字对不上官网的 `¥12 × 折`。
+ * 这里把后端 `official_native` 的几个数与各档单价快照原样铺开，客户可逐笔验算：
  *
- *   官方费用 × 折扣 ÷ 折算率 = 实扣
+ *   官方费用 × 折 ÷ 账本除数 = 实扣
+ *
+ * 账本除数为 1（账本币种与牌价币种相同）时整行隐藏，等式收缩成「官方费用 × 折 = 实扣」。
  *
  * 数字全部来自写入时的快照，前端不自己算、也不查当前模型目录——模型改价后老行仍须
- * 显示当时的牌价。没有快照的行（历史行 / 官方价本就是美元的模型 / API Key 会话）
- * 一行都不渲染。
+ * 显示当时的牌价。不渲染的行：没有快照的（历史行 / 官方价本就是美元的模型 /
+ * API Key 会话），以及计费本就不满足该等式的（固定图价等，后端已判并不下发该块）。
+ *
+ * ⚠️「实扣」这里按账本币种自行配符号，不复用 `CostValue`（它全站写死 $）：
+ * 控制台把 ¥ 标成 $ 是全站旧账、USD 割接会整体修掉，但本块把 ¥ 与实扣摆进同一条等式，
+ * 这一处必须自洽，否则客户看到的是「¥0.12 × 0.7 = $0.084」。
  *
  * ⚠️ 文案只提「厂商官方牌价」，不得出现上游通道、账号或供应商
  * （docs/upstream-identity-egress-sop.md）。
@@ -159,7 +165,7 @@ export function OfficialNativeVerification({
   t: TFunction;
   verification: UsageVerification;
 }) {
-  const { official, actualCost, unitPrices } = verification;
+  const { official, actualCost, unitPrices, showDivisor } = verification;
 
   return (
     <>
@@ -180,10 +186,14 @@ export function OfficialNativeVerification({
         tone="strong"
       />
       <TooltipRow label={t('usage.discount', '折扣')} value={formatDiscount(official.discount)} />
-      <TooltipRow label={t('usage.list_fx', '折算率')} value={formatFX(official.fx)} />
+      {showDivisor ? (
+        <TooltipRow label={t('usage.list_fx', '折算率')} value={formatDivisor(official.divisor)} />
+      ) : null}
       <TooltipRow
         label={t('usage.actual_charged', '实扣')}
-        value={<CostValue value={actualCost} decimals={6} tone="actual" />}
+        value={
+          <span className="text-warning">{formatNativeAmount(actualCost, official.ledger_currency, 6)}</span>
+        }
       />
       <div className="px-2 pb-1 text-[11px] leading-relaxed text-text-tertiary">
         <span className="mr-1">{t('usage.verify_formula', '验算')}</span>

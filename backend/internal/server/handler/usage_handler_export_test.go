@@ -16,6 +16,7 @@ import (
 
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	"github.com/DouDOU-start/airgate-core/internal/i18n"
+	"github.com/DouDOU-start/airgate-core/internal/pkg/ledger"
 	"github.com/DouDOU-start/airgate-core/internal/server/dto"
 )
 
@@ -412,15 +413,23 @@ func TestClassifyExportRowOfficialNative(t *testing.T) {
 	end := start.Add(24 * time.Hour)
 	at := start.Add(time.Hour)
 
-	// 通义：¥12 / 1M input、10,000 tokens、折 0.7（SOP §7 首行）。
+	// 通义：¥12 / 1M input、10,000 tokens、7 折（SOP §7 首行）。
+	// 倍率按当前账本口径造（¥ 账本 4.76、USD 账本 0.7），期望值一律是「折 0.7」。
+	rate := 0.7 * ledger.RateBase
 	withPrice, verdict := classifyExportRow(
-		exportRecord(1, at, "qwen3-max", 1.7647*0.01*0.7, 0.7, exportCNYDetail(12, 6.8, 1.7647, 1.7647*0.01)),
+		exportRecord(1, at, "qwen3-max", 1.7647*0.01*rate, rate, exportCNYDetail(12, 6.8, 1.7647, 1.7647*0.01)),
 		start, end, false)
 	if verdict != rowInWindow || withPrice.Official == nil {
 		t.Fatalf("带牌价快照的行应产出验算块: %+v", withPrice)
 	}
-	if withPrice.Official.Currency != "CNY" || withPrice.Official.FX != 6.8 || withPrice.Official.Discount != 0.7 {
+	if withPrice.Official.Currency != "CNY" || withPrice.Official.FX != 6.8 {
 		t.Fatalf("验算块 = %+v", withPrice.Official)
+	}
+	if math.Abs(withPrice.Official.Discount-0.7) > 1e-6 {
+		t.Fatalf("折 = %g，期望 0.7（不得回传倍率原值 %g）", withPrice.Official.Discount, rate)
+	}
+	if want := 6.8 / ledger.RateBase; math.Abs(withPrice.Official.Divisor-want) > 1e-6 {
+		t.Fatalf("账本除数 = %g，期望 %g", withPrice.Official.Divisor, want)
 	}
 	if math.Abs(withPrice.Official.Cost-0.12) > 1e-6 {
 		t.Fatalf("官方费用 = %g，期望 ¥0.12", withPrice.Official.Cost)
@@ -428,12 +437,20 @@ func TestClassifyExportRowOfficialNative(t *testing.T) {
 
 	// 官方价本就是美元的模型 / 历史行：没有快照，不该凭空造块。
 	noPrice, verdict := classifyExportRow(
-		exportRecord(2, at, "gpt-5.6-sol", 0.03, 0.7,
+		exportRecord(2, at, "gpt-5.6-sol", 0.03*rate, rate,
 			sdk.UsageCostDetail{Key: "input", AccountCost: 0.03, Currency: "USD",
 				Metadata: map[string]string{"unit_price": "3"}}),
 		start, end, false)
 	if verdict != rowInWindow || noPrice.Official != nil {
 		t.Fatalf("无牌价快照的行不应有验算块: %+v", noPrice.Official)
+	}
+
+	// 固定图价行：实扣与「用量 × 倍率」无关，等式当着客户面就是错的，整块不给。
+	fixedPrice, verdict := classifyExportRow(
+		exportRecord(3, at, "kling-image-v2-1", 0.40, rate, exportCNYDetail(0.1, 6.8, 0.01470588, 0.01470588)),
+		start, end, false)
+	if verdict != rowInWindow || fixedPrice.Official != nil {
+		t.Fatalf("计费不闭合的行不应有验算块: %+v", fixedPrice.Official)
 	}
 }
 
@@ -443,7 +460,8 @@ func TestClassifyExportRowOfficialNative(t *testing.T) {
 func TestClassifyExportRowOfficialNativeScoped(t *testing.T) {
 	start := time.Date(2026, 9, 16, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)
-	record := exportRecord(1, start.Add(time.Hour), "qwen3-max", 0.0124, 0.7,
+	rate := 0.7 * ledger.RateBase
+	record := exportRecord(1, start.Add(time.Hour), "qwen3-max", 1.7647*0.01*rate, rate,
 		exportCNYDetail(12, 6.8, 1.7647, 1.7647*0.01))
 	record.BilledCost = 0.05
 
@@ -462,7 +480,7 @@ func TestWriteUsageExportCSVMixedListPrice(t *testing.T) {
 	base := time.Date(2026, 9, 16, 16, 0, 0, 0, time.Local)
 	rows := []exportRow{
 		{CreatedAt: base, Model: "qwen3-max", Tokens: 10000, Cost: 0.012353,
-			Official: &dto.OfficialNativeCostResp{Currency: "CNY", FX: 6.8, Cost: 0.12, Discount: 0.7}},
+			Official: &dto.OfficialNativeCostResp{Currency: "CNY", FX: 6.8, Cost: 0.12, Discount: 0.7, Divisor: 6.8}},
 		{CreatedAt: base.Add(time.Minute), Model: "gpt-5.6-sol", Tokens: 500, Cost: 0.03},
 	}
 	records := parseExportCSV(t, renderCSV(t, rows, exportNotes{}))
@@ -497,11 +515,11 @@ func TestWriteUsageExportCSVOfficialTotalsByCurrency(t *testing.T) {
 	base := time.Date(2026, 9, 16, 16, 0, 0, 0, time.Local)
 	rows := []exportRow{
 		{CreatedAt: base, Model: "qwen3-max", Tokens: 10000, Cost: 0.012353,
-			Official: &dto.OfficialNativeCostResp{Currency: "CNY", FX: 6.8, Cost: 0.12, Discount: 0.7}},
+			Official: &dto.OfficialNativeCostResp{Currency: "CNY", FX: 6.8, Cost: 0.12, Discount: 0.7, Divisor: 6.8}},
 		{CreatedAt: base.Add(time.Minute), Model: "kling-v3", Cost: 0.330882,
-			Official: &dto.OfficialNativeCostResp{Currency: "CNY", FX: 6.8, Cost: 3.0, Discount: 0.75}},
+			Official: &dto.OfficialNativeCostResp{Currency: "CNY", FX: 6.8, Cost: 3.0, Discount: 0.75, Divisor: 6.8}},
 		{CreatedAt: base.Add(2 * time.Minute), Model: "some-jpy-model", Cost: 0.1,
-			Official: &dto.OfficialNativeCostResp{Currency: "JPY", FX: 150, Cost: 15, Discount: 1}},
+			Official: &dto.OfficialNativeCostResp{Currency: "JPY", FX: 150, Cost: 15, Discount: 1, Divisor: 150}},
 	}
 	records := parseExportCSV(t, renderCSV(t, rows, exportNotes{}))
 
@@ -529,7 +547,7 @@ func TestWriteUsageExportCSVVerificationIdentity(t *testing.T) {
 		charged := nativeCost * discount / fx
 		rows = append(rows, exportRow{
 			CreatedAt: base.Add(time.Duration(i) * time.Minute), Model: "m", Cost: charged,
-			Official: &dto.OfficialNativeCostResp{Currency: "CNY", FX: fx, Cost: nativeCost, Discount: discount},
+			Official: &dto.OfficialNativeCostResp{Currency: "CNY", FX: fx, Cost: nativeCost, Discount: discount, Divisor: fx},
 		})
 	}
 	records := parseExportCSV(t, renderCSV(t, rows, exportNotes{}))
@@ -577,11 +595,11 @@ func TestWriteUsageExportCSVVerificationIdentity(t *testing.T) {
 // 客户拿到的就是一份表头写着变量名的账单。
 func TestExportHeaderFiveLocales(t *testing.T) {
 	want := map[string][]string{
-		"zh":    {"时间", "模型", "用量", "官方牌价币种", "官方费用（原币）", "折扣", "折算率", "扣费金额（$）", "说明"},
-		"zh-HK": {"時間", "模型", "用量", "官方牌價幣種", "官方費用（原幣）", "折扣", "折算率", "扣費金額（$）", "說明"},
-		"en":    {"Time", "Model", "Usage", "Official List Price Currency", "Official Cost (List Currency)", "Discount", "Exchange Rate", "Charged (USD)", "Note"},
-		"ja":    {"日時", "モデル", "使用量", "公式価格の通貨", "公式料金（現地通貨）", "割引率", "換算レート", "請求額（$）", "備考"},
-		"es":    {"Fecha y hora", "Modelo", "Uso", "Moneda del precio oficial", "Importe oficial (moneda original)", "Descuento", "Tipo de cambio", "Importe cobrado ($)", "Nota"},
+		"zh":    {"时间", "模型", "用量", "官方牌价币种", "官方费用（原币）", "折扣", "折算率", "扣费金额（" + ledger.Currency + "）", "说明"},
+		"zh-HK": {"時間", "模型", "用量", "官方牌價幣種", "官方費用（原幣）", "折扣", "折算率", "扣費金額（" + ledger.Currency + "）", "說明"},
+		"en":    {"Time", "Model", "Usage", "Official List Price Currency", "Official Cost (List Currency)", "Discount", "Exchange Rate", "Charged (" + ledger.Currency + ")", "Note"},
+		"ja":    {"日時", "モデル", "使用量", "公式価格の通貨", "公式料金（現地通貨）", "割引率", "換算レート", "請求額（" + ledger.Currency + "）", "備考"},
+		"es":    {"Fecha y hora", "Modelo", "Uso", "Moneda del precio oficial", "Importe oficial (moneda original)", "Descuento", "Tipo de cambio", "Importe cobrado (" + ledger.Currency + ")", "Nota"},
 	}
 	headers := map[string]string{"zh": "zh-CN,zh;q=0.9", "zh-HK": "zh-HK", "en": "en-US,en;q=0.9", "ja": "ja", "es": "es-ES,es;q=0.9"}
 
@@ -616,13 +634,43 @@ func TestWriteUsageExportCSVListFXFallsBackToBlank(t *testing.T) {
 	}
 }
 
-// TestExportFXKeepsSnapshotLiteral 折算率写快照原貌：6.8 不能被补成 "6.8000"
-// （客户会以为折算率精确到万分位），150 也不该带小数尾巴。
+// TestWriteUsageExportCSVDivisorOneLeavesColumnBlank 账本币种与牌价币种相同（除数 1）时
+// 折算率列留空：验算式收缩成「官方费用 × 折扣 = 扣费金额」，表里多一列「1」只会让客户
+// 以为自己漏读了什么。这是 ¥ 账本下国内厂商模型的常态。
+func TestWriteUsageExportCSVDivisorOneLeavesColumnBlank(t *testing.T) {
+	base := time.Date(2026, 9, 16, 16, 0, 0, 0, time.Local)
+	rows := []exportRow{
+		{CreatedAt: base, Model: "kling-v3", Cost: 2.25,
+			Official: &dto.OfficialNativeCostResp{Currency: "CNY", FX: 6.8, Cost: 3.0, Discount: 0.75, Divisor: 1}},
+	}
+	records := parseExportCSV(t, renderCSV(t, rows, exportNotes{}))
+	if records[1][exportColListFX] != "" {
+		t.Fatalf("除数为 1 时折算率列应留空，实际 %q", records[1][exportColListFX])
+	}
+	// 其余三列照常给：等式 ¥3.00 × 0.75 = 2.25 自己就闭合。
+	if records[1][exportColOfficialCost] != "3.0000" || records[1][exportColDiscount] != "0.7500" ||
+		records[1][exportColActualCost] != "2.2500" {
+		t.Fatalf("除数为 1 的行三列错误: %v", records[1])
+	}
+	// 合计行同理留空。
+	for _, record := range records {
+		if len(record) == exportColumns && record[exportColListCurrency] == "CNY" && record[exportColActualCost] == "" {
+			if record[exportColListFX] != "" {
+				t.Fatalf("合计行的折算率列应留空，实际 %q", record[exportColListFX])
+			}
+			return
+		}
+	}
+	t.Fatalf("未找到官方费用合计行:\n%v", records)
+}
+
+// TestExportFXKeepsSnapshotLiteral 折算率写原貌：6.8 不能被补成 "6.8000"
+// （客户会以为折算率精确到万分位），150 也不该带小数尾巴；1 与非法值一律留空。
 func TestExportFXKeepsSnapshotLiteral(t *testing.T) {
-	cases := map[float64]string{6.8: "6.8", 150: "150", 7.25: "7.25", 0: "", -1: ""}
+	cases := map[float64]string{6.8: "6.8", 150: "150", 7.25: "7.25", 1: "", 0: "", -1: ""}
 	for in, want := range cases {
-		if got := exportFX(in); got != want {
-			t.Errorf("exportFX(%g) = %q，期望 %q", in, got, want)
+		if got := exportDivisor(in); got != want {
+			t.Errorf("exportDivisor(%g) = %q，期望 %q", in, got, want)
 		}
 	}
 }
@@ -633,9 +681,9 @@ func TestWriteUsageExportCSVOfficialTotalsMixedFX(t *testing.T) {
 	base := time.Date(2026, 9, 16, 16, 0, 0, 0, time.Local)
 	rows := []exportRow{
 		{CreatedAt: base, Model: "qwen3-max", Cost: 0.0124,
-			Official: &dto.OfficialNativeCostResp{Currency: "CNY", FX: 6.8, Cost: 0.12, Discount: 0.7}},
+			Official: &dto.OfficialNativeCostResp{Currency: "CNY", FX: 6.8, Cost: 0.12, Discount: 0.7, Divisor: 6.8}},
 		{CreatedAt: base.Add(time.Minute), Model: "qwen3-max", Cost: 0.0117,
-			Official: &dto.OfficialNativeCostResp{Currency: "CNY", FX: 7.2, Cost: 0.12, Discount: 0.7}},
+			Official: &dto.OfficialNativeCostResp{Currency: "CNY", FX: 7.2, Cost: 0.12, Discount: 0.7, Divisor: 7.2}},
 	}
 	records := parseExportCSV(t, renderCSV(t, rows, exportNotes{}))
 
@@ -662,7 +710,7 @@ func exportFullSampleRows() []exportRow {
 	base := time.Date(2026, 9, 16, 16, 0, 0, 0, time.Local)
 	return []exportRow{
 		{CreatedAt: base, Model: "qwen3-max", Tokens: 10000, Cost: 0.012353,
-			Official: &dto.OfficialNativeCostResp{Currency: "CNY", FX: 6.8, Cost: 0.12, Discount: 0.7}},
+			Official: &dto.OfficialNativeCostResp{Currency: "CNY", FX: 6.8, Cost: 0.12, Discount: 0.7, Divisor: 6.8}},
 		{CreatedAt: base.Add(time.Minute), Model: "claude-sonnet-5", Failed: true},
 		{CreatedAt: base.Add(2 * time.Minute), Model: "glm-5.3", Tokens: 800, Cost: 0.0676, Failed: true},
 		{CreatedAt: base.Add(3 * time.Minute), Model: "gpt-image-2", Cost: 0.2},

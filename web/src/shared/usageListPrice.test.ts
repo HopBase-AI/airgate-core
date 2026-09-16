@@ -3,8 +3,9 @@ import {
   buildUsageVerification,
   currencySymbol,
   formatDiscount,
-  formatFX,
+  formatDivisor,
   formatNativeAmount,
+  hasDivisor,
   verificationFormula,
   type UsageRowWithOfficialNative,
 } from './usageListPrice';
@@ -14,10 +15,11 @@ import ja from '../i18n/ja.json';
 import zh from '../i18n/zh.json';
 import zhHK from '../i18n/zh-HK.json';
 
-// 验收算例取自 docs/pricing-list-verification-sop.md §7：
-// 通义 ¥12 / 1M input、10,000 input tokens、分组 0.7 →
+// 验收算例取自 docs/pricing-list-verification-sop.md §7（USD 账本那一档）：
+// 通义 ¥12 / 1M input、10,000 input tokens、7 折 →
 //   actual_cost = 12 × 0.01 × 0.7 ÷ 6.8 = 0.012353
 // 美元基准价 12 ÷ 6.8 = 1.7647，account_cost = 1.7647 × 0.01 = 0.017647。
+// 本文件只测展示层：discount / divisor 由后端按账本口径算好下发，前端一分不算。
 function qwenRow(): UsageRowWithOfficialNative {
   return {
     actual_cost: 0.012353,
@@ -48,7 +50,7 @@ function qwenRow(): UsageRowWithOfficialNative {
       },
     ],
     usage_metadata: { list_currency: 'CNY', list_fx: '6.8' },
-    official_native: { currency: 'CNY', fx: 6.8, cost: 0.12, discount: 0.7 },
+    official_native: { currency: 'CNY', fx: 6.8, cost: 0.12, discount: 0.7, divisor: 6.8, ledger_currency: 'USD' },
   };
 }
 
@@ -56,7 +58,8 @@ describe('官方牌价验算块：渲染与不渲染', () => {
   it('有 official_native 即给出验算数据与各档牌价单价', () => {
     const verification = buildUsageVerification(qwenRow());
     expect(verification).not.toBeNull();
-    expect(verification?.official).toEqual({ currency: 'CNY', fx: 6.8, cost: 0.12, discount: 0.7 });
+    expect(verification?.official).toEqual({ currency: 'CNY', fx: 6.8, cost: 0.12, discount: 0.7, divisor: 6.8, ledger_currency: 'USD' });
+    expect(verification?.showDivisor).toBe(true);
     expect(verification?.actualCost).toBe(0.012353);
     expect(verification?.unitPrices).toEqual([
       {
@@ -86,16 +89,41 @@ describe('官方牌价验算块：渲染与不渲染', () => {
     expect(buildUsageVerification(undefined)).toBeNull();
   });
 
-  it('币种或折算率缺失时宁可不展示，也不给半截等式', () => {
-    const noCurrency = { ...qwenRow(), official_native: { currency: '', fx: 6.8, cost: 0.12, discount: 0.7 } };
+  it('币种或账本除数缺失时宁可不展示，也不给半截等式', () => {
+    const noCurrency = { ...qwenRow(), official_native: { currency: '', fx: 6.8, cost: 0.12, discount: 0.7, divisor: 6.8, ledger_currency: 'USD' } };
     expect(buildUsageVerification(noCurrency)).toBeNull();
-    const noFX = { ...qwenRow(), official_native: { currency: 'CNY', fx: 0, cost: 0.12, discount: 0.7 } };
-    expect(buildUsageVerification(noFX)).toBeNull();
+    // 除数是等式里唯一必需的那个数，缺了它凑不齐。
+    const noDivisor = { ...qwenRow(), official_native: { currency: 'CNY', fx: 6.8, cost: 0.12, discount: 0.7, divisor: 0, ledger_currency: 'USD' } };
+    expect(buildUsageVerification(noDivisor)).toBeNull();
   });
 
-  it('倍率缺失按 1 记：否则会显示「折扣 0」却扣了钱', () => {
-    const row = { ...qwenRow(), official_native: { currency: 'CNY', fx: 6.8, cost: 0.12, discount: 0 } };
+  it('折缺失按 1 记：否则会显示「折扣 0」却扣了钱', () => {
+    const row = { ...qwenRow(), official_native: { currency: 'CNY', fx: 6.8, cost: 0.12, discount: 0, divisor: 6.8, ledger_currency: 'USD' } };
     expect(buildUsageVerification(row)?.official.discount).toBe(1);
+  });
+
+  it('¥ 账本（除数 1）：折算率整行隐藏，实扣按账本币种标 ¥', () => {
+    // 生产当前口径：组 27 可灵 75 折，倍率 5.1，后端还原成折 0.75、除数 6.8 ÷ 6.8 = 1。
+    const row: UsageRowWithOfficialNative = {
+      actual_cost: 2.25,
+      usage_metrics: [{
+        key: 'duration', label: '视频时长', value: 5, account_cost: 0.441176,
+        metadata: { price_per_sec: '0.0882353', list_currency: 'CNY', list_unit_price: '0.6', list_fx: '6.8' },
+      }],
+      official_native: { currency: 'CNY', fx: 6.8, cost: 3, discount: 0.75, divisor: 1, ledger_currency: 'CNY' },
+    };
+    const verification = buildUsageVerification(row);
+    if (!verification) throw new Error('¥ 账本的行应产出验算块');
+    expect(verification.showDivisor).toBe(false);
+    expect(verification.official.ledger_currency).toBe('CNY');
+    // 等式收缩成「官方费用 × 折」，自己就闭合：¥3.00 × 0.75 = ¥2.25。
+    expect(verificationFormula(verification.official)).toBe('¥3.0000 × 0.75');
+    expect(verification.official.cost * verification.official.discount).toBeCloseTo(verification.actualCost, 6);
+  });
+
+  it('账本币种缺省回落原币，不硬标 $', () => {
+    const row = { ...qwenRow(), official_native: { currency: 'CNY', fx: 6.8, cost: 0.12, discount: 0.7, divisor: 1, ledger_currency: '' } };
+    expect(buildUsageVerification(row)?.official.ledger_currency).toBe('CNY');
   });
 
   it('明细没带快照时才回退 metric，绝不双份累加', () => {
@@ -112,7 +140,7 @@ describe('官方牌价验算块：渲染与不渲染', () => {
           metadata: { price_per_sec: '0.0882353', list_currency: 'CNY', list_unit_price: '0.6', list_fx: '6.8' },
         },
       ],
-      official_native: { currency: 'CNY', fx: 6.8, cost: 3, discount: 0.75 },
+      official_native: { currency: 'CNY', fx: 6.8, cost: 3, discount: 0.75, divisor: 6.8, ledger_currency: 'USD' },
     };
     const verification = buildUsageVerification(row);
     expect(verification?.unitPrices).toHaveLength(1);
@@ -128,7 +156,7 @@ describe('官方牌价验算块：渲染与不渲染', () => {
 
   it('量纲随明细的美元单价键：秒 / 张 / 次 / 百万 token', () => {
     const unitOf = (metadata: Record<string, string>) => buildUsageVerification({
-      official_native: { currency: 'CNY', fx: 6.8, cost: 1, discount: 1 },
+      official_native: { currency: 'CNY', fx: 6.8, cost: 1, discount: 1, divisor: 6.8, ledger_currency: 'USD' },
       usage_cost_details: [{ key: 'x', label: 'x', account_cost: 1, metadata }],
     })?.unitPrices[0]?.unitKey;
     const snapshot = { list_currency: 'CNY', list_unit_price: '1', list_fx: '6.8' };
@@ -176,16 +204,28 @@ describe('金额格式化', () => {
     expect(formatNativeAmount(Number.NaN, 'CNY')).toBe('¥0.0000');
   });
 
-  it('折扣两位、折算率不补零', () => {
+  it('折两位、账本除数不补零', () => {
     expect(formatDiscount(0.7)).toBe('0.70');
     expect(formatDiscount(1)).toBe('1.00');
-    expect(formatFX(6.8)).toBe('6.8');
-    expect(formatFX(0)).toBe('');
+    expect(formatDivisor(6.8)).toBe('6.8');
+    expect(formatDivisor(0)).toBe('');
   });
 
-  it('验算式与 SOP §4.1 模板一致', () => {
-    expect(verificationFormula({ currency: 'CNY', fx: 6.8, cost: 0.156, discount: 0.7 }))
+  it('除数为 1 = 不发生折算，折算率行与「÷」都省掉', () => {
+    expect(hasDivisor(1)).toBe(false);
+    expect(hasDivisor(6.8)).toBe(true);
+    expect(hasDivisor(0)).toBe(false);
+    // 日元牌价在 ¥ 账本下除数是 150 ÷ 6.8，不是 1——写死 1 的实现会在这里红。
+    expect(hasDivisor(150 / 6.8)).toBe(true);
+  });
+
+  it('验算式与 SOP §4.1 模板一致（两种账本各一式）', () => {
+    // USD 账本：官方费用 ¥ → 实扣 $，要除。
+    expect(verificationFormula({ currency: 'CNY', fx: 6.8, cost: 0.156, discount: 0.7, divisor: 6.8, ledger_currency: 'USD' }))
       .toBe('¥0.1560 × 0.70 ÷ 6.8');
+    // ¥ 账本：官方费用与实扣同币，不除。
+    expect(verificationFormula({ currency: 'CNY', fx: 6.8, cost: 0.156, discount: 0.7, divisor: 1, ledger_currency: 'CNY' }))
+      .toBe('¥0.1560 × 0.70');
   });
 });
 

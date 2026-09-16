@@ -12,6 +12,7 @@ import (
 
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	"github.com/DouDOU-start/airgate-core/internal/i18n"
+	"github.com/DouDOU-start/airgate-core/internal/pkg/ledger"
 	"github.com/DouDOU-start/airgate-core/internal/pkg/timezone"
 	"github.com/DouDOU-start/airgate-core/internal/server/dto"
 	"github.com/DouDOU-start/airgate-core/internal/server/response"
@@ -365,11 +366,14 @@ func exportRate(v float64) string {
 	return strconv.FormatFloat(v, 'f', 4, 64)
 }
 
-// exportFX 折算率反过来用最短表示：它是写入时快照的字面量（"6.8" / "150"），
-// ParseFloat → FormatFloat(-1) 原样往返，客户在表里看到的就是插件当时用的那个常数。
+// exportDivisor 折算率列的值：验算式里真正要除的那个数（账本除数 = 牌价折算率 ÷ 账本口径，
+// 见 internal/pkg/ledger）。用最短表示——它本质是个常数（"6.8" / "150" / "22.0588"），
 // 补成 "6.8000" 只会让人误以为折算率精确到万分位。
-func exportFX(v float64) string {
-	if v <= 0 {
+//
+// 除数为 1 时留空而不写 "1"：账本币种与牌价币种相同，本来就不发生折算，
+// 表里多一列「÷1」只会让客户以为自己漏读了什么。
+func exportDivisor(v float64) string {
+	if v <= 0 || v == 1 {
 		return ""
 	}
 	return strconv.FormatFloat(v, 'f', -1, 64)
@@ -380,10 +384,11 @@ func exportFX(v float64) string {
 //
 // 「折算率」夹在折扣与扣费金额之间，是为了让四列从左到右正好读成验算式本身：
 //
-//	官方费用（原币） × 折扣 ÷ 折算率 = 扣费金额（$）
+//	官方费用（原币） × 折扣 ÷ 折算率 = 扣费金额（账本币种）
 //
-// 少了折算率这一列，客户手里只有 ¥ 和 $ 两个数、缺中间那个 6.8，验算根本做不下去——
-// 整层「可验算账单」也就白做了。
+// 少了折算率这一列，牌价币种与账本币种不同时客户手里只有两头、缺中间那个除数，
+// 验算根本做不下去——整层「可验算账单」也就白做了。两币种相同时该列留空
+// （除数为 1，不发生折算），三列照样读成 官方费用 × 折扣 = 扣费金额。
 //
 // 语言按 Accept-Language 解析（i18n.Tc → 默认英文），整份 CSV（含说明栏、汇总标签、
 // 提示行）统一走 key，不留硬编码中文。
@@ -396,7 +401,9 @@ func exportHeader(c *gin.Context) []string {
 		i18n.Tc(c, "export.official_cost_native"),
 		i18n.Tc(c, "export.discount"),
 		i18n.Tc(c, "export.list_fx"),
-		i18n.Tc(c, "export.actual_cost_usd"),
+		// 扣费金额的币种随账本走，不写死 $：¥ 账本下扣的是人民币，标成 $ 会让
+		// 「¥官方费用 × 折 = $扣费」这条等式在同一行里自相矛盾。
+		i18n.Tc(c, "export.actual_cost", ledger.Currency),
 		i18n.Tc(c, "export.note"),
 	}
 }
@@ -422,14 +429,14 @@ const (
 // 现网只有 CNY 一种，但别的原生币牌价随时可能进来，届时不该悄悄加成一堆。
 type officialTotals map[string]*officialTotal
 
-// officialTotal 一个币种的官方费用累计，外加该币种的折算率。
+// officialTotal 一个币种的官方费用累计，外加该币种的账本除数。
 type officialTotal struct {
 	cost float64
-	// fx 该币种各行的折算率；mixedFX 为真时这些行的折算率并不一致。
-	fx float64
-	// mixedFX 同币种内出现了不同折算率（改价前后的行同框）。此时合计行的折算率列
+	// divisor 该币种各行的账本除数；mixedDivisor 为真时这些行并不一致。
+	divisor float64
+	// mixedDivisor 同币种内出现了不同除数（改价前后的行同框）。此时合计行的折算率列
 	// 留空：随手挑一个填进去，客户用它去除合计只会算出一个对不上的数。
-	mixedFX bool
+	mixedDivisor bool
 }
 
 func (t officialTotals) add(block *dto.OfficialNativeCostResp) {
@@ -443,11 +450,11 @@ func (t officialTotals) add(block *dto.OfficialNativeCostResp) {
 	}
 	entry.cost += block.Cost
 	switch {
-	case block.FX <= 0:
-	case entry.fx == 0:
-		entry.fx = block.FX
-	case entry.fx != block.FX:
-		entry.mixedFX = true
+	case block.Divisor <= 0:
+	case entry.divisor == 0:
+		entry.divisor = block.Divisor
+	case entry.divisor != block.Divisor:
+		entry.mixedDivisor = true
 	}
 }
 
@@ -497,14 +504,15 @@ func writeUsageExportCSV(c *gin.Context, filename string, rows []exportRow, note
 		}
 		total += row.Cost
 
-		// 四列同生共死：没有牌价快照的行一律留空，不写 0（见 exportRow.Official）。
-		// 折算率也在其中——单给一个 6.8 而没有官方费用，客户只会更糊涂。
-		listCurrency, officialCost, discount, listFX := "", "", "", ""
+		// 四列同生共死：没有牌价快照、或计费本就不满足验算等式（固定图价等）的行
+		// 一律留空，不写 0（见 exportRow.Official）。折算率也在其中——单给一个 6.8
+		// 而没有官方费用，客户只会更糊涂。
+		listCurrency, officialCost, discount, divisor := "", "", "", ""
 		if row.Official != nil {
 			listCurrency = row.Official.Currency
 			officialCost = exportMoney(row.Official.Cost)
 			discount = exportRate(row.Official.Discount)
-			listFX = exportFX(row.Official.FX)
+			divisor = exportDivisor(row.Official.Divisor)
 			totals.add(row.Official)
 		}
 
@@ -516,7 +524,7 @@ func writeUsageExportCSV(c *gin.Context, filename string, rows []exportRow, note
 			listCurrency,
 			officialCost,
 			discount,
-			listFX,
+			divisor,
 			exportMoney(row.Cost),
 			note,
 		})
@@ -551,7 +559,7 @@ func writeUsageExportCSV(c *gin.Context, filename string, rows []exportRow, note
 	_ = w.Write(summaryRow)
 
 	// 官方费用合计按币种各出一行，落在「官方牌价币种 / 官方费用(原币) / 折算率」三列下。
-	// 验算口径：Σ官方费用(原币) × 折 ÷ 折算率 ≈ Σ扣费($)——整体成立的前提是这批行折扣相同
+	// 验算口径：Σ官方费用(原币) × 折 ÷ 除数 ≈ Σ扣费——整体成立的前提是这批行折扣相同
 	// （同一分组），跨分组请按行验（SOP §7 末行的注）。折扣列不填：合计行的折扣无法定义。
 	for _, currency := range totals.currencies() {
 		entry := totals[currency]
@@ -559,8 +567,8 @@ func writeUsageExportCSV(c *gin.Context, filename string, rows []exportRow, note
 		officialRow[exportColTime] = i18n.Tc(c, "export.official_cost_total")
 		officialRow[exportColListCurrency] = currency
 		officialRow[exportColOfficialCost] = exportMoney(entry.cost)
-		if !entry.mixedFX {
-			officialRow[exportColListFX] = exportFX(entry.fx)
+		if !entry.mixedDivisor {
+			officialRow[exportColListFX] = exportDivisor(entry.divisor)
 		}
 		_ = w.Write(officialRow)
 	}

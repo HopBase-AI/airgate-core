@@ -131,28 +131,41 @@ type UserUsageLogResp struct {
 	ErrorMessage          string                `json:"error_message,omitempty"` // 失败原因（已脱敏截断）
 	CreatedAt             string                `json:"created_at"`
 	// OfficialNative 厂商官方牌价口径的本次费用（只读计算块，由 usage_cost_details 的
-	// list_* 快照累加而来，不落库、不参与计费）。国内厂商模型官网标价是 ¥、账本记 $，
-	// 客户据此逐笔验算：cost × discount ÷ fx = actual_cost。
-	// 省略 = 本行没有牌价快照（历史行、或官方价本就是美元的模型），前端不渲染验算块。
+	// list_* 快照累加而来，不落库、不参与计费）。国内厂商模型官网标价是 ¥，
+	// 客户据此逐笔验算：cost × discount ÷ divisor = actual_cost。
+	// 省略 = 本行没有牌价快照（历史行、或官方价本就是美元的模型），或本行的计费
+	// 本来就不满足该等式（固定图价等），前端不渲染验算块。
 	//
 	// ⚠️ 只加在本 DTO，CustomerUsageLogResp 不带：那是 API Key 会话（分销商的终端客户）
 	// 看的视图，discount 会直接暴露分销商拿到的折扣。
 	OfficialNative *OfficialNativeCostResp `json:"official_native,omitempty"`
 }
 
-// OfficialNativeCostResp 官方牌价口径的单行费用。四个数凑成一条客户可自行验算的等式：
-// cost（原币官方费用）× discount（折扣）÷ fx（折算率）= actual_cost（实扣美元）。
+// OfficialNativeCostResp 官方牌价口径的单行费用，凑成一条客户可自行验算的等式：
 //
-// 只含币种 / 折算率 / 金额 / 折扣，不带任何上游通道、账号或供应商信息。
+//	cost（原币官方费用）× discount（折）÷ divisor（账本除数）= actual_cost（实扣，ledger_currency 计价）
+//
+// 该等式与账本币种无关：discount 一律是客户读得懂的「折」（0.75 = 75 折），
+// 账本差异全部收进 divisor。¥ 账本 + 牌价折算率 6.8 时 divisor = 1（账本本来就是 ¥，
+// 不发生折算，展示层据此隐藏折算率那一行）；USD 账本下 divisor = fx。
+// 推导与割接联动见 internal/pkg/ledger。
+//
+// 只含币种 / 折算率 / 金额 / 折，不带任何上游通道、账号或供应商信息。
 type OfficialNativeCostResp struct {
 	// Currency 原币币种（如 "CNY"）。
 	Currency string `json:"currency"`
-	// FX 折算率快照：1 USD = fx 原币。写入时的历史事实，不是当前汇率。
+	// FX 牌价折算率快照：1 USD = fx 原币。写入时的历史事实，不是当前汇率，
+	// 也不是验算式里的除数（那是 Divisor）——它属于价格定义，供排查与导出溯源。
 	FX float64 `json:"fx"`
-	// Cost 按官方牌价算出的本次费用（原币，折扣前）。
+	// Cost 按官方牌价算出的本次费用（原币，折前）。
 	Cost float64 `json:"cost"`
-	// Discount 本次生效的折扣（= rate_multiplier）。
+	// Discount 本次生效的折（0.75 = 75 折）。已按账本口径把 rate_multiplier 还原成折，
+	// 不是 rate_multiplier 原值——¥ 账本下后者是 5.1 这种量纲，摊给客户读不懂。
 	Discount float64 `json:"discount"`
+	// Divisor 验算式里的账本除数 = FX ÷ ledger.RateBase。为 1 时不发生折算。
+	Divisor float64 `json:"divisor"`
+	// LedgerCurrency 实扣金额的计价币种（账本币种），供展示层给 actual_cost 配符号。
+	LedgerCurrency string `json:"ledger_currency"`
 }
 
 // CustomerUsageLogResp 使用记录响应（end customer scope，剥离所有平台真实成本字段）

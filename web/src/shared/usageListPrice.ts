@@ -1,10 +1,13 @@
 /**
  * 使用记录的「厂商官方牌价验算块」数据层。
  *
- * 背景见 docs/pricing-list-verification-sop.md：账本切 USD 后，国内厂商模型的官网标价是 ¥，
- * 插件按固定折算率折成美元基准价计费，客户只看到 $ 数字对不上官网 ¥。后端在
- * `UserUsageLogResp.official_native` 里给出只读计算块（原币费用 / 折算率 / 折扣），
+ * 背景见 docs/pricing-list-verification-sop.md：国内厂商模型的官网标价是 ¥，
+ * 插件按固定折算率折成美元基准价计费，客户看到的数字对不上官网 ¥ 牌价。后端在
+ * `UserUsageLogResp.official_native` 里给出只读计算块（原币费用 / 折 / 账本除数 / 账本币种），
  * 各明细的 metadata 里带 `list_currency` / `list_unit_price` / `list_fx` 单价快照。
+ *
+ * 验算式：`官方费用(原币) × 折 ÷ 账本除数 = 实扣(账本币种)`。除数为 1 时不发生折算
+ * （账本币种与牌价币种相同），展示层隐藏折算率那一行——摆一个「÷1」只会让人以为漏读了什么。
  *
  * 本模块只做「读快照 → 整理成展示行」，**一分钱都不自己算**：
  * 金额一律取后端的 official_native，单价一律取明细快照。tooltip、插件渲染器、
@@ -46,10 +49,12 @@ export interface ListUnitPriceRow {
 /** 验算块的完整展示数据。 */
 export interface UsageVerification {
   official: OfficialNativeCost;
-  /** 实扣美元（取自本行 actual_cost，不再自乘）。 */
+  /** 实扣金额（取自本行 actual_cost，不再自乘），币种是 official.ledger_currency。 */
   actualCost: number;
   /** 各档官方牌价单价；快照缺单价时为空数组，此时只展示金额行。 */
   unitPrices: ListUnitPriceRow[];
+  /** 是否显示「折算率」行：除数为 1 时账本与牌价同币，不发生折算，整行隐藏。 */
+  showDivisor: boolean;
 }
 
 /** 用量快照键名，与后端 internal/pkg/listprice 的常量一一对应。 */
@@ -94,23 +99,29 @@ export function formatNativeAmount(value: number, currency: string, decimals = 4
   return `${currencySymbol(currency)}${amount.toFixed(decimals)}`;
 }
 
-/** 折扣文案：0.7 → "0.70"。倍率缺失时后端已按 1 记，这里不再兜底。 */
+/** 折文案：0.75 → "0.75"。倍率缺失时后端已按原价（折 1）记，这里不再兜底。 */
 export function formatDiscount(discount: number): string {
   return (Number.isFinite(discount) ? discount : 1).toFixed(2);
 }
 
-/** 折算率文案：6.8 → "6.8"（末尾零不补，客户对照的是「除以 6.8」这个数）。 */
-export function formatFX(fx: number): string {
-  if (!Number.isFinite(fx) || fx <= 0) return '';
-  return String(Number(fx.toFixed(6)));
+/** 账本除数文案：6.8 → "6.8"（末尾零不补，客户对照的是「除以 6.8」这个数）。 */
+export function formatDivisor(divisor: number): string {
+  if (!Number.isFinite(divisor) || divisor <= 0) return '';
+  return String(Number(divisor.toFixed(6)));
+}
+
+/** 除数为 1 = 账本币种与牌价币种相同，不发生折算，折算率行与验算式里的「÷」都省掉。 */
+export function hasDivisor(divisor: number): boolean {
+  return Number.isFinite(divisor) && divisor > 0 && divisor !== 1;
 }
 
 /**
- * 验算式文案：`¥0.1560 × 0.70 ÷ 6.8`。
- * 刻意不带 "= $x"——结果就在紧邻的「实扣」行里，重复三遍反而看不清。
+ * 验算式文案：`¥0.1560 × 0.75 ÷ 6.8`；除数为 1 时是 `¥0.1560 × 0.75`。
+ * 刻意不带 "= x"——结果就在紧邻的「实扣」行里，重复三遍反而看不清。
  */
 export function verificationFormula(official: OfficialNativeCost): string {
-  return `${formatNativeAmount(official.cost, official.currency)} × ${formatDiscount(official.discount)} ÷ ${formatFX(official.fx)}`;
+  const head = `${formatNativeAmount(official.cost, official.currency)} × ${formatDiscount(official.discount)}`;
+  return hasDivisor(official.divisor) ? `${head} ÷ ${formatDivisor(official.divisor)}` : head;
 }
 
 /** 明细 key → 已知档位的 i18n 标签键。认不出的档位回落明细自带 label。 */
@@ -186,7 +197,8 @@ export function buildUsageVerification(row: UsageRowWithOfficialNative | undefin
   const official = row?.official_native;
   if (!official) return null;
   const currency = (official.currency ?? '').trim().toUpperCase();
-  if (!currency || !(official.fx > 0)) return null;
+  // 除数是验算式里唯一必需的那个数：缺了它等式凑不齐，宁可整块不渲染。
+  if (!currency || !(official.divisor > 0)) return null;
 
   // 单价快照与后端同口径：明细优先，一条都没带快照时才回退 metric——
   // 两者常共用同一份 metadata（airgate-openai 就是），都取会出现重复行。
@@ -199,8 +211,12 @@ export function buildUsageVerification(row: UsageRowWithOfficialNative | undefin
       fx: official.fx,
       cost: Number.isFinite(official.cost) ? official.cost : 0,
       discount: official.discount > 0 ? official.discount : 1,
+      divisor: official.divisor,
+      // 账本币种缺省回落原币：¥ 账本下两者本来就相同，标错币种比不标更糟。
+      ledger_currency: (official.ledger_currency ?? '').trim().toUpperCase() || currency,
     },
     actualCost: row?.actual_cost ?? 0,
     unitPrices: unitPrices.filter((item) => item.currency === currency),
+    showDivisor: hasDivisor(official.divisor),
   };
 }

@@ -82,7 +82,7 @@
   "export.official_cost_native": "Importe oficial (moneda original)",
   "export.discount": "Descuento",
   "export.list_fx": "Tipo de cambio",
-  "export.actual_cost_usd": "Importe cobrado ($)",
+  "export.actual_cost": "Importe cobrado (%s)",
   "export.note": "Nota",
   "export.official_cost_total": "Total del importe oficial",
   "export.note_failed_free": "Solicitud fallida, sin cargo",
