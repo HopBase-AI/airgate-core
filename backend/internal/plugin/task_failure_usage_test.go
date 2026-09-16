@@ -143,22 +143,81 @@ func TestBuildTaskFailureUsageSkips(t *testing.T) {
 	}
 }
 
+// error_status 口径：校验类一律 4xx（禁止 5xx）、余额与同步路径同为 402、取消 499、中断 503、
+// http_<n> 透传解析、其余上游类 502。
 func TestTaskFailureStatus(t *testing.T) {
 	cases := []struct {
 		code, errType string
 		want          int
 	}{
+		// 确定性校验 / 客户端类 → 400（显式集合）
+		{"model_not_in_catalog", "", http.StatusBadRequest},
+		{"wrong_model_kind", "", http.StatusBadRequest},
+		{"prompt_required", "", http.StatusBadRequest},
+		{"prompt_too_long", "", http.StatusBadRequest},
+		{"group_missing", "", http.StatusBadRequest},
+		{"invalid_request", "", http.StatusBadRequest},
+		{"bad_request", "", http.StatusBadRequest},
 		{"safety_rejected", "invalid_request", http.StatusBadRequest},
-		{"insufficient_balance", "validation_error", http.StatusBadRequest},
+		{"submission_rejected", "", http.StatusBadRequest},
+		{"mask_unsupported", "", http.StatusBadRequest},
+		{"unsupported_task_type", "", http.StatusBadRequest},
+		{"input_sensitive", "content_policy", http.StatusBadRequest},
+		{"client_error", "", http.StatusBadRequest},
+		// 参考素材类 → 400（reference_ 前缀，不靠枚举）
+		{"reference_image_invalid", "", http.StatusBadRequest},
+		{"reference_image_unsupported", "", http.StatusBadRequest},
+		{"reference_image_too_many", "", http.StatusBadRequest},
+		{"reference_image_required", "", http.StatusBadRequest},
+		{"reference_input_invalid", "", http.StatusBadRequest},
+		{"reference_media_unsupported", "", http.StatusBadRequest},
+		{"reference_media_invalid", "", http.StatusBadRequest},
+		{"reference_media_too_many", "", http.StatusBadRequest},
+		{"reference_whatever_new_code", "upstream_error", http.StatusBadRequest},
+		{"  reference_image_invalid  ", "", http.StatusBadRequest},
+		// 余额 / 额度不足 → 402（与同步路径 quota.go 同码）
+		{"insufficient_balance", "validation_error", http.StatusPaymentRequired},
+		{"insufficient_quota", "", http.StatusPaymentRequired},
+		// 限流 / 鉴权 / 超时
 		{"rate_limited", "", http.StatusTooManyRequests},
+		{"account_rate_limited", "", http.StatusTooManyRequests},
 		{"auth_failed", "", http.StatusUnauthorized},
+		{"account_dead", "", http.StatusUnauthorized},
 		{staleTaskErrorCode, "", http.StatusGatewayTimeout},
+		{"upstream_timeout", "", http.StatusGatewayTimeout},
+		{"task_timeout", "timeout", http.StatusGatewayTimeout},
+		// 取消 / 中断
+		{"task_canceled", "task_state", statusClientClosedRequest},
+		{"task_interrupted", "", http.StatusServiceUnavailable},
+		// http_<n> 透传解析
+		{"http_429", "upstream_error", http.StatusTooManyRequests},
+		{"http_400", "upstream_error", http.StatusBadRequest},
+		{"http_503", "upstream_error", http.StatusServiceUnavailable},
+		{"http_999", "upstream_error", http.StatusBadGateway}, // 不是合法状态：不认
+		{"http_abc", "upstream_error", http.StatusBadGateway},
+		{"http_", "upstream_error", http.StatusBadGateway},
+		// errorType 兜底 → 400
 		{"", "validation_error", http.StatusBadRequest},
+		{"something_new", "invalid_request", http.StatusBadRequest},
+		// 其余上游类 → 502
+		{"server_error", "", http.StatusBadGateway},
+		{"upstream_error", "", http.StatusBadGateway},
+		{"upstream_task_not_found", "", http.StatusBadGateway},
+		{"no_output", "", http.StatusBadGateway},
+		{"image_store_failed", "", http.StatusBadGateway},
+		{"plugin_error", "", http.StatusBadGateway},
+		{"output_video_sensitive", "content_policy", http.StatusBadGateway},
 		{"", "", http.StatusBadGateway},
 	}
 	for _, c := range cases {
 		if got := taskFailureStatus(c.code, c.errType); got != c.want {
 			t.Fatalf("taskFailureStatus(%q,%q) = %d, want %d", c.code, c.errType, got, c.want)
+		}
+	}
+	// 校验类失败绝不能落 5xx：这是本口径的硬约束
+	for code := range taskFailureClientErrorCodes {
+		if got := taskFailureStatus(code, ""); got >= http.StatusInternalServerError {
+			t.Fatalf("client error %q mapped to 5xx (%d)", code, got)
 		}
 	}
 }

@@ -173,25 +173,87 @@ func taskFailureModel(t *ent.Task) string {
 	return ""
 }
 
-// taskFailureStatus 失败记录的 error_status：任务没有上游 HTTP 状态可记，按错误分类给一个
-// 与同步路径口径一致的近似值（客户端/内容类 400、限流 429、鉴权 401、卡死 504、其余 502）。
+// taskFailureClientErrorCodes 确定性的校验 / 客户端类失败：请求本身就不合法（模型不在目录、缺提示词、
+// 参考图不合规、内容审核拒绝……），重试也不会成功，落 400——校验类错误不能记成 5xx，否则错误监控
+// 与客户看到的「上游故障」全是假警报。参考素材类的码统一走 reference_ 前缀规则（见 taskFailureStatus）。
+var taskFailureClientErrorCodes = map[string]struct{}{
+	"model_not_in_catalog":  {},
+	"wrong_model_kind":      {},
+	"prompt_required":       {},
+	"prompt_too_long":       {},
+	"group_missing":         {},
+	"bad_request":           {},
+	"safety_rejected":       {},
+	"submission_rejected":   {},
+	"mask_unsupported":      {},
+	"unsupported_task_type": {},
+	// seedance 输入侧审核（提示词 / 参考素材违规），与输出侧审核不同：输入是客户给的，属客户端错误。
+	"input_sensitive":                {},
+	appusage.ErrorCodeClientError:    {},
+	appusage.ErrorCodeInvalidRequest: {},
+}
+
+const (
+	// taskFailureReferenceCodePrefix 参考素材类校验码前缀（reference_image_invalid /
+	// reference_media_too_many / reference_input_invalid …），插件各自枚举，core 只认前缀。
+	taskFailureReferenceCodePrefix = "reference_"
+	// taskFailureHTTPCodePrefix 插件把上游 HTTP 状态直接编进 error_code 的形态（openai 生图：http_429）。
+	taskFailureHTTPCodePrefix = "http_"
+)
+
+// taskFailureStatus 失败记录的 error_status：任务没有上游 HTTP 状态可记，按错误分类给一个与同步转发
+// 路径口径一致的近似值。规则按优先级：
+//   - 确定性校验 / 客户端类（显式集合 + reference_ 前缀）→ 400；
+//   - 余额 / 额度不足（insufficient_quota 与 videobudget 的 insufficient_balance）→ 402，
+//     与同步路径 quota.go 的 http.StatusPaymentRequired 同码；
+//   - 限流 → 429；鉴权 → 401；卡死 / 超时（stale_timeout / upstream_timeout / task_timeout）→ 504；
+//   - task_canceled → 499：同步路径把 statusClientClosedRequest 只给「请求方自己中止」
+//     （context.Canceled → client_canceled），任务被取消同属请求方而非网关或上游的过错，
+//     不该计入 4xx 校验也不该计入 5xx 故障；
+//   - task_interrupted → 503：任务是被网关侧中断（重启 / 工作进程退出）而非请求方取消，
+//     同步路径这种情况不会走 499，按「服务暂时不可用」记；
+//   - http_<n>（插件透传的上游状态）→ 解析出 n；
+//   - errorType 为 invalid_request / validation_error 的兜底 → 400；
+//   - 其余上游类（server_error / upstream_* / no_output / image_store_failed / plugin_error …）→ 502。
 func taskFailureStatus(code, errorType string) int {
-	switch code {
-	case "safety_rejected", "bad_request", "insufficient_balance",
-		appusage.ErrorCodeClientError, appusage.ErrorCodeInvalidRequest, appusage.ErrorCodeInsufficientQuota:
+	code = strings.TrimSpace(code)
+	if _, ok := taskFailureClientErrorCodes[code]; ok || strings.HasPrefix(code, taskFailureReferenceCodePrefix) {
 		return http.StatusBadRequest
+	}
+	switch code {
+	case "insufficient_balance", appusage.ErrorCodeInsufficientQuota:
+		return http.StatusPaymentRequired
 	case "rate_limited", appusage.ErrorCodeAccountRateLimited:
 		return http.StatusTooManyRequests
 	case "auth_failed", appusage.ErrorCodeAccountDead:
 		return http.StatusUnauthorized
-	case staleTaskErrorCode, appusage.ErrorCodeUpstreamTimeout:
+	case staleTaskErrorCode, "task_timeout", appusage.ErrorCodeUpstreamTimeout:
 		return http.StatusGatewayTimeout
+	case "task_canceled":
+		return statusClientClosedRequest
+	case "task_interrupted":
+		return http.StatusServiceUnavailable
+	}
+	if status, ok := taskFailureHTTPCode(code); ok {
+		return status
 	}
 	switch strings.TrimSpace(errorType) {
 	case "invalid_request", "validation_error":
 		return http.StatusBadRequest
 	}
 	return http.StatusBadGateway
+}
+
+// taskFailureHTTPCode 解析 http_<n> 形态的错误码；n 必须是合法 HTTP 状态（100–599），否则不认。
+func taskFailureHTTPCode(code string) (int, bool) {
+	if !strings.HasPrefix(code, taskFailureHTTPCodePrefix) {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.TrimPrefix(code, taskFailureHTTPCodePrefix))
+	if err != nil || n < 100 || n > 599 {
+		return 0, false
+	}
+	return n, true
 }
 
 // taskElapsedMs 任务从创建到失败的耗时（毫秒），与同步路径「秒失败 vs 卡死」的诊断口径对齐。
