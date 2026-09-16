@@ -207,6 +207,8 @@
     "video_price_note": "單價 / 百萬 video tokens；實際費用 = 單價 × 本次生成消耗的 video tokens。",
     "video_price_unit_second": "計費單價 · 每秒",
     "video_price_note_second": "單價 / 秒；實際費用 = 單價 × 計費秒數（影片時長），不按 video tokens 計量。",
+    "character_price_unit": "計費單價 · 每百萬字元",
+    "character_price_note": "單價 / 百萬計費字元；實際費用 = 單價 × 本次合成的計費字元數（以回傳的用量為準）。",
     "video_audio_silent": "無聲",
     "video_audio_on": "有聲",
     "video_audio_voice": "指定音色",

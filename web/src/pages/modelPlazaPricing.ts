@@ -105,6 +105,15 @@ export function isPerSecondPricing(model: { price_unit?: string }): boolean {
   return priceUnitOf(model) === 'second';
 }
 
+/**
+ * 按计费字符计费（$/百万字符）：语音合成模型（MiniMax speech-2.8 等）。
+ * 这类模型只有 price.input 一份单价、price.output 恒为 0，展示端只能铺一格，
+ * 否则会被标成 token 价、还多出无意义的「缓存输入」「输出 $0」两格。
+ */
+export function isPerCharacterPricing(model: { price_unit?: string }): boolean {
+  return priceUnitOf(model) === 'character';
+}
+
 /** 视频价格区的单位抬头 / 脚注文案 key。 */
 export function videoPriceCopyKeys(model: { price_unit?: string }): { unitKey: string; noteKey: string } {
   return isPerSecondPricing(model)

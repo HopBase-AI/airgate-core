@@ -207,6 +207,8 @@
     "video_price_note": "Tarifa por 1M de tokens de video; el costo real = tarifa × tokens de video consumidos por la generación.",
     "video_price_unit_second": "Tarifa de facturación · por segundo",
     "video_price_note_second": "Tarifa por segundo; coste real = tarifa × segundos facturados (duración del clip), no por tokens de video.",
+    "character_price_unit": "Precio unitario · por 1M de caracteres",
+    "character_price_note": "Precio por 1M de caracteres facturables; coste real = precio unitario × caracteres facturables de esta síntesis (según el uso devuelto en la respuesta).",
     "video_audio_silent": "Sin audio",
     "video_audio_on": "Con audio",
     "video_audio_voice": "Voz predefinida",

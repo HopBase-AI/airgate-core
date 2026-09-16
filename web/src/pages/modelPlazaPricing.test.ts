@@ -3,6 +3,7 @@ import {
   formatModelPrice,
   hasFixedImagePricingBuckets,
   hasFixedImageTierPrices,
+  isPerCharacterPricing,
   isPerSecondPricing,
   priceUnitOf,
   resolveBucketDiscount,
@@ -164,6 +165,30 @@ describe('视频计价单位', () => {
     expect(tZh(unitKey)).toBe('计费单价 · / 1M video tokens');
     expect(tZh(noteKey)).toContain('video tokens');
     expect(videoPriceCopyKeys({})).toEqual(videoPriceCopyKeys(tokenModel));
+  });
+});
+
+// 语音合成（MiniMax speech-2.8 hd / turbo）按**每百万计费字符**收费，插件经
+// price.unit=character 声明、只有 price.input 一份单价。广场若照 token 模型铺
+// 「输入 / 缓存输入 / 输出」三格，会把字符价标成 token 价，还多出两格无意义的 $0。
+describe('按字符计价', () => {
+  const characterModel = { price_unit: 'character' };
+
+  it('只认 price_unit=character，与秒 / token 互斥', () => {
+    expect(isPerCharacterPricing(characterModel)).toBe(true);
+    expect(isPerCharacterPricing({ price_unit: ' Character ' })).toBe(true);
+    expect(isPerCharacterPricing({})).toBe(false);
+    expect(isPerCharacterPricing({ price_unit: 'second' })).toBe(false);
+    expect(isPerCharacterPricing({ price_unit: 'token' })).toBe(false);
+    expect(isPerSecondPricing(characterModel)).toBe(false);
+  });
+
+  it('单格抬头与脚注说的是「每百万字符」，绝不出现 token', () => {
+    expect(tZh('model_plaza.character_price_unit')).toBe('计费单价 · 每百万字符');
+    expect(tZh('model_plaza.character_price_note')).toContain('单价 × 本次合成的计费字符数');
+    expect(tEn('model_plaza.character_price_unit')).toBe('Unit price · per 1M characters');
+    expect(tEn('model_plaza.character_price_unit').toLowerCase()).not.toContain('token');
+    expect(tEn('model_plaza.character_price_note').toLowerCase()).not.toContain('token');
   });
 });
 

@@ -207,6 +207,8 @@
     "video_price_note": "Rate per 1M video tokens; actual cost = rate × video tokens consumed by the generation.",
     "video_price_unit_second": "Billing rate · per second",
     "video_price_note_second": "Rate per second; actual cost = rate × billed seconds (clip duration), not video tokens.",
+    "character_price_unit": "Unit price · per 1M characters",
+    "character_price_note": "Price per 1M billable characters; actual cost = unit price × billable characters of this synthesis (as reported in the response usage).",
     "video_audio_silent": "Silent",
     "video_audio_on": "With audio",
     "video_audio_voice": "Preset voice",
