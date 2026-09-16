@@ -183,11 +183,23 @@ func (s *UserStore) Update(ctx context.Context, id int, mutation appuser.Mutatio
 	return s.FindByID(ctx, id, true)
 }
 
-// UpdateBalance 更新用户余额并写日志。
-func (s *UserStore) UpdateBalance(ctx context.Context, id int, update appuser.BalanceUpdate) (appuser.User, error) {
+// balanceSetMaxAttempts set 动作的 CAS（按读到的旧值条件更新）最大尝试次数，
+// 用尽后退化为无条件 SET——set 的语义本就是"最终等于该值"，退化只影响流水里 before 的精度。
+const balanceSetMaxAttempts = 3
+
+// UpdateBalance 在单个事务内更新用户余额并写流水。
+//
+// add / subtract 用一条原子增量 SQL（`SET balance = balance ± amount`）落库，subtract 的
+// 余额不足判定放在同一条 SQL 的 WHERE（balance >= amount）里；与计费结算（billing/recorder
+// 的 AddBalance(-cost)）并发时两边都是增量，不会互相覆盖。前后余额在同一事务内读回、
+// 写进 balance_logs，保证 after == before ± amount 与真实余额一致。
+//
+// 未启用 ent 的 sql/lock 特性（无 ForUpdate），set 动作走"事务内读旧值 → 按旧值条件 SET"
+// 的 CAS，被并发改动挤掉就重读重试。
+func (s *UserStore) UpdateBalance(ctx context.Context, id int, update appuser.BalanceUpdate) (appuser.BalanceChangeResult, error) {
 	tx, err := s.db.Tx(ctx)
 	if err != nil {
-		return appuser.User{}, err
+		return appuser.BalanceChangeResult{}, err
 	}
 	defer func() {
 		_ = tx.Rollback()
@@ -200,28 +212,33 @@ func (s *UserStore) UpdateBalance(ctx context.Context, id int, update appuser.Ba
 			Where(entbalancelog.IdempotencyKeyEQ(update.IdempotencyKey)).
 			Exist(ctx)
 		if err != nil {
-			return appuser.User{}, err
+			return appuser.BalanceChangeResult{}, err
 		}
 		if exists {
-			return appuser.User{}, appuser.ErrDuplicateBalanceChange
+			return appuser.BalanceChangeResult{}, appuser.ErrDuplicateBalanceChange
 		}
 	}
 
-	item, err := tx.User.UpdateOneID(id).
-		SetBalance(update.AfterBalance).
-		Save(ctx)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			return appuser.User{}, appuser.ErrUserNotFound
-		}
-		return appuser.User{}, err
+	var item *ent.User
+	var before float64
+	switch update.Action {
+	case "add", "subtract":
+		item, before, err = applyBalanceDelta(ctx, tx, id, update.Action, update.Amount)
+	case "set":
+		item, before, err = applyBalanceSet(ctx, tx, id, update.Amount)
+	default:
+		return appuser.BalanceChangeResult{}, appuser.ErrInvalidBalanceAction
 	}
+	if err != nil {
+		return appuser.BalanceChangeResult{}, err
+	}
+	after := item.Balance
 
 	logCreate := tx.BalanceLog.Create().
 		SetAction(entbalancelog.Action(update.Action)).
 		SetAmount(update.Amount).
-		SetBeforeBalance(update.BeforeBalance).
-		SetAfterBalance(update.AfterBalance).
+		SetBeforeBalance(before).
+		SetAfterBalance(after).
 		SetRemark(update.Remark).
 		SetUserIDSnapshot(id).
 		SetUserEmailSnapshot(item.Email).
@@ -231,15 +248,90 @@ func (s *UserStore) UpdateBalance(ctx context.Context, id int, update appuser.Ba
 	}
 	if _, err := logCreate.Save(ctx); err != nil {
 		if ent.IsConstraintError(err) && update.IdempotencyKey != "" {
-			return appuser.User{}, appuser.ErrDuplicateBalanceChange
+			return appuser.BalanceChangeResult{}, appuser.ErrDuplicateBalanceChange
 		}
-		return appuser.User{}, err
+		return appuser.BalanceChangeResult{}, err
 	}
 
 	if err := tx.Commit(); err != nil {
-		return appuser.User{}, err
+		return appuser.BalanceChangeResult{}, err
 	}
-	return s.FindByID(ctx, item.ID, true)
+	user, err := s.FindByID(ctx, item.ID, true)
+	if err != nil {
+		return appuser.BalanceChangeResult{}, err
+	}
+	return appuser.BalanceChangeResult{User: user, BeforeBalance: before, AfterBalance: after}, nil
+}
+
+// applyBalanceDelta 以单条原子 SQL 增/减余额，返回事务内读回的用户与变更前余额。
+// subtract 在 WHERE 里带 balance >= amount：影响行数为 0 且用户存在即余额不足。
+func applyBalanceDelta(ctx context.Context, tx *ent.Tx, id int, action string, amount float64) (*ent.User, float64, error) {
+	builder := tx.User.Update().Where(entuser.IDEQ(id))
+	delta := amount
+	if action == "subtract" {
+		delta = -amount
+		builder = builder.Where(entuser.BalanceGTE(amount))
+	}
+	updated, err := builder.AddBalance(delta).Save(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	if updated == 0 {
+		exists, err := tx.User.Query().Where(entuser.IDEQ(id)).Exist(ctx)
+		if err != nil {
+			return nil, 0, err
+		}
+		if !exists {
+			return nil, 0, appuser.ErrUserNotFound
+		}
+		return nil, 0, appuser.ErrInsufficientBalance
+	}
+	item, err := tx.User.Get(ctx, id)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, 0, appuser.ErrUserNotFound
+		}
+		return nil, 0, err
+	}
+	return item, item.Balance - delta, nil
+}
+
+// applyBalanceSet 事务内读旧值后按旧值条件 SET（CAS），被并发改动挤掉则重读重试；
+// 重试用尽退化为无条件 SET，不劣于历史行为。
+func applyBalanceSet(ctx context.Context, tx *ent.Tx, id int, amount float64) (*ent.User, float64, error) {
+	var before float64
+	for attempt := 0; attempt < balanceSetMaxAttempts; attempt++ {
+		current, err := tx.User.Get(ctx, id)
+		if err != nil {
+			if ent.IsNotFound(err) {
+				return nil, 0, appuser.ErrUserNotFound
+			}
+			return nil, 0, err
+		}
+		before = current.Balance
+		updated, err := tx.User.Update().
+			Where(entuser.IDEQ(id), entuser.BalanceEQ(before)).
+			SetBalance(amount).
+			Save(ctx)
+		if err != nil {
+			return nil, 0, err
+		}
+		if updated > 0 {
+			item, err := tx.User.Get(ctx, id)
+			if err != nil {
+				return nil, 0, err
+			}
+			return item, before, nil
+		}
+	}
+	item, err := tx.User.UpdateOneID(id).SetBalance(amount).Save(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, 0, appuser.ErrUserNotFound
+		}
+		return nil, 0, err
+	}
+	return item, before, nil
 }
 
 // Delete 删除用户。

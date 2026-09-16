@@ -197,15 +197,25 @@ type Mutation struct {
 }
 
 // BalanceUpdate 余额更新数据。
+//
+// 只携带「要做什么」（动作 + 金额），不携带预先算好的前后余额：add / subtract 在 store 层
+// 以单条原子 SQL 增量落库，subtract 的余额不足判定也在同一条 SQL 的 WHERE 里完成，
+// 与计费结算（recorder 的 AddBalance(-cost)）并发时互不覆盖。前后余额由 store 在同一事务内读回。
 type BalanceUpdate struct {
-	Action        string
-	Amount        float64
-	BeforeBalance float64
-	AfterBalance  float64
-	Remark        string
+	Action string
+	Amount float64
+	Remark string
 	// IdempotencyKey 非空时随流水落库（balance_logs 唯一索引），重复键说明
 	// 同一笔变更已入账，store 返回 ErrDuplicateBalanceChange。
 	IdempotencyKey string
+}
+
+// BalanceChangeResult 余额变更结果。BeforeBalance / AfterBalance 是事务内读回的真实值
+// （与 balance_logs 落库一致），User 为提交后的用户投影。
+type BalanceChangeResult struct {
+	User          User
+	BeforeBalance float64
+	AfterBalance  float64
 }
 
 // GroupRateOverride 表示某个用户对某个分组的专属倍率。
@@ -228,7 +238,9 @@ type Repository interface {
 	ListAllGroupRateOverrides(ctx context.Context) (map[int64][]GroupRateOverride, error)
 	Create(context.Context, Mutation) (User, error)
 	Update(context.Context, int, Mutation) (User, error)
-	UpdateBalance(context.Context, int, BalanceUpdate) (User, error)
+	// UpdateBalance 在单个事务内变更余额并写 balance_logs：add / subtract 为原子增量，
+	// subtract 余额不足返回 ErrInsufficientBalance；幂等键重复返回 ErrDuplicateBalanceChange。
+	UpdateBalance(context.Context, int, BalanceUpdate) (BalanceChangeResult, error)
 	Delete(context.Context, int) error
 	ListBalanceLogs(context.Context, int, int, int) ([]BalanceLog, int64, error)
 	// ListAPIKeys 查询用户的 API Key 列表。
