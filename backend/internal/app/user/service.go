@@ -245,35 +245,14 @@ func (s *Service) Update(ctx context.Context, id int, input UpdateInput) (User, 
 }
 
 // AdjustBalance 调整用户余额。
+//
+// 前后余额不在这里读-算-写：曾经的 FindByID → Go 里算 afterBalance → SET 绝对值，
+// 与计费结算的原子 AddBalance(-cost) 并发时会把结算静默覆盖（丢更新）。
+// 现在动作与金额原样交给 store，由其在单个事务内以原子增量落库并读回真实前后值。
 func (s *Service) AdjustBalance(ctx context.Context, id int, change BalanceChange) (User, error) {
 	logger := sdk.LoggerFromContext(ctx)
-	item, err := s.repo.FindByID(ctx, id, false)
-	if err != nil {
-		logger.Error("user_lookup_failed",
-			sdk.LogFieldUserID, id,
-			sdk.LogFieldReason, "adjust_balance",
-			sdk.LogFieldError, err,
-		)
-		return User{}, err
-	}
-
-	beforeBalance := item.Balance
-	var afterBalance float64
 	switch change.Action {
-	case "set":
-		afterBalance = change.Amount
-	case "add":
-		afterBalance = beforeBalance + change.Amount
-	case "subtract":
-		if beforeBalance < change.Amount {
-			logger.Warn("user_balance_change_rejected",
-				sdk.LogFieldUserID, id,
-				sdk.LogFieldReason, "insufficient_balance",
-				"action", change.Action,
-			)
-			return User{}, ErrInsufficientBalance
-		}
-		afterBalance = beforeBalance - change.Amount
+	case "set", "add", "subtract":
 	default:
 		logger.Warn("user_balance_change_rejected",
 			sdk.LogFieldUserID, id,
@@ -283,22 +262,30 @@ func (s *Service) AdjustBalance(ctx context.Context, id int, change BalanceChang
 		return User{}, ErrInvalidBalanceAction
 	}
 
-	updated, err := s.repo.UpdateBalance(ctx, id, BalanceUpdate{
-		Action:         change.Action,
-		Amount:         change.Amount,
-		BeforeBalance:  beforeBalance,
-		AfterBalance:   afterBalance,
-		Remark:         change.Remark,
-		IdempotencyKey: change.IdempotencyKey,
-	})
+	result, err := s.repo.UpdateBalance(ctx, id, BalanceUpdate(change))
 	if err != nil {
+		switch {
 		// 幂等命中：同一键的变更已入账过，返回当前状态、不重复变更
-		if errors.Is(err, ErrDuplicateBalanceChange) {
+		case errors.Is(err, ErrDuplicateBalanceChange):
 			logger.Info("user_balance_change_idempotent_hit",
 				sdk.LogFieldUserID, id,
 				"idempotency_key", change.IdempotencyKey,
 			)
 			return s.repo.FindByID(ctx, id, true)
+		case errors.Is(err, ErrInsufficientBalance):
+			logger.Warn("user_balance_change_rejected",
+				sdk.LogFieldUserID, id,
+				sdk.LogFieldReason, "insufficient_balance",
+				"action", change.Action,
+			)
+			return User{}, err
+		case errors.Is(err, ErrUserNotFound):
+			logger.Error("user_lookup_failed",
+				sdk.LogFieldUserID, id,
+				sdk.LogFieldReason, "adjust_balance",
+				sdk.LogFieldError, err,
+			)
+			return User{}, err
 		}
 		logger.Error("user_balance_change_failed",
 			sdk.LogFieldUserID, id,
@@ -311,15 +298,15 @@ func (s *Service) AdjustBalance(ctx context.Context, id int, change BalanceChang
 	logger.Info("user_balance_changed",
 		sdk.LogFieldUserID, id,
 		"action", change.Action,
-		"before", beforeBalance,
-		"after", afterBalance,
+		"before", result.BeforeBalance,
+		"after", result.AfterBalance,
 		sdk.LogFieldReason, change.Remark,
 	)
 
 	// 余额预警检查
-	s.checkBalanceAlert(ctx, updated, beforeBalance)
+	s.checkBalanceAlert(ctx, result.User, result.BeforeBalance)
 
-	return updated, nil
+	return result.User, nil
 }
 
 // UpdateBalanceAlert 更新余额预警阈值（0 表示关闭）。
