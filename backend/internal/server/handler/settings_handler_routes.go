@@ -63,6 +63,11 @@ func (h *SettingsHandler) UpdateSettings(c *gin.Context) {
 	}
 
 	if err := h.service.Update(c.Request.Context(), items); err != nil {
+		// 管理员可修正的配置错误回 400 带原因，其余仍按内部错误处理。
+		if errors.Is(err, appsettings.ErrModelCatalogListPriceMismatch) {
+			response.BadRequest(c, err.Error())
+			return
+		}
 		slog.Error("更新设置失败", "error", err)
 		response.InternalError(c, "更新设置失败")
 		return

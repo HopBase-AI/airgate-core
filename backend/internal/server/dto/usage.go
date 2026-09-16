@@ -130,6 +130,29 @@ type UserUsageLogResp struct {
 	ErrorStatus           int                   `json:"error_status,omitempty"`  // 失败时优先为上游 HTTP 状态码；无上游响应时为 Core 对外状态码
 	ErrorMessage          string                `json:"error_message,omitempty"` // 失败原因（已脱敏截断）
 	CreatedAt             string                `json:"created_at"`
+	// OfficialNative 厂商官方牌价口径的本次费用（只读计算块，由 usage_cost_details 的
+	// list_* 快照累加而来，不落库、不参与计费）。国内厂商模型官网标价是 ¥、账本记 $，
+	// 客户据此逐笔验算：cost × discount ÷ fx = actual_cost。
+	// 省略 = 本行没有牌价快照（历史行、或官方价本就是美元的模型），前端不渲染验算块。
+	//
+	// ⚠️ 只加在本 DTO，CustomerUsageLogResp 不带：那是 API Key 会话（分销商的终端客户）
+	// 看的视图，discount 会直接暴露分销商拿到的折扣。
+	OfficialNative *OfficialNativeCostResp `json:"official_native,omitempty"`
+}
+
+// OfficialNativeCostResp 官方牌价口径的单行费用。四个数凑成一条客户可自行验算的等式：
+// cost（原币官方费用）× discount（折扣）÷ fx（折算率）= actual_cost（实扣美元）。
+//
+// 只含币种 / 折算率 / 金额 / 折扣，不带任何上游通道、账号或供应商信息。
+type OfficialNativeCostResp struct {
+	// Currency 原币币种（如 "CNY"）。
+	Currency string `json:"currency"`
+	// FX 折算率快照：1 USD = fx 原币。写入时的历史事实，不是当前汇率。
+	FX float64 `json:"fx"`
+	// Cost 按官方牌价算出的本次费用（原币，折扣前）。
+	Cost float64 `json:"cost"`
+	// Discount 本次生效的折扣（= rate_multiplier）。
+	Discount float64 `json:"discount"`
 }
 
 // CustomerUsageLogResp 使用记录响应（end customer scope，剥离所有平台真实成本字段）
