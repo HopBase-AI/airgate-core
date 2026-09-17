@@ -15489,34 +15489,38 @@ func (m *SettingMutation) ResetEdge(name string) error {
 // SubscriptionReservationMutation represents an operation that mutates the SubscriptionReservation nodes in the graph.
 type SubscriptionReservationMutation struct {
 	config
-	op                   Op
-	typ                  string
-	id                   *int
-	reservation_key      *string
-	user_id_snapshot     *int
-	adduser_id_snapshot  *int
-	group_id_snapshot    *int
-	addgroup_id_snapshot *int
-	period_start         *time.Time
-	period_end           *time.Time
-	credits_reserved     *int64
-	addcredits_reserved  *int64
-	images_reserved      *int
-	addimages_reserved   *int
-	credits_settled      *int64
-	addcredits_settled   *int64
-	images_settled       *int
-	addimages_settled    *int
-	status               *subscriptionreservation.Status
-	expires_at           *time.Time
-	created_at           *time.Time
-	updated_at           *time.Time
-	clearedFields        map[string]struct{}
-	subscription         *int
-	clearedsubscription  bool
-	done                 bool
-	oldValue             func(context.Context) (*SubscriptionReservation, error)
-	predicates           []predicate.SubscriptionReservation
+	op                     Op
+	typ                    string
+	id                     *int
+	reservation_key        *string
+	user_id_snapshot       *int
+	adduser_id_snapshot    *int
+	group_id_snapshot      *int
+	addgroup_id_snapshot   *int
+	task_id                *int
+	addtask_id             *int
+	account_id_snapshot    *int
+	addaccount_id_snapshot *int
+	period_start           *time.Time
+	period_end             *time.Time
+	credits_reserved       *int64
+	addcredits_reserved    *int64
+	images_reserved        *int
+	addimages_reserved     *int
+	credits_settled        *int64
+	addcredits_settled     *int64
+	images_settled         *int
+	addimages_settled      *int
+	status                 *subscriptionreservation.Status
+	expires_at             *time.Time
+	created_at             *time.Time
+	updated_at             *time.Time
+	clearedFields          map[string]struct{}
+	subscription           *int
+	clearedsubscription    bool
+	done                   bool
+	oldValue               func(context.Context) (*SubscriptionReservation, error)
+	predicates             []predicate.SubscriptionReservation
 }
 
 var _ ent.Mutation = (*SubscriptionReservationMutation)(nil)
@@ -15763,6 +15767,118 @@ func (m *SubscriptionReservationMutation) AddedGroupIDSnapshot() (r int, exists 
 func (m *SubscriptionReservationMutation) ResetGroupIDSnapshot() {
 	m.group_id_snapshot = nil
 	m.addgroup_id_snapshot = nil
+}
+
+// SetTaskID sets the "task_id" field.
+func (m *SubscriptionReservationMutation) SetTaskID(i int) {
+	m.task_id = &i
+	m.addtask_id = nil
+}
+
+// TaskID returns the value of the "task_id" field in the mutation.
+func (m *SubscriptionReservationMutation) TaskID() (r int, exists bool) {
+	v := m.task_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTaskID returns the old "task_id" field's value of the SubscriptionReservation entity.
+// If the SubscriptionReservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionReservationMutation) OldTaskID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTaskID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTaskID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTaskID: %w", err)
+	}
+	return oldValue.TaskID, nil
+}
+
+// AddTaskID adds i to the "task_id" field.
+func (m *SubscriptionReservationMutation) AddTaskID(i int) {
+	if m.addtask_id != nil {
+		*m.addtask_id += i
+	} else {
+		m.addtask_id = &i
+	}
+}
+
+// AddedTaskID returns the value that was added to the "task_id" field in this mutation.
+func (m *SubscriptionReservationMutation) AddedTaskID() (r int, exists bool) {
+	v := m.addtask_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTaskID resets all changes to the "task_id" field.
+func (m *SubscriptionReservationMutation) ResetTaskID() {
+	m.task_id = nil
+	m.addtask_id = nil
+}
+
+// SetAccountIDSnapshot sets the "account_id_snapshot" field.
+func (m *SubscriptionReservationMutation) SetAccountIDSnapshot(i int) {
+	m.account_id_snapshot = &i
+	m.addaccount_id_snapshot = nil
+}
+
+// AccountIDSnapshot returns the value of the "account_id_snapshot" field in the mutation.
+func (m *SubscriptionReservationMutation) AccountIDSnapshot() (r int, exists bool) {
+	v := m.account_id_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAccountIDSnapshot returns the old "account_id_snapshot" field's value of the SubscriptionReservation entity.
+// If the SubscriptionReservation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionReservationMutation) OldAccountIDSnapshot(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAccountIDSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAccountIDSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAccountIDSnapshot: %w", err)
+	}
+	return oldValue.AccountIDSnapshot, nil
+}
+
+// AddAccountIDSnapshot adds i to the "account_id_snapshot" field.
+func (m *SubscriptionReservationMutation) AddAccountIDSnapshot(i int) {
+	if m.addaccount_id_snapshot != nil {
+		*m.addaccount_id_snapshot += i
+	} else {
+		m.addaccount_id_snapshot = &i
+	}
+}
+
+// AddedAccountIDSnapshot returns the value that was added to the "account_id_snapshot" field in this mutation.
+func (m *SubscriptionReservationMutation) AddedAccountIDSnapshot() (r int, exists bool) {
+	v := m.addaccount_id_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAccountIDSnapshot resets all changes to the "account_id_snapshot" field.
+func (m *SubscriptionReservationMutation) ResetAccountIDSnapshot() {
+	m.account_id_snapshot = nil
+	m.addaccount_id_snapshot = nil
 }
 
 // SetPeriodStart sets the "period_start" field.
@@ -16278,7 +16394,7 @@ func (m *SubscriptionReservationMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SubscriptionReservationMutation) Fields() []string {
-	fields := make([]string, 0, 13)
+	fields := make([]string, 0, 15)
 	if m.reservation_key != nil {
 		fields = append(fields, subscriptionreservation.FieldReservationKey)
 	}
@@ -16287,6 +16403,12 @@ func (m *SubscriptionReservationMutation) Fields() []string {
 	}
 	if m.group_id_snapshot != nil {
 		fields = append(fields, subscriptionreservation.FieldGroupIDSnapshot)
+	}
+	if m.task_id != nil {
+		fields = append(fields, subscriptionreservation.FieldTaskID)
+	}
+	if m.account_id_snapshot != nil {
+		fields = append(fields, subscriptionreservation.FieldAccountIDSnapshot)
 	}
 	if m.period_start != nil {
 		fields = append(fields, subscriptionreservation.FieldPeriodStart)
@@ -16332,6 +16454,10 @@ func (m *SubscriptionReservationMutation) Field(name string) (ent.Value, bool) {
 		return m.UserIDSnapshot()
 	case subscriptionreservation.FieldGroupIDSnapshot:
 		return m.GroupIDSnapshot()
+	case subscriptionreservation.FieldTaskID:
+		return m.TaskID()
+	case subscriptionreservation.FieldAccountIDSnapshot:
+		return m.AccountIDSnapshot()
 	case subscriptionreservation.FieldPeriodStart:
 		return m.PeriodStart()
 	case subscriptionreservation.FieldPeriodEnd:
@@ -16367,6 +16493,10 @@ func (m *SubscriptionReservationMutation) OldField(ctx context.Context, name str
 		return m.OldUserIDSnapshot(ctx)
 	case subscriptionreservation.FieldGroupIDSnapshot:
 		return m.OldGroupIDSnapshot(ctx)
+	case subscriptionreservation.FieldTaskID:
+		return m.OldTaskID(ctx)
+	case subscriptionreservation.FieldAccountIDSnapshot:
+		return m.OldAccountIDSnapshot(ctx)
 	case subscriptionreservation.FieldPeriodStart:
 		return m.OldPeriodStart(ctx)
 	case subscriptionreservation.FieldPeriodEnd:
@@ -16416,6 +16546,20 @@ func (m *SubscriptionReservationMutation) SetField(name string, value ent.Value)
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetGroupIDSnapshot(v)
+		return nil
+	case subscriptionreservation.FieldTaskID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTaskID(v)
+		return nil
+	case subscriptionreservation.FieldAccountIDSnapshot:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccountIDSnapshot(v)
 		return nil
 	case subscriptionreservation.FieldPeriodStart:
 		v, ok := value.(time.Time)
@@ -16501,6 +16645,12 @@ func (m *SubscriptionReservationMutation) AddedFields() []string {
 	if m.addgroup_id_snapshot != nil {
 		fields = append(fields, subscriptionreservation.FieldGroupIDSnapshot)
 	}
+	if m.addtask_id != nil {
+		fields = append(fields, subscriptionreservation.FieldTaskID)
+	}
+	if m.addaccount_id_snapshot != nil {
+		fields = append(fields, subscriptionreservation.FieldAccountIDSnapshot)
+	}
 	if m.addcredits_reserved != nil {
 		fields = append(fields, subscriptionreservation.FieldCreditsReserved)
 	}
@@ -16525,6 +16675,10 @@ func (m *SubscriptionReservationMutation) AddedField(name string) (ent.Value, bo
 		return m.AddedUserIDSnapshot()
 	case subscriptionreservation.FieldGroupIDSnapshot:
 		return m.AddedGroupIDSnapshot()
+	case subscriptionreservation.FieldTaskID:
+		return m.AddedTaskID()
+	case subscriptionreservation.FieldAccountIDSnapshot:
+		return m.AddedAccountIDSnapshot()
 	case subscriptionreservation.FieldCreditsReserved:
 		return m.AddedCreditsReserved()
 	case subscriptionreservation.FieldImagesReserved:
@@ -16555,6 +16709,20 @@ func (m *SubscriptionReservationMutation) AddField(name string, value ent.Value)
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddGroupIDSnapshot(v)
+		return nil
+	case subscriptionreservation.FieldTaskID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTaskID(v)
+		return nil
+	case subscriptionreservation.FieldAccountIDSnapshot:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAccountIDSnapshot(v)
 		return nil
 	case subscriptionreservation.FieldCreditsReserved:
 		v, ok := value.(int64)
@@ -16619,6 +16787,12 @@ func (m *SubscriptionReservationMutation) ResetField(name string) error {
 		return nil
 	case subscriptionreservation.FieldGroupIDSnapshot:
 		m.ResetGroupIDSnapshot()
+		return nil
+	case subscriptionreservation.FieldTaskID:
+		m.ResetTaskID()
+		return nil
+	case subscriptionreservation.FieldAccountIDSnapshot:
+		m.ResetAccountIDSnapshot()
 		return nil
 	case subscriptionreservation.FieldPeriodStart:
 		m.ResetPeriodStart()
@@ -16731,46 +16905,52 @@ func (m *SubscriptionReservationMutation) ResetEdge(name string) error {
 // TaskMutation represents an operation that mutates the Task nodes in the graph.
 type TaskMutation struct {
 	config
-	op                  Op
-	typ                 string
-	id                  *int
-	plugin_id           *string
-	task_type           *string
-	status              *task.Status
-	stage               *string
-	user_id             *int
-	adduser_id          *int
-	input               *map[string]interface{}
-	output              *map[string]interface{}
-	attributes          *map[string]interface{}
-	execution           *map[string]interface{}
-	error_type          *string
-	error_code          *string
-	error_message       *string
-	usage_id            *int
-	addusage_id         *int
-	estimated_cost      *float64
-	addestimated_cost   *float64
-	progress            *int
-	addprogress         *int
-	priority            *int
-	addpriority         *int
-	attempts            *int
-	addattempts         *int
-	max_attempts        *int
-	addmax_attempts     *int
-	public_task_id      *string
-	idempotency_key     *string
-	created_at          *time.Time
-	updated_at          *time.Time
-	started_at          *time.Time
-	completed_at        *time.Time
-	cancel_requested_at *time.Time
-	expires_at          *time.Time
-	clearedFields       map[string]struct{}
-	done                bool
-	oldValue            func(context.Context) (*Task, error)
-	predicates          []predicate.Task
+	op                           Op
+	typ                          string
+	id                           *int
+	plugin_id                    *string
+	task_type                    *string
+	status                       *task.Status
+	stage                        *string
+	user_id                      *int
+	adduser_id                   *int
+	input                        *map[string]interface{}
+	output                       *map[string]interface{}
+	attributes                   *map[string]interface{}
+	execution                    *map[string]interface{}
+	error_type                   *string
+	error_code                   *string
+	error_message                *string
+	usage_id                     *int
+	addusage_id                  *int
+	estimated_cost               *float64
+	addestimated_cost            *float64
+	subscription_reservation_key *string
+	subscription_account_id      *int
+	addsubscription_account_id   *int
+	subscription_billing_rate    *float64
+	addsubscription_billing_rate *float64
+	subscription_usage_observed  *bool
+	progress                     *int
+	addprogress                  *int
+	priority                     *int
+	addpriority                  *int
+	attempts                     *int
+	addattempts                  *int
+	max_attempts                 *int
+	addmax_attempts              *int
+	public_task_id               *string
+	idempotency_key              *string
+	created_at                   *time.Time
+	updated_at                   *time.Time
+	started_at                   *time.Time
+	completed_at                 *time.Time
+	cancel_requested_at          *time.Time
+	expires_at                   *time.Time
+	clearedFields                map[string]struct{}
+	done                         bool
+	oldValue                     func(context.Context) (*Task, error)
+	predicates                   []predicate.Task
 }
 
 var _ ent.Mutation = (*TaskMutation)(nil)
@@ -17488,6 +17668,190 @@ func (m *TaskMutation) ResetEstimatedCost() {
 	m.addestimated_cost = nil
 }
 
+// SetSubscriptionReservationKey sets the "subscription_reservation_key" field.
+func (m *TaskMutation) SetSubscriptionReservationKey(s string) {
+	m.subscription_reservation_key = &s
+}
+
+// SubscriptionReservationKey returns the value of the "subscription_reservation_key" field in the mutation.
+func (m *TaskMutation) SubscriptionReservationKey() (r string, exists bool) {
+	v := m.subscription_reservation_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubscriptionReservationKey returns the old "subscription_reservation_key" field's value of the Task entity.
+// If the Task object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TaskMutation) OldSubscriptionReservationKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubscriptionReservationKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubscriptionReservationKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubscriptionReservationKey: %w", err)
+	}
+	return oldValue.SubscriptionReservationKey, nil
+}
+
+// ResetSubscriptionReservationKey resets all changes to the "subscription_reservation_key" field.
+func (m *TaskMutation) ResetSubscriptionReservationKey() {
+	m.subscription_reservation_key = nil
+}
+
+// SetSubscriptionAccountID sets the "subscription_account_id" field.
+func (m *TaskMutation) SetSubscriptionAccountID(i int) {
+	m.subscription_account_id = &i
+	m.addsubscription_account_id = nil
+}
+
+// SubscriptionAccountID returns the value of the "subscription_account_id" field in the mutation.
+func (m *TaskMutation) SubscriptionAccountID() (r int, exists bool) {
+	v := m.subscription_account_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubscriptionAccountID returns the old "subscription_account_id" field's value of the Task entity.
+// If the Task object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TaskMutation) OldSubscriptionAccountID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubscriptionAccountID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubscriptionAccountID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubscriptionAccountID: %w", err)
+	}
+	return oldValue.SubscriptionAccountID, nil
+}
+
+// AddSubscriptionAccountID adds i to the "subscription_account_id" field.
+func (m *TaskMutation) AddSubscriptionAccountID(i int) {
+	if m.addsubscription_account_id != nil {
+		*m.addsubscription_account_id += i
+	} else {
+		m.addsubscription_account_id = &i
+	}
+}
+
+// AddedSubscriptionAccountID returns the value that was added to the "subscription_account_id" field in this mutation.
+func (m *TaskMutation) AddedSubscriptionAccountID() (r int, exists bool) {
+	v := m.addsubscription_account_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSubscriptionAccountID resets all changes to the "subscription_account_id" field.
+func (m *TaskMutation) ResetSubscriptionAccountID() {
+	m.subscription_account_id = nil
+	m.addsubscription_account_id = nil
+}
+
+// SetSubscriptionBillingRate sets the "subscription_billing_rate" field.
+func (m *TaskMutation) SetSubscriptionBillingRate(f float64) {
+	m.subscription_billing_rate = &f
+	m.addsubscription_billing_rate = nil
+}
+
+// SubscriptionBillingRate returns the value of the "subscription_billing_rate" field in the mutation.
+func (m *TaskMutation) SubscriptionBillingRate() (r float64, exists bool) {
+	v := m.subscription_billing_rate
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubscriptionBillingRate returns the old "subscription_billing_rate" field's value of the Task entity.
+// If the Task object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TaskMutation) OldSubscriptionBillingRate(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubscriptionBillingRate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubscriptionBillingRate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubscriptionBillingRate: %w", err)
+	}
+	return oldValue.SubscriptionBillingRate, nil
+}
+
+// AddSubscriptionBillingRate adds f to the "subscription_billing_rate" field.
+func (m *TaskMutation) AddSubscriptionBillingRate(f float64) {
+	if m.addsubscription_billing_rate != nil {
+		*m.addsubscription_billing_rate += f
+	} else {
+		m.addsubscription_billing_rate = &f
+	}
+}
+
+// AddedSubscriptionBillingRate returns the value that was added to the "subscription_billing_rate" field in this mutation.
+func (m *TaskMutation) AddedSubscriptionBillingRate() (r float64, exists bool) {
+	v := m.addsubscription_billing_rate
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSubscriptionBillingRate resets all changes to the "subscription_billing_rate" field.
+func (m *TaskMutation) ResetSubscriptionBillingRate() {
+	m.subscription_billing_rate = nil
+	m.addsubscription_billing_rate = nil
+}
+
+// SetSubscriptionUsageObserved sets the "subscription_usage_observed" field.
+func (m *TaskMutation) SetSubscriptionUsageObserved(b bool) {
+	m.subscription_usage_observed = &b
+}
+
+// SubscriptionUsageObserved returns the value of the "subscription_usage_observed" field in the mutation.
+func (m *TaskMutation) SubscriptionUsageObserved() (r bool, exists bool) {
+	v := m.subscription_usage_observed
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubscriptionUsageObserved returns the old "subscription_usage_observed" field's value of the Task entity.
+// If the Task object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TaskMutation) OldSubscriptionUsageObserved(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubscriptionUsageObserved is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubscriptionUsageObserved requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubscriptionUsageObserved: %w", err)
+	}
+	return oldValue.SubscriptionUsageObserved, nil
+}
+
+// ResetSubscriptionUsageObserved resets all changes to the "subscription_usage_observed" field.
+func (m *TaskMutation) ResetSubscriptionUsageObserved() {
+	m.subscription_usage_observed = nil
+}
+
 // SetProgress sets the "progress" field.
 func (m *TaskMutation) SetProgress(i int) {
 	m.progress = &i
@@ -18112,7 +18476,7 @@ func (m *TaskMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TaskMutation) Fields() []string {
-	fields := make([]string, 0, 26)
+	fields := make([]string, 0, 30)
 	if m.plugin_id != nil {
 		fields = append(fields, task.FieldPluginID)
 	}
@@ -18154,6 +18518,18 @@ func (m *TaskMutation) Fields() []string {
 	}
 	if m.estimated_cost != nil {
 		fields = append(fields, task.FieldEstimatedCost)
+	}
+	if m.subscription_reservation_key != nil {
+		fields = append(fields, task.FieldSubscriptionReservationKey)
+	}
+	if m.subscription_account_id != nil {
+		fields = append(fields, task.FieldSubscriptionAccountID)
+	}
+	if m.subscription_billing_rate != nil {
+		fields = append(fields, task.FieldSubscriptionBillingRate)
+	}
+	if m.subscription_usage_observed != nil {
+		fields = append(fields, task.FieldSubscriptionUsageObserved)
 	}
 	if m.progress != nil {
 		fields = append(fields, task.FieldProgress)
@@ -18227,6 +18603,14 @@ func (m *TaskMutation) Field(name string) (ent.Value, bool) {
 		return m.UsageID()
 	case task.FieldEstimatedCost:
 		return m.EstimatedCost()
+	case task.FieldSubscriptionReservationKey:
+		return m.SubscriptionReservationKey()
+	case task.FieldSubscriptionAccountID:
+		return m.SubscriptionAccountID()
+	case task.FieldSubscriptionBillingRate:
+		return m.SubscriptionBillingRate()
+	case task.FieldSubscriptionUsageObserved:
+		return m.SubscriptionUsageObserved()
 	case task.FieldProgress:
 		return m.Progress()
 	case task.FieldPriority:
@@ -18288,6 +18672,14 @@ func (m *TaskMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldUsageID(ctx)
 	case task.FieldEstimatedCost:
 		return m.OldEstimatedCost(ctx)
+	case task.FieldSubscriptionReservationKey:
+		return m.OldSubscriptionReservationKey(ctx)
+	case task.FieldSubscriptionAccountID:
+		return m.OldSubscriptionAccountID(ctx)
+	case task.FieldSubscriptionBillingRate:
+		return m.OldSubscriptionBillingRate(ctx)
+	case task.FieldSubscriptionUsageObserved:
+		return m.OldSubscriptionUsageObserved(ctx)
 	case task.FieldProgress:
 		return m.OldProgress(ctx)
 	case task.FieldPriority:
@@ -18419,6 +18811,34 @@ func (m *TaskMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetEstimatedCost(v)
 		return nil
+	case task.FieldSubscriptionReservationKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubscriptionReservationKey(v)
+		return nil
+	case task.FieldSubscriptionAccountID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubscriptionAccountID(v)
+		return nil
+	case task.FieldSubscriptionBillingRate:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubscriptionBillingRate(v)
+		return nil
+	case task.FieldSubscriptionUsageObserved:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubscriptionUsageObserved(v)
+		return nil
 	case task.FieldProgress:
 		v, ok := value.(int)
 		if !ok {
@@ -18520,6 +18940,12 @@ func (m *TaskMutation) AddedFields() []string {
 	if m.addestimated_cost != nil {
 		fields = append(fields, task.FieldEstimatedCost)
 	}
+	if m.addsubscription_account_id != nil {
+		fields = append(fields, task.FieldSubscriptionAccountID)
+	}
+	if m.addsubscription_billing_rate != nil {
+		fields = append(fields, task.FieldSubscriptionBillingRate)
+	}
 	if m.addprogress != nil {
 		fields = append(fields, task.FieldProgress)
 	}
@@ -18546,6 +18972,10 @@ func (m *TaskMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedUsageID()
 	case task.FieldEstimatedCost:
 		return m.AddedEstimatedCost()
+	case task.FieldSubscriptionAccountID:
+		return m.AddedSubscriptionAccountID()
+	case task.FieldSubscriptionBillingRate:
+		return m.AddedSubscriptionBillingRate()
 	case task.FieldProgress:
 		return m.AddedProgress()
 	case task.FieldPriority:
@@ -18583,6 +19013,20 @@ func (m *TaskMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddEstimatedCost(v)
+		return nil
+	case task.FieldSubscriptionAccountID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSubscriptionAccountID(v)
+		return nil
+	case task.FieldSubscriptionBillingRate:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSubscriptionBillingRate(v)
 		return nil
 	case task.FieldProgress:
 		v, ok := value.(int)
@@ -18743,6 +19187,18 @@ func (m *TaskMutation) ResetField(name string) error {
 		return nil
 	case task.FieldEstimatedCost:
 		m.ResetEstimatedCost()
+		return nil
+	case task.FieldSubscriptionReservationKey:
+		m.ResetSubscriptionReservationKey()
+		return nil
+	case task.FieldSubscriptionAccountID:
+		m.ResetSubscriptionAccountID()
+		return nil
+	case task.FieldSubscriptionBillingRate:
+		m.ResetSubscriptionBillingRate()
+		return nil
+	case task.FieldSubscriptionUsageObserved:
+		m.ResetSubscriptionUsageObserved()
 		return nil
 	case task.FieldProgress:
 		m.ResetProgress()

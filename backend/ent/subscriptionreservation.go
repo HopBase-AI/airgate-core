@@ -24,6 +24,10 @@ type SubscriptionReservation struct {
 	UserIDSnapshot int `json:"user_id_snapshot,omitempty"`
 	// GroupIDSnapshot holds the value of the "group_id_snapshot" field.
 	GroupIDSnapshot int `json:"group_id_snapshot,omitempty"`
+	// TaskID holds the value of the "task_id" field.
+	TaskID int `json:"task_id,omitempty"`
+	// AccountIDSnapshot holds the value of the "account_id_snapshot" field.
+	AccountIDSnapshot int `json:"account_id_snapshot,omitempty"`
 	// PeriodStart holds the value of the "period_start" field.
 	PeriodStart time.Time `json:"period_start,omitempty"`
 	// PeriodEnd holds the value of the "period_end" field.
@@ -76,7 +80,7 @@ func (*SubscriptionReservation) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case subscriptionreservation.FieldID, subscriptionreservation.FieldUserIDSnapshot, subscriptionreservation.FieldGroupIDSnapshot, subscriptionreservation.FieldCreditsReserved, subscriptionreservation.FieldImagesReserved, subscriptionreservation.FieldCreditsSettled, subscriptionreservation.FieldImagesSettled:
+		case subscriptionreservation.FieldID, subscriptionreservation.FieldUserIDSnapshot, subscriptionreservation.FieldGroupIDSnapshot, subscriptionreservation.FieldTaskID, subscriptionreservation.FieldAccountIDSnapshot, subscriptionreservation.FieldCreditsReserved, subscriptionreservation.FieldImagesReserved, subscriptionreservation.FieldCreditsSettled, subscriptionreservation.FieldImagesSettled:
 			values[i] = new(sql.NullInt64)
 		case subscriptionreservation.FieldReservationKey, subscriptionreservation.FieldStatus:
 			values[i] = new(sql.NullString)
@@ -122,6 +126,18 @@ func (sr *SubscriptionReservation) assignValues(columns []string, values []any) 
 				return fmt.Errorf("unexpected type %T for field group_id_snapshot", values[i])
 			} else if value.Valid {
 				sr.GroupIDSnapshot = int(value.Int64)
+			}
+		case subscriptionreservation.FieldTaskID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field task_id", values[i])
+			} else if value.Valid {
+				sr.TaskID = int(value.Int64)
+			}
+		case subscriptionreservation.FieldAccountIDSnapshot:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field account_id_snapshot", values[i])
+			} else if value.Valid {
+				sr.AccountIDSnapshot = int(value.Int64)
 			}
 		case subscriptionreservation.FieldPeriodStart:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -239,6 +255,12 @@ func (sr *SubscriptionReservation) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("group_id_snapshot=")
 	builder.WriteString(fmt.Sprintf("%v", sr.GroupIDSnapshot))
+	builder.WriteString(", ")
+	builder.WriteString("task_id=")
+	builder.WriteString(fmt.Sprintf("%v", sr.TaskID))
+	builder.WriteString(", ")
+	builder.WriteString("account_id_snapshot=")
+	builder.WriteString(fmt.Sprintf("%v", sr.AccountIDSnapshot))
 	builder.WriteString(", ")
 	builder.WriteString("period_start=")
 	builder.WriteString(sr.PeriodStart.Format(time.ANSIC))

@@ -46,6 +46,14 @@ type Task struct {
 	UsageID *int `json:"usage_id,omitempty"`
 	// 预估用户价 USD，提交前由 core 按路由倍率换算并写入；非终态任务的这个值就是「在途预留」
 	EstimatedCost float64 `json:"estimated_cost,omitempty"`
+	// Core-owned reservation binding; never accepted from plugin task updates
+	SubscriptionReservationKey string `json:"subscription_reservation_key,omitempty"`
+	// SubscriptionAccountID holds the value of the "subscription_account_id" field.
+	SubscriptionAccountID int `json:"subscription_account_id,omitempty"`
+	// SubscriptionBillingRate holds the value of the "subscription_billing_rate" field.
+	SubscriptionBillingRate float64 `json:"subscription_billing_rate,omitempty"`
+	// SubscriptionUsageObserved holds the value of the "subscription_usage_observed" field.
+	SubscriptionUsageObserved bool `json:"subscription_usage_observed,omitempty"`
 	// Progress holds the value of the "progress" field.
 	Progress int `json:"progress,omitempty"`
 	// 越高越优先处理
@@ -80,11 +88,13 @@ func (*Task) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case task.FieldInput, task.FieldOutput, task.FieldAttributes, task.FieldExecution:
 			values[i] = new([]byte)
-		case task.FieldEstimatedCost:
+		case task.FieldSubscriptionUsageObserved:
+			values[i] = new(sql.NullBool)
+		case task.FieldEstimatedCost, task.FieldSubscriptionBillingRate:
 			values[i] = new(sql.NullFloat64)
-		case task.FieldID, task.FieldUserID, task.FieldUsageID, task.FieldProgress, task.FieldPriority, task.FieldAttempts, task.FieldMaxAttempts:
+		case task.FieldID, task.FieldUserID, task.FieldUsageID, task.FieldSubscriptionAccountID, task.FieldProgress, task.FieldPriority, task.FieldAttempts, task.FieldMaxAttempts:
 			values[i] = new(sql.NullInt64)
-		case task.FieldPluginID, task.FieldTaskType, task.FieldStatus, task.FieldStage, task.FieldErrorType, task.FieldErrorCode, task.FieldErrorMessage, task.FieldPublicTaskID, task.FieldIdempotencyKey:
+		case task.FieldPluginID, task.FieldTaskType, task.FieldStatus, task.FieldStage, task.FieldErrorType, task.FieldErrorCode, task.FieldErrorMessage, task.FieldSubscriptionReservationKey, task.FieldPublicTaskID, task.FieldIdempotencyKey:
 			values[i] = new(sql.NullString)
 		case task.FieldCreatedAt, task.FieldUpdatedAt, task.FieldStartedAt, task.FieldCompletedAt, task.FieldCancelRequestedAt, task.FieldExpiresAt:
 			values[i] = new(sql.NullTime)
@@ -201,6 +211,30 @@ func (t *Task) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field estimated_cost", values[i])
 			} else if value.Valid {
 				t.EstimatedCost = value.Float64
+			}
+		case task.FieldSubscriptionReservationKey:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field subscription_reservation_key", values[i])
+			} else if value.Valid {
+				t.SubscriptionReservationKey = value.String
+			}
+		case task.FieldSubscriptionAccountID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field subscription_account_id", values[i])
+			} else if value.Valid {
+				t.SubscriptionAccountID = int(value.Int64)
+			}
+		case task.FieldSubscriptionBillingRate:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field subscription_billing_rate", values[i])
+			} else if value.Valid {
+				t.SubscriptionBillingRate = value.Float64
+			}
+		case task.FieldSubscriptionUsageObserved:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field subscription_usage_observed", values[i])
+			} else if value.Valid {
+				t.SubscriptionUsageObserved = value.Bool
 			}
 		case task.FieldProgress:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -359,6 +393,18 @@ func (t *Task) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("estimated_cost=")
 	builder.WriteString(fmt.Sprintf("%v", t.EstimatedCost))
+	builder.WriteString(", ")
+	builder.WriteString("subscription_reservation_key=")
+	builder.WriteString(t.SubscriptionReservationKey)
+	builder.WriteString(", ")
+	builder.WriteString("subscription_account_id=")
+	builder.WriteString(fmt.Sprintf("%v", t.SubscriptionAccountID))
+	builder.WriteString(", ")
+	builder.WriteString("subscription_billing_rate=")
+	builder.WriteString(fmt.Sprintf("%v", t.SubscriptionBillingRate))
+	builder.WriteString(", ")
+	builder.WriteString("subscription_usage_observed=")
+	builder.WriteString(fmt.Sprintf("%v", t.SubscriptionUsageObserved))
 	builder.WriteString(", ")
 	builder.WriteString("progress=")
 	builder.WriteString(fmt.Sprintf("%v", t.Progress))

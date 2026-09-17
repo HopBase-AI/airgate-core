@@ -160,6 +160,62 @@ func (tc *TaskCreate) SetNillableEstimatedCost(f *float64) *TaskCreate {
 	return tc
 }
 
+// SetSubscriptionReservationKey sets the "subscription_reservation_key" field.
+func (tc *TaskCreate) SetSubscriptionReservationKey(s string) *TaskCreate {
+	tc.mutation.SetSubscriptionReservationKey(s)
+	return tc
+}
+
+// SetNillableSubscriptionReservationKey sets the "subscription_reservation_key" field if the given value is not nil.
+func (tc *TaskCreate) SetNillableSubscriptionReservationKey(s *string) *TaskCreate {
+	if s != nil {
+		tc.SetSubscriptionReservationKey(*s)
+	}
+	return tc
+}
+
+// SetSubscriptionAccountID sets the "subscription_account_id" field.
+func (tc *TaskCreate) SetSubscriptionAccountID(i int) *TaskCreate {
+	tc.mutation.SetSubscriptionAccountID(i)
+	return tc
+}
+
+// SetNillableSubscriptionAccountID sets the "subscription_account_id" field if the given value is not nil.
+func (tc *TaskCreate) SetNillableSubscriptionAccountID(i *int) *TaskCreate {
+	if i != nil {
+		tc.SetSubscriptionAccountID(*i)
+	}
+	return tc
+}
+
+// SetSubscriptionBillingRate sets the "subscription_billing_rate" field.
+func (tc *TaskCreate) SetSubscriptionBillingRate(f float64) *TaskCreate {
+	tc.mutation.SetSubscriptionBillingRate(f)
+	return tc
+}
+
+// SetNillableSubscriptionBillingRate sets the "subscription_billing_rate" field if the given value is not nil.
+func (tc *TaskCreate) SetNillableSubscriptionBillingRate(f *float64) *TaskCreate {
+	if f != nil {
+		tc.SetSubscriptionBillingRate(*f)
+	}
+	return tc
+}
+
+// SetSubscriptionUsageObserved sets the "subscription_usage_observed" field.
+func (tc *TaskCreate) SetSubscriptionUsageObserved(b bool) *TaskCreate {
+	tc.mutation.SetSubscriptionUsageObserved(b)
+	return tc
+}
+
+// SetNillableSubscriptionUsageObserved sets the "subscription_usage_observed" field if the given value is not nil.
+func (tc *TaskCreate) SetNillableSubscriptionUsageObserved(b *bool) *TaskCreate {
+	if b != nil {
+		tc.SetSubscriptionUsageObserved(*b)
+	}
+	return tc
+}
+
 // SetProgress sets the "progress" field.
 func (tc *TaskCreate) SetProgress(i int) *TaskCreate {
 	tc.mutation.SetProgress(i)
@@ -403,6 +459,22 @@ func (tc *TaskCreate) defaults() {
 		v := task.DefaultEstimatedCost
 		tc.mutation.SetEstimatedCost(v)
 	}
+	if _, ok := tc.mutation.SubscriptionReservationKey(); !ok {
+		v := task.DefaultSubscriptionReservationKey
+		tc.mutation.SetSubscriptionReservationKey(v)
+	}
+	if _, ok := tc.mutation.SubscriptionAccountID(); !ok {
+		v := task.DefaultSubscriptionAccountID
+		tc.mutation.SetSubscriptionAccountID(v)
+	}
+	if _, ok := tc.mutation.SubscriptionBillingRate(); !ok {
+		v := task.DefaultSubscriptionBillingRate
+		tc.mutation.SetSubscriptionBillingRate(v)
+	}
+	if _, ok := tc.mutation.SubscriptionUsageObserved(); !ok {
+		v := task.DefaultSubscriptionUsageObserved
+		tc.mutation.SetSubscriptionUsageObserved(v)
+	}
 	if _, ok := tc.mutation.Progress(); !ok {
 		v := task.DefaultProgress
 		tc.mutation.SetProgress(v)
@@ -480,6 +552,18 @@ func (tc *TaskCreate) check() error {
 	}
 	if _, ok := tc.mutation.EstimatedCost(); !ok {
 		return &ValidationError{Name: "estimated_cost", err: errors.New(`ent: missing required field "Task.estimated_cost"`)}
+	}
+	if _, ok := tc.mutation.SubscriptionReservationKey(); !ok {
+		return &ValidationError{Name: "subscription_reservation_key", err: errors.New(`ent: missing required field "Task.subscription_reservation_key"`)}
+	}
+	if _, ok := tc.mutation.SubscriptionAccountID(); !ok {
+		return &ValidationError{Name: "subscription_account_id", err: errors.New(`ent: missing required field "Task.subscription_account_id"`)}
+	}
+	if _, ok := tc.mutation.SubscriptionBillingRate(); !ok {
+		return &ValidationError{Name: "subscription_billing_rate", err: errors.New(`ent: missing required field "Task.subscription_billing_rate"`)}
+	}
+	if _, ok := tc.mutation.SubscriptionUsageObserved(); !ok {
+		return &ValidationError{Name: "subscription_usage_observed", err: errors.New(`ent: missing required field "Task.subscription_usage_observed"`)}
 	}
 	if _, ok := tc.mutation.Progress(); !ok {
 		return &ValidationError{Name: "progress", err: errors.New(`ent: missing required field "Task.progress"`)}
@@ -585,6 +669,22 @@ func (tc *TaskCreate) createSpec() (*Task, *sqlgraph.CreateSpec) {
 	if value, ok := tc.mutation.EstimatedCost(); ok {
 		_spec.SetField(task.FieldEstimatedCost, field.TypeFloat64, value)
 		_node.EstimatedCost = value
+	}
+	if value, ok := tc.mutation.SubscriptionReservationKey(); ok {
+		_spec.SetField(task.FieldSubscriptionReservationKey, field.TypeString, value)
+		_node.SubscriptionReservationKey = value
+	}
+	if value, ok := tc.mutation.SubscriptionAccountID(); ok {
+		_spec.SetField(task.FieldSubscriptionAccountID, field.TypeInt, value)
+		_node.SubscriptionAccountID = value
+	}
+	if value, ok := tc.mutation.SubscriptionBillingRate(); ok {
+		_spec.SetField(task.FieldSubscriptionBillingRate, field.TypeFloat64, value)
+		_node.SubscriptionBillingRate = value
+	}
+	if value, ok := tc.mutation.SubscriptionUsageObserved(); ok {
+		_spec.SetField(task.FieldSubscriptionUsageObserved, field.TypeBool, value)
+		_node.SubscriptionUsageObserved = value
 	}
 	if value, ok := tc.mutation.Progress(); ok {
 		_spec.SetField(task.FieldProgress, field.TypeInt, value)

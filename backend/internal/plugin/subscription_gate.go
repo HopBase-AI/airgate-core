@@ -230,6 +230,15 @@ func (h *HostService) entitleSubscriptionRoute(ctx context.Context, req hostForw
 	if h.subscriptions == nil {
 		return status.Error(codes.Unavailable, i18n.En("gw.subscription_service_unavailable"))
 	}
+	if req.TaskID > 0 && req.EstimatedOfficialCost == 0 {
+		reservation, _, err := h.existingTaskSubscription(ctx, req, groupID)
+		if err != nil {
+			return err
+		}
+		if reservation != nil {
+			return nil
+		}
+	}
 	plan := billing.ParsePlanQuotas(quotas)
 	kind := requestKindFor(h.manager, req.Path, req.Model, hostForwardBody(req.Body))
 	if _, err := h.subscriptions.Entitle(ctx, int(req.UserID), groupID, plan, kind); err != nil {
@@ -257,6 +266,9 @@ func (h *HostService) entitleSubscriptionRoute(ctx context.Context, req hostForw
 func (h *HostService) reserveHostSubscriptionRoute(ctx context.Context, req hostForwardRequest, groupID int) (string, error) {
 	if h.subscriptions == nil {
 		return "", status.Error(codes.Unavailable, i18n.En("gw.subscription_service_unavailable"))
+	}
+	if req.TaskID > 0 {
+		return h.reserveHostTaskSubscription(ctx, req, groupID)
 	}
 	key := fmt.Sprintf("subscription:host:%d:%s:%d", req.UserID, req.RequestID, groupID)
 	body := hostForwardBody(req.Body)

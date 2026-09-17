@@ -39,6 +39,34 @@ func (src *SubscriptionReservationCreate) SetGroupIDSnapshot(i int) *Subscriptio
 	return src
 }
 
+// SetTaskID sets the "task_id" field.
+func (src *SubscriptionReservationCreate) SetTaskID(i int) *SubscriptionReservationCreate {
+	src.mutation.SetTaskID(i)
+	return src
+}
+
+// SetNillableTaskID sets the "task_id" field if the given value is not nil.
+func (src *SubscriptionReservationCreate) SetNillableTaskID(i *int) *SubscriptionReservationCreate {
+	if i != nil {
+		src.SetTaskID(*i)
+	}
+	return src
+}
+
+// SetAccountIDSnapshot sets the "account_id_snapshot" field.
+func (src *SubscriptionReservationCreate) SetAccountIDSnapshot(i int) *SubscriptionReservationCreate {
+	src.mutation.SetAccountIDSnapshot(i)
+	return src
+}
+
+// SetNillableAccountIDSnapshot sets the "account_id_snapshot" field if the given value is not nil.
+func (src *SubscriptionReservationCreate) SetNillableAccountIDSnapshot(i *int) *SubscriptionReservationCreate {
+	if i != nil {
+		src.SetAccountIDSnapshot(*i)
+	}
+	return src
+}
+
 // SetPeriodStart sets the "period_start" field.
 func (src *SubscriptionReservationCreate) SetPeriodStart(t time.Time) *SubscriptionReservationCreate {
 	src.mutation.SetPeriodStart(t)
@@ -201,6 +229,14 @@ func (src *SubscriptionReservationCreate) ExecX(ctx context.Context) {
 
 // defaults sets the default values of the builder before save.
 func (src *SubscriptionReservationCreate) defaults() {
+	if _, ok := src.mutation.TaskID(); !ok {
+		v := subscriptionreservation.DefaultTaskID
+		src.mutation.SetTaskID(v)
+	}
+	if _, ok := src.mutation.AccountIDSnapshot(); !ok {
+		v := subscriptionreservation.DefaultAccountIDSnapshot
+		src.mutation.SetAccountIDSnapshot(v)
+	}
 	if _, ok := src.mutation.CreditsReserved(); !ok {
 		v := subscriptionreservation.DefaultCreditsReserved
 		src.mutation.SetCreditsReserved(v)
@@ -246,6 +282,12 @@ func (src *SubscriptionReservationCreate) check() error {
 	}
 	if _, ok := src.mutation.GroupIDSnapshot(); !ok {
 		return &ValidationError{Name: "group_id_snapshot", err: errors.New(`ent: missing required field "SubscriptionReservation.group_id_snapshot"`)}
+	}
+	if _, ok := src.mutation.TaskID(); !ok {
+		return &ValidationError{Name: "task_id", err: errors.New(`ent: missing required field "SubscriptionReservation.task_id"`)}
+	}
+	if _, ok := src.mutation.AccountIDSnapshot(); !ok {
+		return &ValidationError{Name: "account_id_snapshot", err: errors.New(`ent: missing required field "SubscriptionReservation.account_id_snapshot"`)}
 	}
 	if _, ok := src.mutation.PeriodStart(); !ok {
 		return &ValidationError{Name: "period_start", err: errors.New(`ent: missing required field "SubscriptionReservation.period_start"`)}
@@ -322,6 +364,14 @@ func (src *SubscriptionReservationCreate) createSpec() (*SubscriptionReservation
 	if value, ok := src.mutation.GroupIDSnapshot(); ok {
 		_spec.SetField(subscriptionreservation.FieldGroupIDSnapshot, field.TypeInt, value)
 		_node.GroupIDSnapshot = value
+	}
+	if value, ok := src.mutation.TaskID(); ok {
+		_spec.SetField(subscriptionreservation.FieldTaskID, field.TypeInt, value)
+		_node.TaskID = value
+	}
+	if value, ok := src.mutation.AccountIDSnapshot(); ok {
+		_spec.SetField(subscriptionreservation.FieldAccountIDSnapshot, field.TypeInt, value)
+		_node.AccountIDSnapshot = value
 	}
 	if value, ok := src.mutation.PeriodStart(); ok {
 		_spec.SetField(subscriptionreservation.FieldPeriodStart, field.TypeTime, value)

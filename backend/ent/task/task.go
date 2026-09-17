@@ -42,6 +42,14 @@ const (
 	FieldUsageID = "usage_id"
 	// FieldEstimatedCost holds the string denoting the estimated_cost field in the database.
 	FieldEstimatedCost = "estimated_cost"
+	// FieldSubscriptionReservationKey holds the string denoting the subscription_reservation_key field in the database.
+	FieldSubscriptionReservationKey = "subscription_reservation_key"
+	// FieldSubscriptionAccountID holds the string denoting the subscription_account_id field in the database.
+	FieldSubscriptionAccountID = "subscription_account_id"
+	// FieldSubscriptionBillingRate holds the string denoting the subscription_billing_rate field in the database.
+	FieldSubscriptionBillingRate = "subscription_billing_rate"
+	// FieldSubscriptionUsageObserved holds the string denoting the subscription_usage_observed field in the database.
+	FieldSubscriptionUsageObserved = "subscription_usage_observed"
 	// FieldProgress holds the string denoting the progress field in the database.
 	FieldProgress = "progress"
 	// FieldPriority holds the string denoting the priority field in the database.
@@ -87,6 +95,10 @@ var Columns = []string{
 	FieldErrorMessage,
 	FieldUsageID,
 	FieldEstimatedCost,
+	FieldSubscriptionReservationKey,
+	FieldSubscriptionAccountID,
+	FieldSubscriptionBillingRate,
+	FieldSubscriptionUsageObserved,
 	FieldProgress,
 	FieldPriority,
 	FieldAttempts,
@@ -136,6 +148,14 @@ var (
 	DefaultErrorMessage string
 	// DefaultEstimatedCost holds the default value on creation for the "estimated_cost" field.
 	DefaultEstimatedCost float64
+	// DefaultSubscriptionReservationKey holds the default value on creation for the "subscription_reservation_key" field.
+	DefaultSubscriptionReservationKey string
+	// DefaultSubscriptionAccountID holds the default value on creation for the "subscription_account_id" field.
+	DefaultSubscriptionAccountID int
+	// DefaultSubscriptionBillingRate holds the default value on creation for the "subscription_billing_rate" field.
+	DefaultSubscriptionBillingRate float64
+	// DefaultSubscriptionUsageObserved holds the default value on creation for the "subscription_usage_observed" field.
+	DefaultSubscriptionUsageObserved bool
 	// DefaultProgress holds the default value on creation for the "progress" field.
 	DefaultProgress int
 	// ProgressValidator is a validator for the "progress" field. It is called by the builders before save.
@@ -241,6 +261,26 @@ func ByUsageID(opts ...sql.OrderTermOption) OrderOption {
 // ByEstimatedCost orders the results by the estimated_cost field.
 func ByEstimatedCost(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldEstimatedCost, opts...).ToFunc()
+}
+
+// BySubscriptionReservationKey orders the results by the subscription_reservation_key field.
+func BySubscriptionReservationKey(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSubscriptionReservationKey, opts...).ToFunc()
+}
+
+// BySubscriptionAccountID orders the results by the subscription_account_id field.
+func BySubscriptionAccountID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSubscriptionAccountID, opts...).ToFunc()
+}
+
+// BySubscriptionBillingRate orders the results by the subscription_billing_rate field.
+func BySubscriptionBillingRate(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSubscriptionBillingRate, opts...).ToFunc()
+}
+
+// BySubscriptionUsageObserved orders the results by the subscription_usage_observed field.
+func BySubscriptionUsageObserved(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSubscriptionUsageObserved, opts...).ToFunc()
 }
 
 // ByProgress orders the results by the progress field.

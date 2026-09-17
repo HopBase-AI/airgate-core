@@ -21,6 +21,10 @@ const (
 	FieldUserIDSnapshot = "user_id_snapshot"
 	// FieldGroupIDSnapshot holds the string denoting the group_id_snapshot field in the database.
 	FieldGroupIDSnapshot = "group_id_snapshot"
+	// FieldTaskID holds the string denoting the task_id field in the database.
+	FieldTaskID = "task_id"
+	// FieldAccountIDSnapshot holds the string denoting the account_id_snapshot field in the database.
+	FieldAccountIDSnapshot = "account_id_snapshot"
 	// FieldPeriodStart holds the string denoting the period_start field in the database.
 	FieldPeriodStart = "period_start"
 	// FieldPeriodEnd holds the string denoting the period_end field in the database.
@@ -60,6 +64,8 @@ var Columns = []string{
 	FieldReservationKey,
 	FieldUserIDSnapshot,
 	FieldGroupIDSnapshot,
+	FieldTaskID,
+	FieldAccountIDSnapshot,
 	FieldPeriodStart,
 	FieldPeriodEnd,
 	FieldCreditsReserved,
@@ -96,6 +102,10 @@ func ValidColumn(column string) bool {
 var (
 	// ReservationKeyValidator is a validator for the "reservation_key" field. It is called by the builders before save.
 	ReservationKeyValidator func(string) error
+	// DefaultTaskID holds the default value on creation for the "task_id" field.
+	DefaultTaskID int
+	// DefaultAccountIDSnapshot holds the default value on creation for the "account_id_snapshot" field.
+	DefaultAccountIDSnapshot int
 	// DefaultCreditsReserved holds the default value on creation for the "credits_reserved" field.
 	DefaultCreditsReserved int64
 	// DefaultImagesReserved holds the default value on creation for the "images_reserved" field.
@@ -160,6 +170,16 @@ func ByUserIDSnapshot(opts ...sql.OrderTermOption) OrderOption {
 // ByGroupIDSnapshot orders the results by the group_id_snapshot field.
 func ByGroupIDSnapshot(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldGroupIDSnapshot, opts...).ToFunc()
+}
+
+// ByTaskID orders the results by the task_id field.
+func ByTaskID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTaskID, opts...).ToFunc()
+}
+
+// ByAccountIDSnapshot orders the results by the account_id_snapshot field.
+func ByAccountIDSnapshot(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAccountIDSnapshot, opts...).ToFunc()
 }
 
 // ByPeriodStart orders the results by the period_start field.
