@@ -137,3 +137,24 @@ func TestBoundRejectsAGroupWithoutAUsableRate(t *testing.T) {
 		}
 	}
 }
+
+func TestSubmitRouteMayQuoteItsOwnBoundWithTheTask(t *testing.T) {
+	m := boundManager(sdk.ModelInfo{ID: "video-model", Metadata: map[string]string{
+		"price.video_tokens.1080p_per_second": "2",
+	}})
+	m.routeCache = map[string][]sdk.RouteDefinition{"gateway-video": {{
+		Method: "POST", Path: "/v1/video/generate",
+		Metadata: map[string]string{"subscription_deferred_bound": "true"},
+	}}}
+	req := subscriptionBoundRequest{Kind: billing.RequestKindVideo, Model: "video-model", Rate: 1, PluginName: "gateway-video"}
+	req.Path = "/v1/video/generate"
+	got, err := m.subscriptionRequestBound(req, boundQuotas)
+	if err != nil || got != 0 {
+		t.Fatalf("declared submit route = %d, %v; want a deferred, zero reservation", got, err)
+	}
+	// The declaration is per route: nothing else on the plugin inherits it.
+	req.Path = "/v1/video/other"
+	if _, err := m.subscriptionRequestBound(req, boundQuotas); !errors.Is(err, appsubscription.ErrRequestCostUnbounded) {
+		t.Fatalf("undeclared route inherited the deferred bound: %v", err)
+	}
+}

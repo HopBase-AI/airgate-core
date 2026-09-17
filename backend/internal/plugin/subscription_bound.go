@@ -126,10 +126,38 @@ func (m *Manager) subscriptionRequestCostUSD(info sdk.ModelInfo, req subscriptio
 		reference, _ := catalogPrice(info.Metadata, "price.image.input_reference")
 		return (unit + reference) * float64(units), nil
 	default:
-		// Video duration and resolution are request-shaped. Only the plugin can
-		// turn them into an upper bound, through price.request_max.
+		// Video duration and resolution are request-shaped. A plugin either
+		// declares price.request_max, or declares on the submit route that it
+		// quotes the bound itself when it creates the durable task — which is
+		// the reservation that actually holds the customer's points for an
+		// asynchronous job. Anything else is unbounded.
+		if m.subscriptionDeferredBound(req.PluginName, req.Path) {
+			return 0, nil
+		}
 		return 0, appsubscription.ErrRequestCostUnbounded
 	}
+}
+
+// subscriptionDeferredBound reports whether a route binds its own reservation
+// later, from the plugin's estimated_official_cost, instead of from the catalog.
+// Admission then reserves nothing here; the task reservation refuses to admit
+// without a positive estimate, so the request is still bounded before it is
+// submitted upstream.
+func (m *Manager) subscriptionDeferredBound(pluginName, path string) bool {
+	if m == nil || pluginName == "" {
+		return false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, route := range m.routeCache[m.resolveNameLocked(pluginName)] {
+		if route.Metadata["subscription_deferred_bound"] != "true" {
+			continue
+		}
+		if route.Path == path {
+			return true
+		}
+	}
+	return false
 }
 
 func chatRequestCostUSD(m *Manager, info sdk.ModelInfo, req subscriptionBoundRequest) (float64, error) {
