@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -20,6 +21,8 @@ import (
 	"github.com/DouDOU-start/airgate-core/internal/routing"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
+
+const maxSubscriptionImagesPerRequest = 1_000_000
 
 // 订阅制分组的转发前准入（subscription gate）。
 //
@@ -48,6 +51,23 @@ func requestKindFor(mgr *Manager, path, model string) billing.RequestKind {
 		return billing.RequestKindImage
 	}
 	return billing.RequestKindChat
+}
+
+// subscriptionImageCount returns the number of image slots that must be
+// reserved before forwarding. OpenAI-compatible image routes default to one
+// image; a positive n is honored so a batched request cannot bypass a monthly
+// image limit.
+func subscriptionImageCount(kind billing.RequestKind, body []byte) int {
+	if kind != billing.RequestKindImage {
+		return 0
+	}
+	var request struct {
+		N int `json:"n"`
+	}
+	if len(body) == 0 || json.Unmarshal(body, &request) != nil || request.N <= 0 {
+		return 1
+	}
+	return min(request.N, maxSubscriptionImagesPerRequest)
 }
 
 // subscriptionDenial 准入失败对外表达。
@@ -122,10 +142,7 @@ func (f *Forwarder) checkSubscription(c *gin.Context, state *forwardState) bool 
 	if reservationKey == "" {
 		reservationKey = "subscription:" + uuid.NewString()
 	}
-	images := 0
-	if kind == billing.RequestKindImage {
-		images = 1
-	}
+	images := subscriptionImageCount(kind, state.body)
 	_, err := f.subscriptions.Reserve(c.Request.Context(), appsubscription.ReserveInput{
 		UserID: state.keyInfo.UserID, GroupID: state.keyInfo.GroupID, Key: reservationKey,
 		Credits: quotas.PerRequestCredits, Images: images, Kind: kind,
@@ -220,10 +237,8 @@ func (h *HostService) reserveHostSubscriptionRoute(ctx context.Context, req host
 	}
 	key := fmt.Sprintf("subscription:host:%d:%s:%d", req.UserID, req.RequestID, groupID)
 	kind := requestKindFor(h.manager, req.Path, req.Model)
-	images := 0
-	if kind == billing.RequestKindImage {
-		images = 1
-	}
+	body, _ := json.Marshal(req.Body)
+	images := subscriptionImageCount(kind, body)
 	if _, err := h.subscriptions.Reserve(ctx, appsubscription.ReserveInput{
 		UserID: int(req.UserID), GroupID: groupID, Key: key, Images: images, Kind: kind,
 	}); err != nil {

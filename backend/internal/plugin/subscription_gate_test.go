@@ -41,6 +41,30 @@ func TestRequestKindForFallsBackToPath(t *testing.T) {
 	}
 }
 
+func TestSubscriptionImageCountReservesWholeBatch(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		kind billing.RequestKind
+		body string
+		want int
+	}{
+		{name: "chat", kind: billing.RequestKindChat, body: `{"n":20}`, want: 0},
+		{name: "image default", kind: billing.RequestKindImage, body: `{}`, want: 1},
+		{name: "image batch", kind: billing.RequestKindImage, body: `{"n":4}`, want: 4},
+		{name: "invalid body", kind: billing.RequestKindImage, body: `{`, want: 1},
+		{name: "non-positive", kind: billing.RequestKindImage, body: `{"n":0}`, want: 1},
+		{name: "bounded", kind: billing.RequestKindImage, body: `{"n":1000001}`, want: maxSubscriptionImagesPerRequest},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := subscriptionImageCount(tc.kind, []byte(tc.body)); got != tc.want {
+				t.Fatalf("subscriptionImageCount(%s, %s) = %d, want %d", tc.kind, tc.body, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSubscriptionDenialMapping(t *testing.T) {
 	if err := i18n.LoadEmbedded(); err != nil {
 		t.Fatal(err)
