@@ -51,11 +51,6 @@ func (h *HostService) RecordTaskFailureUsage(ctx context.Context, taskID int) {
 
 // recordTaskFailureUsage 给已进入 failed 终态的任务落一条零费用使用记录。
 func (h *HostService) recordTaskFailureUsage(ctx context.Context, t *ent.Task) {
-	if h != nil {
-		if err := h.releaseTerminalTaskSubscription(ctx, t); err != nil {
-			slog.Error("task_subscription_release_failed", "task_id", t.ID, sdk.LogFieldError, err)
-		}
-	}
 	if h == nil || h.recorder == nil || h.db == nil {
 		return
 	}

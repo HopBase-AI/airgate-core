@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"time"
@@ -50,6 +51,14 @@ func (h *HostService) existingTaskSubscription(ctx context.Context, req hostForw
 	if req.EstimatedOfficialCost > 0 {
 		return nil, t, status.Error(codes.FailedPrecondition, "subscription task already submitted")
 	}
+	g, err := h.db.Group.Get(ctx, groupID)
+	if err != nil {
+		return nil, t, status.Error(codes.PermissionDenied, "subscription task group unavailable")
+	}
+	// A missing estimate on another submit must never become a free request.
+	if !h.manager.matchesSubscriptionTaskPoll(g.Platform, req, t.Execution) {
+		return nil, t, status.Error(codes.FailedPrecondition, "subscription task requires its original read-only poll")
+	}
 	if req.AccountID <= 0 || t.SubscriptionAccountID != int(req.AccountID) {
 		return nil, t, status.Error(codes.PermissionDenied, "subscription task account mismatch")
 	}
@@ -60,7 +69,7 @@ func (h *HostService) existingTaskSubscription(ctx context.Context, req hostForw
 	if r.UserIDSnapshot != int(req.UserID) || r.GroupIDSnapshot != groupID || r.TaskID != t.ID || r.AccountIDSnapshot != t.SubscriptionAccountID {
 		return nil, t, status.Error(codes.PermissionDenied, "subscription task billing ownership mismatch")
 	}
-	if r.Status == reservation.StatusReleased || t.Status == task.StatusFailed || t.Status == task.StatusCancelled {
+	if r.Status == reservation.StatusReleased {
 		return nil, t, status.Error(codes.FailedPrecondition, "subscription task is terminal")
 	}
 	return r, t, nil
@@ -88,7 +97,7 @@ func (h *HostService) reserveHostTaskSubscriptionForAccount(ctx context.Context,
 	if _, terminal := taskTerminalStatuses[t.Status]; terminal {
 		return "", status.Error(codes.FailedPrecondition, "subscription task is terminal")
 	}
-	// Seedance submits to a selected account. Requiring it here means a task can
+	// Requiring the selected account here means a task can
 	// never change account or group after reserving a supplier charge.
 	if accountID <= 0 || req.EstimatedOfficialCost <= 0 || math.IsNaN(req.EstimatedOfficialCost) || math.IsInf(req.EstimatedOfficialCost, 0) {
 		return "", status.Error(codes.FailedPrecondition, "subscription task requires a pinned account and bounded cost")
@@ -165,12 +174,49 @@ func (h *HostService) markTaskSubscriptionUsage(ctx context.Context, req hostFor
 	return nil
 }
 
-func (h *HostService) releaseTerminalTaskSubscription(ctx context.Context, t *ent.Task) error {
-	if t == nil || t.SubscriptionReservationKey == "" || t.SubscriptionUsageObserved || h.subscriptions == nil {
+func (h *HostService) ensureTaskSubscriptionDeletable(ctx context.Context, t *ent.Task) error {
+	if t.SubscriptionReservationKey == "" {
 		return nil
 	}
-	if t.Status != task.StatusFailed && t.Status != task.StatusCancelled {
-		return nil
+	r, err := h.db.SubscriptionReservation.Query().Where(reservation.ReservationKeyEQ(t.SubscriptionReservationKey)).Only(ctx)
+	if err != nil {
+		return status.Error(codes.Unavailable, "subscription task reservation unavailable")
 	}
-	return h.subscriptions.Release(ctx, t.SubscriptionReservationKey)
+	if r.Status == reservation.StatusReserved {
+		return status.Error(codes.FailedPrecondition, "subscription task settlement is pending")
+	}
+	return nil
+}
+
+// subscription_task_poll is a route metadata contract declaring an internal,
+// read-only task poll. Declaring it does not register a public HTTP endpoint.
+// The named JSON string must match the persisted supplier task identity.
+func (m *Manager) matchesSubscriptionTaskPoll(platform string, req hostForwardRequest, execution map[string]any) bool {
+	if m == nil {
+		return false
+	}
+	inst := m.GetPluginByPlatform(platform)
+	if inst == nil {
+		return false
+	}
+	for _, route := range m.GetRoutes(inst.Name) {
+		var contract struct {
+			Method        string `json:"method"`
+			Path          string `json:"path"`
+			IdentityField string `json:"identity_field"`
+		}
+		if json.Unmarshal([]byte(route.Metadata["subscription_task_poll"]), &contract) != nil ||
+			contract.Method == "" || contract.Path == "" || contract.IdentityField == "" ||
+			contract.Method != req.Method || contract.Path != req.Path {
+			continue
+		}
+		var body map[string]any
+		if json.Unmarshal(hostForwardBody(req.Body), &body) != nil {
+			return false
+		}
+		stored, _ := execution[contract.IdentityField].(string)
+		requested, _ := body[contract.IdentityField].(string)
+		return stored != "" && stored == requested
+	}
+	return false
 }

@@ -316,9 +316,8 @@ func (h *HostService) updateTask(ctx context.Context, pluginID string, req hostU
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "update task: %v", err)
 	}
-	if err := h.releaseTerminalTaskSubscription(ctx, updated); err != nil {
-		return nil, status.Errorf(codes.Internal, "release task subscription: %v", err)
-	}
+	// Local terminal status does not prove the supplier did not charge. Keep
+	// task-owned reservations until settlement or confirmed reconciliation.
 	// 插件宣告的失败终态（工作坊提交期失败、生图上游拒绝、影子任务失败镜像等）
 	// 全部经这里落使用记录；只在本次真正发生 → failed 的跃迁时记一次。
 	if t.Status != enttask.StatusFailed && updated.Status == enttask.StatusFailed {
@@ -435,8 +434,11 @@ func (h *HostService) deleteTask(ctx context.Context, pluginID string, req hostD
 		}
 		return nil, status.Errorf(codes.Internal, "get task: %v", err)
 	}
-	if t.Status == enttask.StatusProcessing || t.Status == enttask.StatusPending {
+	if _, terminal := taskTerminalStatuses[t.Status]; !terminal {
 		return nil, status.Error(codes.FailedPrecondition, "cannot delete a running task")
+	}
+	if err := h.ensureTaskSubscriptionDeletable(ctx, t); err != nil {
+		return nil, err
 	}
 	objectKeys := collectTaskAssetObjectKeys(t)
 	if len(objectKeys) > 0 {
@@ -452,9 +454,6 @@ func (h *HostService) deleteTask(ctx context.Context, pluginID string, req hostD
 				return nil, status.Errorf(codes.Internal, "delete task asset %s: %v", objectKey, err)
 			}
 		}
-	}
-	if err := h.releaseTerminalTaskSubscription(ctx, t); err != nil {
-		return nil, status.Errorf(codes.Internal, "release task subscription: %v", err)
 	}
 	if err := h.db.Task.DeleteOneID(t.ID).Exec(ctx); err != nil {
 		return nil, status.Errorf(codes.Internal, "delete task: %v", err)

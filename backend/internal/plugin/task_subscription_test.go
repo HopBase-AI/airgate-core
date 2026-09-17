@@ -1,21 +1,30 @@
 package plugin
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
 	entreservation "github.com/DouDOU-start/airgate-core/ent/subscriptionreservation"
 	enttask "github.com/DouDOU-start/airgate-core/ent/task"
+	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 func TestTaskSubscriptionPollKeepsOriginalWindowAndOwnership(t *testing.T) {
 	f := newHostStabilityFixture(t, 1, nil)
+	f.host.manager.routeCache = map[string][]sdk.RouteDefinition{
+		"gateway-quota-test": {{
+			Method: http.MethodPost, Path: "/v1/video/generate",
+			Metadata: map[string]string{"subscription_task_poll": `{"method":"POST","path":"/internal/seedance/poll","identity_field":"upstream_task_id"}`},
+		}},
+	}
 	repo := attachHostStreamSubscription(t, f)
 	req := f.request(0)
 	acc := f.db.Account.Query().FirstX(f.ctx)
 	work := f.db.Task.Create().SetPluginID("gateway-seedance").SetTaskType("video.generate").SetUserID(f.user.ID).
+		SetExecution(map[string]any{"upstream_task_id": "supplier-task"}).
 		SetStatus(enttask.StatusProcessing).SetSubscriptionReservationKey("async-test").SetSubscriptionAccountID(acc.ID).SaveX(f.ctx)
 	oldStart := time.Now().AddDate(0, -1, 0)
 	r := f.db.SubscriptionReservation.Create().SetSubscriptionID(repo.sub.ID).
@@ -25,6 +34,7 @@ func TestTaskSubscriptionPollKeepsOriginalWindowAndOwnership(t *testing.T) {
 	// Both plan expiration and monthly rollover occurred while the task ran.
 	f.db.UserSubscription.UpdateOneID(repo.sub.ID).SetExpiresAt(time.Now().Add(-time.Minute)).SetCreditsUsed(7).ExecX(f.ctx)
 	req.TaskID, req.AccountID, req.GroupID = int64(work.ID), int64(acc.ID), int64(f.group.ID)
+	req.Path, req.Body = "/internal/seedance/poll", `{"upstream_task_id":"supplier-task"}`
 	for i := 0; i < 3; i++ {
 		key, err := f.host.reserveHostTaskSubscription(f.ctx, req, f.group.ID)
 		if err != nil || key != r.ReservationKey {
@@ -41,6 +51,8 @@ func TestTaskSubscriptionPollKeepsOriginalWindowAndOwnership(t *testing.T) {
 		func(r *hostForwardRequest) { r.UserID++ },
 		func(r *hostForwardRequest) { r.AccountID++ },
 		func(r *hostForwardRequest) { r.EstimatedOfficialCost = 1 },
+		func(r *hostForwardRequest) { r.Path = "/v1/video/generate" },
+		func(r *hostForwardRequest) { r.Body = `{"upstream_task_id":"other-task"}` },
 	} {
 		bad := req
 		mutate(&bad)
@@ -72,15 +84,18 @@ func TestTaskSubscriptionFailureRetainsObservedUsage(t *testing.T) {
 			SetReservationKey(key).SetUserIDSnapshot(f.user.ID).SetGroupIDSnapshot(f.group.ID).
 			SetPeriodStart(repo.sub.PeriodStart).SetPeriodEnd(repo.sub.PeriodEnd).SetCreditsReserved(100).SetExpiresAt(time.Now().Add(time.Hour)).SaveX(f.ctx)
 		f.db.UserSubscription.UpdateOneID(repo.sub.ID).AddCreditsReserved(100).ExecX(f.ctx)
-		if err := f.host.releaseTerminalTaskSubscription(f.ctx, work); err != nil {
-			t.Fatal(err)
-		}
+		// A local failure is not proof that the supplier did not charge. The
+		// task update path intentionally leaves this reservation pending until
+		// a provider-backed settlement/reconciliation result arrives.
 		got := f.db.SubscriptionReservation.GetX(f.ctx, r.ID)
 		if observed && got.Status != entreservation.StatusReserved {
 			t.Fatal("pending settlement was released")
 		}
-		if !observed && got.Status != entreservation.StatusReleased {
-			t.Fatal("failed uncharged task retained reservation")
+		if !observed && got.Status != entreservation.StatusReserved {
+			t.Fatal("local failure is not evidence that the supplier did not charge")
+		}
+		if err := f.host.ensureTaskSubscriptionDeletable(f.ctx, work); status.Code(err) != codes.FailedPrecondition {
+			t.Fatalf("unsettled task can be deleted: %v", err)
 		}
 	}
 	req := hostForwardRequest{EstimatedOfficialCost: 10, UserID: int64(f.user.ID), subscriptionReservationKey: "charged-task"}

@@ -41,6 +41,7 @@ func (r *hostStreamSubscriptionRepository) Reserve(ctx context.Context, input ap
 	r.reserves++
 	row, err := r.db.SubscriptionReservation.Create().SetSubscriptionID(r.sub.ID).
 		SetReservationKey(input.Key).SetUserIDSnapshot(input.UserID).SetGroupIDSnapshot(input.GroupID).
+		SetTaskID(int(input.TaskID)).SetAccountIDSnapshot(int(input.AccountID)).
 		SetPeriodStart(r.sub.PeriodStart).SetPeriodEnd(r.sub.PeriodEnd).
 		SetCreditsReserved(input.Credits).SetImagesReserved(input.Images).SetExpiresAt(input.ExpiresAt).Save(ctx)
 	if err != nil {

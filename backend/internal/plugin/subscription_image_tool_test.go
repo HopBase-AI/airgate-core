@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -75,8 +76,8 @@ func TestSubscriptionForcedImageToolCannotBypassExhaustedImageQuota(t *testing.T
 	if f.checkSubscription(c, state) || w.Code != http.StatusPaymentRequired {
 		t.Fatalf("HTTP image quota bypass: status %d", w.Code)
 	}
-	if repo.reserved.Kind != billing.RequestKindImage || repo.reserved.Images != 1 {
-		t.Fatalf("HTTP did not reserve image: %+v", repo.reserved)
+	if !strings.Contains(w.Body.String(), "subscription_image_limit_reached") || repo.reserved.Key != "" {
+		t.Fatalf("exhausted image entitlement must reject before reservation: %s", w.Body.String())
 	}
 	var decoded map[string]any
 	if err := json.Unmarshal([]byte(body), &decoded); err != nil {

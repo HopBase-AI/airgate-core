@@ -142,7 +142,7 @@ func (f *Forwarder) checkSubscription(c *gin.Context, state *forwardState) bool 
 		return false
 	}
 	quotas = entitlement.Quotas
-	if cap := quotas.PerRequestCredits; cap > 0 {
+	if cap := quotas.PerRequestCredits; kind == billing.RequestKindChat && cap > 0 {
 		if est := f.estimateInputCredits(state, quotas); est > cap {
 			message := i18n.En("gw.subscription_request_too_large")
 			slog.Warn("subscription_gate_request_too_large",
@@ -166,9 +166,15 @@ func (f *Forwarder) checkSubscription(c *gin.Context, state *forwardState) bool 
 		reservationKey = "subscription:" + uuid.NewString()
 	}
 	images := subscriptionImageCount(kind, state.body)
+	// The chat cap is not a media quote. Media admission requires a trusted
+	// positive bound; the public API has no such quote yet and must fail closed.
+	credits := int64(0)
+	if kind == billing.RequestKindChat {
+		credits = quotas.PerRequestCredits
+	}
 	_, err := f.subscriptions.Reserve(c.Request.Context(), appsubscription.ReserveInput{
 		UserID: state.keyInfo.UserID, GroupID: state.keyInfo.GroupID, Key: reservationKey,
-		Credits: quotas.PerRequestCredits, Images: images, Kind: kind,
+		Credits: credits, Images: images, Kind: kind,
 	})
 	if err != nil {
 		denial, known := subscriptionDenialFor(err)
