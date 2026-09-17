@@ -284,7 +284,13 @@ func (g *hostQuotaTestGateway) Start(context.Context) error  { return nil }
 func (g *hostQuotaTestGateway) Stop(context.Context) error   { return nil }
 func (g *hostQuotaTestGateway) Platform() string             { return "quota-test" }
 func (g *hostQuotaTestGateway) Models() []sdk.ModelInfo {
-	return []sdk.ModelInfo{{ID: "quota-test-model"}}
+	// Subscription admission needs a catalog it can bound: declared prices and
+	// an output ceiling. A model without them is denied before forwarding.
+	return []sdk.ModelInfo{{
+		ID:              "quota-test-model",
+		MaxOutputTokens: 4096,
+		Metadata:        map[string]string{"price.input": "1", "price.output": "3"},
+	}}
 }
 func (g *hostQuotaTestGateway) Routes() []sdk.RouteDefinition { return nil }
 func (g *hostQuotaTestGateway) ValidateAccount(context.Context, map[string]string) error {

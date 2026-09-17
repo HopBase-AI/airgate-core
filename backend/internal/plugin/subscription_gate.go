@@ -30,8 +30,10 @@ const maxSubscriptionImagesPerRequest = 1_000_000
 // 订阅点数账本：有效订阅 + 本期点数未用尽 + 请求类型在权益内（视频开放 / 生图张数未达上限）。
 // 判定失败按订阅语义写 402/403，成功后请求照常转发，扣费由 billing.Recorder 记入账本。
 //
-// 单次请求点数上限（per_request_credits）core 只能做保守预估：按请求体字节数估输入 token，
-// 乘目录官方输入价与分组倍率折算点数；输出侧（max_tokens）限制需插件配合，这里不判。
+// 单次请求点数上限（per_request_credits）判的是本次请求「最多可能花多少」——
+// 见 subscription_bound.go：输入按请求体保守估 token，输出按目录/路由声明的上限封顶，
+// 生图按最贵档 × 张数，视频要求插件声明 price.request_max。目录撑不出上限的模型
+// 一律拒（ErrRequestCostUnbounded），不进转发。
 
 // requestKindFor 判定请求的产品类型：包括聊天模型强制调用的生图工具。
 func requestKindFor(mgr *Manager, path, model string, body []byte) billing.RequestKind {
@@ -142,35 +144,45 @@ func (f *Forwarder) checkSubscription(c *gin.Context, state *forwardState) bool 
 		return false
 	}
 	quotas = entitlement.Quotas
-	if cap := quotas.PerRequestCredits; kind == billing.RequestKindChat && cap > 0 {
-		if est := f.estimateInputCredits(state, quotas); est > cap {
-			message := i18n.En("gw.subscription_request_too_large")
-			slog.Warn("subscription_gate_request_too_large",
-				sdk.LogFieldUserID, state.keyInfo.UserID,
-				sdk.LogFieldGroupID, state.keyInfo.GroupID,
-				sdk.LogFieldModel, state.model,
-				"estimated_credits", est,
-				"cap", cap,
-				"body_bytes", len(state.body))
-			protocolError(c, http.StatusRequestEntityTooLarge, "invalid_request_error", "subscription_request_too_large", i18n.Tc(c, "gw.subscription_request_too_large"))
-			f.recordFailureUsage(c, state, usageFailure{
-				code:    appusage.ErrorCodeRequestTooLarge,
-				status:  http.StatusRequestEntityTooLarge,
-				message: message,
-			})
-			return false
-		}
+	images := subscriptionImageCount(kind, state.body)
+	// Reserve what the request can cost upstream, not what the plan allows a
+	// customer to spend. A model the catalog cannot bound is denied.
+	credits, boundErr := f.manager.subscriptionRequestBound(subscriptionBoundRequest{
+		Kind: kind, Model: state.model, Body: state.body, Images: images,
+		Rate:       billing.ResolveBillingRateForGroup(state.keyInfo.UserGroupRates, state.keyInfo.GroupID, state.keyInfo.GroupRateMultiplier),
+		PluginName: forwardStatePluginName(state), Path: state.requestPath,
+	}, quotas)
+	if boundErr != nil {
+		denial, _ := subscriptionDenialFor(appsubscription.ErrRequestCostUnbounded)
+		slog.Error("subscription_gate_request_cost_unbounded",
+			sdk.LogFieldUserID, state.keyInfo.UserID,
+			sdk.LogFieldGroupID, state.keyInfo.GroupID,
+			sdk.LogFieldModel, state.model,
+			"kind", kind)
+		protocolError(c, denial.status, denial.errType, denial.code, i18n.Tc(c, denial.msgKey))
+		f.recordFailureUsage(c, state, usageFailure{code: denial.usageCode, status: denial.status, message: i18n.En(denial.msgKey)})
+		return false
+	}
+	if cap := quotas.PerRequestCredits; cap > 0 && credits > cap {
+		message := i18n.En("gw.subscription_request_too_large")
+		slog.Warn("subscription_gate_request_too_large",
+			sdk.LogFieldUserID, state.keyInfo.UserID,
+			sdk.LogFieldGroupID, state.keyInfo.GroupID,
+			sdk.LogFieldModel, state.model,
+			"bounded_credits", credits,
+			"cap", cap,
+			"body_bytes", len(state.body))
+		protocolError(c, http.StatusRequestEntityTooLarge, "invalid_request_error", "subscription_request_too_large", i18n.Tc(c, "gw.subscription_request_too_large"))
+		f.recordFailureUsage(c, state, usageFailure{
+			code:    appusage.ErrorCodeRequestTooLarge,
+			status:  http.StatusRequestEntityTooLarge,
+			message: message,
+		})
+		return false
 	}
 	reservationKey := state.subscriptionReservationKey
 	if reservationKey == "" {
 		reservationKey = "subscription:" + uuid.NewString()
-	}
-	images := subscriptionImageCount(kind, state.body)
-	// The chat cap is not a media quote. Media admission requires a trusted
-	// positive bound; the public API has no such quote yet and must fail closed.
-	credits := int64(0)
-	if kind == billing.RequestKindChat {
-		credits = quotas.PerRequestCredits
 	}
 	_, err := f.subscriptions.Reserve(c.Request.Context(), appsubscription.ReserveInput{
 		UserID: state.keyInfo.UserID, GroupID: state.keyInfo.GroupID, Key: reservationKey,
@@ -210,19 +222,24 @@ func (f *Forwarder) checkSubscription(c *gin.Context, state *forwardState) bool 
 	return true
 }
 
-// estimateInputCredits 保守预估本次请求输入侧点数：请求体字节 / 4 ≈ token 数，
-// × 目录官方输入价（USD/1M）× 分组生效倍率 × 余额→点数换算率。目录无价时返回 0（不判）。
-func (f *Forwarder) estimateInputCredits(state *forwardState, quotas billing.PlanQuotas) int64 {
-	if f.manager == nil || len(state.body) == 0 || state.model == "" {
-		return 0
+// hostRoutePluginName resolves the plugin owning a Host route candidate.
+func hostRoutePluginName(mgr *Manager, route routing.Candidate) string {
+	if mgr == nil {
+		return ""
 	}
-	price, ok := f.manager.ModelInputPrice(state.model)
-	if !ok {
-		return 0
+	if inst := mgr.GetPluginByPlatform(route.Platform); inst != nil {
+		return inst.Name
 	}
-	rate := billing.ResolveBillingRateForGroup(state.keyInfo.UserGroupRates, state.keyInfo.GroupID, state.keyInfo.GroupRateMultiplier)
-	tokens := float64(len(state.body)) / 4
-	return quotas.Credits(tokens / 1e6 * price * rate)
+	return ""
+}
+
+// forwardStatePluginName names the plugin owning this request, so its route
+// metadata (the output-bound contract) can be read during admission.
+func forwardStatePluginName(state *forwardState) string {
+	if state == nil || state.plugin == nil {
+		return ""
+	}
+	return state.plugin.Name
 }
 
 // SetSubscriptionService 注入订阅服务（server 装配时调用）。
@@ -269,7 +286,8 @@ func (h *HostService) entitleSubscriptionRoute(ctx context.Context, req hostForw
 	return nil
 }
 
-func (h *HostService) reserveHostSubscriptionRoute(ctx context.Context, req hostForwardRequest, groupID int) (string, error) {
+func (h *HostService) reserveHostSubscriptionRoute(ctx context.Context, req hostForwardRequest, route routing.Candidate) (string, error) {
+	groupID := route.GroupID
 	if h.subscriptions == nil {
 		return "", status.Error(codes.Unavailable, i18n.En("gw.subscription_service_unavailable"))
 	}
@@ -280,8 +298,25 @@ func (h *HostService) reserveHostSubscriptionRoute(ctx context.Context, req host
 	body := hostForwardBody(req.Body)
 	kind := requestKindFor(h.manager, req.Path, req.Model, body)
 	images := subscriptionImageCount(kind, body)
+	// Internal Studio / chat traffic spends the same customer entitlement as the
+	// public API, so it is admitted against the same bounded cost.
+	credits, boundErr := h.manager.subscriptionRequestBound(subscriptionBoundRequest{
+		Kind: kind, Model: req.Model, Body: body, Images: images,
+		Rate: route.EffectiveRate, PluginName: hostRoutePluginName(h.manager, route), Path: req.Path,
+	}, billing.ParsePlanQuotas(route.Quotas))
+	if boundErr != nil {
+		slog.Error("host_forward_subscription_cost_unbounded",
+			sdk.LogFieldUserID, req.UserID,
+			sdk.LogFieldGroupID, groupID,
+			sdk.LogFieldModel, req.Model,
+			"kind", kind)
+		return "", hostSubscriptionDeniedError(i18n.En("gw.subscription_service_unavailable"))
+	}
+	if cap := billing.ParsePlanQuotas(route.Quotas).PerRequestCredits; cap > 0 && credits > cap {
+		return "", hostSubscriptionDeniedError(i18n.En("gw.subscription_request_too_large"))
+	}
 	if _, err := h.subscriptions.Reserve(ctx, appsubscription.ReserveInput{
-		UserID: int(req.UserID), GroupID: groupID, Key: key, Images: images, Kind: kind,
+		UserID: int(req.UserID), GroupID: groupID, Key: key, Credits: credits, Images: images, Kind: kind,
 	}); err != nil {
 		if denial, known := subscriptionDenialFor(err); known {
 			return "", hostSubscriptionDeniedError(i18n.En(denial.msgKey))

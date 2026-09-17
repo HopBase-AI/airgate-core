@@ -126,11 +126,13 @@ func (q PlanQuotas) CreditsPerUnitOrDefault() int64 {
 }
 
 // Credits 把一笔余额口径的费用折算成点数；非正费用返回 0。
+// 向上取整前先抹掉 1e-9 的浮点噪声——否则 0.05×3 这类乘积会算出 0.15000000000000002,
+// 白白多收一点；这点容差远小于一点的面值,不影响「不少收」。
 func (q PlanQuotas) Credits(cost float64) int64 {
 	if cost <= 0 || math.IsNaN(cost) || math.IsInf(cost, 0) {
 		return 0
 	}
-	return int64(math.Ceil(cost * float64(q.CreditsPerUnitOrDefault())))
+	return int64(math.Ceil(cost*float64(q.CreditsPerUnitOrDefault()) - 1e-9))
 }
 
 // Unlimited 月额度是否不限量。

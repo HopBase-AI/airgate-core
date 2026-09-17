@@ -13,6 +13,8 @@ import (
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
 	"github.com/DouDOU-start/airgate-core/internal/i18n"
+	"github.com/DouDOU-start/airgate-core/internal/routing"
+	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc/status"
 )
@@ -83,18 +85,37 @@ func TestSubscriptionForcedImageToolCannotBypassExhaustedImageQuota(t *testing.T
 	if err := json.Unmarshal([]byte(body), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	h := &HostService{subscriptions: svc}
+	// The catalog must be able to bound an image request, otherwise admission
+	// stops earlier with "cost unbounded" and never reaches the image quota.
+	h := &HostService{subscriptions: svc, manager: &Manager{modelCache: map[string][]sdk.ModelInfo{
+		"openai": {{ID: "gpt-5.4", Metadata: map[string]string{"price.image.standard": "0.02"}}},
+	}}}
+	route := routing.Candidate{GroupID: 2, Platform: "openai", EffectiveRate: 7, SubscriptionType: "subscription",
+		Quotas: billing.PlanQuotas{MonthlyCredits: 1000, PerRequestCredits: 0, ImageMonthlyLimit: 2}.ToMap()}
 	for _, representation := range []any{body, []byte(body), json.RawMessage(body), decoded} {
 		req := hostForwardRequest{UserID: 1, RequestID: "image-test", Path: "/v1/responses", Model: "gpt-5.4", Body: representation}
 		if err := h.entitleSubscriptionRoute(context.Background(), req, 2, nil); err == nil || status.Convert(err).Message() != i18n.En("gw.subscription_image_limit_reached") {
 			t.Fatalf("host entitlement bypass (%T): %v", representation, err)
 		}
 		repo.reserved = appsubscription.ReserveInput{}
-		if _, err := h.reserveHostSubscriptionRoute(context.Background(), req, 2); err == nil {
+		if _, err := h.reserveHostSubscriptionRoute(context.Background(), req, route); err == nil {
 			t.Fatalf("host reservation bypass (%T)", representation)
 		}
 		if repo.reserved.Kind != billing.RequestKindImage || repo.reserved.Images != 1 {
 			t.Fatalf("host did not reserve image (%T): %+v", representation, repo.reserved)
 		}
+		if repo.reserved.Credits <= 0 {
+			t.Fatalf("host reserved an unbounded image cost (%T): %+v", representation, repo.reserved)
+		}
+	}
+	// A model the catalog cannot price must not reach the upstream at all.
+	blind := &HostService{subscriptions: svc, manager: &Manager{}}
+	req := hostForwardRequest{UserID: 1, RequestID: "image-test", Path: "/v1/responses", Model: "gpt-5.4", Body: body}
+	repo.reserved = appsubscription.ReserveInput{}
+	if _, err := blind.reserveHostSubscriptionRoute(context.Background(), req, route); err == nil {
+		t.Fatal("unbounded request admitted")
+	}
+	if repo.reserved.Key != "" {
+		t.Fatalf("unbounded request reserved quota: %+v", repo.reserved)
 	}
 }

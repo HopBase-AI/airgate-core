@@ -87,7 +87,7 @@ func TestHostSubscriptionStreamReservesBeforeUpstreamAndSettlesOnce(t *testing.T
 	observed := make(chan error, 1)
 	f = newHostStabilityFixture(t, 1, func(_ int32, req *sdk.ForwardRequest) (sdk.ForwardOutcome, error) {
 		row, err := f.db.SubscriptionReservation.Query().Only(f.ctx)
-		if err == nil && (row.Status != entsubscriptionreservation.StatusReserved || row.CreditsReserved != 300) {
+		if err == nil && (row.Status != entsubscriptionreservation.StatusReserved || row.CreditsReserved <= 0 || row.CreditsReserved > 300) {
 			err = fmt.Errorf("upstream did not have reserved quota: %+v", row)
 		}
 		observed <- err
@@ -174,7 +174,7 @@ func TestHostSubscriptionStreamRetainsReservationOnSettlementFailure(t *testing.
 		t.Fatal("settlement failure reported success")
 	}
 	row := f.db.SubscriptionReservation.Query().OnlyX(f.ctx)
-	if repo.releases != 0 || row.Status != entsubscriptionreservation.StatusReserved || f.db.UserSubscription.GetX(f.ctx, repo.sub.ID).CreditsReserved != 300 {
+	if repo.releases != 0 || row.Status != entsubscriptionreservation.StatusReserved || f.db.UserSubscription.GetX(f.ctx, repo.sub.ID).CreditsReserved != row.CreditsReserved {
 		t.Fatalf("consumed reservation released: releases=%d row=%+v", repo.releases, row)
 	}
 }
