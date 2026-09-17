@@ -38,3 +38,13 @@ func (s subscriptionStubRepository) Purchase(context.Context, PurchaseTx) (Subsc
 func (s subscriptionStubRepository) Topup(context.Context, TopupTx) (Subscription, error) {
 	return Subscription{}, ErrSubscriptionNotFound
 }
+
+func (s subscriptionStubRepository) Reserve(context.Context, ReserveInput) (Reservation, error) {
+	return Reservation{}, ErrSubscriptionNotFound
+}
+
+func (s subscriptionStubRepository) Release(context.Context, string) error { return nil }
+
+func (s subscriptionStubRepository) GrantExternal(context.Context, ExternalGrantInput) (Subscription, error) {
+	return Subscription{}, ErrPlanNotFound
+}

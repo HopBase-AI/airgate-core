@@ -96,5 +96,13 @@
   "export.summary_failed_free": "其中 %d 條請求未成功，均未計費",
   "export.summary_failed_mixed": "其中 %d 條請求未成功且未計費，另 %d 條中途中斷按已產生用量計費",
   "export.summary_truncated": "記錄過多，本檔案僅含最近 %d 條，金額不代表該區間全部消耗",
-  "export.summary_separator": "；"
+  "export.summary_separator": "；",
+  "gw.subscription_required": "此分組需要有效訂閱",
+  "gw.subscription_expired": "訂閱已到期，請續費後繼續使用",
+  "gw.subscription_suspended": "訂閱已暫停",
+  "gw.subscription_quota_exceeded": "今期點數已用完，可加購或等候下期重置",
+  "gw.subscription_video_not_included": "目前套餐不包括影片生成",
+  "gw.subscription_image_limit_reached": "今期生圖張數已達套餐上限",
+  "gw.subscription_request_too_large": "單一訊息超出套餐每次點數上限，請縮短內容或升級套餐",
+  "gw.subscription_service_unavailable": "訂閱權益服務暫時未能使用，請稍後再試"
 }

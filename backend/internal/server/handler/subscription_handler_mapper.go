@@ -77,6 +77,7 @@ func toPlanRespFromDomain(item appsubscription.PlanView) dto.PlanResp {
 
 func toPlanQuotasResp(q billing.PlanQuotas) dto.PlanQuotasResp {
 	return dto.PlanQuotasResp{
+		IncludedGroupIDs:  append([]int(nil), q.IncludedGroupIDs...),
 		MonthlyCredits:    q.MonthlyCredits,
 		CreditsPerUnit:    q.CreditsPerUnitOrDefault(),
 		PerRequestCredits: q.PerRequestCredits,
@@ -91,9 +92,10 @@ func toPlanQuotasResp(q billing.PlanQuotas) dto.PlanQuotasResp {
 
 func toUsageWindow(w appsubscription.UsageWindow) dto.UsageWindow {
 	return dto.UsageWindow{
-		Used:  w.Used,
-		Limit: w.Limit,
-		Reset: formatOptionalTime(w.Reset),
+		Used:     w.Used,
+		Reserved: w.Reserved,
+		Limit:    w.Limit,
+		Reset:    formatOptionalTime(w.Reset),
 	}
 }
 

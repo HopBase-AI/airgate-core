@@ -45,7 +45,9 @@ var flushInterval = 5 * time.Second
 type UsageRecord struct {
 	// RequestID 计费幂等 ID（UUID）。Record/RecordSync 入口自动补齐；
 	// 落库带唯一索引，WAL 回放与重试据此去重，防重复入账/扣费。
-	RequestID                    string
+	RequestID string
+	// SubscriptionReservationKey links strict pre-forward admission to atomic settlement.
+	SubscriptionReservationKey   string
 	UserID                       int
 	UserEmail                    string
 	APIKeyID                     int

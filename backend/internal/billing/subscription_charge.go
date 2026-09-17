@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	entgroup "github.com/DouDOU-start/airgate-core/ent/group"
+	entsubscriptionreservation "github.com/DouDOU-start/airgate-core/ent/subscriptionreservation"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
 	entusersubscription "github.com/DouDOU-start/airgate-core/ent/usersubscription"
 )
@@ -15,8 +17,11 @@ import (
 type meteredRecord struct {
 	subscriptionID int
 	quotas         PlanQuotas
-	credits        float64
+	credits        int64
 	images         int
+	reservationKey string
+	periodStart    time.Time
+	periodEnd      time.Time
 }
 
 // resolveSubscriptionMetering 找出本批中应记入订阅账本的记录（按 batch 下标）：
@@ -24,8 +29,37 @@ type meteredRecord struct {
 // 没有订阅的记录（管理员直配 key、订阅刚过期的尾巴请求）退回余额扣费，钱不会漏。
 // 同一事务内查询，保证与扣费原子。
 func resolveSubscriptionMetering(ctx context.Context, tx *ent.Tx, batch []UsageRecord) (map[int]meteredRecord, error) {
+	metered := make(map[int]meteredRecord)
+	for i, rec := range batch {
+		if rec.SubscriptionReservationKey == "" || rec.IsError() {
+			continue
+		}
+		reservation, err := tx.SubscriptionReservation.Query().
+			Where(entsubscriptionreservation.ReservationKeyEQ(rec.SubscriptionReservationKey)).
+			WithSubscription().Only(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("query subscription reservation %q: %w", rec.SubscriptionReservationKey, err)
+		}
+		if reservation.UserIDSnapshot != rec.UserID || reservation.GroupIDSnapshot != rec.GroupID {
+			return nil, fmt.Errorf("subscription reservation ownership mismatch")
+		}
+		sub := reservation.Edges.Subscription
+		if sub == nil {
+			return nil, fmt.Errorf("subscription reservation has no subscription")
+		}
+		quotas := ParsePlanQuotas(sub.PlanSnapshot)
+		metered[i] = meteredRecord{
+			subscriptionID: sub.ID,
+			quotas:         quotas,
+			credits:        quotas.Credits(rec.ActualCost),
+			images:         usageRecordImageCount(rec),
+			reservationKey: rec.SubscriptionReservationKey,
+			periodStart:    reservation.PeriodStart,
+			periodEnd:      reservation.PeriodEnd,
+		}
+	}
 	groupIDs := collectUsageIDs(batch, func(rec UsageRecord) int {
-		if rec.IsError() || rec.GroupID <= 0 || rec.UserID <= 0 {
+		if rec.IsError() || rec.SubscriptionReservationKey != "" || rec.GroupID <= 0 || rec.UserID <= 0 {
 			return 0
 		}
 		if rec.ActualCost <= 0 && usageRecordImageCount(rec) <= 0 {
@@ -34,7 +68,7 @@ func resolveSubscriptionMetering(ctx context.Context, tx *ent.Tx, batch []UsageR
 		return rec.GroupID
 	})
 	if len(groupIDs) == 0 {
-		return nil, nil
+		return metered, nil
 	}
 	groups, err := tx.Group.Query().
 		Where(
@@ -46,7 +80,7 @@ func resolveSubscriptionMetering(ctx context.Context, tx *ent.Tx, batch []UsageR
 		return nil, fmt.Errorf("查询订阅制分组失败: %w", err)
 	}
 	if len(groups) == 0 {
-		return nil, nil
+		return metered, nil
 	}
 	plans := make(map[int]PlanQuotas, len(groups))
 	for _, g := range groups {
@@ -55,8 +89,10 @@ func resolveSubscriptionMetering(ctx context.Context, tx *ent.Tx, batch []UsageR
 
 	type key struct{ userID, groupID int }
 	subs := make(map[key]int) // 0 = 无有效订阅
-	metered := make(map[int]meteredRecord)
 	for i, rec := range batch {
+		if rec.SubscriptionReservationKey != "" {
+			continue
+		}
 		quotas, ok := plans[rec.GroupID]
 		if !ok || rec.IsError() || rec.UserID <= 0 {
 			continue
@@ -103,9 +139,15 @@ func applySubscriptionCharges(ctx context.Context, tx *ent.Tx, metered map[int]m
 	if len(metered) == 0 {
 		return nil
 	}
-	credits := make(map[int]float64)
+	credits := make(map[int]int64)
 	images := make(map[int]int)
 	for _, m := range metered {
+		if m.reservationKey != "" {
+			if err := settleSubscriptionReservation(ctx, tx, m); err != nil {
+				return err
+			}
+			continue
+		}
 		credits[m.subscriptionID] += m.credits
 		images[m.subscriptionID] += m.images
 	}
@@ -118,7 +160,50 @@ func applySubscriptionCharges(ctx context.Context, tx *ent.Tx, metered map[int]m
 			update = update.AddImagesUsed(n)
 		}
 		if err := update.Exec(ctx); err != nil {
-			return fmt.Errorf("累加订阅账本失败 subscription_id=%d credits=%.4f: %w", subID, c, err)
+			return fmt.Errorf("累加订阅账本失败 subscription_id=%d credits=%d: %w", subID, c, err)
+		}
+	}
+	return nil
+}
+
+func settleSubscriptionReservation(ctx context.Context, tx *ent.Tx, m meteredRecord) error {
+	reservation, err := tx.SubscriptionReservation.Query().
+		Where(entsubscriptionreservation.ReservationKeyEQ(m.reservationKey)).
+		WithSubscription().Only(ctx)
+	if err != nil {
+		return fmt.Errorf("read subscription reservation %q: %w", m.reservationKey, err)
+	}
+	if reservation.Status == entsubscriptionreservation.StatusSettled {
+		return nil
+	}
+	if reservation.Status != entsubscriptionreservation.StatusReserved {
+		return fmt.Errorf("subscription reservation %q is %s", m.reservationKey, reservation.Status)
+	}
+	n, err := tx.SubscriptionReservation.Update().
+		Where(
+			entsubscriptionreservation.IDEQ(reservation.ID),
+			entsubscriptionreservation.StatusEQ(entsubscriptionreservation.StatusReserved),
+		).
+		SetStatus(entsubscriptionreservation.StatusSettled).
+		SetCreditsSettled(m.credits).
+		SetImagesSettled(m.images).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return fmt.Errorf("subscription reservation %q changed concurrently", m.reservationKey)
+	}
+	sub := reservation.Edges.Subscription
+	if sub != nil && sub.PeriodStart.Equal(reservation.PeriodStart) && sub.PeriodEnd.Equal(reservation.PeriodEnd) {
+		if err := tx.UserSubscription.UpdateOneID(sub.ID).
+			AddCreditsReserved(-reservation.CreditsReserved).
+			AddImagesReserved(-reservation.ImagesReserved).
+			AddCreditsUsed(m.credits).
+			AddImagesUsed(m.images).
+			AddLedgerVersion(1).
+			Exec(ctx); err != nil {
+			return fmt.Errorf("settle subscription reservation %q: %w", m.reservationKey, err)
 		}
 	}
 	return nil

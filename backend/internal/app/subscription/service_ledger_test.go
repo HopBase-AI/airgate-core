@@ -145,6 +145,13 @@ func (m *memoryRepository) Topup(_ context.Context, tx TopupTx) (Subscription, e
 	sub.ExtraCredits += tx.Credits
 	return *sub, nil
 }
+func (m *memoryRepository) Reserve(context.Context, ReserveInput) (Reservation, error) {
+	return Reservation{}, errors.New("unused")
+}
+func (m *memoryRepository) Release(context.Context, string) error { return nil }
+func (m *memoryRepository) GrantExternal(context.Context, ExternalGrantInput) (Subscription, error) {
+	return Subscription{}, errors.New("unused")
+}
 
 var testPlanQuotas = billing.PlanQuotas{
 	MonthlyCredits: 1000, CreditsPerUnit: 10000, PerRequestCredits: 50, ImageMonthlyLimit: 2, VideoEnabled: false,
@@ -241,6 +248,7 @@ func TestEntitleRollsOverPeriodAndChecksQuotas(t *testing.T) {
 
 	// 不限量套餐：点数不判
 	unlimited := billing.PlanQuotas{VideoEnabled: true}
+	sub.GroupQuotas = unlimited.ToMap()
 	sub.CreditsUsed = 999999
 	if ent, err := svc.Entitle(ctx, 1, 7, unlimited, billing.RequestKindVideo); err != nil || !ent.Unlimited {
 		t.Fatalf("不限量应放行: err=%v ent=%+v", err, ent)

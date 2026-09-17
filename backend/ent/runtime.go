@@ -19,6 +19,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/referralcommission"
 	"github.com/DouDOU-start/airgate-core/ent/schema"
 	"github.com/DouDOU-start/airgate-core/ent/setting"
+	"github.com/DouDOU-start/airgate-core/ent/subscriptionreservation"
 	"github.com/DouDOU-start/airgate-core/ent/task"
 	"github.com/DouDOU-start/airgate-core/ent/teamauditlog"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
@@ -602,6 +603,38 @@ func init() {
 	setting.DefaultUpdatedAt = settingDescUpdatedAt.Default.(func() time.Time)
 	// setting.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	setting.UpdateDefaultUpdatedAt = settingDescUpdatedAt.UpdateDefault.(func() time.Time)
+	subscriptionreservationFields := schema.SubscriptionReservation{}.Fields()
+	_ = subscriptionreservationFields
+	// subscriptionreservationDescReservationKey is the schema descriptor for reservation_key field.
+	subscriptionreservationDescReservationKey := subscriptionreservationFields[0].Descriptor()
+	// subscriptionreservation.ReservationKeyValidator is a validator for the "reservation_key" field. It is called by the builders before save.
+	subscriptionreservation.ReservationKeyValidator = subscriptionreservationDescReservationKey.Validators[0].(func(string) error)
+	// subscriptionreservationDescCreditsReserved is the schema descriptor for credits_reserved field.
+	subscriptionreservationDescCreditsReserved := subscriptionreservationFields[5].Descriptor()
+	// subscriptionreservation.DefaultCreditsReserved holds the default value on creation for the credits_reserved field.
+	subscriptionreservation.DefaultCreditsReserved = subscriptionreservationDescCreditsReserved.Default.(int64)
+	// subscriptionreservationDescImagesReserved is the schema descriptor for images_reserved field.
+	subscriptionreservationDescImagesReserved := subscriptionreservationFields[6].Descriptor()
+	// subscriptionreservation.DefaultImagesReserved holds the default value on creation for the images_reserved field.
+	subscriptionreservation.DefaultImagesReserved = subscriptionreservationDescImagesReserved.Default.(int)
+	// subscriptionreservationDescCreditsSettled is the schema descriptor for credits_settled field.
+	subscriptionreservationDescCreditsSettled := subscriptionreservationFields[7].Descriptor()
+	// subscriptionreservation.DefaultCreditsSettled holds the default value on creation for the credits_settled field.
+	subscriptionreservation.DefaultCreditsSettled = subscriptionreservationDescCreditsSettled.Default.(int64)
+	// subscriptionreservationDescImagesSettled is the schema descriptor for images_settled field.
+	subscriptionreservationDescImagesSettled := subscriptionreservationFields[8].Descriptor()
+	// subscriptionreservation.DefaultImagesSettled holds the default value on creation for the images_settled field.
+	subscriptionreservation.DefaultImagesSettled = subscriptionreservationDescImagesSettled.Default.(int)
+	// subscriptionreservationDescCreatedAt is the schema descriptor for created_at field.
+	subscriptionreservationDescCreatedAt := subscriptionreservationFields[11].Descriptor()
+	// subscriptionreservation.DefaultCreatedAt holds the default value on creation for the created_at field.
+	subscriptionreservation.DefaultCreatedAt = subscriptionreservationDescCreatedAt.Default.(func() time.Time)
+	// subscriptionreservationDescUpdatedAt is the schema descriptor for updated_at field.
+	subscriptionreservationDescUpdatedAt := subscriptionreservationFields[12].Descriptor()
+	// subscriptionreservation.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	subscriptionreservation.DefaultUpdatedAt = subscriptionreservationDescUpdatedAt.Default.(func() time.Time)
+	// subscriptionreservation.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	subscriptionreservation.UpdateDefaultUpdatedAt = subscriptionreservationDescUpdatedAt.UpdateDefault.(func() time.Time)
 	taskFields := schema.Task{}.Fields()
 	_ = taskFields
 	// taskDescPluginID is the schema descriptor for plugin_id field.
@@ -1094,24 +1127,56 @@ func init() {
 	usernotification.DefaultCreatedAt = usernotificationDescCreatedAt.Default.(func() time.Time)
 	usersubscriptionFields := schema.UserSubscription{}.Fields()
 	_ = usersubscriptionFields
+	// usersubscriptionDescCreditsLimit is the schema descriptor for credits_limit field.
+	usersubscriptionDescCreditsLimit := usersubscriptionFields[8].Descriptor()
+	// usersubscription.DefaultCreditsLimit holds the default value on creation for the credits_limit field.
+	usersubscription.DefaultCreditsLimit = usersubscriptionDescCreditsLimit.Default.(int64)
 	// usersubscriptionDescCreditsUsed is the schema descriptor for credits_used field.
-	usersubscriptionDescCreditsUsed := usersubscriptionFields[6].Descriptor()
+	usersubscriptionDescCreditsUsed := usersubscriptionFields[9].Descriptor()
 	// usersubscription.DefaultCreditsUsed holds the default value on creation for the credits_used field.
-	usersubscription.DefaultCreditsUsed = usersubscriptionDescCreditsUsed.Default.(float64)
+	usersubscription.DefaultCreditsUsed = usersubscriptionDescCreditsUsed.Default.(int64)
+	// usersubscriptionDescCreditsReserved is the schema descriptor for credits_reserved field.
+	usersubscriptionDescCreditsReserved := usersubscriptionFields[10].Descriptor()
+	// usersubscription.DefaultCreditsReserved holds the default value on creation for the credits_reserved field.
+	usersubscription.DefaultCreditsReserved = usersubscriptionDescCreditsReserved.Default.(int64)
 	// usersubscriptionDescExtraCredits is the schema descriptor for extra_credits field.
-	usersubscriptionDescExtraCredits := usersubscriptionFields[7].Descriptor()
+	usersubscriptionDescExtraCredits := usersubscriptionFields[11].Descriptor()
 	// usersubscription.DefaultExtraCredits holds the default value on creation for the extra_credits field.
-	usersubscription.DefaultExtraCredits = usersubscriptionDescExtraCredits.Default.(float64)
+	usersubscription.DefaultExtraCredits = usersubscriptionDescExtraCredits.Default.(int64)
 	// usersubscriptionDescImagesUsed is the schema descriptor for images_used field.
-	usersubscriptionDescImagesUsed := usersubscriptionFields[8].Descriptor()
+	usersubscriptionDescImagesUsed := usersubscriptionFields[12].Descriptor()
 	// usersubscription.DefaultImagesUsed holds the default value on creation for the images_used field.
 	usersubscription.DefaultImagesUsed = usersubscriptionDescImagesUsed.Default.(int)
+	// usersubscriptionDescImagesReserved is the schema descriptor for images_reserved field.
+	usersubscriptionDescImagesReserved := usersubscriptionFields[13].Descriptor()
+	// usersubscription.DefaultImagesReserved holds the default value on creation for the images_reserved field.
+	usersubscription.DefaultImagesReserved = usersubscriptionDescImagesReserved.Default.(int)
+	// usersubscriptionDescImageLimit is the schema descriptor for image_limit field.
+	usersubscriptionDescImageLimit := usersubscriptionFields[14].Descriptor()
+	// usersubscription.DefaultImageLimit holds the default value on creation for the image_limit field.
+	usersubscription.DefaultImageLimit = usersubscriptionDescImageLimit.Default.(int)
+	// usersubscriptionDescLedgerVersion is the schema descriptor for ledger_version field.
+	usersubscriptionDescLedgerVersion := usersubscriptionFields[15].Descriptor()
+	// usersubscription.DefaultLedgerVersion holds the default value on creation for the ledger_version field.
+	usersubscription.DefaultLedgerVersion = usersubscriptionDescLedgerVersion.Default.(int64)
+	// usersubscriptionDescSourceProvider is the schema descriptor for source_provider field.
+	usersubscriptionDescSourceProvider := usersubscriptionFields[17].Descriptor()
+	// usersubscription.DefaultSourceProvider holds the default value on creation for the source_provider field.
+	usersubscription.DefaultSourceProvider = usersubscriptionDescSourceProvider.Default.(string)
+	// usersubscriptionDescPaymentAmountMinor is the schema descriptor for payment_amount_minor field.
+	usersubscriptionDescPaymentAmountMinor := usersubscriptionFields[20].Descriptor()
+	// usersubscription.DefaultPaymentAmountMinor holds the default value on creation for the payment_amount_minor field.
+	usersubscription.DefaultPaymentAmountMinor = usersubscriptionDescPaymentAmountMinor.Default.(int64)
+	// usersubscriptionDescPaymentCurrency is the schema descriptor for payment_currency field.
+	usersubscriptionDescPaymentCurrency := usersubscriptionFields[21].Descriptor()
+	// usersubscription.DefaultPaymentCurrency holds the default value on creation for the payment_currency field.
+	usersubscription.DefaultPaymentCurrency = usersubscriptionDescPaymentCurrency.Default.(string)
 	// usersubscriptionDescCreatedAt is the schema descriptor for created_at field.
-	usersubscriptionDescCreatedAt := usersubscriptionFields[10].Descriptor()
+	usersubscriptionDescCreatedAt := usersubscriptionFields[22].Descriptor()
 	// usersubscription.DefaultCreatedAt holds the default value on creation for the created_at field.
 	usersubscription.DefaultCreatedAt = usersubscriptionDescCreatedAt.Default.(func() time.Time)
 	// usersubscriptionDescUpdatedAt is the schema descriptor for updated_at field.
-	usersubscriptionDescUpdatedAt := usersubscriptionFields[11].Descriptor()
+	usersubscriptionDescUpdatedAt := usersubscriptionFields[23].Descriptor()
 	// usersubscription.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	usersubscription.DefaultUpdatedAt = usersubscriptionDescUpdatedAt.Default.(func() time.Time)
 	// usersubscription.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

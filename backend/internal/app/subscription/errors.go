@@ -33,4 +33,8 @@ var (
 	ErrVideoNotIncluded = errors.New("当前套餐不包含视频生成")
 	// ErrImageLimitReached 本期生图张数已达上限。
 	ErrImageLimitReached = errors.New("本期生图张数已达套餐上限")
+	// ErrRequestCostUnbounded means a strict subscription reservation cannot be calculated.
+	ErrRequestCostUnbounded = errors.New("请求成本无法在发送前确定上限")
+	ErrReservationNotFound = errors.New("订阅预占不存在")
+	ErrInvalidPaymentGrant = errors.New("支付权益发放参数无效")
 )

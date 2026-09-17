@@ -204,6 +204,7 @@ const (
 	hostMethodUsersGet               = "users.get"
 	hostMethodBillingBudget          = "billing.budget"
 	hostMethodUsersUpdateBalance     = "users.update_balance"
+	hostMethodSubscriptionsGrant     = "subscriptions.grant"
 	hostMethodUsageRecord            = "usage.record"
 	hostMethodUsersNotifyTopup       = "users.notify_topup"
 	hostMethodAssetsStore            = "assets.store"
@@ -299,6 +300,15 @@ func (h *HostService) invoke(
 			req.IdempotencyKey = idempotencyKey
 		}
 		return h.updateUserBalance(ctx, pluginID, req)
+	case hostMethodSubscriptionsGrant:
+		var req hostGrantSubscriptionRequest
+		if err := decodeHostPayload(payload, &req); err != nil {
+			return nil, err
+		}
+		if idempotencyKey != "" && req.ExecutionKey == "" {
+			req.ExecutionKey = idempotencyKey
+		}
+		return h.grantSubscription(ctx, pluginID, req)
 	case hostMethodUsageRecord:
 		var req hostRecordUsageRequest
 		if err := decodeHostPayload(payload, &req); err != nil {
@@ -470,12 +480,13 @@ type hostForwardRequest struct {
 	// member 留着算本期剩余额度。
 	// submitterID 是**改写前**的原始调用账号：任务行的 user_id 记的是提交人本人，
 	// 在途预留必须按它统计，按企业主查一条都查不到。
-	memberID            int
-	departmentID        int
-	memberAllowedGroups []int64
-	member              *ent.Member
-	department          *ent.Department
-	submitterID         int
+	memberID                   int
+	departmentID               int
+	memberAllowedGroups        []int64
+	subscriptionReservationKey string
+	member                     *ent.Member
+	department                 *ent.Department
+	submitterID                int
 }
 
 // resolveHostForwardIdentity 把成员账号发起的 Host 转发映射到付费身份：
@@ -1163,6 +1174,9 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 	if err := h.resolveHostForwardIdentity(ctx, &req); err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(req.RequestID) == "" {
+		req.RequestID = uuid.NewString()
+	}
 	// 只读元信息路径（如视频价格预估 /v1/video/estimate）不打上游、不计费、不占预留，
 	// 对余额与预算门禁一律放行——与转发管线 Forwarder.checkBalance 的口径一致。
 	// 否则余额已经见底的用户连"这条要花多少钱"都问不出来，恰恰是最需要提示的人拿不到提示。
@@ -1202,7 +1216,29 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 	hasLastClientUpstream := false
 	var lastClientUpstreamScrubber *identityScrubber
 	failureSummary := allRoutesFailureSummary{}
+	activeReservationKey := ""
+	defer func() {
+		if activeReservationKey != "" && h.subscriptions != nil {
+			if err := h.subscriptions.Release(context.Background(), activeReservationKey); err != nil {
+				slog.Error("host_subscription_reservation_release_failed", "reservation_key", activeReservationKey, sdk.LogFieldError, err)
+			}
+		}
+	}()
 	for _, route := range routes {
+		if activeReservationKey != "" && h.subscriptions != nil {
+			if err := h.subscriptions.Release(ctx, activeReservationKey); err != nil {
+				return nil, hostInternalError("host_subscription_reservation_release_failed", err)
+			}
+			activeReservationKey = ""
+		}
+		if route.SubscriptionType == "subscription" {
+			key, err := h.reserveHostSubscriptionRoute(ctx, req, route.GroupID)
+			if err != nil {
+				return nil, err
+			}
+			activeReservationKey = key
+			req.subscriptionReservationKey = key
+		}
 		model := h.resolveHostModel(route.Platform, req.Model)
 		if model == "" {
 			slog.Warn("host_forward_no_model",
@@ -1413,6 +1449,18 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 		return nil, err
 	}
 	route := routes[0]
+	if route.SubscriptionType == "subscription" {
+		key, err := h.reserveHostSubscriptionRoute(ctx, req, route.GroupID)
+		if err != nil {
+			return nil, err
+		}
+		req.subscriptionReservationKey = key
+		defer func() {
+			if err := h.subscriptions.Release(context.Background(), key); err != nil {
+				slog.Error("host_subscription_reservation_release_failed", "reservation_key", key, sdk.LogFieldError, err)
+			}
+		}()
+	}
 	// 钉选路径同样要过预算门禁：视频插件的**首次提交本身就是钉选转发**
 	// （参考图素材绑在选中账号上，必须钉住），只有它带 estimated_official_cost；
 	// 后续的进度轮询/结算不带，checkSubmissionBudget 会直接 no-op 放行——
@@ -2225,6 +2273,7 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 		CacheCreation1hTokens:        usageValues.CacheCreation1hTokens,
 		ReasoningOutputTokens:        usageValues.ReasoningOutputTokens,
 		RequestID:                    req.RequestID,
+		SubscriptionReservationKey:   req.subscriptionReservationKey,
 		InputPrice:                   usageValues.InputPrice,
 		OutputPrice:                  usageValues.OutputPrice,
 		CachedInputPrice:             usageValues.CachedInputPrice,
@@ -2510,6 +2559,66 @@ type hostUpdateBalanceRequest struct {
 	// IdempotencyKey 必填。同一键的变更只入账一次（balance_logs 唯一索引保证），
 	// 支付回调等场景重试不会重复加扣款。建议格式 "<plugin>:<业务单号>"。
 	IdempotencyKey string `json:"idempotency_key"`
+}
+
+type hostGrantSubscriptionRequest struct {
+	UserID       int64  `json:"user_id"`
+	PlanGroupID  int64  `json:"plan_group_id"`
+	Cycle        string `json:"cycle"`
+	ExecutionKey string `json:"execution_key"`
+	PaymentKey   string `json:"payment_key"`
+	AmountMinor  int64  `json:"amount_minor"`
+	Currency     string `json:"currency"`
+	EffectiveAt  string `json:"effective_at"`
+	ExpiresAt    string `json:"expires_at"`
+}
+
+func (h *HostService) grantSubscription(ctx context.Context, pluginID string, req hostGrantSubscriptionRequest) (map[string]interface{}, error) {
+	if h.subscriptions == nil {
+		return nil, status.Error(codes.Unavailable, "subscription service unavailable")
+	}
+	parseTime := func(value string) (time.Time, error) {
+		if strings.TrimSpace(value) == "" {
+			return time.Time{}, nil
+		}
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err != nil {
+			return time.Time{}, status.Error(codes.InvalidArgument, "subscription dates must use RFC3339")
+		}
+		return parsed, nil
+	}
+	effectiveAt, err := parseTime(req.EffectiveAt)
+	if err != nil {
+		return nil, err
+	}
+	expiresAt, err := parseTime(req.ExpiresAt)
+	if err != nil {
+		return nil, err
+	}
+	sub, err := h.subscriptions.GrantExternal(ctx, appsubscription.ExternalGrantInput{
+		UserID: int(req.UserID), PlanGroupID: int(req.PlanGroupID), Cycle: req.Cycle,
+		Provider: pluginID, ExecutionKey: req.ExecutionKey, PaymentKey: req.PaymentKey,
+		AmountMinor: req.AmountMinor, Currency: strings.ToUpper(strings.TrimSpace(req.Currency)),
+		EffectiveAt: effectiveAt, ExpiresAt: expiresAt,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, appsubscription.ErrInvalidPaymentGrant), errors.Is(err, appsubscription.ErrInvalidBillingCycle):
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		case errors.Is(err, appsubscription.ErrPlanNotFound), errors.Is(err, appsubscription.ErrPlanNotPurchasable):
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		default:
+			return nil, hostInternalError("host_subscription_grant_failed", err, sdk.LogFieldUserID, req.UserID)
+		}
+	}
+	return map[string]interface{}{
+		"subscription_id": sub.ID,
+		"status":          sub.Status,
+		"effective_at":    sub.EffectiveAt.Format(time.RFC3339),
+		"expires_at":      sub.ExpiresAt.Format(time.RFC3339),
+		"period_start":    sub.PeriodStart.Format(time.RFC3339),
+		"period_end":      sub.PeriodEnd.Format(time.RFC3339),
+	}, nil
 }
 
 // updateUserBalance 调整用户余额并写 balance_logs 流水。

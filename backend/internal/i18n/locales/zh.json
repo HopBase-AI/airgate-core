@@ -96,5 +96,13 @@
   "export.summary_failed_free": "其中 %d 条请求未成功，均未计费",
   "export.summary_failed_mixed": "其中 %d 条请求未成功且未计费，另 %d 条中途中断按已产生用量计费",
   "export.summary_truncated": "记录过多，本文件仅含最近 %d 条，金额不代表该区间全部消耗",
-  "export.summary_separator": "；"
+  "export.summary_separator": "；",
+  "gw.subscription_required": "该分组需要有效订阅",
+  "gw.subscription_expired": "订阅已到期，请续费后继续使用",
+  "gw.subscription_suspended": "订阅已暂停",
+  "gw.subscription_quota_exceeded": "本期点数已用完，可加购或等待下期重置",
+  "gw.subscription_video_not_included": "当前套餐不包含视频生成",
+  "gw.subscription_image_limit_reached": "本期生图张数已达套餐上限",
+  "gw.subscription_request_too_large": "单条消息超出套餐单次点数上限，请缩短内容或升级套餐",
+  "gw.subscription_service_unavailable": "订阅权益服务暂时不可用，请稍后重试"
 }

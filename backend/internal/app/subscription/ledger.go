@@ -43,13 +43,17 @@ func PeriodContaining(anchor, now time.Time) (time.Time, time.Time) {
 	return start, end
 }
 
-// remainingCredits 剩余点数 = 月额度 + 加购 − 已用（可为负：最后一笔允许透支，与余额语义一致）。
-func remainingCredits(q billing.PlanQuotas, sub Subscription) float64 {
-	return q.MonthlyCredits + sub.ExtraCredits - sub.CreditsUsed
+// remainingCredits 剩余可预占点数 = 月额度 + 加购 − 已用 − 已预占。
+func remainingCredits(q billing.PlanQuotas, sub Subscription) int64 {
+	limit := q.MonthlyCredits
+	if sub.CreditsLimit > 0 {
+		limit = sub.CreditsLimit
+	}
+	return limit + sub.ExtraCredits - sub.CreditsUsed - sub.CreditsReserved
 }
 
 // carryOverExtra 期满结转：本期超出月额度的消耗先吃加购包，剩余加购点数带入下期。
-func carryOverExtra(q billing.PlanQuotas, sub Subscription) float64 {
+func carryOverExtra(q billing.PlanQuotas, sub Subscription) int64 {
 	extra := sub.ExtraCredits
 	if q.MonthlyCredits > 0 && sub.CreditsUsed > q.MonthlyCredits {
 		extra -= sub.CreditsUsed - q.MonthlyCredits

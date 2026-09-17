@@ -2,6 +2,7 @@ package billing
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 )
 
@@ -34,7 +35,7 @@ func TestParsePlanQuotasDefaultsAndTypes(t *testing.T) {
 	if !q.Purchasable() || !q.TopupAvailable() || q.Unlimited() {
 		t.Fatalf("可购/可加购判定错误: %+v", q)
 	}
-	if got := q.Credits(0.87); got < 9999.7 || got > 10000.3 {
+	if got := q.Credits(0.87); got != 10000 {
 		t.Fatalf("¥0.87 应≈10000 点，得到 %v", got)
 	}
 	if q.Credits(-1) != 0 || q.Credits(0) != 0 {
@@ -42,7 +43,7 @@ func TestParsePlanQuotasDefaultsAndTypes(t *testing.T) {
 	}
 
 	back := ParsePlanQuotas(q.ToMap())
-	if back != q {
+	if !reflect.DeepEqual(back, q) {
 		t.Fatalf("ToMap 往返不一致: %+v vs %+v", back, q)
 	}
 }

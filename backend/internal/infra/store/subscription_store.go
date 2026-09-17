@@ -2,14 +2,19 @@ package store
 
 import (
 	"context"
+	"fmt"
+	"reflect"
+	"slices"
 	"time"
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	entbalancelog "github.com/DouDOU-start/airgate-core/ent/balancelog"
 	entgroup "github.com/DouDOU-start/airgate-core/ent/group"
+	entsubscriptionreservation "github.com/DouDOU-start/airgate-core/ent/subscriptionreservation"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
 	entusersubscription "github.com/DouDOU-start/airgate-core/ent/usersubscription"
 	appsubscription "github.com/DouDOU-start/airgate-core/internal/app/subscription"
+	"github.com/DouDOU-start/airgate-core/internal/billing"
 )
 
 // SubscriptionStore 使用 Ent 实现订阅仓储。
@@ -106,7 +111,13 @@ func (s *SubscriptionStore) Create(ctx context.Context, input appsubscription.Cr
 		SetGroupID(input.GroupID).
 		SetEffectiveAt(input.EffectiveAt).
 		SetExpiresAt(input.ExpiresAt).
+		SetPeriodStart(input.PeriodStart).
+		SetPeriodEnd(input.PeriodEnd).
 		SetStatus(entusersubscription.Status(input.Status)).
+		SetPlanSnapshot(input.PlanSnapshot).
+		SetIncludedGroupIds(input.IncludedGroupIDs).
+		SetCreditsLimit(input.CreditsLimit).
+		SetImageLimit(input.ImageLimit).
 		Save(ctx)
 	if err != nil {
 		return appsubscription.Subscription{}, err
@@ -124,7 +135,13 @@ func (s *SubscriptionStore) BulkCreate(ctx context.Context, input appsubscriptio
 			SetGroupID(input.GroupID).
 			SetEffectiveAt(input.EffectiveAt).
 			SetExpiresAt(input.ExpiresAt).
-			SetStatus(entusersubscription.Status(input.Status))
+			SetPeriodStart(input.PeriodStart).
+			SetPeriodEnd(input.PeriodEnd).
+			SetStatus(entusersubscription.Status(input.Status)).
+			SetPlanSnapshot(input.PlanSnapshot).
+			SetIncludedGroupIds(input.IncludedGroupIDs).
+			SetCreditsLimit(input.CreditsLimit).
+			SetImageLimit(input.ImageLimit)
 		builders = append(builders, builder)
 	}
 
@@ -164,24 +181,25 @@ func (s *SubscriptionStore) FindByID(ctx context.Context, id int) (appsubscripti
 // FindActiveByUserGroup 查询用户在分组下最新一条未失效（active / suspended）的订阅：
 // 暂停中的订阅也要能被找到，准入才能报「已暂停」而不是「需要订阅」。
 func (s *SubscriptionStore) FindActiveByUserGroup(ctx context.Context, userID, groupID int) (appsubscription.Subscription, error) {
-	item, err := s.db.UserSubscription.Query().
+	items, err := s.db.UserSubscription.Query().
 		Where(
 			entusersubscription.HasUserWith(entuser.IDEQ(userID)),
-			entusersubscription.HasGroupWith(entgroup.IDEQ(groupID)),
 			entusersubscription.StatusNEQ(entusersubscription.StatusExpired),
 		).
 		WithGroup().
 		Order(ent.Desc(entusersubscription.FieldCreatedAt), ent.Desc(entusersubscription.FieldID)).
-		First(ctx)
+		All(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
-			return appsubscription.Subscription{}, appsubscription.ErrSubscriptionNotFound
-		}
 		return appsubscription.Subscription{}, err
 	}
-	result := mapSubscription(item)
-	result.UserID = userID
-	return result, nil
+	for _, item := range items {
+		if subscriptionIncludesGroup(item, groupID) {
+			result := mapSubscription(item)
+			result.UserID = userID
+			return result, nil
+		}
+	}
+	return appsubscription.Subscription{}, appsubscription.ErrSubscriptionNotFound
 }
 
 // FindPlan 把订阅制分组投影为套餐。
@@ -231,8 +249,11 @@ func (s *SubscriptionStore) ApplyRollover(ctx context.Context, id int, expectPer
 		SetPeriodStart(input.PeriodStart).
 		SetPeriodEnd(input.PeriodEnd).
 		SetCreditsUsed(0).
+		SetCreditsReserved(0).
 		SetImagesUsed(0).
+		SetImagesReserved(0).
 		SetExtraCredits(input.ExtraCredits).
+		AddLedgerVersion(1).
 		Save(ctx)
 	if err != nil {
 		return false, err
@@ -323,6 +344,302 @@ func (s *SubscriptionStore) Topup(ctx context.Context, input appsubscription.Top
 	return s.findOneWithEdges(ctx, input.SubscriptionID)
 }
 
+// Reserve atomically reserves a bounded request in the subscription's current period.
+func (s *SubscriptionStore) Reserve(ctx context.Context, input appsubscription.ReserveInput) (appsubscription.Reservation, error) {
+	tx, err := s.db.Tx(ctx)
+	if err != nil {
+		return appsubscription.Reservation{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if existing, queryErr := tx.SubscriptionReservation.Query().
+		Where(entsubscriptionreservation.ReservationKeyEQ(input.Key)).
+		WithSubscription().Only(ctx); queryErr == nil {
+		if existing.UserIDSnapshot != input.UserID || existing.GroupIDSnapshot != input.GroupID {
+			return appsubscription.Reservation{}, appsubscription.ErrRequestCostUnbounded
+		}
+		return mapReservation(existing), nil
+	} else if !ent.IsNotFound(queryErr) {
+		return appsubscription.Reservation{}, queryErr
+	}
+
+	items, err := tx.UserSubscription.Query().
+		Where(
+			entusersubscription.HasUserWith(entuser.IDEQ(input.UserID)),
+			entusersubscription.StatusNEQ(entusersubscription.StatusExpired),
+		).
+		WithGroup().
+		Order(ent.Desc(entusersubscription.FieldCreatedAt), ent.Desc(entusersubscription.FieldID)).
+		All(ctx)
+	if err != nil {
+		return appsubscription.Reservation{}, err
+	}
+	var row *ent.UserSubscription
+	for _, candidate := range items {
+		if subscriptionIncludesGroup(candidate, input.GroupID) {
+			row = candidate
+			break
+		}
+	}
+	if row == nil {
+		return appsubscription.Reservation{}, appsubscription.ErrSubscriptionRequired
+	}
+	if row.Status == entusersubscription.StatusSuspended {
+		return appsubscription.Reservation{}, appsubscription.ErrSubscriptionSuspended
+	}
+	if !row.ExpiresAt.After(input.Now) {
+		return appsubscription.Reservation{}, appsubscription.ErrSubscriptionExpired
+	}
+
+	quotas := subscriptionQuotas(row)
+	if input.Kind == billing.RequestKindVideo && !quotas.VideoEnabled {
+		return appsubscription.Reservation{}, appsubscription.ErrVideoNotIncluded
+	}
+	if quotas.PerRequestCredits <= 0 || input.Credits > quotas.PerRequestCredits {
+		return appsubscription.Reservation{}, appsubscription.ErrRequestCostUnbounded
+	}
+
+	periodStart, periodEnd := row.PeriodStart, row.PeriodEnd
+	if periodEnd.IsZero() || !input.Now.Before(periodEnd) {
+		periodStart, periodEnd = appsubscription.PeriodContaining(row.EffectiveAt, input.Now)
+		carry := carryOverExtraStore(quotas.MonthlyCredits, row.CreditsUsed, row.ExtraCredits)
+		row, err = tx.UserSubscription.UpdateOneID(row.ID).
+			SetPeriodStart(periodStart).SetPeriodEnd(periodEnd).
+			SetCreditsLimit(quotas.MonthlyCredits).SetImageLimit(quotas.ImageMonthlyLimit).
+			SetCreditsUsed(0).SetCreditsReserved(0).SetImagesUsed(0).SetImagesReserved(0).
+			SetExtraCredits(carry).AddLedgerVersion(1).Save(ctx)
+		if err != nil {
+			return appsubscription.Reservation{}, err
+		}
+	}
+	row, err = releaseExpiredReservations(ctx, tx, row, input.Now)
+	if err != nil {
+		return appsubscription.Reservation{}, err
+	}
+	creditsLimit := row.CreditsLimit
+	if creditsLimit <= 0 {
+		creditsLimit = quotas.MonthlyCredits
+	}
+	if creditsLimit <= 0 || row.CreditsUsed+row.CreditsReserved+input.Credits > creditsLimit+row.ExtraCredits {
+		return appsubscription.Reservation{}, appsubscription.ErrCreditsExhausted
+	}
+	imageLimit := row.ImageLimit
+	if imageLimit <= 0 {
+		imageLimit = quotas.ImageMonthlyLimit
+	}
+	if input.Images > 0 && imageLimit > 0 && row.ImagesUsed+row.ImagesReserved+input.Images > imageLimit {
+		return appsubscription.Reservation{}, appsubscription.ErrImageLimitReached
+	}
+
+	updated, err := tx.UserSubscription.Update().
+		Where(entusersubscription.IDEQ(row.ID), entusersubscription.LedgerVersionEQ(row.LedgerVersion)).
+		SetCreditsReserved(row.CreditsReserved + input.Credits).
+		SetImagesReserved(row.ImagesReserved + input.Images).
+		AddLedgerVersion(1).Save(ctx)
+	if err != nil {
+		return appsubscription.Reservation{}, err
+	}
+	if updated != 1 {
+		return appsubscription.Reservation{}, fmt.Errorf("subscription ledger changed concurrently")
+	}
+	created, err := tx.SubscriptionReservation.Create().
+		SetReservationKey(input.Key).
+		SetUserIDSnapshot(input.UserID).
+		SetGroupIDSnapshot(input.GroupID).
+		SetPeriodStart(periodStart).
+		SetPeriodEnd(periodEnd).
+		SetCreditsReserved(input.Credits).
+		SetImagesReserved(input.Images).
+		SetExpiresAt(input.ExpiresAt).
+		SetSubscriptionID(row.ID).
+		Save(ctx)
+	if err != nil {
+		return appsubscription.Reservation{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return appsubscription.Reservation{}, err
+	}
+	created.Edges.Subscription = row
+	return mapReservation(created), nil
+}
+
+func releaseExpiredReservations(ctx context.Context, tx *ent.Tx, row *ent.UserSubscription, now time.Time) (*ent.UserSubscription, error) {
+	expired, err := tx.SubscriptionReservation.Query().
+		Where(
+			entsubscriptionreservation.StatusEQ(entsubscriptionreservation.StatusReserved),
+			entsubscriptionreservation.ExpiresAtLTE(now),
+			entsubscriptionreservation.HasSubscriptionWith(entusersubscription.IDEQ(row.ID)),
+		).
+		All(ctx)
+	if err != nil || len(expired) == 0 {
+		return row, err
+	}
+	ids := make([]int, 0, len(expired))
+	var credits int64
+	var images int
+	for _, reservation := range expired {
+		ids = append(ids, reservation.ID)
+		if reservation.PeriodStart.Equal(row.PeriodStart) && reservation.PeriodEnd.Equal(row.PeriodEnd) {
+			credits += reservation.CreditsReserved
+			images += reservation.ImagesReserved
+		}
+	}
+	n, err := tx.SubscriptionReservation.Update().
+		Where(
+			entsubscriptionreservation.IDIn(ids...),
+			entsubscriptionreservation.StatusEQ(entsubscriptionreservation.StatusReserved),
+		).
+		SetStatus(entsubscriptionreservation.StatusReleased).
+		Save(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if n != len(ids) {
+		return nil, fmt.Errorf("subscription reservations changed concurrently")
+	}
+	if credits == 0 && images == 0 {
+		return row, nil
+	}
+	credits = min(credits, row.CreditsReserved)
+	images = min(images, row.ImagesReserved)
+	updated, err := tx.UserSubscription.Update().
+		Where(entusersubscription.IDEQ(row.ID), entusersubscription.LedgerVersionEQ(row.LedgerVersion)).
+		SetCreditsReserved(row.CreditsReserved - credits).
+		SetImagesReserved(row.ImagesReserved - images).
+		AddLedgerVersion(1).
+		Save(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if updated != 1 {
+		return nil, fmt.Errorf("subscription ledger changed concurrently")
+	}
+	row.CreditsReserved -= credits
+	row.ImagesReserved -= images
+	row.LedgerVersion++
+	return row, nil
+}
+
+// Release idempotently returns a reservation to the same monthly window.
+func (s *SubscriptionStore) Release(ctx context.Context, key string) error {
+	tx, err := s.db.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	reservation, err := tx.SubscriptionReservation.Query().
+		Where(entsubscriptionreservation.ReservationKeyEQ(key)).WithSubscription().Only(ctx)
+	if ent.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if reservation.Status != entsubscriptionreservation.StatusReserved {
+		return nil
+	}
+	n, err := tx.SubscriptionReservation.Update().
+		Where(entsubscriptionreservation.IDEQ(reservation.ID), entsubscriptionreservation.StatusEQ(entsubscriptionreservation.StatusReserved)).
+		SetStatus(entsubscriptionreservation.StatusReleased).Save(ctx)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return nil
+	}
+	sub := reservation.Edges.Subscription
+	if sub != nil && sub.PeriodStart.Equal(reservation.PeriodStart) && sub.PeriodEnd.Equal(reservation.PeriodEnd) {
+		if err := tx.UserSubscription.UpdateOneID(sub.ID).
+			AddCreditsReserved(-reservation.CreditsReserved).
+			AddImagesReserved(-reservation.ImagesReserved).
+			AddLedgerVersion(1).Exec(ctx); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// GrantExternal persists a provider-verified entitlement with immutable plan rights.
+func (s *SubscriptionStore) GrantExternal(ctx context.Context, input appsubscription.ExternalGrantInput) (appsubscription.Subscription, error) {
+	tx, err := s.db.Tx(ctx)
+	if err != nil {
+		return appsubscription.Subscription{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	existing, err := tx.UserSubscription.Query().Where(
+		entusersubscription.SourceProviderEQ(input.Provider),
+		entusersubscription.Or(
+			entusersubscription.SourceExecutionKeyEQ(input.ExecutionKey),
+			entusersubscription.SourcePaymentKeyEQ(input.PaymentKey),
+		),
+	).WithUser().WithGroup().Only(ctx)
+	if err == nil {
+		if !externalGrantMatches(existing, input) {
+			return appsubscription.Subscription{}, appsubscription.ErrInvalidPaymentGrant
+		}
+		if err := tx.Commit(); err != nil {
+			return appsubscription.Subscription{}, err
+		}
+		return s.FindByID(ctx, existing.ID)
+	}
+	if !ent.IsNotFound(err) {
+		return appsubscription.Subscription{}, err
+	}
+	quotas := billing.ParsePlanQuotas(input.PlanSnapshot)
+	periodStart, periodEnd := appsubscription.PeriodContaining(input.EffectiveAt, input.EffectiveAt)
+	created, err := tx.UserSubscription.Create().
+		SetUserID(input.UserID).SetGroupID(input.PlanGroupID).
+		SetEffectiveAt(input.EffectiveAt).SetExpiresAt(input.ExpiresAt).
+		SetPeriodStart(periodStart).SetPeriodEnd(periodEnd).
+		SetBillingCycle(entusersubscription.BillingCycle(input.Cycle)).
+		SetPlanSnapshot(input.PlanSnapshot).SetIncludedGroupIds(input.IncludedGroupIDs).
+		SetCreditsLimit(quotas.MonthlyCredits).SetImageLimit(quotas.ImageMonthlyLimit).
+		SetSourceProvider(input.Provider).SetSourceExecutionKey(input.ExecutionKey).SetSourcePaymentKey(input.PaymentKey).
+		SetPaymentAmountMinor(input.AmountMinor).SetPaymentCurrency(input.Currency).
+		SetStatus(entusersubscription.StatusActive).Save(ctx)
+	if err != nil {
+		if ent.IsConstraintError(err) {
+			_ = tx.Rollback()
+			existing, queryErr := s.db.UserSubscription.Query().Where(
+				entusersubscription.SourceProviderEQ(input.Provider),
+				entusersubscription.Or(
+					entusersubscription.SourceExecutionKeyEQ(input.ExecutionKey),
+					entusersubscription.SourcePaymentKeyEQ(input.PaymentKey),
+				),
+			).WithUser().WithGroup().Only(ctx)
+			if queryErr == nil && externalGrantMatches(existing, input) {
+				return s.FindByID(ctx, existing.ID)
+			}
+			if queryErr == nil {
+				return appsubscription.Subscription{}, appsubscription.ErrInvalidPaymentGrant
+			}
+		}
+		return appsubscription.Subscription{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return appsubscription.Subscription{}, err
+	}
+	return s.FindByID(ctx, created.ID)
+}
+
+func externalGrantMatches(row *ent.UserSubscription, input appsubscription.ExternalGrantInput) bool {
+	if row == nil || row.Edges.User == nil || row.Edges.Group == nil || row.SourceExecutionKey == nil || row.SourcePaymentKey == nil {
+		return false
+	}
+	return row.Edges.User.ID == input.UserID &&
+		row.Edges.Group.ID == input.PlanGroupID &&
+		string(row.BillingCycle) == input.Cycle &&
+		row.SourceProvider == input.Provider &&
+		*row.SourceExecutionKey == input.ExecutionKey &&
+		*row.SourcePaymentKey == input.PaymentKey &&
+		row.PaymentAmountMinor == input.AmountMinor &&
+		row.PaymentCurrency == input.Currency &&
+		row.EffectiveAt.Equal(input.EffectiveAt) &&
+		row.ExpiresAt.Equal(input.ExpiresAt) &&
+		reflect.DeepEqual(billing.ParsePlanQuotas(row.PlanSnapshot), billing.ParsePlanQuotas(input.PlanSnapshot)) &&
+		slices.Equal(row.IncludedGroupIds, input.IncludedGroupIDs)
+}
+
 // debitBalanceTx 在事务内条件扣减余额并写 balance_logs。余额不足返回 ErrInsufficientBalance。
 // before/after 取自扣减前读到的快照：条件更新已保证不会透支，并发下流水数值允许微小偏差
 // （与 app/user.AdjustBalance 的读-改-写口径一致）。
@@ -381,19 +698,35 @@ func mapSubscriptions(items []*ent.UserSubscription) []appsubscription.Subscript
 
 func mapSubscription(item *ent.UserSubscription) appsubscription.Subscription {
 	result := appsubscription.Subscription{
-		ID:           item.ID,
-		EffectiveAt:  item.EffectiveAt,
-		ExpiresAt:    item.ExpiresAt,
-		Usage:        mapSubscriptionUsage(item.Usage),
-		Status:       string(item.Status),
-		CreatedAt:    item.CreatedAt,
-		UpdatedAt:    item.UpdatedAt,
-		PeriodStart:  item.PeriodStart,
-		PeriodEnd:    item.PeriodEnd,
-		CreditsUsed:  item.CreditsUsed,
-		ExtraCredits: item.ExtraCredits,
-		ImagesUsed:   item.ImagesUsed,
-		BillingCycle: string(item.BillingCycle),
+		ID:                 item.ID,
+		EffectiveAt:        item.EffectiveAt,
+		ExpiresAt:          item.ExpiresAt,
+		Usage:              mapSubscriptionUsage(item.Usage),
+		Status:             string(item.Status),
+		CreatedAt:          item.CreatedAt,
+		UpdatedAt:          item.UpdatedAt,
+		PeriodStart:        item.PeriodStart,
+		PeriodEnd:          item.PeriodEnd,
+		PlanSnapshot:       mapSubscriptionUsage(item.PlanSnapshot),
+		IncludedGroupIDs:   append([]int(nil), item.IncludedGroupIds...),
+		CreditsLimit:       item.CreditsLimit,
+		CreditsUsed:        item.CreditsUsed,
+		CreditsReserved:    item.CreditsReserved,
+		ExtraCredits:       item.ExtraCredits,
+		ImagesUsed:         item.ImagesUsed,
+		ImagesReserved:     item.ImagesReserved,
+		ImageLimit:         item.ImageLimit,
+		LedgerVersion:      item.LedgerVersion,
+		BillingCycle:       string(item.BillingCycle),
+		SourceProvider:     item.SourceProvider,
+		PaymentAmountMinor: item.PaymentAmountMinor,
+		PaymentCurrency:    item.PaymentCurrency,
+	}
+	if item.SourceExecutionKey != nil {
+		result.SourceExecutionKey = *item.SourceExecutionKey
+	}
+	if item.SourcePaymentKey != nil {
+		result.SourcePaymentKey = *item.SourcePaymentKey
 	}
 
 	if edgeUser := item.Edges.User; edgeUser != nil {
@@ -402,9 +735,67 @@ func mapSubscription(item *ent.UserSubscription) appsubscription.Subscription {
 	if edgeGroup := item.Edges.Group; edgeGroup != nil {
 		result.GroupID = edgeGroup.ID
 		result.GroupName = edgeGroup.Name
-		result.GroupQuotas = mapSubscriptionUsage(edgeGroup.Quotas)
+		if len(result.PlanSnapshot) > 0 {
+			result.GroupQuotas = mapSubscriptionUsage(result.PlanSnapshot)
+		} else {
+			result.GroupQuotas = mapSubscriptionUsage(edgeGroup.Quotas)
+		}
 	}
 
+	return result
+}
+
+func subscriptionIncludesGroup(row *ent.UserSubscription, groupID int) bool {
+	if row == nil {
+		return false
+	}
+	for _, id := range row.IncludedGroupIds {
+		if id == groupID {
+			return true
+		}
+	}
+	if len(row.IncludedGroupIds) == 0 {
+		for _, id := range subscriptionQuotas(row).IncludedGroupIDs {
+			if id == groupID {
+				return true
+			}
+		}
+	}
+	return row.Edges.Group != nil && row.Edges.Group.ID == groupID
+}
+
+func subscriptionQuotas(row *ent.UserSubscription) billing.PlanQuotas {
+	if len(row.PlanSnapshot) > 0 {
+		return billing.ParsePlanQuotas(row.PlanSnapshot)
+	}
+	if row.Edges.Group != nil {
+		return billing.ParsePlanQuotas(row.Edges.Group.Quotas)
+	}
+	return billing.PlanQuotas{}
+}
+
+func carryOverExtraStore(limit, used, extra int64) int64 {
+	if limit > 0 && used > limit {
+		extra -= used - limit
+	}
+	if extra < 0 {
+		return 0
+	}
+	return extra
+}
+
+func mapReservation(item *ent.SubscriptionReservation) appsubscription.Reservation {
+	result := appsubscription.Reservation{
+		Key:             item.ReservationKey,
+		PeriodStart:     item.PeriodStart,
+		PeriodEnd:       item.PeriodEnd,
+		CreditsReserved: item.CreditsReserved,
+		ImagesReserved:  item.ImagesReserved,
+		Status:          string(item.Status),
+	}
+	if item.Edges.Subscription != nil {
+		result.SubscriptionID = item.Edges.Subscription.ID
+	}
 	return result
 }
 

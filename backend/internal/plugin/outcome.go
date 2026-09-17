@@ -362,7 +362,9 @@ func (f *Forwarder) recordUsageWithFailureOverride(c *gin.Context, state *forwar
 		failure = failureFromOutcome(execution)
 	}
 
-	f.recorder.Record(billing.UsageRecord{
+	record := billing.UsageRecord{
+		RequestID:                    state.subscriptionReservationKey,
+		SubscriptionReservationKey:   state.subscriptionReservationKey,
 		UserID:                       state.keyInfo.UserID,
 		UserEmail:                    state.keyInfo.UserEmail,
 		APIKeyID:                     state.keyInfo.KeyID,
@@ -414,7 +416,18 @@ func (f *Forwarder) recordUsageWithFailureOverride(c *gin.Context, state *forwar
 		ErrorCode:                    failure.code,
 		ErrorStatus:                  failure.status,
 		ErrorMessage:                 sanitizeFailureMessage(failure.message),
-	})
+	}
+	if state.subscriptionReservationKey != "" {
+		if _, err := f.recorder.RecordSync(ctx, record); err != nil {
+			sdk.LoggerFromContext(ctx).Error("subscription_usage_settlement_failed",
+				"reservation_key", state.subscriptionReservationKey,
+				sdk.LogFieldError, err)
+		} else {
+			state.subscriptionReservationSettled = true
+		}
+	} else {
+		f.recorder.Record(record)
+	}
 
 	if state.stream {
 		f.logTTFTBreakdown(ctx, c, state, usage, actualModel)

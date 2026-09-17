@@ -119,6 +119,13 @@ func (f *Forwarder) Forward(c *gin.Context) {
 	if !f.checkBalance(c, state) {
 		return
 	}
+	defer func() {
+		if state.subscriptionReservationKey != "" && !state.subscriptionReservationSettled && f.subscriptions != nil {
+			if err := f.subscriptions.Release(context.Background(), state.subscriptionReservationKey); err != nil {
+				sdk.LoggerFromContext(c.Request.Context()).Error("subscription_reservation_release_failed", sdk.LogFieldError, err)
+			}
+		}
+	}()
 
 	// 请求级 logger：继承 middleware 注入的 request_id / user_id / group_id 等字段，
 	// 再叠加 model / platform 让所有 forward 阶段日志自带上下文。

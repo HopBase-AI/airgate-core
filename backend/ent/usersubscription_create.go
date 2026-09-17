@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/DouDOU-start/airgate-core/ent/group"
+	"github.com/DouDOU-start/airgate-core/ent/subscriptionreservation"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 	"github.com/DouDOU-start/airgate-core/ent/usersubscription"
 )
@@ -82,30 +83,70 @@ func (usc *UserSubscriptionCreate) SetNillablePeriodEnd(t *time.Time) *UserSubsc
 	return usc
 }
 
+// SetPlanSnapshot sets the "plan_snapshot" field.
+func (usc *UserSubscriptionCreate) SetPlanSnapshot(m map[string]interface{}) *UserSubscriptionCreate {
+	usc.mutation.SetPlanSnapshot(m)
+	return usc
+}
+
+// SetIncludedGroupIds sets the "included_group_ids" field.
+func (usc *UserSubscriptionCreate) SetIncludedGroupIds(i []int) *UserSubscriptionCreate {
+	usc.mutation.SetIncludedGroupIds(i)
+	return usc
+}
+
+// SetCreditsLimit sets the "credits_limit" field.
+func (usc *UserSubscriptionCreate) SetCreditsLimit(i int64) *UserSubscriptionCreate {
+	usc.mutation.SetCreditsLimit(i)
+	return usc
+}
+
+// SetNillableCreditsLimit sets the "credits_limit" field if the given value is not nil.
+func (usc *UserSubscriptionCreate) SetNillableCreditsLimit(i *int64) *UserSubscriptionCreate {
+	if i != nil {
+		usc.SetCreditsLimit(*i)
+	}
+	return usc
+}
+
 // SetCreditsUsed sets the "credits_used" field.
-func (usc *UserSubscriptionCreate) SetCreditsUsed(f float64) *UserSubscriptionCreate {
-	usc.mutation.SetCreditsUsed(f)
+func (usc *UserSubscriptionCreate) SetCreditsUsed(i int64) *UserSubscriptionCreate {
+	usc.mutation.SetCreditsUsed(i)
 	return usc
 }
 
 // SetNillableCreditsUsed sets the "credits_used" field if the given value is not nil.
-func (usc *UserSubscriptionCreate) SetNillableCreditsUsed(f *float64) *UserSubscriptionCreate {
-	if f != nil {
-		usc.SetCreditsUsed(*f)
+func (usc *UserSubscriptionCreate) SetNillableCreditsUsed(i *int64) *UserSubscriptionCreate {
+	if i != nil {
+		usc.SetCreditsUsed(*i)
+	}
+	return usc
+}
+
+// SetCreditsReserved sets the "credits_reserved" field.
+func (usc *UserSubscriptionCreate) SetCreditsReserved(i int64) *UserSubscriptionCreate {
+	usc.mutation.SetCreditsReserved(i)
+	return usc
+}
+
+// SetNillableCreditsReserved sets the "credits_reserved" field if the given value is not nil.
+func (usc *UserSubscriptionCreate) SetNillableCreditsReserved(i *int64) *UserSubscriptionCreate {
+	if i != nil {
+		usc.SetCreditsReserved(*i)
 	}
 	return usc
 }
 
 // SetExtraCredits sets the "extra_credits" field.
-func (usc *UserSubscriptionCreate) SetExtraCredits(f float64) *UserSubscriptionCreate {
-	usc.mutation.SetExtraCredits(f)
+func (usc *UserSubscriptionCreate) SetExtraCredits(i int64) *UserSubscriptionCreate {
+	usc.mutation.SetExtraCredits(i)
 	return usc
 }
 
 // SetNillableExtraCredits sets the "extra_credits" field if the given value is not nil.
-func (usc *UserSubscriptionCreate) SetNillableExtraCredits(f *float64) *UserSubscriptionCreate {
-	if f != nil {
-		usc.SetExtraCredits(*f)
+func (usc *UserSubscriptionCreate) SetNillableExtraCredits(i *int64) *UserSubscriptionCreate {
+	if i != nil {
+		usc.SetExtraCredits(*i)
 	}
 	return usc
 }
@@ -124,6 +165,48 @@ func (usc *UserSubscriptionCreate) SetNillableImagesUsed(i *int) *UserSubscripti
 	return usc
 }
 
+// SetImagesReserved sets the "images_reserved" field.
+func (usc *UserSubscriptionCreate) SetImagesReserved(i int) *UserSubscriptionCreate {
+	usc.mutation.SetImagesReserved(i)
+	return usc
+}
+
+// SetNillableImagesReserved sets the "images_reserved" field if the given value is not nil.
+func (usc *UserSubscriptionCreate) SetNillableImagesReserved(i *int) *UserSubscriptionCreate {
+	if i != nil {
+		usc.SetImagesReserved(*i)
+	}
+	return usc
+}
+
+// SetImageLimit sets the "image_limit" field.
+func (usc *UserSubscriptionCreate) SetImageLimit(i int) *UserSubscriptionCreate {
+	usc.mutation.SetImageLimit(i)
+	return usc
+}
+
+// SetNillableImageLimit sets the "image_limit" field if the given value is not nil.
+func (usc *UserSubscriptionCreate) SetNillableImageLimit(i *int) *UserSubscriptionCreate {
+	if i != nil {
+		usc.SetImageLimit(*i)
+	}
+	return usc
+}
+
+// SetLedgerVersion sets the "ledger_version" field.
+func (usc *UserSubscriptionCreate) SetLedgerVersion(i int64) *UserSubscriptionCreate {
+	usc.mutation.SetLedgerVersion(i)
+	return usc
+}
+
+// SetNillableLedgerVersion sets the "ledger_version" field if the given value is not nil.
+func (usc *UserSubscriptionCreate) SetNillableLedgerVersion(i *int64) *UserSubscriptionCreate {
+	if i != nil {
+		usc.SetLedgerVersion(*i)
+	}
+	return usc
+}
+
 // SetBillingCycle sets the "billing_cycle" field.
 func (usc *UserSubscriptionCreate) SetBillingCycle(uc usersubscription.BillingCycle) *UserSubscriptionCreate {
 	usc.mutation.SetBillingCycle(uc)
@@ -134,6 +217,76 @@ func (usc *UserSubscriptionCreate) SetBillingCycle(uc usersubscription.BillingCy
 func (usc *UserSubscriptionCreate) SetNillableBillingCycle(uc *usersubscription.BillingCycle) *UserSubscriptionCreate {
 	if uc != nil {
 		usc.SetBillingCycle(*uc)
+	}
+	return usc
+}
+
+// SetSourceProvider sets the "source_provider" field.
+func (usc *UserSubscriptionCreate) SetSourceProvider(s string) *UserSubscriptionCreate {
+	usc.mutation.SetSourceProvider(s)
+	return usc
+}
+
+// SetNillableSourceProvider sets the "source_provider" field if the given value is not nil.
+func (usc *UserSubscriptionCreate) SetNillableSourceProvider(s *string) *UserSubscriptionCreate {
+	if s != nil {
+		usc.SetSourceProvider(*s)
+	}
+	return usc
+}
+
+// SetSourceExecutionKey sets the "source_execution_key" field.
+func (usc *UserSubscriptionCreate) SetSourceExecutionKey(s string) *UserSubscriptionCreate {
+	usc.mutation.SetSourceExecutionKey(s)
+	return usc
+}
+
+// SetNillableSourceExecutionKey sets the "source_execution_key" field if the given value is not nil.
+func (usc *UserSubscriptionCreate) SetNillableSourceExecutionKey(s *string) *UserSubscriptionCreate {
+	if s != nil {
+		usc.SetSourceExecutionKey(*s)
+	}
+	return usc
+}
+
+// SetSourcePaymentKey sets the "source_payment_key" field.
+func (usc *UserSubscriptionCreate) SetSourcePaymentKey(s string) *UserSubscriptionCreate {
+	usc.mutation.SetSourcePaymentKey(s)
+	return usc
+}
+
+// SetNillableSourcePaymentKey sets the "source_payment_key" field if the given value is not nil.
+func (usc *UserSubscriptionCreate) SetNillableSourcePaymentKey(s *string) *UserSubscriptionCreate {
+	if s != nil {
+		usc.SetSourcePaymentKey(*s)
+	}
+	return usc
+}
+
+// SetPaymentAmountMinor sets the "payment_amount_minor" field.
+func (usc *UserSubscriptionCreate) SetPaymentAmountMinor(i int64) *UserSubscriptionCreate {
+	usc.mutation.SetPaymentAmountMinor(i)
+	return usc
+}
+
+// SetNillablePaymentAmountMinor sets the "payment_amount_minor" field if the given value is not nil.
+func (usc *UserSubscriptionCreate) SetNillablePaymentAmountMinor(i *int64) *UserSubscriptionCreate {
+	if i != nil {
+		usc.SetPaymentAmountMinor(*i)
+	}
+	return usc
+}
+
+// SetPaymentCurrency sets the "payment_currency" field.
+func (usc *UserSubscriptionCreate) SetPaymentCurrency(s string) *UserSubscriptionCreate {
+	usc.mutation.SetPaymentCurrency(s)
+	return usc
+}
+
+// SetNillablePaymentCurrency sets the "payment_currency" field if the given value is not nil.
+func (usc *UserSubscriptionCreate) SetNillablePaymentCurrency(s *string) *UserSubscriptionCreate {
+	if s != nil {
+		usc.SetPaymentCurrency(*s)
 	}
 	return usc
 }
@@ -188,6 +341,21 @@ func (usc *UserSubscriptionCreate) SetGroup(g *Group) *UserSubscriptionCreate {
 	return usc.SetGroupID(g.ID)
 }
 
+// AddReservationIDs adds the "reservations" edge to the SubscriptionReservation entity by IDs.
+func (usc *UserSubscriptionCreate) AddReservationIDs(ids ...int) *UserSubscriptionCreate {
+	usc.mutation.AddReservationIDs(ids...)
+	return usc
+}
+
+// AddReservations adds the "reservations" edges to the SubscriptionReservation entity.
+func (usc *UserSubscriptionCreate) AddReservations(s ...*SubscriptionReservation) *UserSubscriptionCreate {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return usc.AddReservationIDs(ids...)
+}
+
 // Mutation returns the UserSubscriptionMutation object of the builder.
 func (usc *UserSubscriptionCreate) Mutation() *UserSubscriptionMutation {
 	return usc.mutation
@@ -227,9 +395,17 @@ func (usc *UserSubscriptionCreate) defaults() {
 		v := usersubscription.DefaultStatus
 		usc.mutation.SetStatus(v)
 	}
+	if _, ok := usc.mutation.CreditsLimit(); !ok {
+		v := usersubscription.DefaultCreditsLimit
+		usc.mutation.SetCreditsLimit(v)
+	}
 	if _, ok := usc.mutation.CreditsUsed(); !ok {
 		v := usersubscription.DefaultCreditsUsed
 		usc.mutation.SetCreditsUsed(v)
+	}
+	if _, ok := usc.mutation.CreditsReserved(); !ok {
+		v := usersubscription.DefaultCreditsReserved
+		usc.mutation.SetCreditsReserved(v)
 	}
 	if _, ok := usc.mutation.ExtraCredits(); !ok {
 		v := usersubscription.DefaultExtraCredits
@@ -239,9 +415,33 @@ func (usc *UserSubscriptionCreate) defaults() {
 		v := usersubscription.DefaultImagesUsed
 		usc.mutation.SetImagesUsed(v)
 	}
+	if _, ok := usc.mutation.ImagesReserved(); !ok {
+		v := usersubscription.DefaultImagesReserved
+		usc.mutation.SetImagesReserved(v)
+	}
+	if _, ok := usc.mutation.ImageLimit(); !ok {
+		v := usersubscription.DefaultImageLimit
+		usc.mutation.SetImageLimit(v)
+	}
+	if _, ok := usc.mutation.LedgerVersion(); !ok {
+		v := usersubscription.DefaultLedgerVersion
+		usc.mutation.SetLedgerVersion(v)
+	}
 	if _, ok := usc.mutation.BillingCycle(); !ok {
 		v := usersubscription.DefaultBillingCycle
 		usc.mutation.SetBillingCycle(v)
+	}
+	if _, ok := usc.mutation.SourceProvider(); !ok {
+		v := usersubscription.DefaultSourceProvider
+		usc.mutation.SetSourceProvider(v)
+	}
+	if _, ok := usc.mutation.PaymentAmountMinor(); !ok {
+		v := usersubscription.DefaultPaymentAmountMinor
+		usc.mutation.SetPaymentAmountMinor(v)
+	}
+	if _, ok := usc.mutation.PaymentCurrency(); !ok {
+		v := usersubscription.DefaultPaymentCurrency
+		usc.mutation.SetPaymentCurrency(v)
 	}
 	if _, ok := usc.mutation.CreatedAt(); !ok {
 		v := usersubscription.DefaultCreatedAt()
@@ -269,14 +469,29 @@ func (usc *UserSubscriptionCreate) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "UserSubscription.status": %w`, err)}
 		}
 	}
+	if _, ok := usc.mutation.CreditsLimit(); !ok {
+		return &ValidationError{Name: "credits_limit", err: errors.New(`ent: missing required field "UserSubscription.credits_limit"`)}
+	}
 	if _, ok := usc.mutation.CreditsUsed(); !ok {
 		return &ValidationError{Name: "credits_used", err: errors.New(`ent: missing required field "UserSubscription.credits_used"`)}
+	}
+	if _, ok := usc.mutation.CreditsReserved(); !ok {
+		return &ValidationError{Name: "credits_reserved", err: errors.New(`ent: missing required field "UserSubscription.credits_reserved"`)}
 	}
 	if _, ok := usc.mutation.ExtraCredits(); !ok {
 		return &ValidationError{Name: "extra_credits", err: errors.New(`ent: missing required field "UserSubscription.extra_credits"`)}
 	}
 	if _, ok := usc.mutation.ImagesUsed(); !ok {
 		return &ValidationError{Name: "images_used", err: errors.New(`ent: missing required field "UserSubscription.images_used"`)}
+	}
+	if _, ok := usc.mutation.ImagesReserved(); !ok {
+		return &ValidationError{Name: "images_reserved", err: errors.New(`ent: missing required field "UserSubscription.images_reserved"`)}
+	}
+	if _, ok := usc.mutation.ImageLimit(); !ok {
+		return &ValidationError{Name: "image_limit", err: errors.New(`ent: missing required field "UserSubscription.image_limit"`)}
+	}
+	if _, ok := usc.mutation.LedgerVersion(); !ok {
+		return &ValidationError{Name: "ledger_version", err: errors.New(`ent: missing required field "UserSubscription.ledger_version"`)}
 	}
 	if _, ok := usc.mutation.BillingCycle(); !ok {
 		return &ValidationError{Name: "billing_cycle", err: errors.New(`ent: missing required field "UserSubscription.billing_cycle"`)}
@@ -285,6 +500,15 @@ func (usc *UserSubscriptionCreate) check() error {
 		if err := usersubscription.BillingCycleValidator(v); err != nil {
 			return &ValidationError{Name: "billing_cycle", err: fmt.Errorf(`ent: validator failed for field "UserSubscription.billing_cycle": %w`, err)}
 		}
+	}
+	if _, ok := usc.mutation.SourceProvider(); !ok {
+		return &ValidationError{Name: "source_provider", err: errors.New(`ent: missing required field "UserSubscription.source_provider"`)}
+	}
+	if _, ok := usc.mutation.PaymentAmountMinor(); !ok {
+		return &ValidationError{Name: "payment_amount_minor", err: errors.New(`ent: missing required field "UserSubscription.payment_amount_minor"`)}
+	}
+	if _, ok := usc.mutation.PaymentCurrency(); !ok {
+		return &ValidationError{Name: "payment_currency", err: errors.New(`ent: missing required field "UserSubscription.payment_currency"`)}
 	}
 	if _, ok := usc.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "UserSubscription.created_at"`)}
@@ -348,21 +572,69 @@ func (usc *UserSubscriptionCreate) createSpec() (*UserSubscription, *sqlgraph.Cr
 		_spec.SetField(usersubscription.FieldPeriodEnd, field.TypeTime, value)
 		_node.PeriodEnd = value
 	}
+	if value, ok := usc.mutation.PlanSnapshot(); ok {
+		_spec.SetField(usersubscription.FieldPlanSnapshot, field.TypeJSON, value)
+		_node.PlanSnapshot = value
+	}
+	if value, ok := usc.mutation.IncludedGroupIds(); ok {
+		_spec.SetField(usersubscription.FieldIncludedGroupIds, field.TypeJSON, value)
+		_node.IncludedGroupIds = value
+	}
+	if value, ok := usc.mutation.CreditsLimit(); ok {
+		_spec.SetField(usersubscription.FieldCreditsLimit, field.TypeInt64, value)
+		_node.CreditsLimit = value
+	}
 	if value, ok := usc.mutation.CreditsUsed(); ok {
-		_spec.SetField(usersubscription.FieldCreditsUsed, field.TypeFloat64, value)
+		_spec.SetField(usersubscription.FieldCreditsUsed, field.TypeInt64, value)
 		_node.CreditsUsed = value
 	}
+	if value, ok := usc.mutation.CreditsReserved(); ok {
+		_spec.SetField(usersubscription.FieldCreditsReserved, field.TypeInt64, value)
+		_node.CreditsReserved = value
+	}
 	if value, ok := usc.mutation.ExtraCredits(); ok {
-		_spec.SetField(usersubscription.FieldExtraCredits, field.TypeFloat64, value)
+		_spec.SetField(usersubscription.FieldExtraCredits, field.TypeInt64, value)
 		_node.ExtraCredits = value
 	}
 	if value, ok := usc.mutation.ImagesUsed(); ok {
 		_spec.SetField(usersubscription.FieldImagesUsed, field.TypeInt, value)
 		_node.ImagesUsed = value
 	}
+	if value, ok := usc.mutation.ImagesReserved(); ok {
+		_spec.SetField(usersubscription.FieldImagesReserved, field.TypeInt, value)
+		_node.ImagesReserved = value
+	}
+	if value, ok := usc.mutation.ImageLimit(); ok {
+		_spec.SetField(usersubscription.FieldImageLimit, field.TypeInt, value)
+		_node.ImageLimit = value
+	}
+	if value, ok := usc.mutation.LedgerVersion(); ok {
+		_spec.SetField(usersubscription.FieldLedgerVersion, field.TypeInt64, value)
+		_node.LedgerVersion = value
+	}
 	if value, ok := usc.mutation.BillingCycle(); ok {
 		_spec.SetField(usersubscription.FieldBillingCycle, field.TypeEnum, value)
 		_node.BillingCycle = value
+	}
+	if value, ok := usc.mutation.SourceProvider(); ok {
+		_spec.SetField(usersubscription.FieldSourceProvider, field.TypeString, value)
+		_node.SourceProvider = value
+	}
+	if value, ok := usc.mutation.SourceExecutionKey(); ok {
+		_spec.SetField(usersubscription.FieldSourceExecutionKey, field.TypeString, value)
+		_node.SourceExecutionKey = &value
+	}
+	if value, ok := usc.mutation.SourcePaymentKey(); ok {
+		_spec.SetField(usersubscription.FieldSourcePaymentKey, field.TypeString, value)
+		_node.SourcePaymentKey = &value
+	}
+	if value, ok := usc.mutation.PaymentAmountMinor(); ok {
+		_spec.SetField(usersubscription.FieldPaymentAmountMinor, field.TypeInt64, value)
+		_node.PaymentAmountMinor = value
+	}
+	if value, ok := usc.mutation.PaymentCurrency(); ok {
+		_spec.SetField(usersubscription.FieldPaymentCurrency, field.TypeString, value)
+		_node.PaymentCurrency = value
 	}
 	if value, ok := usc.mutation.CreatedAt(); ok {
 		_spec.SetField(usersubscription.FieldCreatedAt, field.TypeTime, value)
@@ -404,6 +676,22 @@ func (usc *UserSubscriptionCreate) createSpec() (*UserSubscription, *sqlgraph.Cr
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.group_subscriptions = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := usc.mutation.ReservationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   usersubscription.ReservationsTable,
+			Columns: []string{usersubscription.ReservationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionreservation.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

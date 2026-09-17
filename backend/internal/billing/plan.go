@@ -26,13 +26,16 @@ const DefaultCreditsPerUnit = 10000
 // 以 JSON 存于 Group.quotas，键名即下方 tag。所有金额单位=余额单位（与 users.balance 同口径）。
 // 零值/缺省语义见各字段注释；非订阅制分组该结构无意义。
 type PlanQuotas struct {
+	// IncludedGroupIDs lists every model group sharing this subscription pool.
+	// Empty keeps backwards compatibility by including only the plan's own group.
+	IncludedGroupIDs []int `json:"included_group_ids"`
 	// MonthlyCredits 每期（自然月按 effective_at 锚定）点数额度；<=0 表示不限量。
-	MonthlyCredits float64 `json:"monthly_credits"`
+	MonthlyCredits int64 `json:"monthly_credits"`
 	// CreditsPerUnit 1 单位余额折算点数；<=0 回落 DefaultCreditsPerUnit。
-	CreditsPerUnit float64 `json:"credits_per_unit"`
+	CreditsPerUnit int64 `json:"credits_per_unit"`
 	// PerRequestCredits 单次请求点数上限；<=0 不限。core 只能按请求体大小做保守预估
 	// （见 plugin 包 subscription gate），输出侧限制需插件配合。
-	PerRequestCredits float64 `json:"per_request_credits"`
+	PerRequestCredits int64 `json:"per_request_credits"`
 	// ImageMonthlyLimit 每期生图张数上限；<=0 不限。
 	ImageMonthlyLimit int `json:"image_monthly_limit"`
 	// VideoEnabled 是否开放视频生成；JSON 缺省视为 true。
@@ -41,7 +44,7 @@ type PlanQuotas struct {
 	PriceMonthly float64 `json:"price_monthly"`
 	PriceAnnual  float64 `json:"price_annual"`
 	// TopupCredits / TopupPrice 加购包：一次加购得到的点数与价格；任一 <=0 表示不提供加购。
-	TopupCredits float64 `json:"topup_credits"`
+	TopupCredits int64   `json:"topup_credits"`
 	TopupPrice   float64 `json:"topup_price"`
 }
 
@@ -52,16 +55,17 @@ func ParsePlanQuotas(raw map[string]any) PlanQuotas {
 	if len(raw) == 0 {
 		return q
 	}
-	q.MonthlyCredits = planNumber(raw["monthly_credits"])
-	q.CreditsPerUnit = planNumber(raw["credits_per_unit"])
-	q.PerRequestCredits = planNumber(raw["per_request_credits"])
+	q.MonthlyCredits = planInt64(raw["monthly_credits"])
+	q.IncludedGroupIDs = planIntSlice(raw["included_group_ids"])
+	q.CreditsPerUnit = planInt64(raw["credits_per_unit"])
+	q.PerRequestCredits = planInt64(raw["per_request_credits"])
 	q.ImageMonthlyLimit = int(planNumber(raw["image_monthly_limit"]))
 	if v, ok := planBool(raw["video_enabled"]); ok {
 		q.VideoEnabled = v
 	}
 	q.PriceMonthly = planNumber(raw["price_monthly"])
 	q.PriceAnnual = planNumber(raw["price_annual"])
-	q.TopupCredits = planNumber(raw["topup_credits"])
+	q.TopupCredits = planInt64(raw["topup_credits"])
 	q.TopupPrice = planNumber(raw["topup_price"])
 	return q
 }
@@ -69,6 +73,7 @@ func ParsePlanQuotas(raw map[string]any) PlanQuotas {
 // ToMap 反向序列化为 Group.quotas 存储形态（供管理端回填/校验后写回）。
 func (q PlanQuotas) ToMap() map[string]any {
 	return map[string]any{
+		"included_group_ids":  append([]int(nil), q.IncludedGroupIDs...),
 		"monthly_credits":     q.MonthlyCredits,
 		"credits_per_unit":    q.CreditsPerUnit,
 		"per_request_credits": q.PerRequestCredits,
@@ -81,20 +86,51 @@ func (q PlanQuotas) ToMap() map[string]any {
 	}
 }
 
+func planIntSlice(v any) []int {
+	var result []int
+	seen := map[int]struct{}{}
+	add := func(value int64) {
+		if value <= 0 || value > math.MaxInt || len(result) >= 256 {
+			return
+		}
+		id := int(value)
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+	switch values := v.(type) {
+	case []int:
+		for _, value := range values {
+			add(int64(value))
+		}
+	case []int64:
+		for _, value := range values {
+			add(value)
+		}
+	case []any:
+		for _, value := range values {
+			add(planInt64(value))
+		}
+	}
+	return result
+}
+
 // CreditsPerUnitOrDefault 生效的余额→点数换算率。
-func (q PlanQuotas) CreditsPerUnitOrDefault() float64 {
-	if q.CreditsPerUnit > 0 && !math.IsInf(q.CreditsPerUnit, 0) && !math.IsNaN(q.CreditsPerUnit) {
+func (q PlanQuotas) CreditsPerUnitOrDefault() int64 {
+	if q.CreditsPerUnit > 0 {
 		return q.CreditsPerUnit
 	}
 	return DefaultCreditsPerUnit
 }
 
 // Credits 把一笔余额口径的费用折算成点数；非正费用返回 0。
-func (q PlanQuotas) Credits(cost float64) float64 {
+func (q PlanQuotas) Credits(cost float64) int64 {
 	if cost <= 0 || math.IsNaN(cost) || math.IsInf(cost, 0) {
 		return 0
 	}
-	return cost * q.CreditsPerUnitOrDefault()
+	return int64(math.Ceil(cost * float64(q.CreditsPerUnitOrDefault())))
 }
 
 // Unlimited 月额度是否不限量。
@@ -141,6 +177,17 @@ func planNumber(v any) float64 {
 	default:
 		return 0
 	}
+}
+
+func planInt64(v any) int64 {
+	f := planNumber(v)
+	if f <= 0 {
+		return 0
+	}
+	if f >= math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return int64(math.Floor(f))
 }
 
 func planBool(v any) (bool, bool) {

@@ -3,15 +3,20 @@ package plugin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	appsubscription "github.com/DouDOU-start/airgate-core/internal/app/subscription"
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	"github.com/DouDOU-start/airgate-core/internal/routing"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
@@ -50,7 +55,7 @@ type subscriptionDenial struct {
 	status    int
 	errType   string
 	code      string
-	message   string
+	msgKey    string
 	usageCode string
 }
 
@@ -58,23 +63,24 @@ type subscriptionDenial struct {
 func subscriptionDenialFor(err error) (subscriptionDenial, bool) {
 	switch {
 	case errors.Is(err, appsubscription.ErrSubscriptionRequired):
-		return subscriptionDenial{http.StatusForbidden, "permission_error", "subscription_required", "该分组需要有效订阅", appusage.ErrorCodeInsufficientQuota}, true
+		return subscriptionDenial{http.StatusForbidden, "permission_error", "subscription_required", "gw.subscription_required", appusage.ErrorCodeInsufficientQuota}, true
 	case errors.Is(err, appsubscription.ErrSubscriptionExpired):
-		return subscriptionDenial{http.StatusPaymentRequired, "insufficient_quota", "subscription_expired", "订阅已到期，请续费", appusage.ErrorCodeInsufficientQuota}, true
+		return subscriptionDenial{http.StatusPaymentRequired, "insufficient_quota", "subscription_expired", "gw.subscription_expired", appusage.ErrorCodeInsufficientQuota}, true
 	case errors.Is(err, appsubscription.ErrSubscriptionSuspended):
-		return subscriptionDenial{http.StatusForbidden, "permission_error", "subscription_suspended", "订阅已暂停", appusage.ErrorCodeInsufficientQuota}, true
+		return subscriptionDenial{http.StatusForbidden, "permission_error", "subscription_suspended", "gw.subscription_suspended", appusage.ErrorCodeInsufficientQuota}, true
 	case errors.Is(err, appsubscription.ErrCreditsExhausted):
-		return subscriptionDenial{http.StatusPaymentRequired, "insufficient_quota", "subscription_quota_exceeded", "本期点数已用完，可加购或等待下期重置", appusage.ErrorCodeInsufficientQuota}, true
+		return subscriptionDenial{http.StatusPaymentRequired, "insufficient_quota", "subscription_quota_exceeded", "gw.subscription_quota_exceeded", appusage.ErrorCodeInsufficientQuota}, true
 	case errors.Is(err, appsubscription.ErrVideoNotIncluded):
-		return subscriptionDenial{http.StatusForbidden, "permission_error", "subscription_video_not_included", "当前套餐不包含视频生成", appusage.ErrorCodeCapabilityDenied}, true
+		return subscriptionDenial{http.StatusForbidden, "permission_error", "subscription_video_not_included", "gw.subscription_video_not_included", appusage.ErrorCodeCapabilityDenied}, true
 	case errors.Is(err, appsubscription.ErrImageLimitReached):
-		return subscriptionDenial{http.StatusPaymentRequired, "insufficient_quota", "subscription_image_limit_reached", "本期生图张数已达套餐上限", appusage.ErrorCodeInsufficientQuota}, true
+		return subscriptionDenial{http.StatusPaymentRequired, "insufficient_quota", "subscription_image_limit_reached", "gw.subscription_image_limit_reached", appusage.ErrorCodeInsufficientQuota}, true
+	case errors.Is(err, appsubscription.ErrRequestCostUnbounded):
+		return subscriptionDenial{http.StatusServiceUnavailable, "server_error", "subscription_cost_unbounded", "gw.subscription_service_unavailable", appusage.ErrorCodeNoAvailableRoute}, true
 	}
 	return subscriptionDenial{}, false
 }
 
-// SetSubscriptionService 注入订阅服务（server 装配时调用）。未注入时订阅制分组退化为放行，
-// 扣费仍会落到账本——只是少了准入这道闸。
+// SetSubscriptionService 注入订阅服务（server 装配时调用）。
 func (f *Forwarder) SetSubscriptionService(svc *appsubscription.Service) {
 	f.subscriptions = svc
 }
@@ -82,39 +88,20 @@ func (f *Forwarder) SetSubscriptionService(svc *appsubscription.Service) {
 // checkSubscription 订阅制分组的准入；替代余额预检。
 func (f *Forwarder) checkSubscription(c *gin.Context, state *forwardState) bool {
 	if f.subscriptions == nil {
-		return true
-	}
-	quotas := billing.ParsePlanQuotas(state.keyInfo.GroupQuotas)
-	kind := requestKindFor(f.manager, state.requestPath, state.model)
-	entitlement, err := f.subscriptions.Entitle(c.Request.Context(), state.keyInfo.UserID, state.keyInfo.GroupID, quotas, kind)
-	if err != nil {
-		denial, known := subscriptionDenialFor(err)
-		if !known {
-			// 账本读取故障：放行并告警。请求仍会被计费进账本，只是少判一次；
-			// 比起把整条分组打成 5xx，宁可短暂放宽。
-			slog.Error("subscription_gate_failed",
-				sdk.LogFieldUserID, state.keyInfo.UserID,
-				sdk.LogFieldGroupID, state.keyInfo.GroupID,
-				sdk.LogFieldError, err)
-			return true
-		}
-		slog.Warn("subscription_gate_denied",
-			sdk.LogFieldUserID, state.keyInfo.UserID,
-			sdk.LogFieldGroupID, state.keyInfo.GroupID,
-			sdk.LogFieldModel, state.model,
-			"kind", kind,
-			"code", denial.code)
-		protocolError(c, denial.status, denial.errType, denial.code, denial.message)
+		message := i18n.En("gw.subscription_service_unavailable")
+		protocolError(c, http.StatusServiceUnavailable, "server_error", "subscription_service_unavailable", i18n.Tc(c, "gw.subscription_service_unavailable"))
 		f.recordFailureUsage(c, state, usageFailure{
-			code:    denial.usageCode,
-			status:  denial.status,
-			message: denial.message,
+			code:    appusage.ErrorCodePluginUnavailable,
+			status:  http.StatusServiceUnavailable,
+			message: message,
 		})
 		return false
 	}
+	quotas := billing.ParsePlanQuotas(state.keyInfo.GroupQuotas)
+	kind := requestKindFor(f.manager, state.requestPath, state.model)
 	if cap := quotas.PerRequestCredits; cap > 0 {
 		if est := f.estimateInputCredits(state, quotas); est > cap {
-			message := "单条消息超出套餐单次点数上限，请缩短内容或升级套餐"
+			message := i18n.En("gw.subscription_request_too_large")
 			slog.Warn("subscription_gate_request_too_large",
 				sdk.LogFieldUserID, state.keyInfo.UserID,
 				sdk.LogFieldGroupID, state.keyInfo.GroupID,
@@ -122,7 +109,7 @@ func (f *Forwarder) checkSubscription(c *gin.Context, state *forwardState) bool 
 				"estimated_credits", est,
 				"cap", cap,
 				"body_bytes", len(state.body))
-			protocolError(c, http.StatusRequestEntityTooLarge, "invalid_request_error", "subscription_request_too_large", message)
+			protocolError(c, http.StatusRequestEntityTooLarge, "invalid_request_error", "subscription_request_too_large", i18n.Tc(c, "gw.subscription_request_too_large"))
 			f.recordFailureUsage(c, state, usageFailure{
 				code:    appusage.ErrorCodeRequestTooLarge,
 				status:  http.StatusRequestEntityTooLarge,
@@ -131,13 +118,55 @@ func (f *Forwarder) checkSubscription(c *gin.Context, state *forwardState) bool 
 			return false
 		}
 	}
-	_ = entitlement
+	reservationKey := state.subscriptionReservationKey
+	if reservationKey == "" {
+		reservationKey = "subscription:" + uuid.NewString()
+	}
+	images := 0
+	if kind == billing.RequestKindImage {
+		images = 1
+	}
+	_, err := f.subscriptions.Reserve(c.Request.Context(), appsubscription.ReserveInput{
+		UserID: state.keyInfo.UserID, GroupID: state.keyInfo.GroupID, Key: reservationKey,
+		Credits: quotas.PerRequestCredits, Images: images, Kind: kind,
+	})
+	if err != nil {
+		denial, known := subscriptionDenialFor(err)
+		if !known {
+			slog.Error("subscription_gate_failed",
+				sdk.LogFieldUserID, state.keyInfo.UserID,
+				sdk.LogFieldGroupID, state.keyInfo.GroupID,
+				sdk.LogFieldError, err)
+			message := i18n.En("gw.subscription_service_unavailable")
+			protocolError(c, http.StatusServiceUnavailable, "server_error", "subscription_service_unavailable", i18n.Tc(c, "gw.subscription_service_unavailable"))
+			f.recordFailureUsage(c, state, usageFailure{
+				code:    appusage.ErrorCodePluginUnavailable,
+				status:  http.StatusServiceUnavailable,
+				message: message,
+			})
+			return false
+		}
+		slog.Warn("subscription_gate_denied",
+			sdk.LogFieldUserID, state.keyInfo.UserID,
+			sdk.LogFieldGroupID, state.keyInfo.GroupID,
+			sdk.LogFieldModel, state.model,
+			"kind", kind,
+			"code", denial.code)
+		protocolError(c, denial.status, denial.errType, denial.code, i18n.Tc(c, denial.msgKey))
+		f.recordFailureUsage(c, state, usageFailure{
+			code:    denial.usageCode,
+			status:  denial.status,
+			message: i18n.En(denial.msgKey),
+		})
+		return false
+	}
+	state.subscriptionReservationKey = reservationKey
 	return true
 }
 
 // estimateInputCredits 保守预估本次请求输入侧点数：请求体字节 / 4 ≈ token 数，
 // × 目录官方输入价（USD/1M）× 分组生效倍率 × 余额→点数换算率。目录无价时返回 0（不判）。
-func (f *Forwarder) estimateInputCredits(state *forwardState, quotas billing.PlanQuotas) float64 {
+func (f *Forwarder) estimateInputCredits(state *forwardState, quotas billing.PlanQuotas) int64 {
 	if f.manager == nil || len(state.body) == 0 || state.model == "" {
 		return 0
 	}
@@ -159,7 +188,7 @@ func (h *HostService) SetSubscriptionService(svc *appsubscription.Service) {
 // 返回 gRPC 错误（FailedPrecondition + 订阅语义文案），nil 表示放行。
 func (h *HostService) entitleSubscriptionRoute(ctx context.Context, req hostForwardRequest, groupID int, quotas map[string]any) error {
 	if h.subscriptions == nil {
-		return nil
+		return status.Error(codes.Unavailable, i18n.En("gw.subscription_service_unavailable"))
 	}
 	plan := billing.ParsePlanQuotas(quotas)
 	kind := requestKindFor(h.manager, req.Path, req.Model)
@@ -171,7 +200,7 @@ func (h *HostService) entitleSubscriptionRoute(ctx context.Context, req hostForw
 				sdk.LogFieldModel, req.Model,
 				"kind", kind,
 				"code", denial.code)
-			return hostSubscriptionDeniedError(denial.message)
+			return hostSubscriptionDeniedError(i18n.En(denial.msgKey))
 		}
 		if cerr := hostContextError(err); cerr != nil {
 			return cerr
@@ -180,15 +209,37 @@ func (h *HostService) entitleSubscriptionRoute(ctx context.Context, req hostForw
 			sdk.LogFieldUserID, req.UserID,
 			sdk.LogFieldGroupID, groupID,
 			sdk.LogFieldError, err)
+		return status.Error(codes.Unavailable, i18n.En("gw.subscription_service_unavailable"))
 	}
 	return nil
 }
 
+func (h *HostService) reserveHostSubscriptionRoute(ctx context.Context, req hostForwardRequest, groupID int) (string, error) {
+	if h.subscriptions == nil {
+		return "", status.Error(codes.Unavailable, i18n.En("gw.subscription_service_unavailable"))
+	}
+	key := fmt.Sprintf("subscription:host:%d:%s:%d", req.UserID, req.RequestID, groupID)
+	kind := requestKindFor(h.manager, req.Path, req.Model)
+	images := 0
+	if kind == billing.RequestKindImage {
+		images = 1
+	}
+	if _, err := h.subscriptions.Reserve(ctx, appsubscription.ReserveInput{
+		UserID: int(req.UserID), GroupID: groupID, Key: key, Images: images, Kind: kind,
+	}); err != nil {
+		if denial, known := subscriptionDenialFor(err); known {
+			return "", hostSubscriptionDeniedError(i18n.En(denial.msgKey))
+		}
+		if cerr := hostContextError(err); cerr != nil {
+			return "", cerr
+		}
+		return "", status.Error(codes.Unavailable, i18n.En("gw.subscription_service_unavailable"))
+	}
+	return key, nil
+}
+
 // filterSubscriptionRoutes 自动路由候选里的订阅制分组逐个过准入；全部被拒时返回最后一个拒绝原因。
 func (h *HostService) filterSubscriptionRoutes(ctx context.Context, req hostForwardRequest, routes []routing.Candidate) ([]routing.Candidate, error) {
-	if h.subscriptions == nil {
-		return routes, nil
-	}
 	kept := routes[:0]
 	var lastErr error
 	for _, route := range routes {

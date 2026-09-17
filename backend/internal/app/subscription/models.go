@@ -40,6 +40,12 @@ type Repository interface {
 	Purchase(context.Context, PurchaseTx) (Subscription, error)
 	// Topup 事务化加购：扣余额 + 余额流水 + extra_credits 累加。
 	Topup(context.Context, TopupTx) (Subscription, error)
+	// Reserve atomically reserves one bounded request against the subscription's current monthly window.
+	Reserve(context.Context, ReserveInput) (Reservation, error)
+	// Release releases a reservation that never reached billable usage. It is idempotent.
+	Release(context.Context, string) error
+	// GrantExternal grants or renews a snapshotted entitlement from a verified payment execution.
+	GrantExternal(context.Context, ExternalGrantInput) (Subscription, error)
 }
 
 // Subscription 订阅领域对象。
@@ -57,12 +63,24 @@ type Subscription struct {
 	UpdatedAt   time.Time
 
 	// ---- 点数账本 ----
-	PeriodStart  time.Time
-	PeriodEnd    time.Time
-	CreditsUsed  float64
-	ExtraCredits float64
-	ImagesUsed   int
-	BillingCycle string
+	PeriodStart        time.Time
+	PeriodEnd          time.Time
+	PlanSnapshot       map[string]any
+	IncludedGroupIDs   []int
+	CreditsLimit       int64
+	CreditsUsed        int64
+	CreditsReserved    int64
+	ExtraCredits       int64
+	ImagesUsed         int
+	ImagesReserved     int
+	ImageLimit         int
+	LedgerVersion      int64
+	BillingCycle       string
+	SourceProvider     string
+	SourceExecutionKey string
+	SourcePaymentKey   string
+	PaymentAmountMinor int64
+	PaymentCurrency    string
 }
 
 // Plan 套餐 = 订阅制分组的展示投影。
@@ -86,9 +104,10 @@ type PlanView struct {
 
 // UsageWindow 表示一个计量窗口。
 type UsageWindow struct {
-	Used  float64
-	Limit float64
-	Reset time.Time
+	Used     int64
+	Reserved int64
+	Limit    int64
+	Reset    time.Time
 }
 
 // SubscriptionProgress 用户订阅使用进度。
@@ -104,13 +123,13 @@ type SubscriptionProgress struct {
 	// Credits 本期点数窗口；Unlimited 为 true 时 Limit=0 表示不限量。
 	Credits      UsageWindow
 	Unlimited    bool
-	ExtraCredits float64
+	ExtraCredits int64
 	// Images 张数窗口；套餐未限张数时为 nil。
 	Images            *UsageWindow
 	VideoEnabled      bool
-	PerRequestCredits float64
+	PerRequestCredits int64
 	TopupAvailable    bool
-	TopupCredits      float64
+	TopupCredits      int64
 	TopupPrice        float64
 }
 
@@ -119,8 +138,47 @@ type Entitlement struct {
 	SubscriptionID int
 	Quotas         billing.PlanQuotas
 	// Remaining 剩余点数（月额度 + 加购 − 已用）；Unlimited 时无意义。
-	Remaining float64
+	Remaining int64
 	Unlimited bool
+}
+
+// Reservation is the durable, period-pinned result of request admission.
+type Reservation struct {
+	Key             string
+	SubscriptionID  int
+	PeriodStart     time.Time
+	PeriodEnd       time.Time
+	CreditsReserved int64
+	ImagesReserved  int
+	Status          string
+}
+
+type ReserveInput struct {
+	UserID    int
+	GroupID   int
+	Key       string
+	Credits   int64
+	Images    int
+	Kind      billing.RequestKind
+	Now       time.Time
+	ExpiresAt time.Time
+}
+
+// ExternalGrantInput contains only data produced after provider verification.
+// Provider + execution/payment keys are unique, making callback retries idempotent.
+type ExternalGrantInput struct {
+	UserID           int
+	PlanGroupID      int
+	Cycle            string
+	Provider         string
+	ExecutionKey     string
+	PaymentKey       string
+	AmountMinor      int64
+	Currency         string
+	EffectiveAt      time.Time
+	ExpiresAt        time.Time
+	PlanSnapshot     map[string]any
+	IncludedGroupIDs []int
 }
 
 // ListResult 分页查询结果。
@@ -181,20 +239,32 @@ type TopupInput struct {
 
 // CreateInput 仓储创建输入。
 type CreateInput struct {
-	UserID      int
-	GroupID     int
-	EffectiveAt time.Time
-	ExpiresAt   time.Time
-	Status      string
+	UserID           int
+	GroupID          int
+	EffectiveAt      time.Time
+	ExpiresAt        time.Time
+	PeriodStart      time.Time
+	PeriodEnd        time.Time
+	Status           string
+	PlanSnapshot     map[string]any
+	IncludedGroupIDs []int
+	CreditsLimit     int64
+	ImageLimit       int
 }
 
 // BulkCreateInput 仓储批量创建输入。
 type BulkCreateInput struct {
-	UserIDs     []int
-	GroupID     int
-	EffectiveAt time.Time
-	ExpiresAt   time.Time
-	Status      string
+	UserIDs          []int
+	GroupID          int
+	EffectiveAt      time.Time
+	ExpiresAt        time.Time
+	PeriodStart      time.Time
+	PeriodEnd        time.Time
+	Status           string
+	PlanSnapshot     map[string]any
+	IncludedGroupIDs []int
+	CreditsLimit     int64
+	ImageLimit       int
 }
 
 // UpdateInput 仓储更新输入。
@@ -207,7 +277,7 @@ type UpdateInput struct {
 type RolloverInput struct {
 	PeriodStart  time.Time
 	PeriodEnd    time.Time
-	ExtraCredits float64
+	ExtraCredits int64
 }
 
 // PurchaseTx 仓储事务化购买输入。ExistingID>0 表示续期既有订阅（只延长 expires_at），
@@ -230,6 +300,6 @@ type TopupTx struct {
 	UserID         int
 	SubscriptionID int
 	Price          float64
-	Credits        float64
+	Credits        int64
 	Remark         string
 }

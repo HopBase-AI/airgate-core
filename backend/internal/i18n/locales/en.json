@@ -96,5 +96,13 @@
   "export.summary_failed_free": "Failed requests: %d, none charged",
   "export.summary_failed_mixed": "Failed requests not charged: %d; interrupted requests charged for the usage already generated: %d",
   "export.summary_truncated": "Too many records; this file only contains the most recent %d, so the total does not represent all usage in the range",
-  "export.summary_separator": "; "
+  "export.summary_separator": "; ",
+  "gw.subscription_required": "An active subscription is required for this group",
+  "gw.subscription_expired": "Your subscription has expired. Renew it to continue",
+  "gw.subscription_suspended": "Your subscription has been suspended",
+  "gw.subscription_quota_exceeded": "You have used all credits for this billing period. Add more credits or wait for the next reset",
+  "gw.subscription_video_not_included": "Your current plan does not include video generation",
+  "gw.subscription_image_limit_reached": "You have reached the image generation limit for this billing period",
+  "gw.subscription_request_too_large": "This request exceeds your plan's per-request credit limit. Shorten the content or upgrade your plan",
+  "gw.subscription_service_unavailable": "Subscription entitlement is temporarily unavailable. Please retry later"
 }

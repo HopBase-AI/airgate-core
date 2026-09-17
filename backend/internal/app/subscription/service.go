@@ -97,9 +97,10 @@ func buildProgress(sub Subscription, q billing.PlanQuotas) SubscriptionProgress 
 		PeriodStart:    sub.PeriodStart,
 		PeriodEnd:      sub.PeriodEnd,
 		Credits: UsageWindow{
-			Used:  sub.CreditsUsed,
-			Limit: q.MonthlyCredits,
-			Reset: sub.PeriodEnd,
+			Used:     sub.CreditsUsed,
+			Reserved: sub.CreditsReserved,
+			Limit:    q.MonthlyCredits,
+			Reset:    sub.PeriodEnd,
 		},
 		Unlimited:         q.Unlimited(),
 		ExtraCredits:      sub.ExtraCredits,
@@ -111,9 +112,10 @@ func buildProgress(sub Subscription, q billing.PlanQuotas) SubscriptionProgress 
 	}
 	if q.ImageMonthlyLimit > 0 {
 		p.Images = &UsageWindow{
-			Used:  float64(sub.ImagesUsed),
-			Limit: float64(q.ImageMonthlyLimit),
-			Reset: sub.PeriodEnd,
+			Used:     int64(sub.ImagesUsed),
+			Reserved: int64(sub.ImagesReserved),
+			Limit:    int64(q.ImageMonthlyLimit),
+			Reset:    sub.PeriodEnd,
 		}
 	}
 	return p
@@ -244,7 +246,7 @@ func (s *Service) Topup(ctx context.Context, input TopupInput) (Subscription, er
 		SubscriptionID: sub.ID,
 		Price:          q.TopupPrice,
 		Credits:        q.TopupCredits,
-		Remark:         fmt.Sprintf("加购点数包：%s（%.0f 点）", sub.GroupName, q.TopupCredits),
+		Remark:         fmt.Sprintf("加购点数包：%s（%d 点）", sub.GroupName, q.TopupCredits),
 	})
 	if err != nil {
 		if !errors.Is(err, ErrInsufficientBalance) {
@@ -274,6 +276,9 @@ func (s *Service) Entitle(ctx context.Context, userID, groupID int, q billing.Pl
 		}
 		return Entitlement{}, err
 	}
+	if len(sub.GroupQuotas) > 0 {
+		q = billing.ParsePlanQuotas(sub.GroupQuotas)
+	}
 	if err := s.refresh(ctx, &sub, q, s.now()); err != nil {
 		return Entitlement{}, err
 	}
@@ -297,6 +302,89 @@ func (s *Service) Entitle(ctx context.Context, userID, groupID int, q billing.Pl
 		}
 	}
 	return ent, nil
+}
+
+// Reserve performs strict request admission. Every billable subscription request must
+// provide a stable key and a positive upper bound; unknown/unbounded costs fail closed.
+func (s *Service) Reserve(ctx context.Context, input ReserveInput) (Reservation, error) {
+	if input.UserID <= 0 || input.GroupID <= 0 || input.Key == "" {
+		return Reservation{}, ErrRequestCostUnbounded
+	}
+	if input.Images < 0 {
+		return Reservation{}, ErrRequestCostUnbounded
+	}
+	if input.Now.IsZero() {
+		input.Now = s.now()
+	}
+	if input.ExpiresAt.IsZero() {
+		input.ExpiresAt = input.Now.Add(30 * time.Minute)
+	}
+	sub, err := s.repo.FindActiveByUserGroup(ctx, input.UserID, input.GroupID)
+	if err != nil {
+		if errors.Is(err, ErrSubscriptionNotFound) {
+			return Reservation{}, ErrSubscriptionRequired
+		}
+		return Reservation{}, err
+	}
+	q := billing.ParsePlanQuotas(sub.GroupQuotas)
+	if q.PerRequestCredits <= 0 {
+		return Reservation{}, ErrRequestCostUnbounded
+	}
+	input.Credits = q.PerRequestCredits
+	return s.repo.Reserve(ctx, input)
+}
+
+// Release releases a request reservation when forwarding ends without billable usage.
+func (s *Service) Release(ctx context.Context, key string) error {
+	if key == "" {
+		return nil
+	}
+	return s.repo.Release(ctx, key)
+}
+
+// GrantExternal converts a provider-verified recurring payment into a snapshotted entitlement.
+func (s *Service) GrantExternal(ctx context.Context, input ExternalGrantInput) (Subscription, error) {
+	months := cycleMonths(input.Cycle)
+	if input.UserID <= 0 || input.PlanGroupID <= 0 || months == 0 || input.Provider == "" ||
+		input.ExecutionKey == "" || input.PaymentKey == "" || input.AmountMinor <= 0 || input.Currency == "" {
+		return Subscription{}, ErrInvalidPaymentGrant
+	}
+	plan, err := s.repo.FindPlan(ctx, input.PlanGroupID)
+	if err != nil {
+		return Subscription{}, err
+	}
+	if plan.Delisted {
+		return Subscription{}, ErrPlanNotPurchasable
+	}
+	q := billing.ParsePlanQuotas(plan.Quotas)
+	if q.MonthlyCredits <= 0 || q.PerRequestCredits <= 0 {
+		return Subscription{}, ErrRequestCostUnbounded
+	}
+	if input.EffectiveAt.IsZero() {
+		input.EffectiveAt = s.now()
+	}
+	if input.ExpiresAt.IsZero() {
+		input.ExpiresAt = AddMonths(input.EffectiveAt, months)
+	}
+	input.PlanSnapshot = q.ToMap()
+	input.IncludedGroupIDs = normalizedIncludedGroups(input.PlanGroupID, q.IncludedGroupIDs)
+	return s.repo.GrantExternal(ctx, input)
+}
+
+func normalizedIncludedGroups(planGroupID int, configured []int) []int {
+	result := make([]int, 0, len(configured)+1)
+	seen := make(map[int]struct{}, len(configured)+1)
+	for _, id := range append([]int{planGroupID}, configured...) {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+	return result
 }
 
 // refresh 对一条订阅做到期判定与计量期推进，就地更新 sub。
@@ -367,13 +455,23 @@ func (s *Service) AdminAssign(ctx context.Context, input AssignInput) (Subscript
 			sdk.LogFieldGroupID, input.GroupID)
 		return Subscription{}, ErrInvalidExpiresAt
 	}
+	plan, err := s.repo.FindPlan(ctx, input.GroupID)
+	if err != nil {
+		return Subscription{}, err
+	}
+	q := billing.ParsePlanQuotas(plan.Quotas)
+	if q.MonthlyCredits <= 0 || q.PerRequestCredits <= 0 {
+		return Subscription{}, ErrRequestCostUnbounded
+	}
+	effectiveAt := s.now()
+	periodStart, periodEnd := PeriodContaining(effectiveAt, effectiveAt)
 
 	sub, err := s.repo.Create(ctx, CreateInput{
-		UserID:      input.UserID,
-		GroupID:     input.GroupID,
-		EffectiveAt: s.now(),
-		ExpiresAt:   expiresAt,
-		Status:      "active",
+		UserID: input.UserID, GroupID: input.GroupID,
+		EffectiveAt: effectiveAt, ExpiresAt: expiresAt,
+		PeriodStart: periodStart, PeriodEnd: periodEnd, Status: "active",
+		PlanSnapshot: q.ToMap(), IncludedGroupIDs: normalizedIncludedGroups(input.GroupID, q.IncludedGroupIDs),
+		CreditsLimit: q.MonthlyCredits, ImageLimit: q.ImageMonthlyLimit,
 	})
 	if err != nil {
 		logger.Error("subscription_persist_failed",
@@ -401,13 +499,23 @@ func (s *Service) AdminBulkAssign(ctx context.Context, input BulkAssignInput) (i
 			sdk.LogFieldGroupID, input.GroupID)
 		return 0, ErrInvalidExpiresAt
 	}
+	plan, err := s.repo.FindPlan(ctx, input.GroupID)
+	if err != nil {
+		return 0, err
+	}
+	q := billing.ParsePlanQuotas(plan.Quotas)
+	if q.MonthlyCredits <= 0 || q.PerRequestCredits <= 0 {
+		return 0, ErrRequestCostUnbounded
+	}
+	effectiveAt := s.now()
+	periodStart, periodEnd := PeriodContaining(effectiveAt, effectiveAt)
 
 	count, err := s.repo.BulkCreate(ctx, BulkCreateInput{
-		UserIDs:     append([]int(nil), input.UserIDs...),
-		GroupID:     input.GroupID,
-		EffectiveAt: s.now(),
-		ExpiresAt:   expiresAt,
-		Status:      "active",
+		UserIDs: append([]int(nil), input.UserIDs...), GroupID: input.GroupID,
+		EffectiveAt: effectiveAt, ExpiresAt: expiresAt,
+		PeriodStart: periodStart, PeriodEnd: periodEnd, Status: "active",
+		PlanSnapshot: q.ToMap(), IncludedGroupIDs: normalizedIncludedGroups(input.GroupID, q.IncludedGroupIDs),
+		CreditsLimit: q.MonthlyCredits, ImageLimit: q.ImageMonthlyLimit,
 	})
 	if err != nil {
 		logger.Error("subscription_persist_failed",

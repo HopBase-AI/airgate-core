@@ -13,8 +13,10 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/enttest"
 	entgroup "github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/migrate"
+	entsubscriptionreservation "github.com/DouDOU-start/airgate-core/ent/subscriptionreservation"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 	appsubscription "github.com/DouDOU-start/airgate-core/internal/app/subscription"
+	"github.com/DouDOU-start/airgate-core/internal/billing"
 )
 
 func appgroupAvailableFilter(userID int) appgroup.AvailableFilter {
@@ -138,6 +140,141 @@ func TestSubscriptionStorePurchaseTopupAndRollover(t *testing.T) {
 	}
 	if _, err := store.FindActiveByUserGroup(ctx, u.ID, 2); err != appsubscription.ErrSubscriptionNotFound {
 		t.Fatalf("无订阅应 ErrSubscriptionNotFound，得到 %v", err)
+	}
+}
+
+func TestSubscriptionStoreExternalGrantSharedPoolAndReservation(t *testing.T) {
+	ctx := context.Background()
+	db := openSubscriptionTestDB(t)
+	store := NewSubscriptionStore(db)
+	u := db.User.Create().SetEmail("consumer@example.com").SetPasswordHash("hash").SaveX(ctx)
+	plan := db.Group.Create().SetName("Consumer Pro").SetPlatform("openai").
+		SetSubscriptionType(entgroup.SubscriptionTypeSubscription).
+		SetQuotas(map[string]any{
+			"monthly_credits": 1000, "credits_per_unit": 10000, "per_request_credits": 600,
+			"image_monthly_limit": 2, "video_enabled": true,
+		}).SaveX(ctx)
+	claude := db.Group.Create().SetName("Claude").SetPlatform("claude").SetSubscriptionType(entgroup.SubscriptionTypeSubscription).SaveX(ctx)
+	now := time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)
+	input := appsubscription.ExternalGrantInput{
+		UserID: u.ID, PlanGroupID: plan.ID, Cycle: appsubscription.BillingCycleAnnual,
+		Provider: "essevin-payments", ExecutionKey: "exec-1", PaymentKey: "pay-1",
+		AmountMinor: 5980, Currency: "HKD", EffectiveAt: now, ExpiresAt: now.AddDate(1, 0, 0),
+		PlanSnapshot: map[string]any{
+			"monthly_credits": 1000, "credits_per_unit": 10000, "per_request_credits": 600,
+			"image_monthly_limit": 2, "video_enabled": true,
+		},
+		IncludedGroupIDs: []int{plan.ID, claude.ID},
+	}
+	sub, err := store.GrantExternal(ctx, input)
+	if err != nil {
+		t.Fatalf("GrantExternal: %v", err)
+	}
+	replayed, err := store.GrantExternal(ctx, input)
+	if err != nil || replayed.ID != sub.ID {
+		t.Fatalf("grant replay must be idempotent: %v %+v", err, replayed)
+	}
+	if count := db.UserSubscription.Query().CountX(ctx); count != 1 {
+		t.Fatalf("grant replay created %d rows", count)
+	}
+	collision := input
+	collision.PaymentKey = "pay-collision"
+	if _, err := store.GrantExternal(ctx, collision); err != appsubscription.ErrInvalidPaymentGrant {
+		t.Fatalf("execution key collision must be rejected, got %v", err)
+	}
+	shared, err := store.FindActiveByUserGroup(ctx, u.ID, claude.ID)
+	if err != nil || shared.ID != sub.ID {
+		t.Fatalf("included group must share entitlement: %v %+v", err, shared)
+	}
+
+	first, err := store.Reserve(ctx, appsubscription.ReserveInput{
+		UserID: u.ID, GroupID: claude.ID, Key: "request-1", Credits: 600,
+		Kind: billing.RequestKindChat, Now: now, ExpiresAt: now.Add(time.Minute),
+	})
+	if err != nil || first.SubscriptionID != sub.ID {
+		t.Fatalf("Reserve shared pool: %v %+v", err, first)
+	}
+	replay, err := store.Reserve(ctx, appsubscription.ReserveInput{
+		UserID: u.ID, GroupID: claude.ID, Key: "request-1", Credits: 600,
+		Kind: billing.RequestKindChat, Now: now, ExpiresAt: now.Add(time.Minute),
+	})
+	if err != nil || replay.Key != first.Key {
+		t.Fatalf("reservation replay must be idempotent: %v %+v", err, replay)
+	}
+	_, err = store.Reserve(ctx, appsubscription.ReserveInput{
+		UserID: u.ID, GroupID: plan.ID, Key: "request-2", Credits: 600,
+		Kind: billing.RequestKindChat, Now: now, ExpiresAt: now.Add(time.Minute),
+	})
+	if err != appsubscription.ErrCreditsExhausted {
+		t.Fatalf("concurrent over-reservation must fail, got %v", err)
+	}
+	third, err := store.Reserve(ctx, appsubscription.ReserveInput{
+		UserID: u.ID, GroupID: plan.ID, Key: "request-3", Credits: 600,
+		Kind: billing.RequestKindChat, Now: now.Add(2 * time.Minute), ExpiresAt: now.Add(3 * time.Minute),
+	})
+	if err != nil || third.SubscriptionID != sub.ID {
+		t.Fatalf("expired reservation should be released before admission: %v %+v", err, third)
+	}
+	oldReservation := db.SubscriptionReservation.Query().
+		Where(entsubscriptionreservation.ReservationKeyEQ("request-1")).OnlyX(ctx)
+	if oldReservation.Status != entsubscriptionreservation.StatusReleased {
+		t.Fatalf("expired reservation status = %s", oldReservation.Status)
+	}
+	if got := db.UserSubscription.GetX(ctx, sub.ID).CreditsReserved; got != 600 {
+		t.Fatalf("only the new request should remain reserved, got %d", got)
+	}
+	if err := store.Release(ctx, "request-1"); err != nil {
+		t.Fatalf("Release: %v", err)
+	}
+	if err := store.Release(ctx, "request-1"); err != nil {
+		t.Fatalf("Release replay: %v", err)
+	}
+	if err := store.Release(ctx, "request-3"); err != nil {
+		t.Fatalf("Release current reservation: %v", err)
+	}
+	ledger := db.UserSubscription.GetX(ctx, sub.ID)
+	if ledger.CreditsReserved != 0 {
+		t.Fatalf("released credits still reserved: %d", ledger.CreditsReserved)
+	}
+}
+
+func TestAdminAssignSnapshotsPlanRights(t *testing.T) {
+	ctx := context.Background()
+	db := openSubscriptionTestDB(t)
+	store := NewSubscriptionStore(db)
+	u := db.User.Create().SetEmail("admin-grant@example.com").SetPasswordHash("hash").SaveX(ctx)
+	plan := db.Group.Create().SetName("Consumer").SetPlatform("openai").
+		SetSubscriptionType(entgroup.SubscriptionTypeSubscription).
+		SetQuotas(map[string]any{
+			"monthly_credits": 1200, "per_request_credits": 100,
+			"included_group_ids": []any{2.0, 3.0}, "image_monthly_limit": 4,
+		}).SaveX(ctx)
+
+	svc := appsubscription.NewService(store)
+	expiresAt := time.Now().AddDate(0, 2, 0).UTC().Format(time.RFC3339)
+	sub, err := svc.AdminAssign(ctx, appsubscription.AssignInput{UserID: u.ID, GroupID: plan.ID, ExpiresAt: expiresAt})
+	if err != nil {
+		t.Fatalf("AdminAssign: %v", err)
+	}
+	if sub.CreditsLimit != 1200 || sub.ImageLimit != 4 || len(sub.PlanSnapshot) == 0 {
+		t.Fatalf("admin grant did not snapshot plan rights: %+v", sub)
+	}
+	if len(sub.IncludedGroupIDs) != 3 || sub.IncludedGroupIDs[0] != plan.ID {
+		t.Fatalf("included groups = %+v", sub.IncludedGroupIDs)
+	}
+	if sub.PeriodStart.IsZero() || sub.PeriodEnd.IsZero() {
+		t.Fatalf("admin grant did not initialize monthly window: %+v", sub)
+	}
+
+	db.Group.UpdateOneID(plan.ID).SetQuotas(map[string]any{
+		"monthly_credits": 1, "per_request_credits": 1,
+	}).ExecX(ctx)
+	fresh, err := store.FindByID(ctx, sub.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := billing.ParsePlanQuotas(fresh.GroupQuotas).MonthlyCredits; got != 1200 {
+		t.Fatalf("sold rights changed with group config: %d", got)
 	}
 }
 

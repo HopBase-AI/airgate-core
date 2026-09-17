@@ -75,19 +75,69 @@ func PeriodEnd(v time.Time) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldEQ(FieldPeriodEnd, v))
 }
 
+// CreditsLimit applies equality check predicate on the "credits_limit" field. It's identical to CreditsLimitEQ.
+func CreditsLimit(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldCreditsLimit, v))
+}
+
 // CreditsUsed applies equality check predicate on the "credits_used" field. It's identical to CreditsUsedEQ.
-func CreditsUsed(v float64) predicate.UserSubscription {
+func CreditsUsed(v int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldEQ(FieldCreditsUsed, v))
 }
 
+// CreditsReserved applies equality check predicate on the "credits_reserved" field. It's identical to CreditsReservedEQ.
+func CreditsReserved(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldCreditsReserved, v))
+}
+
 // ExtraCredits applies equality check predicate on the "extra_credits" field. It's identical to ExtraCreditsEQ.
-func ExtraCredits(v float64) predicate.UserSubscription {
+func ExtraCredits(v int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldEQ(FieldExtraCredits, v))
 }
 
 // ImagesUsed applies equality check predicate on the "images_used" field. It's identical to ImagesUsedEQ.
 func ImagesUsed(v int) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldEQ(FieldImagesUsed, v))
+}
+
+// ImagesReserved applies equality check predicate on the "images_reserved" field. It's identical to ImagesReservedEQ.
+func ImagesReserved(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldImagesReserved, v))
+}
+
+// ImageLimit applies equality check predicate on the "image_limit" field. It's identical to ImageLimitEQ.
+func ImageLimit(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldImageLimit, v))
+}
+
+// LedgerVersion applies equality check predicate on the "ledger_version" field. It's identical to LedgerVersionEQ.
+func LedgerVersion(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldLedgerVersion, v))
+}
+
+// SourceProvider applies equality check predicate on the "source_provider" field. It's identical to SourceProviderEQ.
+func SourceProvider(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldSourceProvider, v))
+}
+
+// SourceExecutionKey applies equality check predicate on the "source_execution_key" field. It's identical to SourceExecutionKeyEQ.
+func SourceExecutionKey(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldSourceExecutionKey, v))
+}
+
+// SourcePaymentKey applies equality check predicate on the "source_payment_key" field. It's identical to SourcePaymentKeyEQ.
+func SourcePaymentKey(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldSourcePaymentKey, v))
+}
+
+// PaymentAmountMinor applies equality check predicate on the "payment_amount_minor" field. It's identical to PaymentAmountMinorEQ.
+func PaymentAmountMinor(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldPaymentAmountMinor, v))
+}
+
+// PaymentCurrency applies equality check predicate on the "payment_currency" field. It's identical to PaymentCurrencyEQ.
+func PaymentCurrency(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldPaymentCurrency, v))
 }
 
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
@@ -310,83 +360,183 @@ func PeriodEndNotNil() predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldNotNull(FieldPeriodEnd))
 }
 
+// PlanSnapshotIsNil applies the IsNil predicate on the "plan_snapshot" field.
+func PlanSnapshotIsNil() predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIsNull(FieldPlanSnapshot))
+}
+
+// PlanSnapshotNotNil applies the NotNil predicate on the "plan_snapshot" field.
+func PlanSnapshotNotNil() predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotNull(FieldPlanSnapshot))
+}
+
+// IncludedGroupIdsIsNil applies the IsNil predicate on the "included_group_ids" field.
+func IncludedGroupIdsIsNil() predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIsNull(FieldIncludedGroupIds))
+}
+
+// IncludedGroupIdsNotNil applies the NotNil predicate on the "included_group_ids" field.
+func IncludedGroupIdsNotNil() predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotNull(FieldIncludedGroupIds))
+}
+
+// CreditsLimitEQ applies the EQ predicate on the "credits_limit" field.
+func CreditsLimitEQ(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldCreditsLimit, v))
+}
+
+// CreditsLimitNEQ applies the NEQ predicate on the "credits_limit" field.
+func CreditsLimitNEQ(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldCreditsLimit, v))
+}
+
+// CreditsLimitIn applies the In predicate on the "credits_limit" field.
+func CreditsLimitIn(vs ...int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIn(FieldCreditsLimit, vs...))
+}
+
+// CreditsLimitNotIn applies the NotIn predicate on the "credits_limit" field.
+func CreditsLimitNotIn(vs ...int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotIn(FieldCreditsLimit, vs...))
+}
+
+// CreditsLimitGT applies the GT predicate on the "credits_limit" field.
+func CreditsLimitGT(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGT(FieldCreditsLimit, v))
+}
+
+// CreditsLimitGTE applies the GTE predicate on the "credits_limit" field.
+func CreditsLimitGTE(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGTE(FieldCreditsLimit, v))
+}
+
+// CreditsLimitLT applies the LT predicate on the "credits_limit" field.
+func CreditsLimitLT(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLT(FieldCreditsLimit, v))
+}
+
+// CreditsLimitLTE applies the LTE predicate on the "credits_limit" field.
+func CreditsLimitLTE(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLTE(FieldCreditsLimit, v))
+}
+
 // CreditsUsedEQ applies the EQ predicate on the "credits_used" field.
-func CreditsUsedEQ(v float64) predicate.UserSubscription {
+func CreditsUsedEQ(v int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldEQ(FieldCreditsUsed, v))
 }
 
 // CreditsUsedNEQ applies the NEQ predicate on the "credits_used" field.
-func CreditsUsedNEQ(v float64) predicate.UserSubscription {
+func CreditsUsedNEQ(v int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldNEQ(FieldCreditsUsed, v))
 }
 
 // CreditsUsedIn applies the In predicate on the "credits_used" field.
-func CreditsUsedIn(vs ...float64) predicate.UserSubscription {
+func CreditsUsedIn(vs ...int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldIn(FieldCreditsUsed, vs...))
 }
 
 // CreditsUsedNotIn applies the NotIn predicate on the "credits_used" field.
-func CreditsUsedNotIn(vs ...float64) predicate.UserSubscription {
+func CreditsUsedNotIn(vs ...int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldNotIn(FieldCreditsUsed, vs...))
 }
 
 // CreditsUsedGT applies the GT predicate on the "credits_used" field.
-func CreditsUsedGT(v float64) predicate.UserSubscription {
+func CreditsUsedGT(v int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldGT(FieldCreditsUsed, v))
 }
 
 // CreditsUsedGTE applies the GTE predicate on the "credits_used" field.
-func CreditsUsedGTE(v float64) predicate.UserSubscription {
+func CreditsUsedGTE(v int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldGTE(FieldCreditsUsed, v))
 }
 
 // CreditsUsedLT applies the LT predicate on the "credits_used" field.
-func CreditsUsedLT(v float64) predicate.UserSubscription {
+func CreditsUsedLT(v int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldLT(FieldCreditsUsed, v))
 }
 
 // CreditsUsedLTE applies the LTE predicate on the "credits_used" field.
-func CreditsUsedLTE(v float64) predicate.UserSubscription {
+func CreditsUsedLTE(v int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldLTE(FieldCreditsUsed, v))
 }
 
+// CreditsReservedEQ applies the EQ predicate on the "credits_reserved" field.
+func CreditsReservedEQ(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldCreditsReserved, v))
+}
+
+// CreditsReservedNEQ applies the NEQ predicate on the "credits_reserved" field.
+func CreditsReservedNEQ(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldCreditsReserved, v))
+}
+
+// CreditsReservedIn applies the In predicate on the "credits_reserved" field.
+func CreditsReservedIn(vs ...int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIn(FieldCreditsReserved, vs...))
+}
+
+// CreditsReservedNotIn applies the NotIn predicate on the "credits_reserved" field.
+func CreditsReservedNotIn(vs ...int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotIn(FieldCreditsReserved, vs...))
+}
+
+// CreditsReservedGT applies the GT predicate on the "credits_reserved" field.
+func CreditsReservedGT(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGT(FieldCreditsReserved, v))
+}
+
+// CreditsReservedGTE applies the GTE predicate on the "credits_reserved" field.
+func CreditsReservedGTE(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGTE(FieldCreditsReserved, v))
+}
+
+// CreditsReservedLT applies the LT predicate on the "credits_reserved" field.
+func CreditsReservedLT(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLT(FieldCreditsReserved, v))
+}
+
+// CreditsReservedLTE applies the LTE predicate on the "credits_reserved" field.
+func CreditsReservedLTE(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLTE(FieldCreditsReserved, v))
+}
+
 // ExtraCreditsEQ applies the EQ predicate on the "extra_credits" field.
-func ExtraCreditsEQ(v float64) predicate.UserSubscription {
+func ExtraCreditsEQ(v int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldEQ(FieldExtraCredits, v))
 }
 
 // ExtraCreditsNEQ applies the NEQ predicate on the "extra_credits" field.
-func ExtraCreditsNEQ(v float64) predicate.UserSubscription {
+func ExtraCreditsNEQ(v int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldNEQ(FieldExtraCredits, v))
 }
 
 // ExtraCreditsIn applies the In predicate on the "extra_credits" field.
-func ExtraCreditsIn(vs ...float64) predicate.UserSubscription {
+func ExtraCreditsIn(vs ...int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldIn(FieldExtraCredits, vs...))
 }
 
 // ExtraCreditsNotIn applies the NotIn predicate on the "extra_credits" field.
-func ExtraCreditsNotIn(vs ...float64) predicate.UserSubscription {
+func ExtraCreditsNotIn(vs ...int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldNotIn(FieldExtraCredits, vs...))
 }
 
 // ExtraCreditsGT applies the GT predicate on the "extra_credits" field.
-func ExtraCreditsGT(v float64) predicate.UserSubscription {
+func ExtraCreditsGT(v int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldGT(FieldExtraCredits, v))
 }
 
 // ExtraCreditsGTE applies the GTE predicate on the "extra_credits" field.
-func ExtraCreditsGTE(v float64) predicate.UserSubscription {
+func ExtraCreditsGTE(v int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldGTE(FieldExtraCredits, v))
 }
 
 // ExtraCreditsLT applies the LT predicate on the "extra_credits" field.
-func ExtraCreditsLT(v float64) predicate.UserSubscription {
+func ExtraCreditsLT(v int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldLT(FieldExtraCredits, v))
 }
 
 // ExtraCreditsLTE applies the LTE predicate on the "extra_credits" field.
-func ExtraCreditsLTE(v float64) predicate.UserSubscription {
+func ExtraCreditsLTE(v int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldLTE(FieldExtraCredits, v))
 }
 
@@ -430,6 +580,126 @@ func ImagesUsedLTE(v int) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldLTE(FieldImagesUsed, v))
 }
 
+// ImagesReservedEQ applies the EQ predicate on the "images_reserved" field.
+func ImagesReservedEQ(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldImagesReserved, v))
+}
+
+// ImagesReservedNEQ applies the NEQ predicate on the "images_reserved" field.
+func ImagesReservedNEQ(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldImagesReserved, v))
+}
+
+// ImagesReservedIn applies the In predicate on the "images_reserved" field.
+func ImagesReservedIn(vs ...int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIn(FieldImagesReserved, vs...))
+}
+
+// ImagesReservedNotIn applies the NotIn predicate on the "images_reserved" field.
+func ImagesReservedNotIn(vs ...int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotIn(FieldImagesReserved, vs...))
+}
+
+// ImagesReservedGT applies the GT predicate on the "images_reserved" field.
+func ImagesReservedGT(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGT(FieldImagesReserved, v))
+}
+
+// ImagesReservedGTE applies the GTE predicate on the "images_reserved" field.
+func ImagesReservedGTE(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGTE(FieldImagesReserved, v))
+}
+
+// ImagesReservedLT applies the LT predicate on the "images_reserved" field.
+func ImagesReservedLT(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLT(FieldImagesReserved, v))
+}
+
+// ImagesReservedLTE applies the LTE predicate on the "images_reserved" field.
+func ImagesReservedLTE(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLTE(FieldImagesReserved, v))
+}
+
+// ImageLimitEQ applies the EQ predicate on the "image_limit" field.
+func ImageLimitEQ(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldImageLimit, v))
+}
+
+// ImageLimitNEQ applies the NEQ predicate on the "image_limit" field.
+func ImageLimitNEQ(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldImageLimit, v))
+}
+
+// ImageLimitIn applies the In predicate on the "image_limit" field.
+func ImageLimitIn(vs ...int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIn(FieldImageLimit, vs...))
+}
+
+// ImageLimitNotIn applies the NotIn predicate on the "image_limit" field.
+func ImageLimitNotIn(vs ...int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotIn(FieldImageLimit, vs...))
+}
+
+// ImageLimitGT applies the GT predicate on the "image_limit" field.
+func ImageLimitGT(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGT(FieldImageLimit, v))
+}
+
+// ImageLimitGTE applies the GTE predicate on the "image_limit" field.
+func ImageLimitGTE(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGTE(FieldImageLimit, v))
+}
+
+// ImageLimitLT applies the LT predicate on the "image_limit" field.
+func ImageLimitLT(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLT(FieldImageLimit, v))
+}
+
+// ImageLimitLTE applies the LTE predicate on the "image_limit" field.
+func ImageLimitLTE(v int) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLTE(FieldImageLimit, v))
+}
+
+// LedgerVersionEQ applies the EQ predicate on the "ledger_version" field.
+func LedgerVersionEQ(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldLedgerVersion, v))
+}
+
+// LedgerVersionNEQ applies the NEQ predicate on the "ledger_version" field.
+func LedgerVersionNEQ(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldLedgerVersion, v))
+}
+
+// LedgerVersionIn applies the In predicate on the "ledger_version" field.
+func LedgerVersionIn(vs ...int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIn(FieldLedgerVersion, vs...))
+}
+
+// LedgerVersionNotIn applies the NotIn predicate on the "ledger_version" field.
+func LedgerVersionNotIn(vs ...int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotIn(FieldLedgerVersion, vs...))
+}
+
+// LedgerVersionGT applies the GT predicate on the "ledger_version" field.
+func LedgerVersionGT(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGT(FieldLedgerVersion, v))
+}
+
+// LedgerVersionGTE applies the GTE predicate on the "ledger_version" field.
+func LedgerVersionGTE(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGTE(FieldLedgerVersion, v))
+}
+
+// LedgerVersionLT applies the LT predicate on the "ledger_version" field.
+func LedgerVersionLT(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLT(FieldLedgerVersion, v))
+}
+
+// LedgerVersionLTE applies the LTE predicate on the "ledger_version" field.
+func LedgerVersionLTE(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLTE(FieldLedgerVersion, v))
+}
+
 // BillingCycleEQ applies the EQ predicate on the "billing_cycle" field.
 func BillingCycleEQ(v BillingCycle) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldEQ(FieldBillingCycle, v))
@@ -448,6 +718,326 @@ func BillingCycleIn(vs ...BillingCycle) predicate.UserSubscription {
 // BillingCycleNotIn applies the NotIn predicate on the "billing_cycle" field.
 func BillingCycleNotIn(vs ...BillingCycle) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldNotIn(FieldBillingCycle, vs...))
+}
+
+// SourceProviderEQ applies the EQ predicate on the "source_provider" field.
+func SourceProviderEQ(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldSourceProvider, v))
+}
+
+// SourceProviderNEQ applies the NEQ predicate on the "source_provider" field.
+func SourceProviderNEQ(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldSourceProvider, v))
+}
+
+// SourceProviderIn applies the In predicate on the "source_provider" field.
+func SourceProviderIn(vs ...string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIn(FieldSourceProvider, vs...))
+}
+
+// SourceProviderNotIn applies the NotIn predicate on the "source_provider" field.
+func SourceProviderNotIn(vs ...string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotIn(FieldSourceProvider, vs...))
+}
+
+// SourceProviderGT applies the GT predicate on the "source_provider" field.
+func SourceProviderGT(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGT(FieldSourceProvider, v))
+}
+
+// SourceProviderGTE applies the GTE predicate on the "source_provider" field.
+func SourceProviderGTE(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGTE(FieldSourceProvider, v))
+}
+
+// SourceProviderLT applies the LT predicate on the "source_provider" field.
+func SourceProviderLT(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLT(FieldSourceProvider, v))
+}
+
+// SourceProviderLTE applies the LTE predicate on the "source_provider" field.
+func SourceProviderLTE(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLTE(FieldSourceProvider, v))
+}
+
+// SourceProviderContains applies the Contains predicate on the "source_provider" field.
+func SourceProviderContains(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldContains(FieldSourceProvider, v))
+}
+
+// SourceProviderHasPrefix applies the HasPrefix predicate on the "source_provider" field.
+func SourceProviderHasPrefix(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldHasPrefix(FieldSourceProvider, v))
+}
+
+// SourceProviderHasSuffix applies the HasSuffix predicate on the "source_provider" field.
+func SourceProviderHasSuffix(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldHasSuffix(FieldSourceProvider, v))
+}
+
+// SourceProviderEqualFold applies the EqualFold predicate on the "source_provider" field.
+func SourceProviderEqualFold(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEqualFold(FieldSourceProvider, v))
+}
+
+// SourceProviderContainsFold applies the ContainsFold predicate on the "source_provider" field.
+func SourceProviderContainsFold(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldContainsFold(FieldSourceProvider, v))
+}
+
+// SourceExecutionKeyEQ applies the EQ predicate on the "source_execution_key" field.
+func SourceExecutionKeyEQ(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldSourceExecutionKey, v))
+}
+
+// SourceExecutionKeyNEQ applies the NEQ predicate on the "source_execution_key" field.
+func SourceExecutionKeyNEQ(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldSourceExecutionKey, v))
+}
+
+// SourceExecutionKeyIn applies the In predicate on the "source_execution_key" field.
+func SourceExecutionKeyIn(vs ...string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIn(FieldSourceExecutionKey, vs...))
+}
+
+// SourceExecutionKeyNotIn applies the NotIn predicate on the "source_execution_key" field.
+func SourceExecutionKeyNotIn(vs ...string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotIn(FieldSourceExecutionKey, vs...))
+}
+
+// SourceExecutionKeyGT applies the GT predicate on the "source_execution_key" field.
+func SourceExecutionKeyGT(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGT(FieldSourceExecutionKey, v))
+}
+
+// SourceExecutionKeyGTE applies the GTE predicate on the "source_execution_key" field.
+func SourceExecutionKeyGTE(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGTE(FieldSourceExecutionKey, v))
+}
+
+// SourceExecutionKeyLT applies the LT predicate on the "source_execution_key" field.
+func SourceExecutionKeyLT(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLT(FieldSourceExecutionKey, v))
+}
+
+// SourceExecutionKeyLTE applies the LTE predicate on the "source_execution_key" field.
+func SourceExecutionKeyLTE(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLTE(FieldSourceExecutionKey, v))
+}
+
+// SourceExecutionKeyContains applies the Contains predicate on the "source_execution_key" field.
+func SourceExecutionKeyContains(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldContains(FieldSourceExecutionKey, v))
+}
+
+// SourceExecutionKeyHasPrefix applies the HasPrefix predicate on the "source_execution_key" field.
+func SourceExecutionKeyHasPrefix(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldHasPrefix(FieldSourceExecutionKey, v))
+}
+
+// SourceExecutionKeyHasSuffix applies the HasSuffix predicate on the "source_execution_key" field.
+func SourceExecutionKeyHasSuffix(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldHasSuffix(FieldSourceExecutionKey, v))
+}
+
+// SourceExecutionKeyIsNil applies the IsNil predicate on the "source_execution_key" field.
+func SourceExecutionKeyIsNil() predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIsNull(FieldSourceExecutionKey))
+}
+
+// SourceExecutionKeyNotNil applies the NotNil predicate on the "source_execution_key" field.
+func SourceExecutionKeyNotNil() predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotNull(FieldSourceExecutionKey))
+}
+
+// SourceExecutionKeyEqualFold applies the EqualFold predicate on the "source_execution_key" field.
+func SourceExecutionKeyEqualFold(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEqualFold(FieldSourceExecutionKey, v))
+}
+
+// SourceExecutionKeyContainsFold applies the ContainsFold predicate on the "source_execution_key" field.
+func SourceExecutionKeyContainsFold(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldContainsFold(FieldSourceExecutionKey, v))
+}
+
+// SourcePaymentKeyEQ applies the EQ predicate on the "source_payment_key" field.
+func SourcePaymentKeyEQ(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldSourcePaymentKey, v))
+}
+
+// SourcePaymentKeyNEQ applies the NEQ predicate on the "source_payment_key" field.
+func SourcePaymentKeyNEQ(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldSourcePaymentKey, v))
+}
+
+// SourcePaymentKeyIn applies the In predicate on the "source_payment_key" field.
+func SourcePaymentKeyIn(vs ...string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIn(FieldSourcePaymentKey, vs...))
+}
+
+// SourcePaymentKeyNotIn applies the NotIn predicate on the "source_payment_key" field.
+func SourcePaymentKeyNotIn(vs ...string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotIn(FieldSourcePaymentKey, vs...))
+}
+
+// SourcePaymentKeyGT applies the GT predicate on the "source_payment_key" field.
+func SourcePaymentKeyGT(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGT(FieldSourcePaymentKey, v))
+}
+
+// SourcePaymentKeyGTE applies the GTE predicate on the "source_payment_key" field.
+func SourcePaymentKeyGTE(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGTE(FieldSourcePaymentKey, v))
+}
+
+// SourcePaymentKeyLT applies the LT predicate on the "source_payment_key" field.
+func SourcePaymentKeyLT(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLT(FieldSourcePaymentKey, v))
+}
+
+// SourcePaymentKeyLTE applies the LTE predicate on the "source_payment_key" field.
+func SourcePaymentKeyLTE(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLTE(FieldSourcePaymentKey, v))
+}
+
+// SourcePaymentKeyContains applies the Contains predicate on the "source_payment_key" field.
+func SourcePaymentKeyContains(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldContains(FieldSourcePaymentKey, v))
+}
+
+// SourcePaymentKeyHasPrefix applies the HasPrefix predicate on the "source_payment_key" field.
+func SourcePaymentKeyHasPrefix(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldHasPrefix(FieldSourcePaymentKey, v))
+}
+
+// SourcePaymentKeyHasSuffix applies the HasSuffix predicate on the "source_payment_key" field.
+func SourcePaymentKeyHasSuffix(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldHasSuffix(FieldSourcePaymentKey, v))
+}
+
+// SourcePaymentKeyIsNil applies the IsNil predicate on the "source_payment_key" field.
+func SourcePaymentKeyIsNil() predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIsNull(FieldSourcePaymentKey))
+}
+
+// SourcePaymentKeyNotNil applies the NotNil predicate on the "source_payment_key" field.
+func SourcePaymentKeyNotNil() predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotNull(FieldSourcePaymentKey))
+}
+
+// SourcePaymentKeyEqualFold applies the EqualFold predicate on the "source_payment_key" field.
+func SourcePaymentKeyEqualFold(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEqualFold(FieldSourcePaymentKey, v))
+}
+
+// SourcePaymentKeyContainsFold applies the ContainsFold predicate on the "source_payment_key" field.
+func SourcePaymentKeyContainsFold(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldContainsFold(FieldSourcePaymentKey, v))
+}
+
+// PaymentAmountMinorEQ applies the EQ predicate on the "payment_amount_minor" field.
+func PaymentAmountMinorEQ(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldPaymentAmountMinor, v))
+}
+
+// PaymentAmountMinorNEQ applies the NEQ predicate on the "payment_amount_minor" field.
+func PaymentAmountMinorNEQ(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldPaymentAmountMinor, v))
+}
+
+// PaymentAmountMinorIn applies the In predicate on the "payment_amount_minor" field.
+func PaymentAmountMinorIn(vs ...int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIn(FieldPaymentAmountMinor, vs...))
+}
+
+// PaymentAmountMinorNotIn applies the NotIn predicate on the "payment_amount_minor" field.
+func PaymentAmountMinorNotIn(vs ...int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotIn(FieldPaymentAmountMinor, vs...))
+}
+
+// PaymentAmountMinorGT applies the GT predicate on the "payment_amount_minor" field.
+func PaymentAmountMinorGT(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGT(FieldPaymentAmountMinor, v))
+}
+
+// PaymentAmountMinorGTE applies the GTE predicate on the "payment_amount_minor" field.
+func PaymentAmountMinorGTE(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGTE(FieldPaymentAmountMinor, v))
+}
+
+// PaymentAmountMinorLT applies the LT predicate on the "payment_amount_minor" field.
+func PaymentAmountMinorLT(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLT(FieldPaymentAmountMinor, v))
+}
+
+// PaymentAmountMinorLTE applies the LTE predicate on the "payment_amount_minor" field.
+func PaymentAmountMinorLTE(v int64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLTE(FieldPaymentAmountMinor, v))
+}
+
+// PaymentCurrencyEQ applies the EQ predicate on the "payment_currency" field.
+func PaymentCurrencyEQ(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldPaymentCurrency, v))
+}
+
+// PaymentCurrencyNEQ applies the NEQ predicate on the "payment_currency" field.
+func PaymentCurrencyNEQ(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldPaymentCurrency, v))
+}
+
+// PaymentCurrencyIn applies the In predicate on the "payment_currency" field.
+func PaymentCurrencyIn(vs ...string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIn(FieldPaymentCurrency, vs...))
+}
+
+// PaymentCurrencyNotIn applies the NotIn predicate on the "payment_currency" field.
+func PaymentCurrencyNotIn(vs ...string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotIn(FieldPaymentCurrency, vs...))
+}
+
+// PaymentCurrencyGT applies the GT predicate on the "payment_currency" field.
+func PaymentCurrencyGT(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGT(FieldPaymentCurrency, v))
+}
+
+// PaymentCurrencyGTE applies the GTE predicate on the "payment_currency" field.
+func PaymentCurrencyGTE(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGTE(FieldPaymentCurrency, v))
+}
+
+// PaymentCurrencyLT applies the LT predicate on the "payment_currency" field.
+func PaymentCurrencyLT(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLT(FieldPaymentCurrency, v))
+}
+
+// PaymentCurrencyLTE applies the LTE predicate on the "payment_currency" field.
+func PaymentCurrencyLTE(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLTE(FieldPaymentCurrency, v))
+}
+
+// PaymentCurrencyContains applies the Contains predicate on the "payment_currency" field.
+func PaymentCurrencyContains(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldContains(FieldPaymentCurrency, v))
+}
+
+// PaymentCurrencyHasPrefix applies the HasPrefix predicate on the "payment_currency" field.
+func PaymentCurrencyHasPrefix(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldHasPrefix(FieldPaymentCurrency, v))
+}
+
+// PaymentCurrencyHasSuffix applies the HasSuffix predicate on the "payment_currency" field.
+func PaymentCurrencyHasSuffix(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldHasSuffix(FieldPaymentCurrency, v))
+}
+
+// PaymentCurrencyEqualFold applies the EqualFold predicate on the "payment_currency" field.
+func PaymentCurrencyEqualFold(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEqualFold(FieldPaymentCurrency, v))
+}
+
+// PaymentCurrencyContainsFold applies the ContainsFold predicate on the "payment_currency" field.
+func PaymentCurrencyContainsFold(v string) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldContainsFold(FieldPaymentCurrency, v))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
@@ -568,6 +1158,29 @@ func HasGroup() predicate.UserSubscription {
 func HasGroupWith(preds ...predicate.Group) predicate.UserSubscription {
 	return predicate.UserSubscription(func(s *sql.Selector) {
 		step := newGroupStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasReservations applies the HasEdge predicate on the "reservations" edge.
+func HasReservations() predicate.UserSubscription {
+	return predicate.UserSubscription(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, ReservationsTable, ReservationsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasReservationsWith applies the HasEdge predicate on the "reservations" edge with a given conditions (other predicates).
+func HasReservationsWith(preds ...predicate.SubscriptionReservation) predicate.UserSubscription {
+	return predicate.UserSubscription(func(s *sql.Selector) {
+		step := newReservationsStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

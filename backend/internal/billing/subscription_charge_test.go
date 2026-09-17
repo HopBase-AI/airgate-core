@@ -111,3 +111,45 @@ func TestUsageRecordImageCount(t *testing.T) {
 		t.Fatalf("文本请求应为 0，得到 %d", n)
 	}
 }
+
+func TestRecorderSettlesPinnedSubscriptionReservation(t *testing.T) {
+	db := enttest.Open(t, "sqlite3", "file:billing_reservation?mode=memory&cache=shared&_fk=1", enttest.WithMigrateOptions(schema.WithGlobalUniqueID(false)))
+	defer func() { _ = db.Close() }()
+	ctx := context.Background()
+	user := createBillingTestUser(t, ctx, db, "reserved@example.com")
+	db.User.UpdateOneID(user.ID).SetBalance(50).ExecX(ctx)
+	group := db.Group.Create().SetName("Consumer").SetPlatform("openai").SetSubscriptionType(entgroup.SubscriptionTypeSubscription).SaveX(ctx)
+	now := time.Now().UTC().Truncate(time.Second)
+	snapshot := map[string]any{"monthly_credits": 1000, "credits_per_unit": 10000, "per_request_credits": 600}
+	sub := db.UserSubscription.Create().
+		SetUserID(user.ID).SetGroupID(group.ID).
+		SetEffectiveAt(now).SetExpiresAt(now.AddDate(0, 1, 0)).
+		SetPeriodStart(now).SetPeriodEnd(now.AddDate(0, 1, 0)).
+		SetPlanSnapshot(snapshot).SetIncludedGroupIds([]int{group.ID}).
+		SetCreditsLimit(1000).SetCreditsReserved(600).SaveX(ctx)
+	db.SubscriptionReservation.Create().
+		SetReservationKey("subscription:req-1").SetUserIDSnapshot(user.ID).SetGroupIDSnapshot(group.ID).
+		SetPeriodStart(now).SetPeriodEnd(now.AddDate(0, 1, 0)).
+		SetCreditsReserved(600).SetExpiresAt(now.Add(time.Hour)).SetSubscriptionID(sub.ID).SaveX(ctx)
+
+	recorder := NewRecorder(db, 0)
+	_, err := recorder.RecordSync(ctx, UsageRecord{
+		RequestID: "subscription:req-1", SubscriptionReservationKey: "subscription:req-1",
+		UserID: user.ID, GroupID: group.ID, Platform: "openai", Model: "gpt-5",
+		ActualCost: 0.02, BilledCost: 0.02,
+	})
+	if err != nil {
+		t.Fatalf("RecordSync: %v", err)
+	}
+	ledger := db.UserSubscription.GetX(ctx, sub.ID)
+	if ledger.CreditsReserved != 0 || ledger.CreditsUsed != 200 {
+		t.Fatalf("settlement ledger = used %d reserved %d", ledger.CreditsUsed, ledger.CreditsReserved)
+	}
+	reservation := db.SubscriptionReservation.Query().OnlyX(ctx)
+	if string(reservation.Status) != "settled" || reservation.CreditsSettled != 200 {
+		t.Fatalf("reservation not settled: %+v", reservation)
+	}
+	if balance := db.User.GetX(ctx, user.ID).Balance; balance != 50 {
+		t.Fatalf("subscription settlement changed wallet balance: %v", balance)
+	}
+}

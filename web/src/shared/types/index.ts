@@ -791,6 +791,7 @@ export interface SubscriptionResp {
 
 // 套餐权益：订阅制分组 quotas JSON 的类型化投影（金额单位=余额单位；0 = 不限 / 不提供）
 export interface PlanQuotasResp {
+  included_group_ids: number[];
   monthly_credits: number;
   credits_per_unit: number;
   per_request_credits: number;
@@ -816,6 +817,7 @@ export interface PlanResp {
 
 export interface SubscriptionUsageWindow {
   used: number;
+  reserved: number;
   limit: number;
   reset: string;
 }
@@ -839,12 +841,6 @@ export interface SubscriptionProgressResp {
   topup_credits: number;
   topup_price: number;
 }
-
-export interface PurchaseSubscriptionReq {
-  group_id: number;
-  cycle: SubscriptionBillingCycle;
-}
-
 
 export interface AssignSubscriptionReq {
   user_id: number;

@@ -69,7 +69,7 @@ func TestCarryOverExtraEatsOverageFirst(t *testing.T) {
 	cases := []struct {
 		name string
 		sub  Subscription
-		want float64
+		want int64
 	}{
 		{"未超额全额结转", Subscription{CreditsUsed: 400, ExtraCredits: 300}, 300},
 		{"超额吃掉部分加购", Subscription{CreditsUsed: 1200, ExtraCredits: 300}, 100},
