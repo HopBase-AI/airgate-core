@@ -298,6 +298,9 @@ func (h *HostService) updateTask(ctx context.Context, pluginID string, req hostU
 		update.SetUsageID(*req.UsageID)
 	}
 	if req.EstimatedCost != nil {
+		if t.SubscriptionReservationKey != "" {
+			return nil, status.Error(codes.FailedPrecondition, "subscription task estimated cost is core-owned")
+		}
 		update.SetEstimatedCost(*req.EstimatedCost)
 	}
 	if req.Status == enttask.StatusCompleted.String() || req.Status == enttask.StatusFailed.String() {

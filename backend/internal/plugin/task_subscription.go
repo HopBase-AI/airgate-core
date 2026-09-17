@@ -60,12 +60,6 @@ func (h *HostService) existingTaskSubscription(ctx context.Context, req hostForw
 	if r.UserIDSnapshot != int(req.UserID) || r.GroupIDSnapshot != groupID || r.TaskID != t.ID || r.AccountIDSnapshot != t.SubscriptionAccountID {
 		return nil, t, status.Error(codes.PermissionDenied, "subscription task billing ownership mismatch")
 	}
-	if !r.ExpiresAt.After(time.Now()) {
-		if h.subscriptions != nil {
-			_ = h.subscriptions.Release(ctx, r.ReservationKey)
-		}
-		return nil, t, status.Error(codes.FailedPrecondition, "subscription task reservation expired")
-	}
 	if r.Status == reservation.StatusReleased || t.Status == task.StatusFailed || t.Status == task.StatusCancelled {
 		return nil, t, status.Error(codes.FailedPrecondition, "subscription task is terminal")
 	}
