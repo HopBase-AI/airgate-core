@@ -122,6 +122,26 @@ func (f *Forwarder) checkSubscription(c *gin.Context, state *forwardState) bool 
 	}
 	quotas := billing.ParsePlanQuotas(state.keyInfo.GroupQuotas)
 	kind := requestKindFor(f.manager, state.requestPath, state.model, state.body)
+	// Entitle resolves the immutable plan snapshot before any request-size
+	// estimate. The group configuration can change after a customer pays, but
+	// that must not change the rights sold with the entitlement.
+	entitlement, entitlementErr := f.subscriptions.Entitle(c.Request.Context(), state.keyInfo.UserID, state.keyInfo.GroupID, quotas, kind)
+	if entitlementErr != nil {
+		if denial, known := subscriptionDenialFor(entitlementErr); known {
+			protocolError(c, denial.status, denial.errType, denial.code, i18n.Tc(c, denial.msgKey))
+			f.recordFailureUsage(c, state, usageFailure{code: denial.usageCode, status: denial.status, message: i18n.En(denial.msgKey)})
+			return false
+		}
+		slog.Error("subscription_entitlement_lookup_failed",
+			sdk.LogFieldUserID, state.keyInfo.UserID,
+			sdk.LogFieldGroupID, state.keyInfo.GroupID,
+			sdk.LogFieldError, entitlementErr)
+		message := i18n.En("gw.subscription_service_unavailable")
+		protocolError(c, http.StatusServiceUnavailable, "server_error", "subscription_service_unavailable", i18n.Tc(c, "gw.subscription_service_unavailable"))
+		f.recordFailureUsage(c, state, usageFailure{code: appusage.ErrorCodePluginUnavailable, status: http.StatusServiceUnavailable, message: message})
+		return false
+	}
+	quotas = entitlement.Quotas
 	if cap := quotas.PerRequestCredits; cap > 0 {
 		if est := f.estimateInputCredits(state, quotas); est > cap {
 			message := i18n.En("gw.subscription_request_too_large")
