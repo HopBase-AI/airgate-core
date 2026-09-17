@@ -196,7 +196,8 @@ func settleSubscriptionReservation(ctx context.Context, tx *ent.Tx, m meteredRec
 	}
 	sub := reservation.Edges.Subscription
 	if sub != nil && sub.PeriodStart.Equal(reservation.PeriodStart) && sub.PeriodEnd.Equal(reservation.PeriodEnd) {
-		if err := tx.UserSubscription.UpdateOneID(sub.ID).
+		if err := tx.UserSubscription.Update().
+			Where(entusersubscription.IDEQ(sub.ID), entusersubscription.PeriodStartEQ(reservation.PeriodStart), entusersubscription.PeriodEndEQ(reservation.PeriodEnd)).
 			AddCreditsReserved(-reservation.CreditsReserved).
 			AddImagesReserved(-reservation.ImagesReserved).
 			AddCreditsUsed(m.credits).

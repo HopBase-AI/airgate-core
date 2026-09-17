@@ -17,6 +17,7 @@ type memoryRepository struct {
 	nextID   int
 	rollover int
 	debits   []float64
+	reserved ReserveInput
 }
 
 func newMemoryRepository() *memoryRepository {
@@ -145,8 +146,9 @@ func (m *memoryRepository) Topup(_ context.Context, tx TopupTx) (Subscription, e
 	sub.ExtraCredits += tx.Credits
 	return *sub, nil
 }
-func (m *memoryRepository) Reserve(context.Context, ReserveInput) (Reservation, error) {
-	return Reservation{}, errors.New("unused")
+func (m *memoryRepository) Reserve(_ context.Context, input ReserveInput) (Reservation, error) {
+	m.reserved = input
+	return Reservation{Key: input.Key, CreditsReserved: input.Credits, ImagesReserved: input.Images}, nil
 }
 func (m *memoryRepository) Release(context.Context, string) error { return nil }
 func (m *memoryRepository) GrantExternal(context.Context, ExternalGrantInput) (Subscription, error) {
@@ -265,6 +267,32 @@ func TestEntitleInitializesLegacyRowsWithoutPeriod(t *testing.T) {
 	sub := repo.subs[id]
 	if !sub.PeriodStart.Equal(date(2026, 2, 28, 9)) || !sub.PeriodEnd.Equal(date(2026, 3, 31, 9)) {
 		t.Fatalf("历史行计量期应按 1/31 锚定到 [2-28, 3-31)，得到 [%s, %s)", sub.PeriodStart, sub.PeriodEnd)
+	}
+}
+
+func TestReserveUsesImmutableSnapshotAndSeparateMediaBound(t *testing.T) {
+	now := date(2026, 3, 10, 12)
+	svc, repo := newLedgerService(t, now)
+	snapshot := testPlanQuotas
+	snapshot.PerRequestCredits = 50
+	repo.put(Subscription{
+		UserID: 1, GroupID: 7, EffectiveAt: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour),
+		PlanSnapshot: snapshot.ToMap(), GroupQuotas: billing.PlanQuotas{PerRequestCredits: 1}.ToMap(),
+	})
+	if _, err := svc.Reserve(context.Background(), ReserveInput{
+		UserID: 1, GroupID: 7, Key: "chat", Kind: billing.RequestKindChat,
+	}); err != nil || repo.reserved.Credits != 50 {
+		t.Fatalf("chat did not use sold snapshot cap: input=%+v err=%v", repo.reserved, err)
+	}
+	if _, err := svc.Reserve(context.Background(), ReserveInput{
+		UserID: 1, GroupID: 7, Key: "video", Kind: billing.RequestKindVideo, Credits: 120,
+	}); err != nil || repo.reserved.Credits != 120 {
+		t.Fatalf("media quote was replaced by chat cap: input=%+v err=%v", repo.reserved, err)
+	}
+	if _, err := svc.Reserve(context.Background(), ReserveInput{
+		UserID: 1, GroupID: 7, Key: "too-large", Kind: billing.RequestKindChat, Credits: 51,
+	}); !errors.Is(err, ErrRequestCostUnbounded) {
+		t.Fatalf("chat above sold cap accepted: %v", err)
 	}
 }
 

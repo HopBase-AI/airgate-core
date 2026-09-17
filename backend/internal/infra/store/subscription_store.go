@@ -366,6 +366,9 @@ func (s *SubscriptionStore) Reserve(ctx context.Context, input appsubscription.R
 		if existing.UserIDSnapshot != input.UserID || existing.GroupIDSnapshot != input.GroupID {
 			return appsubscription.Reservation{}, appsubscription.ErrRequestCostUnbounded
 		}
+		if existing.Status != entsubscriptionreservation.StatusReserved || !existing.ExpiresAt.After(input.Now) {
+			return appsubscription.Reservation{}, appsubscription.ErrRequestCostUnbounded
+		}
 		return mapReservation(existing), nil
 	} else if !ent.IsNotFound(queryErr) {
 		return appsubscription.Reservation{}, queryErr
@@ -396,7 +399,10 @@ func (s *SubscriptionStore) Reserve(ctx context.Context, input appsubscription.R
 	if input.Kind == billing.RequestKindVideo && !quotas.VideoEnabled {
 		return appsubscription.Reservation{}, appsubscription.ErrVideoNotIncluded
 	}
-	if quotas.PerRequestCredits <= 0 || input.Credits > quotas.PerRequestCredits {
+	if input.Images < 0 {
+		return appsubscription.Reservation{}, appsubscription.ErrRequestCostUnbounded
+	}
+	if (input.Kind == billing.RequestKindChat || input.Kind == "") && (quotas.PerRequestCredits <= 0 || input.Credits > quotas.PerRequestCredits) {
 		return appsubscription.Reservation{}, appsubscription.ErrRequestCostUnbounded
 	}
 
@@ -404,11 +410,19 @@ func (s *SubscriptionStore) Reserve(ctx context.Context, input appsubscription.R
 	if periodEnd.IsZero() || !input.Now.Before(periodEnd) {
 		periodStart, periodEnd = appsubscription.PeriodContaining(row.EffectiveAt, input.Now)
 		carry := carryOverExtraStore(quotas.MonthlyCredits, row.CreditsUsed, row.ExtraCredits)
-		row, err = tx.UserSubscription.UpdateOneID(row.ID).
+		n, updateErr := tx.UserSubscription.Update().
+			Where(entusersubscription.IDEQ(row.ID), entusersubscription.LedgerVersionEQ(row.LedgerVersion)).
 			SetPeriodStart(periodStart).SetPeriodEnd(periodEnd).
 			SetCreditsLimit(quotas.MonthlyCredits).SetImageLimit(quotas.ImageMonthlyLimit).
 			SetCreditsUsed(0).SetCreditsReserved(0).SetImagesUsed(0).SetImagesReserved(0).
 			SetExtraCredits(carry).AddLedgerVersion(1).Save(ctx)
+		if updateErr != nil {
+			return appsubscription.Reservation{}, updateErr
+		}
+		if n != 1 {
+			return appsubscription.Reservation{}, fmt.Errorf("subscription ledger changed concurrently")
+		}
+		row, err = tx.UserSubscription.Get(ctx, row.ID)
 		if err != nil {
 			return appsubscription.Reservation{}, err
 		}
@@ -421,7 +435,7 @@ func (s *SubscriptionStore) Reserve(ctx context.Context, input appsubscription.R
 	if creditsLimit <= 0 {
 		creditsLimit = quotas.MonthlyCredits
 	}
-	if creditsLimit <= 0 || row.CreditsUsed+row.CreditsReserved+input.Credits > creditsLimit+row.ExtraCredits {
+	if creditsLimit > 0 && row.CreditsUsed+row.CreditsReserved+input.Credits > creditsLimit+row.ExtraCredits {
 		return appsubscription.Reservation{}, appsubscription.ErrCreditsExhausted
 	}
 	imageLimit := row.ImageLimit
@@ -430,6 +444,9 @@ func (s *SubscriptionStore) Reserve(ctx context.Context, input appsubscription.R
 	}
 	if input.Images > 0 && imageLimit > 0 && row.ImagesUsed+row.ImagesReserved+input.Images > imageLimit {
 		return appsubscription.Reservation{}, appsubscription.ErrImageLimitReached
+	}
+	if input.Credits <= 0 {
+		return appsubscription.Reservation{}, appsubscription.ErrRequestCostUnbounded
 	}
 
 	updated, err := tx.UserSubscription.Update().
@@ -550,7 +567,8 @@ func (s *SubscriptionStore) Release(ctx context.Context, key string) error {
 	}
 	sub := reservation.Edges.Subscription
 	if sub != nil && sub.PeriodStart.Equal(reservation.PeriodStart) && sub.PeriodEnd.Equal(reservation.PeriodEnd) {
-		if err := tx.UserSubscription.UpdateOneID(sub.ID).
+		if err := tx.UserSubscription.Update().
+			Where(entusersubscription.IDEQ(sub.ID), entusersubscription.PeriodStartEQ(reservation.PeriodStart), entusersubscription.PeriodEndEQ(reservation.PeriodEnd)).
 			AddCreditsReserved(-reservation.CreditsReserved).
 			AddImagesReserved(-reservation.ImagesReserved).
 			AddLedgerVersion(1).Exec(ctx); err != nil {

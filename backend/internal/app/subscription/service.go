@@ -77,7 +77,7 @@ func (s *Service) SubscriptionProgress(ctx context.Context, userID int) ([]Subsc
 	out := make([]SubscriptionProgress, 0, len(list))
 	for i := range list {
 		sub := list[i]
-		q := billing.ParsePlanQuotas(sub.GroupQuotas)
+		q := subscriptionQuotas(sub)
 		if err := s.refresh(ctx, &sub, q, now); err != nil {
 			if errors.Is(err, ErrSubscriptionExpired) || errors.Is(err, ErrSubscriptionSuspended) || errors.Is(err, ErrSubscriptionRequired) {
 				continue
@@ -238,7 +238,7 @@ func (s *Service) Topup(ctx context.Context, input TopupInput) (Subscription, er
 		return Subscription{}, ErrSubscriptionNotFound
 	}
 	now := s.now()
-	q := billing.ParsePlanQuotas(sub.GroupQuotas)
+	q := subscriptionQuotas(sub)
 	if err := s.refresh(ctx, &sub, q, now); err != nil {
 		return Subscription{}, err
 	}
@@ -280,9 +280,7 @@ func (s *Service) Entitle(ctx context.Context, userID, groupID int, q billing.Pl
 		}
 		return Entitlement{}, err
 	}
-	if len(sub.GroupQuotas) > 0 {
-		q = billing.ParsePlanQuotas(sub.GroupQuotas)
-	}
+	q = subscriptionQuotasOr(sub, q)
 	if err := s.refresh(ctx, &sub, q, s.now()); err != nil {
 		return Entitlement{}, err
 	}
@@ -314,7 +312,7 @@ func (s *Service) Reserve(ctx context.Context, input ReserveInput) (Reservation,
 	if input.UserID <= 0 || input.GroupID <= 0 || input.Key == "" {
 		return Reservation{}, ErrRequestCostUnbounded
 	}
-	if input.Images < 0 {
+	if input.Credits < 0 || input.Images < 0 {
 		return Reservation{}, ErrRequestCostUnbounded
 	}
 	if input.Now.IsZero() {
@@ -330,15 +328,36 @@ func (s *Service) Reserve(ctx context.Context, input ReserveInput) (Reservation,
 		}
 		return Reservation{}, err
 	}
-	q := billing.ParsePlanQuotas(sub.GroupQuotas)
+	q := subscriptionQuotas(sub)
 	if sub.EffectiveAt.After(input.Now) {
 		return Reservation{}, ErrSubscriptionRequired
 	}
-	if q.PerRequestCredits <= 0 {
-		return Reservation{}, ErrRequestCostUnbounded
+	if input.Kind == billing.RequestKindChat || input.Kind == "" {
+		if q.PerRequestCredits <= 0 || input.Credits > q.PerRequestCredits {
+			return Reservation{}, ErrRequestCostUnbounded
+		}
+		if input.Credits == 0 {
+			input.Credits = q.PerRequestCredits
+		}
 	}
-	input.Credits = q.PerRequestCredits
 	return s.repo.Reserve(ctx, input)
+}
+
+// subscriptionQuotas prefers the immutable rights snapshot stored when the
+// entitlement was granted. Falling back to the current group is only for old
+// rows created before plan snapshots existed.
+func subscriptionQuotas(sub Subscription) billing.PlanQuotas {
+	if len(sub.PlanSnapshot) > 0 {
+		return billing.ParsePlanQuotas(sub.PlanSnapshot)
+	}
+	return billing.ParsePlanQuotas(sub.GroupQuotas)
+}
+
+func subscriptionQuotasOr(sub Subscription, fallback billing.PlanQuotas) billing.PlanQuotas {
+	if len(sub.PlanSnapshot) > 0 || len(sub.GroupQuotas) > 0 {
+		return subscriptionQuotas(sub)
+	}
+	return fallback
 }
 
 // Release releases a request reservation when forwarding ends without billable usage.
@@ -424,6 +443,7 @@ func (s *Service) refresh(ctx context.Context, sub *Subscription, q billing.Plan
 	if won {
 		sub.PeriodStart, sub.PeriodEnd = start, end
 		sub.CreditsUsed, sub.ImagesUsed = 0, 0
+		sub.CreditsReserved, sub.ImagesReserved = 0, 0
 		sub.ExtraCredits = input.ExtraCredits
 		return nil
 	}
