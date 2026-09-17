@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -156,5 +157,76 @@ func TestSubmitRouteMayQuoteItsOwnBoundWithTheTask(t *testing.T) {
 	req.Path = "/v1/video/other"
 	if _, err := m.subscriptionRequestBound(req, boundQuotas); !errors.Is(err, appsubscription.ErrRequestCostUnbounded) {
 		t.Fatalf("undeclared route inherited the deferred bound: %v", err)
+	}
+}
+
+func TestAnswerIsShortenedToFitThePerRequestAllowance(t *testing.T) {
+	// A consumer plan's per-request allowance is far smaller than what a model's
+	// full output ceiling is worth, so rejecting everything above it would reject
+	// every request. The answer is capped to what the allowance pays for instead.
+	m := boundManager(sdk.ModelInfo{
+		ID: "chat-model", MaxOutputTokens: 64000,
+		Metadata: map[string]string{"price.input": "1", "price.output": "10"},
+	})
+	m.routeCache = map[string][]sdk.RouteDefinition{"gateway-test": {{
+		Method: "POST", Path: "/v1/chat/completions",
+		Metadata: map[string]string{"subscription_output_bound": `{"fields":["max_tokens","max_completion_tokens"]}`},
+	}}}
+	quotas := billing.PlanQuotas{MonthlyCredits: 1_000_000, CreditsPerUnit: 10000, PerRequestCredits: 2000}
+	req := subscriptionBoundRequest{
+		Kind: billing.RequestKindChat, Model: "chat-model", Rate: 1,
+		PluginName: "gateway-test", Path: "/v1/chat/completions",
+		Body: []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
+	}
+	admission, err := m.admitSubscriptionRequest(req, quotas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if admission.Credits > quotas.PerRequestCredits {
+		t.Fatalf("reserved %d credits above the %d allowance", admission.Credits, quotas.PerRequestCredits)
+	}
+	var decoded map[string]any
+	if admission.Body == nil || json.Unmarshal(admission.Body, &decoded) != nil {
+		t.Fatalf("request was not narrowed: %s", admission.Body)
+	}
+	limit, ok := decoded["max_tokens"].(float64)
+	if !ok || limit <= 0 || limit >= 64000 {
+		t.Fatalf("max_tokens = %v, want a positive limit below the model ceiling", decoded["max_tokens"])
+	}
+	if decoded["messages"] == nil {
+		t.Fatalf("rewriting the limit dropped the caller's payload: %s", admission.Body)
+	}
+	// The caller's own smaller limit is left alone and costs less.
+	req.Body = []byte(`{"messages":[],"max_tokens":16}`)
+	small, err := m.admitSubscriptionRequest(req, quotas)
+	if err != nil || small.Body != nil || small.Credits >= admission.Credits {
+		t.Fatalf("a request already within the allowance was rewritten: %+v %v", small, err)
+	}
+}
+
+func TestRequestsThatCannotBeNarrowedAreRejected(t *testing.T) {
+	m := boundManager(sdk.ModelInfo{
+		ID: "chat-model", MaxOutputTokens: 64000,
+		Metadata: map[string]string{"price.input": "1", "price.output": "10"},
+	})
+	quotas := billing.PlanQuotas{MonthlyCredits: 1_000_000, CreditsPerUnit: 10000, PerRequestCredits: 2000}
+	req := subscriptionBoundRequest{Kind: billing.RequestKindChat, Model: "chat-model", Rate: 1, Body: []byte(`{}`)}
+	// No route contract: Core does not know which field narrows this protocol.
+	if _, err := m.admitSubscriptionRequest(req, quotas); !errors.Is(err, errSubscriptionRequestTooLarge) {
+		t.Fatalf("unnarrowable protocol admitted: %v", err)
+	}
+	// Prompt alone above the allowance leaves nothing to answer with.
+	costly := boundManager(sdk.ModelInfo{
+		ID: "chat-model", MaxOutputTokens: 64000,
+		Metadata: map[string]string{"price.input": "100", "price.output": "10"},
+	})
+	costly.routeCache = map[string][]sdk.RouteDefinition{"gateway-test": {{
+		Method: "POST", Path: "/v1/chat/completions",
+		Metadata: map[string]string{"subscription_output_bound": `{"fields":["max_tokens"]}`},
+	}}}
+	req.PluginName, req.Path = "gateway-test", "/v1/chat/completions"
+	req.Body = []byte(`{"messages":"` + strings.Repeat("中", 5000) + `"}`)
+	if _, err := costly.admitSubscriptionRequest(req, quotas); !errors.Is(err, errSubscriptionRequestTooLarge) {
+		t.Fatalf("oversized prompt admitted: %v", err)
 	}
 }

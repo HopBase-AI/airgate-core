@@ -147,11 +147,27 @@ func (f *Forwarder) checkSubscription(c *gin.Context, state *forwardState) bool 
 	images := subscriptionImageCount(kind, state.body)
 	// Reserve what the request can cost upstream, not what the plan allows a
 	// customer to spend. A model the catalog cannot bound is denied.
-	credits, boundErr := f.manager.subscriptionRequestBound(subscriptionBoundRequest{
+	admission, boundErr := f.manager.admitSubscriptionRequest(subscriptionBoundRequest{
 		Kind: kind, Model: state.model, Body: state.body, Images: images,
 		Rate:       billing.ResolveBillingRateForGroup(state.keyInfo.UserGroupRates, state.keyInfo.GroupID, state.keyInfo.GroupRateMultiplier),
 		PluginName: forwardStatePluginName(state), Path: state.requestPath,
 	}, quotas)
+	if errors.Is(boundErr, errSubscriptionRequestTooLarge) {
+		message := i18n.En("gw.subscription_request_too_large")
+		slog.Warn("subscription_gate_request_too_large",
+			sdk.LogFieldUserID, state.keyInfo.UserID,
+			sdk.LogFieldGroupID, state.keyInfo.GroupID,
+			sdk.LogFieldModel, state.model,
+			"cap", quotas.PerRequestCredits,
+			"body_bytes", len(state.body))
+		protocolError(c, http.StatusRequestEntityTooLarge, "invalid_request_error", "subscription_request_too_large", i18n.Tc(c, "gw.subscription_request_too_large"))
+		f.recordFailureUsage(c, state, usageFailure{
+			code:    appusage.ErrorCodeRequestTooLarge,
+			status:  http.StatusRequestEntityTooLarge,
+			message: message,
+		})
+		return false
+	}
 	if boundErr != nil {
 		denial, _ := subscriptionDenialFor(appsubscription.ErrRequestCostUnbounded)
 		slog.Error("subscription_gate_request_cost_unbounded",
@@ -163,22 +179,10 @@ func (f *Forwarder) checkSubscription(c *gin.Context, state *forwardState) bool 
 		f.recordFailureUsage(c, state, usageFailure{code: denial.usageCode, status: denial.status, message: i18n.En(denial.msgKey)})
 		return false
 	}
-	if cap := quotas.PerRequestCredits; cap > 0 && credits > cap {
-		message := i18n.En("gw.subscription_request_too_large")
-		slog.Warn("subscription_gate_request_too_large",
-			sdk.LogFieldUserID, state.keyInfo.UserID,
-			sdk.LogFieldGroupID, state.keyInfo.GroupID,
-			sdk.LogFieldModel, state.model,
-			"bounded_credits", credits,
-			"cap", cap,
-			"body_bytes", len(state.body))
-		protocolError(c, http.StatusRequestEntityTooLarge, "invalid_request_error", "subscription_request_too_large", i18n.Tc(c, "gw.subscription_request_too_large"))
-		f.recordFailureUsage(c, state, usageFailure{
-			code:    appusage.ErrorCodeRequestTooLarge,
-			status:  http.StatusRequestEntityTooLarge,
-			message: message,
-		})
-		return false
+	credits := admission.Credits
+	if admission.Body != nil {
+		// The answer was shortened to fit the plan's per-request allowance.
+		state.body = admission.Body
 	}
 	reservationKey := state.subscriptionReservationKey
 	if reservationKey == "" {
@@ -286,24 +290,28 @@ func (h *HostService) entitleSubscriptionRoute(ctx context.Context, req hostForw
 	return nil
 }
 
-func (h *HostService) reserveHostSubscriptionRoute(ctx context.Context, req hostForwardRequest, route routing.Candidate) (string, error) {
+func (h *HostService) reserveHostSubscriptionRoute(ctx context.Context, req *hostForwardRequest, route routing.Candidate) (string, error) {
 	groupID := route.GroupID
 	if h.subscriptions == nil {
 		return "", status.Error(codes.Unavailable, i18n.En("gw.subscription_service_unavailable"))
 	}
 	if req.TaskID > 0 {
-		return h.reserveHostTaskSubscription(ctx, req, groupID)
+		return h.reserveHostTaskSubscription(ctx, *req, groupID)
 	}
 	key := fmt.Sprintf("subscription:host:%d:%s:%d", req.UserID, req.RequestID, groupID)
 	body := hostForwardBody(req.Body)
 	kind := requestKindFor(h.manager, req.Path, req.Model, body)
 	images := subscriptionImageCount(kind, body)
 	// Internal Studio / chat traffic spends the same customer entitlement as the
-	// public API, so it is admitted against the same bounded cost.
-	credits, boundErr := h.manager.subscriptionRequestBound(subscriptionBoundRequest{
+	// public API, so it is admitted against the same bounded cost and its answer
+	// is shortened the same way when the plan's per-request allowance is smaller.
+	admission, boundErr := h.manager.admitSubscriptionRequest(subscriptionBoundRequest{
 		Kind: kind, Model: req.Model, Body: body, Images: images,
 		Rate: route.EffectiveRate, PluginName: hostRoutePluginName(h.manager, route), Path: req.Path,
 	}, billing.ParsePlanQuotas(route.Quotas))
+	if errors.Is(boundErr, errSubscriptionRequestTooLarge) {
+		return "", hostSubscriptionDeniedError(i18n.En("gw.subscription_request_too_large"))
+	}
 	if boundErr != nil {
 		slog.Error("host_forward_subscription_cost_unbounded",
 			sdk.LogFieldUserID, req.UserID,
@@ -312,11 +320,11 @@ func (h *HostService) reserveHostSubscriptionRoute(ctx context.Context, req host
 			"kind", kind)
 		return "", hostSubscriptionDeniedError(i18n.En("gw.subscription_service_unavailable"))
 	}
-	if cap := billing.ParsePlanQuotas(route.Quotas).PerRequestCredits; cap > 0 && credits > cap {
-		return "", hostSubscriptionDeniedError(i18n.En("gw.subscription_request_too_large"))
+	if admission.Body != nil {
+		req.Body = admission.Body
 	}
 	if _, err := h.subscriptions.Reserve(ctx, appsubscription.ReserveInput{
-		UserID: int(req.UserID), GroupID: groupID, Key: key, Credits: credits, Images: images, Kind: kind,
+		UserID: int(req.UserID), GroupID: groupID, Key: key, Credits: admission.Credits, Images: images, Kind: kind,
 	}); err != nil {
 		if denial, known := subscriptionDenialFor(err); known {
 			return "", hostSubscriptionDeniedError(i18n.En(denial.msgKey))

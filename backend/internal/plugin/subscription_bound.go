@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"encoding/json"
+	"errors"
 	"math"
 	"strconv"
 	"strings"
@@ -83,6 +84,93 @@ func (m *Manager) ModelCatalogEntry(modelID string) (sdk.ModelInfo, bool) {
 		}
 	}
 	return sdk.ModelInfo{}, false
+}
+
+// errSubscriptionRequestTooLarge means the request cannot be made to fit the
+// plan's per-request ceiling, not that its cost is unknown.
+var errSubscriptionRequestTooLarge = errors.New("subscription: request cannot fit the per-request ceiling")
+
+// subscriptionAdmission is what admission decided: the credits to reserve and,
+// when the answer had to be shortened to fit the plan's per-request ceiling, the
+// rewritten body to forward in place of the caller's.
+type subscriptionAdmission struct {
+	Credits int64
+	Body    []byte
+}
+
+// admitSubscriptionRequest bounds the request and, where it can, makes it fit.
+//
+// Pricing the whole output ceiling is the only honest upper bound, but a model's
+// ceiling is worth far more than a consumer plan allows for one message, so
+// rejecting everything above the ceiling would reject every request. Instead the
+// output is clamped to what the ceiling can pay for, which is what a per-request
+// allowance means to a customer: a longer answer costs more, so it is cut off
+// rather than silently billed past the plan. Only a request whose input alone
+// exceeds the ceiling, or one whose protocol Core cannot narrow, is rejected.
+func (m *Manager) admitSubscriptionRequest(req subscriptionBoundRequest, quotas billing.PlanQuotas) (subscriptionAdmission, error) {
+	credits, err := m.subscriptionRequestBound(req, quotas)
+	if err != nil {
+		return subscriptionAdmission{}, err
+	}
+	ceiling := quotas.PerRequestCredits
+	if ceiling <= 0 || credits <= ceiling {
+		return subscriptionAdmission{Credits: credits}, nil
+	}
+	if req.Kind != billing.RequestKindChat {
+		return subscriptionAdmission{}, errSubscriptionRequestTooLarge
+	}
+	contract := m.subscriptionOutputBound(req.PluginName, req.Path)
+	if len(contract.Fields) == 0 {
+		return subscriptionAdmission{}, errSubscriptionRequestTooLarge
+	}
+	info, ok := m.ModelCatalogEntry(req.Model)
+	if !ok {
+		return subscriptionAdmission{}, appsubscription.ErrRequestCostUnbounded
+	}
+	inputPrice, okIn := catalogPrice(info.Metadata, "price.input")
+	outputPrice, okOut := catalogPrice(info.Metadata, "price.output")
+	if !okIn || !okOut {
+		return subscriptionAdmission{}, appsubscription.ErrRequestCostUnbounded
+	}
+	// Convert the plan's ceiling back into supplier USD, then spend what is
+	// left after the prompt on output tokens.
+	ceilingUSD := float64(ceiling) / float64(quotas.CreditsPerUnitOrDefault()) / req.Rate
+	inputUSD := float64(estimatePromptTokens(req.Body)) / 1e6 * inputPrice * subscriptionCacheWriteSurcharge
+	affordable := int((ceilingUSD - inputUSD) / outputPrice * 1e6)
+	if affordable < 1 {
+		return subscriptionAdmission{}, errSubscriptionRequestTooLarge
+	}
+	clamped := min(affordable, m.subscriptionOutputCeiling(info, req))
+	if clamped < 1 {
+		return subscriptionAdmission{}, errSubscriptionRequestTooLarge
+	}
+	body, err := withOutputLimit(req.Body, contract.Fields, clamped)
+	if err != nil {
+		return subscriptionAdmission{}, errSubscriptionRequestTooLarge
+	}
+	usd := inputUSD + float64(clamped)/1e6*outputPrice
+	return subscriptionAdmission{Credits: quotas.Credits(usd * req.Rate), Body: body}, nil
+}
+
+// withOutputLimit rewrites the caller's output limit. A field the caller already
+// sent is narrowed in place; otherwise the plugin's first declared field is
+// added, because that is the one its protocol uses.
+func withOutputLimit(body []byte, fields []string, limit int) ([]byte, error) {
+	decoded := map[string]json.RawMessage{}
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &decoded); err != nil {
+			return nil, err
+		}
+	}
+	target := strings.TrimSpace(fields[0])
+	for _, field := range fields {
+		if _, ok := decoded[strings.TrimSpace(field)]; ok {
+			target = strings.TrimSpace(field)
+			break
+		}
+	}
+	decoded[target] = json.RawMessage(strconv.Itoa(limit))
+	return json.Marshal(decoded)
 }
 
 // subscriptionRequestBound returns the maximum credits one request can consume,

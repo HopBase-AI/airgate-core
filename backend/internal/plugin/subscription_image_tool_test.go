@@ -98,7 +98,7 @@ func TestSubscriptionForcedImageToolCannotBypassExhaustedImageQuota(t *testing.T
 			t.Fatalf("host entitlement bypass (%T): %v", representation, err)
 		}
 		repo.reserved = appsubscription.ReserveInput{}
-		if _, err := h.reserveHostSubscriptionRoute(context.Background(), req, route); err == nil {
+		if _, err := h.reserveHostSubscriptionRoute(context.Background(), &req, route); err == nil {
 			t.Fatalf("host reservation bypass (%T)", representation)
 		}
 		if repo.reserved.Kind != billing.RequestKindImage || repo.reserved.Images != 1 {
@@ -112,7 +112,7 @@ func TestSubscriptionForcedImageToolCannotBypassExhaustedImageQuota(t *testing.T
 	blind := &HostService{subscriptions: svc, manager: &Manager{}}
 	req := hostForwardRequest{UserID: 1, RequestID: "image-test", Path: "/v1/responses", Model: "gpt-5.4", Body: body}
 	repo.reserved = appsubscription.ReserveInput{}
-	if _, err := blind.reserveHostSubscriptionRoute(context.Background(), req, route); err == nil {
+	if _, err := blind.reserveHostSubscriptionRoute(context.Background(), &req, route); err == nil {
 		t.Fatal("unbounded request admitted")
 	}
 	if repo.reserved.Key != "" {

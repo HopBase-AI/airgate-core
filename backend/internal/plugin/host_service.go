@@ -1233,7 +1233,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 				return nil, err
 			}
 		} else if req.TaskID == 0 && !metadataOnly {
-			key, err := h.reserveHostSubscriptionRoute(ctx, req, route)
+			key, err := h.reserveHostSubscriptionRoute(ctx, &req, route)
 			if err != nil {
 				return nil, err
 			}
@@ -1493,7 +1493,7 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 	route := routes[0]
 	reservationConsumed := false
 	if route.SubscriptionType == "subscription" && req.TaskID == 0 && !h.isHostMetadataOnlyPath(req.Path) {
-		key, err := h.reserveHostSubscriptionRoute(ctx, req, route)
+		key, err := h.reserveHostSubscriptionRoute(ctx, &req, route)
 		if err != nil {
 			return nil, err
 		}
@@ -1742,7 +1742,7 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 		}
 		req.subscriptionReservationKey = ""
 		if route.SubscriptionType == "subscription" {
-			key, err := h.reserveHostSubscriptionRoute(ctx, req, route)
+			key, err := h.reserveHostSubscriptionRoute(ctx, &req, route)
 			if err != nil {
 				return err
 			}
