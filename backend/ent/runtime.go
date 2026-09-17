@@ -609,28 +609,36 @@ func init() {
 	subscriptionreservationDescReservationKey := subscriptionreservationFields[0].Descriptor()
 	// subscriptionreservation.ReservationKeyValidator is a validator for the "reservation_key" field. It is called by the builders before save.
 	subscriptionreservation.ReservationKeyValidator = subscriptionreservationDescReservationKey.Validators[0].(func(string) error)
+	// subscriptionreservationDescTaskID is the schema descriptor for task_id field.
+	subscriptionreservationDescTaskID := subscriptionreservationFields[3].Descriptor()
+	// subscriptionreservation.DefaultTaskID holds the default value on creation for the task_id field.
+	subscriptionreservation.DefaultTaskID = subscriptionreservationDescTaskID.Default.(int)
+	// subscriptionreservationDescAccountIDSnapshot is the schema descriptor for account_id_snapshot field.
+	subscriptionreservationDescAccountIDSnapshot := subscriptionreservationFields[4].Descriptor()
+	// subscriptionreservation.DefaultAccountIDSnapshot holds the default value on creation for the account_id_snapshot field.
+	subscriptionreservation.DefaultAccountIDSnapshot = subscriptionreservationDescAccountIDSnapshot.Default.(int)
 	// subscriptionreservationDescCreditsReserved is the schema descriptor for credits_reserved field.
-	subscriptionreservationDescCreditsReserved := subscriptionreservationFields[5].Descriptor()
+	subscriptionreservationDescCreditsReserved := subscriptionreservationFields[7].Descriptor()
 	// subscriptionreservation.DefaultCreditsReserved holds the default value on creation for the credits_reserved field.
 	subscriptionreservation.DefaultCreditsReserved = subscriptionreservationDescCreditsReserved.Default.(int64)
 	// subscriptionreservationDescImagesReserved is the schema descriptor for images_reserved field.
-	subscriptionreservationDescImagesReserved := subscriptionreservationFields[6].Descriptor()
+	subscriptionreservationDescImagesReserved := subscriptionreservationFields[8].Descriptor()
 	// subscriptionreservation.DefaultImagesReserved holds the default value on creation for the images_reserved field.
 	subscriptionreservation.DefaultImagesReserved = subscriptionreservationDescImagesReserved.Default.(int)
 	// subscriptionreservationDescCreditsSettled is the schema descriptor for credits_settled field.
-	subscriptionreservationDescCreditsSettled := subscriptionreservationFields[7].Descriptor()
+	subscriptionreservationDescCreditsSettled := subscriptionreservationFields[9].Descriptor()
 	// subscriptionreservation.DefaultCreditsSettled holds the default value on creation for the credits_settled field.
 	subscriptionreservation.DefaultCreditsSettled = subscriptionreservationDescCreditsSettled.Default.(int64)
 	// subscriptionreservationDescImagesSettled is the schema descriptor for images_settled field.
-	subscriptionreservationDescImagesSettled := subscriptionreservationFields[8].Descriptor()
+	subscriptionreservationDescImagesSettled := subscriptionreservationFields[10].Descriptor()
 	// subscriptionreservation.DefaultImagesSettled holds the default value on creation for the images_settled field.
 	subscriptionreservation.DefaultImagesSettled = subscriptionreservationDescImagesSettled.Default.(int)
 	// subscriptionreservationDescCreatedAt is the schema descriptor for created_at field.
-	subscriptionreservationDescCreatedAt := subscriptionreservationFields[11].Descriptor()
+	subscriptionreservationDescCreatedAt := subscriptionreservationFields[13].Descriptor()
 	// subscriptionreservation.DefaultCreatedAt holds the default value on creation for the created_at field.
 	subscriptionreservation.DefaultCreatedAt = subscriptionreservationDescCreatedAt.Default.(func() time.Time)
 	// subscriptionreservationDescUpdatedAt is the schema descriptor for updated_at field.
-	subscriptionreservationDescUpdatedAt := subscriptionreservationFields[12].Descriptor()
+	subscriptionreservationDescUpdatedAt := subscriptionreservationFields[14].Descriptor()
 	// subscriptionreservation.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	subscriptionreservation.DefaultUpdatedAt = subscriptionreservationDescUpdatedAt.Default.(func() time.Time)
 	// subscriptionreservation.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -685,8 +693,24 @@ func init() {
 	taskDescEstimatedCost := taskFields[13].Descriptor()
 	// task.DefaultEstimatedCost holds the default value on creation for the estimated_cost field.
 	task.DefaultEstimatedCost = taskDescEstimatedCost.Default.(float64)
+	// taskDescSubscriptionReservationKey is the schema descriptor for subscription_reservation_key field.
+	taskDescSubscriptionReservationKey := taskFields[14].Descriptor()
+	// task.DefaultSubscriptionReservationKey holds the default value on creation for the subscription_reservation_key field.
+	task.DefaultSubscriptionReservationKey = taskDescSubscriptionReservationKey.Default.(string)
+	// taskDescSubscriptionAccountID is the schema descriptor for subscription_account_id field.
+	taskDescSubscriptionAccountID := taskFields[15].Descriptor()
+	// task.DefaultSubscriptionAccountID holds the default value on creation for the subscription_account_id field.
+	task.DefaultSubscriptionAccountID = taskDescSubscriptionAccountID.Default.(int)
+	// taskDescSubscriptionBillingRate is the schema descriptor for subscription_billing_rate field.
+	taskDescSubscriptionBillingRate := taskFields[16].Descriptor()
+	// task.DefaultSubscriptionBillingRate holds the default value on creation for the subscription_billing_rate field.
+	task.DefaultSubscriptionBillingRate = taskDescSubscriptionBillingRate.Default.(float64)
+	// taskDescSubscriptionUsageObserved is the schema descriptor for subscription_usage_observed field.
+	taskDescSubscriptionUsageObserved := taskFields[17].Descriptor()
+	// task.DefaultSubscriptionUsageObserved holds the default value on creation for the subscription_usage_observed field.
+	task.DefaultSubscriptionUsageObserved = taskDescSubscriptionUsageObserved.Default.(bool)
 	// taskDescProgress is the schema descriptor for progress field.
-	taskDescProgress := taskFields[14].Descriptor()
+	taskDescProgress := taskFields[18].Descriptor()
 	// task.DefaultProgress holds the default value on creation for the progress field.
 	task.DefaultProgress = taskDescProgress.Default.(int)
 	// task.ProgressValidator is a validator for the "progress" field. It is called by the builders before save.
@@ -706,23 +730,23 @@ func init() {
 		}
 	}()
 	// taskDescPriority is the schema descriptor for priority field.
-	taskDescPriority := taskFields[15].Descriptor()
+	taskDescPriority := taskFields[19].Descriptor()
 	// task.DefaultPriority holds the default value on creation for the priority field.
 	task.DefaultPriority = taskDescPriority.Default.(int)
 	// taskDescAttempts is the schema descriptor for attempts field.
-	taskDescAttempts := taskFields[16].Descriptor()
+	taskDescAttempts := taskFields[20].Descriptor()
 	// task.DefaultAttempts holds the default value on creation for the attempts field.
 	task.DefaultAttempts = taskDescAttempts.Default.(int)
 	// taskDescMaxAttempts is the schema descriptor for max_attempts field.
-	taskDescMaxAttempts := taskFields[17].Descriptor()
+	taskDescMaxAttempts := taskFields[21].Descriptor()
 	// task.DefaultMaxAttempts holds the default value on creation for the max_attempts field.
 	task.DefaultMaxAttempts = taskDescMaxAttempts.Default.(int)
 	// taskDescCreatedAt is the schema descriptor for created_at field.
-	taskDescCreatedAt := taskFields[20].Descriptor()
+	taskDescCreatedAt := taskFields[24].Descriptor()
 	// task.DefaultCreatedAt holds the default value on creation for the created_at field.
 	task.DefaultCreatedAt = taskDescCreatedAt.Default.(func() time.Time)
 	// taskDescUpdatedAt is the schema descriptor for updated_at field.
-	taskDescUpdatedAt := taskFields[21].Descriptor()
+	taskDescUpdatedAt := taskFields[25].Descriptor()
 	// task.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	task.DefaultUpdatedAt = taskDescUpdatedAt.Default.(func() time.Time)
 	// task.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

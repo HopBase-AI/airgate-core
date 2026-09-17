@@ -493,6 +493,8 @@ var (
 		{Name: "reservation_key", Type: field.TypeString},
 		{Name: "user_id_snapshot", Type: field.TypeInt},
 		{Name: "group_id_snapshot", Type: field.TypeInt},
+		{Name: "task_id", Type: field.TypeInt, Default: 0},
+		{Name: "account_id_snapshot", Type: field.TypeInt, Default: 0},
 		{Name: "period_start", Type: field.TypeTime},
 		{Name: "period_end", Type: field.TypeTime},
 		{Name: "credits_reserved", Type: field.TypeInt64, Default: 0},
@@ -513,7 +515,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "subscription_reservations_user_subscriptions_reservations",
-				Columns:    []*schema.Column{SubscriptionReservationsColumns[14]},
+				Columns:    []*schema.Column{SubscriptionReservationsColumns[16]},
 				RefColumns: []*schema.Column{UserSubscriptionsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -527,12 +529,12 @@ var (
 			{
 				Name:    "subscriptionreservation_status_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionReservationsColumns[10], SubscriptionReservationsColumns[11]},
+				Columns: []*schema.Column{SubscriptionReservationsColumns[12], SubscriptionReservationsColumns[13]},
 			},
 			{
 				Name:    "subscriptionreservation_user_id_snapshot_period_start",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionReservationsColumns[2], SubscriptionReservationsColumns[4]},
+				Columns: []*schema.Column{SubscriptionReservationsColumns[2], SubscriptionReservationsColumns[6]},
 			},
 		},
 	}
@@ -553,6 +555,10 @@ var (
 		{Name: "error_message", Type: field.TypeString, Default: ""},
 		{Name: "usage_id", Type: field.TypeInt, Nullable: true},
 		{Name: "estimated_cost", Type: field.TypeFloat64, Default: 0},
+		{Name: "subscription_reservation_key", Type: field.TypeString, Default: ""},
+		{Name: "subscription_account_id", Type: field.TypeInt, Default: 0},
+		{Name: "subscription_billing_rate", Type: field.TypeFloat64, Default: 0},
+		{Name: "subscription_usage_observed", Type: field.TypeBool, Default: false},
 		{Name: "progress", Type: field.TypeInt, Default: 0},
 		{Name: "priority", Type: field.TypeInt, Default: 0},
 		{Name: "attempts", Type: field.TypeInt, Default: 0},
@@ -575,12 +581,12 @@ var (
 			{
 				Name:    "task_plugin_id_status_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{TasksColumns[1], TasksColumns[3], TasksColumns[21]},
+				Columns: []*schema.Column{TasksColumns[1], TasksColumns[3], TasksColumns[25]},
 			},
 			{
 				Name:    "task_user_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{TasksColumns[5], TasksColumns[21]},
+				Columns: []*schema.Column{TasksColumns[5], TasksColumns[25]},
 			},
 			{
 				Name:    "task_user_id_status",
@@ -588,19 +594,24 @@ var (
 				Columns: []*schema.Column{TasksColumns[5], TasksColumns[3]},
 			},
 			{
+				Name:    "task_subscription_reservation_key",
+				Unique:  false,
+				Columns: []*schema.Column{TasksColumns[15]},
+			},
+			{
 				Name:    "task_status_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{TasksColumns[3], TasksColumns[21]},
+				Columns: []*schema.Column{TasksColumns[3], TasksColumns[25]},
 			},
 			{
 				Name:    "task_public_task_id",
 				Unique:  true,
-				Columns: []*schema.Column{TasksColumns[19]},
+				Columns: []*schema.Column{TasksColumns[23]},
 			},
 			{
 				Name:    "task_plugin_id_user_id_task_type_idempotency_key",
 				Unique:  true,
-				Columns: []*schema.Column{TasksColumns[1], TasksColumns[5], TasksColumns[2], TasksColumns[20]},
+				Columns: []*schema.Column{TasksColumns[1], TasksColumns[5], TasksColumns[2], TasksColumns[24]},
 			},
 		},
 	}

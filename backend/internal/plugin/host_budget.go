@@ -140,6 +140,11 @@ func (h *HostService) checkSubmissionBudget(ctx context.Context, req *hostForwar
 	if req == nil || req.EstimatedOfficialCost <= 0 {
 		return nil
 	}
+	if req.subscriptionReservationKey != "" {
+		// The atomic subscription ledger already admitted this supplier cost.
+		// Consumer subscribers need no wallet balance for the same request.
+		return nil
+	}
 	if rate <= 0 {
 		rate = 1
 	}

@@ -99,6 +99,26 @@ func EstimatedCost(v float64) predicate.Task {
 	return predicate.Task(sql.FieldEQ(FieldEstimatedCost, v))
 }
 
+// SubscriptionReservationKey applies equality check predicate on the "subscription_reservation_key" field. It's identical to SubscriptionReservationKeyEQ.
+func SubscriptionReservationKey(v string) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldSubscriptionReservationKey, v))
+}
+
+// SubscriptionAccountID applies equality check predicate on the "subscription_account_id" field. It's identical to SubscriptionAccountIDEQ.
+func SubscriptionAccountID(v int) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldSubscriptionAccountID, v))
+}
+
+// SubscriptionBillingRate applies equality check predicate on the "subscription_billing_rate" field. It's identical to SubscriptionBillingRateEQ.
+func SubscriptionBillingRate(v float64) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldSubscriptionBillingRate, v))
+}
+
+// SubscriptionUsageObserved applies equality check predicate on the "subscription_usage_observed" field. It's identical to SubscriptionUsageObservedEQ.
+func SubscriptionUsageObserved(v bool) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldSubscriptionUsageObserved, v))
+}
+
 // Progress applies equality check predicate on the "progress" field. It's identical to ProgressEQ.
 func Progress(v int) predicate.Task {
 	return predicate.Task(sql.FieldEQ(FieldProgress, v))
@@ -727,6 +747,161 @@ func EstimatedCostLT(v float64) predicate.Task {
 // EstimatedCostLTE applies the LTE predicate on the "estimated_cost" field.
 func EstimatedCostLTE(v float64) predicate.Task {
 	return predicate.Task(sql.FieldLTE(FieldEstimatedCost, v))
+}
+
+// SubscriptionReservationKeyEQ applies the EQ predicate on the "subscription_reservation_key" field.
+func SubscriptionReservationKeyEQ(v string) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldSubscriptionReservationKey, v))
+}
+
+// SubscriptionReservationKeyNEQ applies the NEQ predicate on the "subscription_reservation_key" field.
+func SubscriptionReservationKeyNEQ(v string) predicate.Task {
+	return predicate.Task(sql.FieldNEQ(FieldSubscriptionReservationKey, v))
+}
+
+// SubscriptionReservationKeyIn applies the In predicate on the "subscription_reservation_key" field.
+func SubscriptionReservationKeyIn(vs ...string) predicate.Task {
+	return predicate.Task(sql.FieldIn(FieldSubscriptionReservationKey, vs...))
+}
+
+// SubscriptionReservationKeyNotIn applies the NotIn predicate on the "subscription_reservation_key" field.
+func SubscriptionReservationKeyNotIn(vs ...string) predicate.Task {
+	return predicate.Task(sql.FieldNotIn(FieldSubscriptionReservationKey, vs...))
+}
+
+// SubscriptionReservationKeyGT applies the GT predicate on the "subscription_reservation_key" field.
+func SubscriptionReservationKeyGT(v string) predicate.Task {
+	return predicate.Task(sql.FieldGT(FieldSubscriptionReservationKey, v))
+}
+
+// SubscriptionReservationKeyGTE applies the GTE predicate on the "subscription_reservation_key" field.
+func SubscriptionReservationKeyGTE(v string) predicate.Task {
+	return predicate.Task(sql.FieldGTE(FieldSubscriptionReservationKey, v))
+}
+
+// SubscriptionReservationKeyLT applies the LT predicate on the "subscription_reservation_key" field.
+func SubscriptionReservationKeyLT(v string) predicate.Task {
+	return predicate.Task(sql.FieldLT(FieldSubscriptionReservationKey, v))
+}
+
+// SubscriptionReservationKeyLTE applies the LTE predicate on the "subscription_reservation_key" field.
+func SubscriptionReservationKeyLTE(v string) predicate.Task {
+	return predicate.Task(sql.FieldLTE(FieldSubscriptionReservationKey, v))
+}
+
+// SubscriptionReservationKeyContains applies the Contains predicate on the "subscription_reservation_key" field.
+func SubscriptionReservationKeyContains(v string) predicate.Task {
+	return predicate.Task(sql.FieldContains(FieldSubscriptionReservationKey, v))
+}
+
+// SubscriptionReservationKeyHasPrefix applies the HasPrefix predicate on the "subscription_reservation_key" field.
+func SubscriptionReservationKeyHasPrefix(v string) predicate.Task {
+	return predicate.Task(sql.FieldHasPrefix(FieldSubscriptionReservationKey, v))
+}
+
+// SubscriptionReservationKeyHasSuffix applies the HasSuffix predicate on the "subscription_reservation_key" field.
+func SubscriptionReservationKeyHasSuffix(v string) predicate.Task {
+	return predicate.Task(sql.FieldHasSuffix(FieldSubscriptionReservationKey, v))
+}
+
+// SubscriptionReservationKeyEqualFold applies the EqualFold predicate on the "subscription_reservation_key" field.
+func SubscriptionReservationKeyEqualFold(v string) predicate.Task {
+	return predicate.Task(sql.FieldEqualFold(FieldSubscriptionReservationKey, v))
+}
+
+// SubscriptionReservationKeyContainsFold applies the ContainsFold predicate on the "subscription_reservation_key" field.
+func SubscriptionReservationKeyContainsFold(v string) predicate.Task {
+	return predicate.Task(sql.FieldContainsFold(FieldSubscriptionReservationKey, v))
+}
+
+// SubscriptionAccountIDEQ applies the EQ predicate on the "subscription_account_id" field.
+func SubscriptionAccountIDEQ(v int) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldSubscriptionAccountID, v))
+}
+
+// SubscriptionAccountIDNEQ applies the NEQ predicate on the "subscription_account_id" field.
+func SubscriptionAccountIDNEQ(v int) predicate.Task {
+	return predicate.Task(sql.FieldNEQ(FieldSubscriptionAccountID, v))
+}
+
+// SubscriptionAccountIDIn applies the In predicate on the "subscription_account_id" field.
+func SubscriptionAccountIDIn(vs ...int) predicate.Task {
+	return predicate.Task(sql.FieldIn(FieldSubscriptionAccountID, vs...))
+}
+
+// SubscriptionAccountIDNotIn applies the NotIn predicate on the "subscription_account_id" field.
+func SubscriptionAccountIDNotIn(vs ...int) predicate.Task {
+	return predicate.Task(sql.FieldNotIn(FieldSubscriptionAccountID, vs...))
+}
+
+// SubscriptionAccountIDGT applies the GT predicate on the "subscription_account_id" field.
+func SubscriptionAccountIDGT(v int) predicate.Task {
+	return predicate.Task(sql.FieldGT(FieldSubscriptionAccountID, v))
+}
+
+// SubscriptionAccountIDGTE applies the GTE predicate on the "subscription_account_id" field.
+func SubscriptionAccountIDGTE(v int) predicate.Task {
+	return predicate.Task(sql.FieldGTE(FieldSubscriptionAccountID, v))
+}
+
+// SubscriptionAccountIDLT applies the LT predicate on the "subscription_account_id" field.
+func SubscriptionAccountIDLT(v int) predicate.Task {
+	return predicate.Task(sql.FieldLT(FieldSubscriptionAccountID, v))
+}
+
+// SubscriptionAccountIDLTE applies the LTE predicate on the "subscription_account_id" field.
+func SubscriptionAccountIDLTE(v int) predicate.Task {
+	return predicate.Task(sql.FieldLTE(FieldSubscriptionAccountID, v))
+}
+
+// SubscriptionBillingRateEQ applies the EQ predicate on the "subscription_billing_rate" field.
+func SubscriptionBillingRateEQ(v float64) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldSubscriptionBillingRate, v))
+}
+
+// SubscriptionBillingRateNEQ applies the NEQ predicate on the "subscription_billing_rate" field.
+func SubscriptionBillingRateNEQ(v float64) predicate.Task {
+	return predicate.Task(sql.FieldNEQ(FieldSubscriptionBillingRate, v))
+}
+
+// SubscriptionBillingRateIn applies the In predicate on the "subscription_billing_rate" field.
+func SubscriptionBillingRateIn(vs ...float64) predicate.Task {
+	return predicate.Task(sql.FieldIn(FieldSubscriptionBillingRate, vs...))
+}
+
+// SubscriptionBillingRateNotIn applies the NotIn predicate on the "subscription_billing_rate" field.
+func SubscriptionBillingRateNotIn(vs ...float64) predicate.Task {
+	return predicate.Task(sql.FieldNotIn(FieldSubscriptionBillingRate, vs...))
+}
+
+// SubscriptionBillingRateGT applies the GT predicate on the "subscription_billing_rate" field.
+func SubscriptionBillingRateGT(v float64) predicate.Task {
+	return predicate.Task(sql.FieldGT(FieldSubscriptionBillingRate, v))
+}
+
+// SubscriptionBillingRateGTE applies the GTE predicate on the "subscription_billing_rate" field.
+func SubscriptionBillingRateGTE(v float64) predicate.Task {
+	return predicate.Task(sql.FieldGTE(FieldSubscriptionBillingRate, v))
+}
+
+// SubscriptionBillingRateLT applies the LT predicate on the "subscription_billing_rate" field.
+func SubscriptionBillingRateLT(v float64) predicate.Task {
+	return predicate.Task(sql.FieldLT(FieldSubscriptionBillingRate, v))
+}
+
+// SubscriptionBillingRateLTE applies the LTE predicate on the "subscription_billing_rate" field.
+func SubscriptionBillingRateLTE(v float64) predicate.Task {
+	return predicate.Task(sql.FieldLTE(FieldSubscriptionBillingRate, v))
+}
+
+// SubscriptionUsageObservedEQ applies the EQ predicate on the "subscription_usage_observed" field.
+func SubscriptionUsageObservedEQ(v bool) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldSubscriptionUsageObserved, v))
+}
+
+// SubscriptionUsageObservedNEQ applies the NEQ predicate on the "subscription_usage_observed" field.
+func SubscriptionUsageObservedNEQ(v bool) predicate.Task {
+	return predicate.Task(sql.FieldNEQ(FieldSubscriptionUsageObserved, v))
 }
 
 // ProgressEQ applies the EQ predicate on the "progress" field.

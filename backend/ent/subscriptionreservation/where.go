@@ -70,6 +70,16 @@ func GroupIDSnapshot(v int) predicate.SubscriptionReservation {
 	return predicate.SubscriptionReservation(sql.FieldEQ(FieldGroupIDSnapshot, v))
 }
 
+// TaskID applies equality check predicate on the "task_id" field. It's identical to TaskIDEQ.
+func TaskID(v int) predicate.SubscriptionReservation {
+	return predicate.SubscriptionReservation(sql.FieldEQ(FieldTaskID, v))
+}
+
+// AccountIDSnapshot applies equality check predicate on the "account_id_snapshot" field. It's identical to AccountIDSnapshotEQ.
+func AccountIDSnapshot(v int) predicate.SubscriptionReservation {
+	return predicate.SubscriptionReservation(sql.FieldEQ(FieldAccountIDSnapshot, v))
+}
+
 // PeriodStart applies equality check predicate on the "period_start" field. It's identical to PeriodStartEQ.
 func PeriodStart(v time.Time) predicate.SubscriptionReservation {
 	return predicate.SubscriptionReservation(sql.FieldEQ(FieldPeriodStart, v))
@@ -258,6 +268,86 @@ func GroupIDSnapshotLT(v int) predicate.SubscriptionReservation {
 // GroupIDSnapshotLTE applies the LTE predicate on the "group_id_snapshot" field.
 func GroupIDSnapshotLTE(v int) predicate.SubscriptionReservation {
 	return predicate.SubscriptionReservation(sql.FieldLTE(FieldGroupIDSnapshot, v))
+}
+
+// TaskIDEQ applies the EQ predicate on the "task_id" field.
+func TaskIDEQ(v int) predicate.SubscriptionReservation {
+	return predicate.SubscriptionReservation(sql.FieldEQ(FieldTaskID, v))
+}
+
+// TaskIDNEQ applies the NEQ predicate on the "task_id" field.
+func TaskIDNEQ(v int) predicate.SubscriptionReservation {
+	return predicate.SubscriptionReservation(sql.FieldNEQ(FieldTaskID, v))
+}
+
+// TaskIDIn applies the In predicate on the "task_id" field.
+func TaskIDIn(vs ...int) predicate.SubscriptionReservation {
+	return predicate.SubscriptionReservation(sql.FieldIn(FieldTaskID, vs...))
+}
+
+// TaskIDNotIn applies the NotIn predicate on the "task_id" field.
+func TaskIDNotIn(vs ...int) predicate.SubscriptionReservation {
+	return predicate.SubscriptionReservation(sql.FieldNotIn(FieldTaskID, vs...))
+}
+
+// TaskIDGT applies the GT predicate on the "task_id" field.
+func TaskIDGT(v int) predicate.SubscriptionReservation {
+	return predicate.SubscriptionReservation(sql.FieldGT(FieldTaskID, v))
+}
+
+// TaskIDGTE applies the GTE predicate on the "task_id" field.
+func TaskIDGTE(v int) predicate.SubscriptionReservation {
+	return predicate.SubscriptionReservation(sql.FieldGTE(FieldTaskID, v))
+}
+
+// TaskIDLT applies the LT predicate on the "task_id" field.
+func TaskIDLT(v int) predicate.SubscriptionReservation {
+	return predicate.SubscriptionReservation(sql.FieldLT(FieldTaskID, v))
+}
+
+// TaskIDLTE applies the LTE predicate on the "task_id" field.
+func TaskIDLTE(v int) predicate.SubscriptionReservation {
+	return predicate.SubscriptionReservation(sql.FieldLTE(FieldTaskID, v))
+}
+
+// AccountIDSnapshotEQ applies the EQ predicate on the "account_id_snapshot" field.
+func AccountIDSnapshotEQ(v int) predicate.SubscriptionReservation {
+	return predicate.SubscriptionReservation(sql.FieldEQ(FieldAccountIDSnapshot, v))
+}
+
+// AccountIDSnapshotNEQ applies the NEQ predicate on the "account_id_snapshot" field.
+func AccountIDSnapshotNEQ(v int) predicate.SubscriptionReservation {
+	return predicate.SubscriptionReservation(sql.FieldNEQ(FieldAccountIDSnapshot, v))
+}
+
+// AccountIDSnapshotIn applies the In predicate on the "account_id_snapshot" field.
+func AccountIDSnapshotIn(vs ...int) predicate.SubscriptionReservation {
+	return predicate.SubscriptionReservation(sql.FieldIn(FieldAccountIDSnapshot, vs...))
+}
+
+// AccountIDSnapshotNotIn applies the NotIn predicate on the "account_id_snapshot" field.
+func AccountIDSnapshotNotIn(vs ...int) predicate.SubscriptionReservation {
+	return predicate.SubscriptionReservation(sql.FieldNotIn(FieldAccountIDSnapshot, vs...))
+}
+
+// AccountIDSnapshotGT applies the GT predicate on the "account_id_snapshot" field.
+func AccountIDSnapshotGT(v int) predicate.SubscriptionReservation {
+	return predicate.SubscriptionReservation(sql.FieldGT(FieldAccountIDSnapshot, v))
+}
+
+// AccountIDSnapshotGTE applies the GTE predicate on the "account_id_snapshot" field.
+func AccountIDSnapshotGTE(v int) predicate.SubscriptionReservation {
+	return predicate.SubscriptionReservation(sql.FieldGTE(FieldAccountIDSnapshot, v))
+}
+
+// AccountIDSnapshotLT applies the LT predicate on the "account_id_snapshot" field.
+func AccountIDSnapshotLT(v int) predicate.SubscriptionReservation {
+	return predicate.SubscriptionReservation(sql.FieldLT(FieldAccountIDSnapshot, v))
+}
+
+// AccountIDSnapshotLTE applies the LTE predicate on the "account_id_snapshot" field.
+func AccountIDSnapshotLTE(v int) predicate.SubscriptionReservation {
+	return predicate.SubscriptionReservation(sql.FieldLTE(FieldAccountIDSnapshot, v))
 }
 
 // PeriodStartEQ applies the EQ predicate on the "period_start" field.

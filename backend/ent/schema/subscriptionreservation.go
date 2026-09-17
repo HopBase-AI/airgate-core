@@ -18,6 +18,8 @@ func (SubscriptionReservation) Fields() []ent.Field {
 		field.String("reservation_key").NotEmpty().Immutable(),
 		field.Int("user_id_snapshot").Immutable(),
 		field.Int("group_id_snapshot").Immutable(),
+		field.Int("task_id").Default(0).Immutable(),
+		field.Int("account_id_snapshot").Default(0).Immutable(),
 		field.Time("period_start").Immutable(),
 		field.Time("period_end").Immutable(),
 		field.Int64("credits_reserved").Default(0).Immutable(),
