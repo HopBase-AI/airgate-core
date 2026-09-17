@@ -447,6 +447,8 @@ func (s *SubscriptionStore) Reserve(ctx context.Context, input appsubscription.R
 		SetReservationKey(input.Key).
 		SetUserIDSnapshot(input.UserID).
 		SetGroupIDSnapshot(input.GroupID).
+		SetTaskID(int(input.TaskID)).
+		SetAccountIDSnapshot(int(input.AccountID)).
 		SetPeriodStart(periodStart).
 		SetPeriodEnd(periodEnd).
 		SetCreditsReserved(input.Credits).
@@ -469,6 +471,7 @@ func releaseExpiredReservations(ctx context.Context, tx *ent.Tx, row *ent.UserSu
 		Where(
 			entsubscriptionreservation.StatusEQ(entsubscriptionreservation.StatusReserved),
 			entsubscriptionreservation.ExpiresAtLTE(now),
+			entsubscriptionreservation.TaskIDEQ(0),
 			entsubscriptionreservation.HasSubscriptionWith(entusersubscription.IDEQ(row.ID)),
 		).
 		All(ctx)
@@ -788,6 +791,8 @@ func carryOverExtraStore(limit, used, extra int64) int64 {
 func mapReservation(item *ent.SubscriptionReservation) appsubscription.Reservation {
 	result := appsubscription.Reservation{
 		Key:             item.ReservationKey,
+		TaskID:          int64(item.TaskID),
+		AccountID:       int64(item.AccountIDSnapshot),
 		PeriodStart:     item.PeriodStart,
 		PeriodEnd:       item.PeriodEnd,
 		CreditsReserved: item.CreditsReserved,

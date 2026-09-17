@@ -147,6 +147,8 @@ type Entitlement struct {
 type Reservation struct {
 	Key             string
 	SubscriptionID  int
+	TaskID          int64
+	AccountID       int64
 	PeriodStart     time.Time
 	PeriodEnd       time.Time
 	CreditsReserved int64
@@ -157,6 +159,8 @@ type Reservation struct {
 type ReserveInput struct {
 	UserID    int
 	GroupID   int
+	TaskID    int64
+	AccountID int64
 	Key       string
 	Credits   int64
 	Images    int
