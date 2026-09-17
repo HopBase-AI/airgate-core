@@ -35,7 +35,7 @@ func TestRequestKindForFallsBackToPath(t *testing.T) {
 		{"/v1/sd/videos", billing.RequestKindVideo},
 	}
 	for _, tc := range cases {
-		if got := requestKindFor(nil, tc.path, ""); got != tc.want {
+		if got := requestKindFor(nil, tc.path, "", nil); got != tc.want {
 			t.Errorf("requestKindFor(%q) = %s, want %s", tc.path, got, tc.want)
 		}
 	}

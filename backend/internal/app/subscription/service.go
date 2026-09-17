@@ -53,6 +53,9 @@ func (s *Service) ActiveSubscriptions(ctx context.Context, userID int) ([]Subscr
 	now := s.now()
 	out := make([]Subscription, 0, len(list))
 	for _, sub := range list {
+		if sub.EffectiveAt.After(now) {
+			continue
+		}
 		if !sub.ExpiresAt.After(now) {
 			if err := s.repo.MarkExpired(ctx, sub.ID); err != nil {
 				return nil, err
@@ -76,7 +79,7 @@ func (s *Service) SubscriptionProgress(ctx context.Context, userID int) ([]Subsc
 		sub := list[i]
 		q := billing.ParsePlanQuotas(sub.GroupQuotas)
 		if err := s.refresh(ctx, &sub, q, now); err != nil {
-			if errors.Is(err, ErrSubscriptionExpired) || errors.Is(err, ErrSubscriptionSuspended) {
+			if errors.Is(err, ErrSubscriptionExpired) || errors.Is(err, ErrSubscriptionSuspended) || errors.Is(err, ErrSubscriptionRequired) {
 				continue
 			}
 			return nil, err
@@ -133,8 +136,9 @@ func (s *Service) Plans(ctx context.Context, userID int) ([]PlanView, error) {
 	}
 	byGroup := make(map[int]Subscription, len(active))
 	for _, sub := range active {
-		// ListActiveByUser 按创建时间倒序，首个即最新，后到者不覆盖。
-		if _, seen := byGroup[sub.GroupID]; !seen {
+		// Compare business effective times, independent of callback arrival order.
+		if current, seen := byGroup[sub.GroupID]; !seen || sub.EffectiveAt.After(current.EffectiveAt) ||
+			(sub.EffectiveAt.Equal(current.EffectiveAt) && sub.ID > current.ID) {
 			byGroup[sub.GroupID] = sub
 		}
 	}
@@ -327,6 +331,9 @@ func (s *Service) Reserve(ctx context.Context, input ReserveInput) (Reservation,
 		return Reservation{}, err
 	}
 	q := billing.ParsePlanQuotas(sub.GroupQuotas)
+	if sub.EffectiveAt.After(input.Now) {
+		return Reservation{}, ErrSubscriptionRequired
+	}
 	if q.PerRequestCredits <= 0 {
 		return Reservation{}, ErrRequestCostUnbounded
 	}
@@ -389,6 +396,9 @@ func normalizedIncludedGroups(planGroupID int, configured []int) []int {
 
 // refresh 对一条订阅做到期判定与计量期推进，就地更新 sub。
 func (s *Service) refresh(ctx context.Context, sub *Subscription, q billing.PlanQuotas, now time.Time) error {
+	if sub.EffectiveAt.After(now) {
+		return ErrSubscriptionRequired
+	}
 	switch sub.Status {
 	case "suspended":
 		return ErrSubscriptionSuspended

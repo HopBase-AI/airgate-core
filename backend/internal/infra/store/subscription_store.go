@@ -19,12 +19,13 @@ import (
 
 // SubscriptionStore 使用 Ent 实现订阅仓储。
 type SubscriptionStore struct {
-	db *ent.Client
+	db  *ent.Client
+	now func() time.Time
 }
 
 // NewSubscriptionStore 创建订阅仓储。
 func NewSubscriptionStore(db *ent.Client) *SubscriptionStore {
-	return &SubscriptionStore{db: db}
+	return &SubscriptionStore{db: db, now: time.Now}
 }
 
 // ListByUser 查询用户订阅列表。
@@ -54,7 +55,7 @@ func (s *SubscriptionStore) ListByUser(ctx context.Context, filter appsubscripti
 	return items, int64(total), nil
 }
 
-// ListActiveByUser 查询用户活跃订阅（含分组权益配置，按创建时间倒序）。
+// ListActiveByUser 查询用户活跃订阅（含分组权益配置，按生效时间倒序）。
 func (s *SubscriptionStore) ListActiveByUser(ctx context.Context, userID int) ([]appsubscription.Subscription, error) {
 	list, err := s.db.UserSubscription.Query().
 		Where(
@@ -62,7 +63,7 @@ func (s *SubscriptionStore) ListActiveByUser(ctx context.Context, userID int) ([
 			entusersubscription.StatusEQ(entusersubscription.StatusActive),
 		).
 		WithGroup().
-		Order(ent.Desc(entusersubscription.FieldCreatedAt)).
+		Order(ent.Desc(entusersubscription.FieldEffectiveAt), ent.Desc(entusersubscription.FieldID)).
 		All(ctx)
 	if err != nil {
 		return nil, err
@@ -178,17 +179,10 @@ func (s *SubscriptionStore) FindByID(ctx context.Context, id int) (appsubscripti
 	return s.findOneWithEdges(ctx, id)
 }
 
-// FindActiveByUserGroup 查询用户在分组下最新一条未失效（active / suspended）的订阅：
+// FindActiveByUserGroup 查询当前有效窗口内生效时间最新的订阅：
 // 暂停中的订阅也要能被找到，准入才能报「已暂停」而不是「需要订阅」。
 func (s *SubscriptionStore) FindActiveByUserGroup(ctx context.Context, userID, groupID int) (appsubscription.Subscription, error) {
-	items, err := s.db.UserSubscription.Query().
-		Where(
-			entusersubscription.HasUserWith(entuser.IDEQ(userID)),
-			entusersubscription.StatusNEQ(entusersubscription.StatusExpired),
-		).
-		WithGroup().
-		Order(ent.Desc(entusersubscription.FieldCreatedAt), ent.Desc(entusersubscription.FieldID)).
-		All(ctx)
+	items, err := currentSubscriptions(s.db.UserSubscription.Query(), userID, s.now()).All(ctx)
 	if err != nil {
 		return appsubscription.Subscription{}, err
 	}
@@ -200,6 +194,20 @@ func (s *SubscriptionStore) FindActiveByUserGroup(ctx context.Context, userID, g
 		}
 	}
 	return appsubscription.Subscription{}, appsubscription.ErrSubscriptionNotFound
+}
+
+// Share selection between entitlement lookup and transactional admission. Callback
+// arrival order must not activate future renewals or restore an older grant.
+func currentSubscriptions(query *ent.UserSubscriptionQuery, userID int, now time.Time) *ent.UserSubscriptionQuery {
+	return query.
+		Where(
+			entusersubscription.HasUserWith(entuser.IDEQ(userID)),
+			entusersubscription.StatusNEQ(entusersubscription.StatusExpired),
+			entusersubscription.EffectiveAtLTE(now),
+			entusersubscription.ExpiresAtGT(now),
+		).
+		WithGroup().
+		Order(ent.Desc(entusersubscription.FieldEffectiveAt), ent.Desc(entusersubscription.FieldID))
 }
 
 // FindPlan 把订阅制分组投影为套餐。
@@ -363,14 +371,7 @@ func (s *SubscriptionStore) Reserve(ctx context.Context, input appsubscription.R
 		return appsubscription.Reservation{}, queryErr
 	}
 
-	items, err := tx.UserSubscription.Query().
-		Where(
-			entusersubscription.HasUserWith(entuser.IDEQ(input.UserID)),
-			entusersubscription.StatusNEQ(entusersubscription.StatusExpired),
-		).
-		WithGroup().
-		Order(ent.Desc(entusersubscription.FieldCreatedAt), ent.Desc(entusersubscription.FieldID)).
-		All(ctx)
+	items, err := currentSubscriptions(tx.UserSubscription.Query(), input.UserID, input.Now).All(ctx)
 	if err != nil {
 		return appsubscription.Reservation{}, err
 	}
