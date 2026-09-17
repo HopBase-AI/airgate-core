@@ -8,9 +8,9 @@ import type {
 
 export const subscriptionsApi = {
   // 用户接口：套餐与订阅进度。购买由支付插件完成。
-  plans: () => get<PlanResp[]>('/api/v1/account/plans'),
-  active: () => get<SubscriptionResp[]>('/api/v1/account/subscriptions/active'),
-  progress: () => get<SubscriptionProgressResp[]>('/api/v1/account/subscriptions/progress'),
+  plans: () => get<PlanResp[]>('/api/v1/plans'),
+  active: () => get<SubscriptionResp[]>('/api/v1/subscriptions/active'),
+  progress: () => get<SubscriptionProgressResp[]>('/api/v1/subscriptions/progress'),
 
   // 管理员接口
   adminList: (params: PageReq & { user_id?: number; group_id?: number; status?: string }) =>
