@@ -277,6 +277,22 @@ func (r *Recorder) Record(record UsageRecord) {
 	}
 }
 
+// RecordRetry durably queues an already identified charge after synchronous
+// settlement failed. The caller must retain its reservation until replay settles it.
+func (r *Recorder) RecordRetry(record UsageRecord) error {
+	if strings.TrimSpace(record.RequestID) == "" {
+		return errors.New("billing retry requires a stable request ID")
+	}
+	if r.wal == nil {
+		return errors.New("billing retry WAL is not enabled")
+	}
+	if err := r.wal.writeBatch([]UsageRecord{record}); err != nil {
+		return fmt.Errorf("persist billing retry: %w", err)
+	}
+	r.spilledTotal.Add(1)
+	return nil
+}
+
 // RecordSync 同步写入一条使用记录并返回 usage_log.id。
 // 需要立即把 usage_id 关联到任务时使用；普通转发仍走异步 Record。
 func (r *Recorder) RecordSync(ctx context.Context, record UsageRecord) (int, error) {
