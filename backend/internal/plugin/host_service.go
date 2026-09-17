@@ -1351,6 +1351,9 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 			attempt++
 			duration := time.Since(start)
 			releaseAccountSlot()
+			if outcome.Usage != nil {
+				activeReservationKey = ""
+			}
 			if !h.applyHostOutcome(fwdCtx, acc.ID, accFull, model, outcome, duration, probeToken, fwdErr, true) {
 				h.recordCanceledHostForwardUsage(req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration, hostCanceledRequestStatus(fwdCtx, fwdErr))
 				return nil, hostForwardContextError(fwdCtx, fwdErr)
@@ -1361,11 +1364,33 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 				lastUpstreamScrubber = newIdentityScrubber(accFull, model)
 			}
 			if cerr := hostForwardContextError(fwdCtx, fwdErr); cerr != nil {
+				h.recordCanceledHostForwardUsage(req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration, hostCanceledRequestStatus(fwdCtx, fwdErr))
 				return nil, cerr
 			}
 
+			resp := hostForwardPayload(outcome, nil)
+			if outcome.Usage != nil && req.subscriptionReservationKey != "" {
+				if usageID, err := h.recordHostForwardUsage(ctx, req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration); err != nil {
+					slog.Error("host_forward_record_usage_failed",
+						sdk.LogFieldUserID, req.UserID,
+						sdk.LogFieldAccountID, acc.ID,
+						sdk.LogFieldError, err)
+					return nil, hostInternalError("host_forward_subscription_settlement_failed", err)
+				} else if usageID > 0 {
+					resp["usage_id"] = usageID
+				}
+				resp["usage"] = outcome.Usage
+			}
+
 			replayableClient := outcome.Kind == sdk.OutcomeClientError && replayableClientError(outcome)
-			if fwdErr != nil || outcome.Kind.ShouldFailover() || replayableClient {
+			canRetry := fwdErr != nil || outcome.Kind.ShouldFailover() || replayableClient
+			if req.subscriptionReservationKey != "" && outcome.Usage != nil {
+				canRetry = false
+				if fwdErr != nil {
+					return hostPinnedGatewayError(outcome, fwdErr, newIdentityScrubber(accFull, model))
+				}
+			}
+			if canRetry {
 				if replayableClient && returnableUpstream(outcome.Upstream) {
 					lastClientUpstream = outcome.Upstream
 					hasLastClientUpstream = true
@@ -1408,24 +1433,21 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 				if returnableUpstream(outcome.Upstream) {
 					return hostForwardPayload(outcome, newIdentityScrubber(accFull, model)), nil
 				}
+				if req.subscriptionReservationKey != "" && outcome.Usage != nil {
+					return nil, hostForwardGenericError()
+				}
 				break
 			}
 
-			resp := hostForwardPayload(outcome, nil)
-
-			if outcome.Usage != nil {
+			if outcome.Usage != nil && req.subscriptionReservationKey == "" {
 				if usageID, err := h.recordHostForwardUsage(ctx, req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration); err != nil {
-					slog.Error("host_forward_record_usage_failed",
-						sdk.LogFieldUserID, req.UserID,
-						sdk.LogFieldAccountID, acc.ID,
-						sdk.LogFieldError, err,
-					)
+					slog.Error("host_forward_record_usage_failed", sdk.LogFieldUserID, req.UserID,
+						sdk.LogFieldAccountID, acc.ID, sdk.LogFieldError, err)
 				} else if usageID > 0 {
 					resp["usage_id"] = usageID
 				}
 				resp["usage"] = outcome.Usage
 			}
-
 			return resp, nil
 		}
 	}
@@ -1450,6 +1472,7 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 		return nil, err
 	}
 	route := routes[0]
+	reservationConsumed := false
 	if route.SubscriptionType == "subscription" {
 		key, err := h.reserveHostSubscriptionRoute(ctx, req, route.GroupID)
 		if err != nil {
@@ -1457,6 +1480,9 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 		}
 		req.subscriptionReservationKey = key
 		defer func() {
+			if reservationConsumed {
+				return
+			}
 			if err := h.subscriptions.Release(context.Background(), key); err != nil {
 				slog.Error("host_subscription_reservation_release_failed", "reservation_key", key, sdk.LogFieldError, err)
 			}
@@ -1557,9 +1583,23 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 	h.persistHostUpdatedCredentials(accFull.ID, outcome.UpdatedCredentials)
 	duration := time.Since(start)
 	releaseAccountSlot()
+	reservationConsumed = outcome.Usage != nil
 	if !h.applyHostOutcome(fwdCtx, accFull.ID, accFull, model, outcome, duration, claimedProbeToken, fwdErr, true) {
 		h.recordCanceledHostForwardUsage(req, route, accFull.ID, route.Platform, model, accFull, userEmail, outcome, duration, hostCanceledRequestStatus(fwdCtx, fwdErr))
 		return nil, hostForwardContextError(fwdCtx, fwdErr)
+	}
+	resp := hostForwardPayload(outcome, newIdentityScrubber(accFull, model))
+	if outcome.Usage != nil && req.subscriptionReservationKey != "" {
+		if usageID, err := h.recordHostForwardUsage(ctx, req, route, accFull.ID, route.Platform, model, accFull, userEmail, outcome, duration); err != nil {
+			slog.Error("host_forward_pinned_record_usage_failed",
+				sdk.LogFieldUserID, req.UserID,
+				sdk.LogFieldAccountID, accFull.ID,
+				sdk.LogFieldError, err)
+			return nil, hostInternalError("host_forward_pinned_subscription_settlement_failed", err)
+		} else if usageID > 0 {
+			resp["usage_id"] = usageID
+		}
+		resp["usage"] = outcome.Usage
 	}
 	if fwdErr != nil {
 		payload, terminalErr := hostPinnedGatewayError(outcome, fwdErr, newIdentityScrubber(accFull, model))
@@ -1578,14 +1618,10 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 		return nil, hostForwardGenericError()
 	}
 
-	resp := hostForwardPayload(outcome, newIdentityScrubber(accFull, model))
-	if outcome.Kind == sdk.OutcomeSuccess && outcome.Usage != nil {
+	if outcome.Kind == sdk.OutcomeSuccess && outcome.Usage != nil && req.subscriptionReservationKey == "" {
 		if usageID, err := h.recordHostForwardUsage(ctx, req, route, accFull.ID, route.Platform, model, accFull, userEmail, outcome, duration); err != nil {
-			slog.Error("host_forward_pinned_record_usage_failed",
-				sdk.LogFieldUserID, req.UserID,
-				sdk.LogFieldAccountID, accFull.ID,
-				sdk.LogFieldError, err,
-			)
+			slog.Error("host_forward_pinned_record_usage_failed", sdk.LogFieldUserID, req.UserID,
+				sdk.LogFieldAccountID, accFull.ID, sdk.LogFieldError, err)
 		} else if usageID > 0 {
 			resp["usage_id"] = usageID
 		}
@@ -2257,6 +2293,12 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 	if usage == nil {
 		return 0, nil
 	}
+	if req.subscriptionReservationKey != "" {
+		// Billing must survive the request context after usage was consumed.
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+	}
 	// 只读元信息路径（如 /v1/video/estimate 估价）不计费也不落使用记录：否则每次估价都写一条
 	// 零费用的 usage_logs，污染使用记录、概览模型分布与总请求数。
 	if h.isHostMetadataOnlyPath(req.Path) {
@@ -2289,8 +2331,12 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 	applyHostForwardBilling(usage, calc)
 	applyHostForwardTrace(usage, req.TraceID)
 
+	var lookupFailure error
 	if usageID, found, err := h.existingHostForwardUsageID(ctx, req, platform, actualModel); err != nil {
-		return 0, err
+		if req.subscriptionReservationKey == "" || status.Code(err) == codes.FailedPrecondition {
+			return 0, err
+		}
+		lookupFailure = err
 	} else if found {
 		return usageID, nil
 	}
@@ -2357,15 +2403,29 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 		}
 		return 0, nil
 	}
-	usageID, err := h.recorder.RecordSync(ctx, record)
+	var usageID int
+	err := lookupFailure
+	if err == nil {
+		usageID, err = h.recorder.RecordSync(ctx, record)
+	}
 	if err != nil {
 		// A concurrent retry can win the unique request_id insert after our first
 		// lookup. Resolve that race to the committed row instead of reporting a
 		// zero usage ID and leaving an async task stranded.
 		if existingID, found, lookupErr := h.existingHostForwardUsageID(ctx, req, platform, actualModel); lookupErr != nil {
-			return 0, lookupErr
+			if status.Code(lookupErr) == codes.FailedPrecondition || record.SubscriptionReservationKey == "" {
+				return 0, lookupErr
+			}
+			err = errors.Join(err, lookupErr)
 		} else if found {
 			return existingID, nil
+		}
+		if record.SubscriptionReservationKey != "" {
+			if retryErr := h.recorder.RecordRetry(record); retryErr != nil {
+				slog.Error("host_subscription_settlement_retry_failed", "request_id", record.RequestID,
+					"reservation_key", record.SubscriptionReservationKey, sdk.LogFieldError, retryErr)
+				return 0, errors.Join(err, retryErr)
+			}
 		}
 		return 0, err
 	}
