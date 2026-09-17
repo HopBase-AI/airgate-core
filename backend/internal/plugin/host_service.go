@@ -1231,6 +1231,7 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 			}
 			activeReservationKey = ""
 		}
+		req.subscriptionReservationKey = ""
 		if route.SubscriptionType == "subscription" {
 			key, err := h.reserveHostSubscriptionRoute(ctx, req, route.GroupID)
 			if err != nil {
@@ -1619,8 +1620,13 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 	if req.UserID <= 0 {
 		return status.Error(codes.InvalidArgument, "user_id must be > 0")
 	}
+	req.submitterID = int(req.UserID)
 	if err := h.resolveHostForwardIdentity(ctx, &req); err != nil {
 		return err
+	}
+	req.RequestID = strings.TrimSpace(req.RequestID)
+	if req.RequestID == "" {
+		req.RequestID = uuid.NewString()
 	}
 	if err := h.checkHostForwardBalance(ctx, req.UserID); err != nil {
 		return err
@@ -1639,8 +1645,31 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 	// 与 Forwarder 一致：4xx 判决也换号重试，穷尽后回放最后一次客户端错误。
 	var lastClientError *sdk.ForwardOutcome
 	var lastClientErrorScrubber *identityScrubber
+	activeReservationKey := ""
+	defer func() {
+		if activeReservationKey != "" && h.subscriptions != nil {
+			if err := h.subscriptions.Release(context.Background(), activeReservationKey); err != nil {
+				slog.Error("host_subscription_reservation_release_failed", "reservation_key", activeReservationKey, sdk.LogFieldError, err)
+			}
+		}
+	}()
 
 	for _, route := range routes {
+		if activeReservationKey != "" && h.subscriptions != nil {
+			if err := h.subscriptions.Release(ctx, activeReservationKey); err != nil {
+				return hostInternalError("host_subscription_reservation_release_failed", err)
+			}
+			activeReservationKey = ""
+		}
+		req.subscriptionReservationKey = ""
+		if route.SubscriptionType == "subscription" {
+			key, err := h.reserveHostSubscriptionRoute(ctx, req, route.GroupID)
+			if err != nil {
+				return err
+			}
+			activeReservationKey = key
+			req.subscriptionReservationKey = key
+		}
 		model := h.resolveHostModel(route.Platform, req.Model)
 		if model == "" {
 			slog.Warn("host_forward_stream_no_model",
@@ -1755,12 +1784,18 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 			duration := time.Since(start)
 			releaseAccountSlot()
 			if !h.applyHostOutcome(fwdCtx, acc.ID, accFull, model, outcome, duration, probeToken, fwdErr, true) {
+				if outcome.Usage != nil {
+					activeReservationKey = ""
+				}
 				h.recordCanceledHostForwardUsage(req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration, hostCanceledRequestStatus(fwdCtx, fwdErr))
 				return hostForwardContextError(fwdCtx, fwdErr)
 			}
 
 			replayableClient := outcome.Kind == sdk.OutcomeClientError && replayableClientError(outcome)
 			canRetry := !fw.committed && (fwdErr != nil || outcome.Kind.ShouldFailover() || replayableClient)
+			if req.subscriptionReservationKey != "" && outcome.Usage != nil {
+				canRetry = false
+			}
 			if canRetry {
 				if replayableClient {
 					snapshot := outcome
@@ -1779,6 +1814,27 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 				)
 				hardExclude = append(hardExclude, acc.ID)
 				continue
+			}
+
+			var usage *sdk.Usage
+			if outcome.Usage != nil {
+				// Once usage exists, settlement owns the reservation. Never release
+				// consumed quota merely because persistence or delivery failed.
+				activeReservationKey = ""
+				settleCtx, settleCancel := context.WithTimeout(context.Background(), 10*time.Second)
+				_, settleErr := h.recordHostForwardUsage(settleCtx, req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration)
+				settleCancel()
+				if settleErr != nil {
+					slog.Error("host_forward_stream_record_usage_failed",
+						sdk.LogFieldUserID, req.UserID,
+						sdk.LogFieldAccountID, acc.ID,
+						"reservation_key", req.subscriptionReservationKey,
+						sdk.LogFieldError, settleErr)
+					if req.subscriptionReservationKey != "" {
+						return hostInternalError("host_forward_stream_subscription_settlement_failed", settleErr)
+					}
+				}
+				usage = outcome.Usage
 			}
 
 			if outcome.Kind == sdk.OutcomeClientError {
@@ -1814,18 +1870,6 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 					sdk.LogFieldError, fwdErr,
 				)
 				return hostForwardGenericError()
-			}
-
-			var usage *sdk.Usage
-			if outcome.Usage != nil {
-				if _, err := h.recordHostForwardUsage(ctx, req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration); err != nil {
-					slog.Error("host_forward_stream_record_usage_failed",
-						sdk.LogFieldUserID, req.UserID,
-						sdk.LogFieldAccountID, acc.ID,
-						sdk.LogFieldError, err,
-					)
-				}
-				usage = outcome.Usage
 			}
 
 			return stream.Send(&pb.HostStreamFrame{
@@ -2308,6 +2352,9 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 		ErrorMessage:                 sanitizeFailureMessage(failure.message),
 	}
 	if h.recorder == nil {
+		if req.subscriptionReservationKey != "" {
+			return 0, errors.New("subscription usage recorder is not configured")
+		}
 		return 0, nil
 	}
 	usageID, err := h.recorder.RecordSync(ctx, record)
@@ -3335,11 +3382,13 @@ func (h *HostService) checkHostForwardBalance(ctx context.Context, userID int64)
 	if u.Balance <= 0 {
 		// 订阅用户余额常为 0（余额已换成套餐）：持有未到期的 active 订阅即放行，
 		// 点数/张数等具体准入在路由阶段按分组判定。
+		now := time.Now()
 		subscribed, err := h.db.UserSubscription.Query().
 			Where(
 				entusersubscription.HasUserWith(user.IDEQ(int(userID))),
 				entusersubscription.StatusEQ(entusersubscription.StatusActive),
-				entusersubscription.ExpiresAtGT(time.Now()),
+				entusersubscription.EffectiveAtLTE(now),
+				entusersubscription.ExpiresAtGT(now),
 			).
 			Exist(ctx)
 		if err != nil {
