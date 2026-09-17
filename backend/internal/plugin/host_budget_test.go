@@ -4,15 +4,21 @@ import (
 	"context"
 	"math"
 	"testing"
+	"time"
 
 	"entgo.io/ent/dialect/sql/schema"
 	_ "github.com/mattn/go-sqlite3"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/ent/enttest"
+	entgroup "github.com/DouDOU-start/airgate-core/ent/group"
 	enttask "github.com/DouDOU-start/airgate-core/ent/task"
+	appsubscription "github.com/DouDOU-start/airgate-core/internal/app/subscription"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
+	"github.com/DouDOU-start/airgate-core/internal/billing"
+	"github.com/DouDOU-start/airgate-core/internal/i18n"
 )
 
 // 提交侧预算门禁的算术：可用 − 在途预留 − 本条预估 < 0 就拒。
@@ -221,6 +227,214 @@ func assertBudgetField(t *testing.T, out map[string]interface{}, key string, wan
 	if got != want {
 		t.Fatalf("%s = %v (%T), want %v (%T)", key, got, got, want, want)
 	}
+}
+
+// This repository seam exercises the real entitlement service while keeping the
+// plugin tests independent of store (which imports plugin).
+type budgetSubscriptionRepository struct {
+	appsubscription.Repository
+	userID  int
+	byGroup map[int]appsubscription.Subscription
+}
+
+func (r *budgetSubscriptionRepository) FindActiveByUserGroup(_ context.Context, userID, groupID int) (appsubscription.Subscription, error) {
+	if sub, ok := r.byGroup[groupID]; ok && userID == r.userID {
+		return sub, nil
+	}
+	return appsubscription.Subscription{}, appsubscription.ErrSubscriptionNotFound
+}
+
+func (r *budgetSubscriptionRepository) MarkExpired(context.Context, int) error { return nil }
+
+func newBudgetSubscriptionFixture(t *testing.T) (*HostService, *ent.User, *ent.Group, *budgetSubscriptionRepository) {
+	t.Helper()
+	ctx := context.Background()
+	db := enttest.Open(t, "sqlite3", "file:budget_subscription?mode=memory&cache=shared&_fk=1", enttest.WithMigrateOptions(schema.WithGlobalUniqueID(false)))
+	t.Cleanup(func() { _ = db.Close() })
+	u := db.User.Create().SetEmail("budget-subscription@example.com").SetPasswordHash("h").SetBalance(0).SaveX(ctx)
+	auth.InvalidateTeamIdentity(u.ID)
+	t.Cleanup(func() { auth.InvalidateTeamIdentity(u.ID) })
+	// Group rights can change after purchase; only the sold snapshot is binding.
+	g := db.Group.Create().SetName("Video").SetPlatform("seedance").SetRateMultiplier(2).
+		SetSubscriptionType(entgroup.SubscriptionTypeSubscription).
+		SetQuotas(billing.PlanQuotas{MonthlyCredits: 1, CreditsPerUnit: 1, VideoEnabled: false}.ToMap()).SaveX(ctx)
+	now := time.Now()
+	snapshot := billing.PlanQuotas{MonthlyCredits: 200000, CreditsPerUnit: 10000, VideoEnabled: true}.ToMap()
+	row := db.UserSubscription.Create().SetUserID(u.ID).SetGroupID(g.ID).
+		SetEffectiveAt(now.Add(-time.Hour)).SetExpiresAt(now.Add(time.Hour)).
+		SetPeriodStart(now.Add(-time.Hour)).SetPeriodEnd(now.Add(time.Hour)).
+		SetPlanSnapshot(snapshot).SetCreditsLimit(200000).
+		SetExtraCredits(10000).SetCreditsUsed(80000).SetCreditsReserved(30000).SaveX(ctx)
+	repo := &budgetSubscriptionRepository{userID: u.ID, byGroup: map[int]appsubscription.Subscription{
+		g.ID: {ID: row.ID, UserID: u.ID, GroupID: g.ID, Status: "active",
+			EffectiveAt: row.EffectiveAt, ExpiresAt: row.ExpiresAt,
+			PeriodStart: row.PeriodStart, PeriodEnd: row.PeriodEnd, PlanSnapshot: snapshot,
+			CreditsLimit: row.CreditsLimit, CreditsUsed: row.CreditsUsed,
+			CreditsReserved: row.CreditsReserved, ExtraCredits: row.ExtraCredits},
+	}}
+	return &HostService{db: db, subscriptions: appsubscription.NewService(repo)}, u, g, repo
+}
+
+func TestBillingBudgetSubscriptionUsesSnapshotCreditsWithZeroWallet(t *testing.T) {
+	host, u, g, repo := newBudgetSubscriptionFixture(t)
+	ctx := context.Background()
+	// Already represented by the credits ledger; subtracting task costs again
+	// would make this affordable request fail.
+	host.db.Task.Create().SetPluginID("gateway-seedance").SetTaskType("video.generate").
+		SetUserID(u.ID).SetStatus(enttask.StatusProcessing).SetEstimatedCost(9).SaveX(ctx)
+	for _, groupID := range []int64{0, int64(g.ID)} {
+		out, err := host.billingBudget(ctx, hostBillingBudgetRequest{
+			UserID: int64(u.ID), Platform: "seedance", GroupID: groupID, EstimatedOfficialCost: 5,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertBudgetField(t, out, "sufficient", true)
+		assertBudgetField(t, out, "billing_source", "subscription")
+		assertBudgetField(t, out, "group_id", g.ID)
+		assertBudgetField(t, out, "subscription_id", repo.byGroup[g.ID].ID)
+		assertBudgetField(t, out, "credits_remaining", int64(100000))
+		assertBudgetField(t, out, "credits_per_unit", int64(10000))
+		assertBudgetField(t, out, "available", 10.0)
+		assertBudgetField(t, out, "estimate", 10.0)
+		assertBudgetField(t, out, "reserved", 0.0)
+	}
+	out, err := host.billingBudget(ctx, hostBillingBudgetRequest{
+		UserID: int64(u.ID), GroupID: int64(g.ID), EstimatedOfficialCost: 5.00001,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBudgetField(t, out, "sufficient", false)
+	assertBudgetField(t, out, "message", i18n.En("gw.subscription_quota_exceeded"))
+}
+
+func TestBillingBudgetSubscriptionRejectsUnavailableRights(t *testing.T) {
+	for _, scenario := range []string{"video_disabled", "future", "expired", "exhausted", "missing"} {
+		t.Run(scenario, func(t *testing.T) {
+			host, u, g, repo := newBudgetSubscriptionFixture(t)
+			sub := repo.byGroup[g.ID]
+			switch scenario {
+			case "video_disabled":
+				sub.PlanSnapshot["video_enabled"] = false
+			case "future":
+				sub.EffectiveAt = time.Now().Add(time.Hour)
+			case "expired":
+				sub.ExpiresAt = time.Now().Add(-time.Hour)
+			case "exhausted":
+				sub.CreditsReserved += 100000
+			}
+			repo.byGroup[g.ID] = sub
+			if scenario == "missing" {
+				delete(repo.byGroup, g.ID)
+			}
+			// Cash cannot override a subscription-only group's admission rules.
+			host.db.User.UpdateOneID(u.ID).SetBalance(1000).ExecX(context.Background())
+			out, err := host.billingBudget(context.Background(), hostBillingBudgetRequest{
+				UserID: int64(u.ID), GroupID: int64(g.ID), EstimatedOfficialCost: 1,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertBudgetField(t, out, "sufficient", false)
+			assertBudgetField(t, out, "billing_source", "subscription")
+			if out["message"] == "" {
+				t.Fatal("denial must explain unavailable rights")
+			}
+		})
+	}
+}
+
+func TestBillingBudgetMixedCandidatesKeepGroupPriceAndRightsTogether(t *testing.T) {
+	host, u, first, repo := newBudgetSubscriptionFixture(t)
+	ctx := context.Background()
+	second := host.db.Group.Create().SetName("Other video").SetPlatform("seedance").SetRateMultiplier(4).
+		SetSubscriptionType(entgroup.SubscriptionTypeSubscription).SaveX(ctx)
+	sub := repo.byGroup[first.ID]
+	row := host.db.UserSubscription.Create().SetUserID(u.ID).SetGroupID(second.ID).
+		SetEffectiveAt(sub.EffectiveAt).SetExpiresAt(sub.ExpiresAt).SaveX(ctx)
+	other := sub
+	other.ID, other.GroupID = row.ID, second.ID
+	other.CreditsUsed, other.CreditsReserved, other.ExtraCredits = 0, 0, 0
+	repo.byGroup[second.ID] = other // $20 at rate 4, not $20 at rate 2.
+	request := hostBillingBudgetRequest{UserID: int64(u.ID), Platform: "seedance", EstimatedOfficialCost: 6}
+	out, err := host.billingBudget(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBudgetField(t, out, "sufficient", false)
+	assertBudgetField(t, out, "group_id", first.ID)
+	assertBudgetField(t, out, "available", 10.0)
+	assertBudgetField(t, out, "estimate", 12.0)
+	// Skipping an ineligible first subscription must recompute the second
+	// group's price, rather than combining the first price with the second pool.
+	delete(repo.byGroup, first.ID)
+	out, err = host.billingBudget(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBudgetField(t, out, "sufficient", false)
+	assertBudgetField(t, out, "group_id", second.ID)
+	assertBudgetField(t, out, "available", 20.0)
+	assertBudgetField(t, out, "estimate", 24.0)
+	request.GroupID = int64(first.ID)
+	out, err = host.billingBudget(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBudgetField(t, out, "sufficient", false)
+	assertBudgetField(t, out, "group_id", first.ID)
+}
+
+func TestBillingBudgetRejectsInvalidEstimate(t *testing.T) {
+	host := &HostService{}
+	for _, cost := range []float64{-1, math.NaN(), math.Inf(1), math.Inf(-1)} {
+		_, err := host.billingBudget(context.Background(), hostBillingBudgetRequest{UserID: 1, EstimatedOfficialCost: cost})
+		if status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("cost %v: %v", cost, err)
+		}
+	}
+}
+
+func TestBillingBudgetSubscriptionStillEnforcesMemberQuota(t *testing.T) {
+	host, owner, g, _ := newBudgetSubscriptionFixture(t)
+	ctx := context.Background()
+	member := host.db.User.Create().SetEmail("subscription-member@example.com").SetPasswordHash("h").SaveX(ctx)
+	host.db.Member.Create().SetName("Member").SetOwner(owner).SetAccount(member).
+		SetQuotaUsd(5).SetUsedQuota(1).SetAllowedGroupIds([]int64{int64(g.ID)}).SaveX(ctx)
+	auth.InvalidateTeamIdentity(member.ID)
+	t.Cleanup(func() { auth.InvalidateTeamIdentity(member.ID) })
+	host.db.Task.Create().SetPluginID("gateway-seedance").SetTaskType("video.generate").
+		SetUserID(member.ID).SetStatus(enttask.StatusProcessing).SetEstimatedCost(1).SaveX(ctx)
+	for _, test := range []struct {
+		estimate   float64
+		sufficient bool
+	}{{1.5, true}, {2, false}} {
+		out, err := host.billingBudget(ctx, hostBillingBudgetRequest{
+			UserID: int64(member.ID), GroupID: int64(g.ID), EstimatedOfficialCost: test.estimate,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertBudgetField(t, out, "available", 3.0)
+		assertBudgetField(t, out, "limited", true)
+		assertBudgetField(t, out, "sufficient", test.sufficient)
+	}
+}
+
+func TestBillingBudgetUnlimitedSubscriptionWithZeroWallet(t *testing.T) {
+	host, u, g, repo := newBudgetSubscriptionFixture(t)
+	sub := repo.byGroup[g.ID]
+	sub.PlanSnapshot["monthly_credits"] = 0
+	repo.byGroup[g.ID] = sub
+	out, err := host.billingBudget(context.Background(), hostBillingBudgetRequest{
+		UserID: int64(u.ID), GroupID: int64(g.ID), EstimatedOfficialCost: 1000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBudgetField(t, out, "sufficient", true)
+	assertBudgetField(t, out, "unlimited", true)
 }
 
 // 单测 evaluateBudget 的两道口子：余额与成员额度任一不过都要拒，且文案各归各的。
