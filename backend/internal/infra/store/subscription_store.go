@@ -11,6 +11,7 @@ import (
 	entbalancelog "github.com/DouDOU-start/airgate-core/ent/balancelog"
 	entgroup "github.com/DouDOU-start/airgate-core/ent/group"
 	entsubscriptionreservation "github.com/DouDOU-start/airgate-core/ent/subscriptionreservation"
+	enttask "github.com/DouDOU-start/airgate-core/ent/task"
 	entuser "github.com/DouDOU-start/airgate-core/ent/user"
 	entusersubscription "github.com/DouDOU-start/airgate-core/ent/usersubscription"
 	appsubscription "github.com/DouDOU-start/airgate-core/internal/app/subscription"
@@ -492,8 +493,16 @@ func releaseExpiredReservations(ctx context.Context, tx *ent.Tx, row *ent.UserSu
 			entsubscriptionreservation.HasSubscriptionWith(entusersubscription.IDEQ(row.ID)),
 		).
 		All(ctx)
-	if err != nil || len(expired) == 0 {
-		return row, err
+	if err != nil {
+		return nil, err
+	}
+	reconciled, err := reconcilableTaskReservations(ctx, tx, row, now)
+	if err != nil {
+		return nil, err
+	}
+	expired = append(expired, reconciled...)
+	if len(expired) == 0 {
+		return row, nil
 	}
 	ids := make([]int, 0, len(expired))
 	var credits int64
@@ -539,6 +548,63 @@ func releaseExpiredReservations(ctx context.Context, tx *ent.Tx, row *ent.UserSu
 	row.ImagesReserved -= images
 	row.LedgerVersion++
 	return row, nil
+}
+
+// reconcilableTaskReservations finds asynchronous task reservations that can be
+// given back to the customer.
+//
+// An asynchronous video task owns its reservation from submission until
+// settlement: a local failure is not evidence that the supplier did not charge,
+// so a failed task does not release on the spot. That alone would strand the
+// points forever, which is worse for the customer than the risk it avoids.
+// A reservation is therefore returned only once all three hold:
+//
+//   - the task reached a terminal status, so nothing more can be charged for it;
+//   - no usage was ever observed for it, so there is nothing to settle; and
+//   - its 48-hour reservation window has passed, giving a late supplier
+//     callback the whole window to arrive first.
+//
+// A terminal task whose usage WAS observed but never settled is deliberately
+// left reserved: that is a settlement failure the billing WAL replays, and
+// releasing it would hand back points we are about to spend. A task still
+// running past its window is also left alone, because it can still be charged.
+func reconcilableTaskReservations(ctx context.Context, tx *ent.Tx, row *ent.UserSubscription, now time.Time) ([]*ent.SubscriptionReservation, error) {
+	candidates, err := tx.SubscriptionReservation.Query().
+		Where(
+			entsubscriptionreservation.StatusEQ(entsubscriptionreservation.StatusReserved),
+			entsubscriptionreservation.ExpiresAtLTE(now),
+			entsubscriptionreservation.TaskIDGT(0),
+			entsubscriptionreservation.HasSubscriptionWith(entusersubscription.IDEQ(row.ID)),
+		).
+		All(ctx)
+	if err != nil || len(candidates) == 0 {
+		return nil, err
+	}
+	ids := make([]int, 0, len(candidates))
+	for _, candidate := range candidates {
+		ids = append(ids, candidate.TaskID)
+	}
+	settled, err := tx.Task.Query().
+		Where(
+			enttask.IDIn(ids...),
+			enttask.StatusIn(enttask.StatusCompleted, enttask.StatusFailed, enttask.StatusCancelled),
+			enttask.SubscriptionUsageObserved(false),
+		).
+		IDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	eligible := make(map[int]struct{}, len(settled))
+	for _, id := range settled {
+		eligible[id] = struct{}{}
+	}
+	out := make([]*ent.SubscriptionReservation, 0, len(settled))
+	for _, candidate := range candidates {
+		if _, ok := eligible[candidate.TaskID]; ok {
+			out = append(out, candidate)
+		}
+	}
+	return out, nil
 }
 
 // Release idempotently returns a reservation to the same monthly window.

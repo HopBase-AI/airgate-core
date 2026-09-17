@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	entgroup "github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/migrate"
 	entsubscriptionreservation "github.com/DouDOU-start/airgate-core/ent/subscriptionreservation"
+	enttask "github.com/DouDOU-start/airgate-core/ent/task"
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 	appsubscription "github.com/DouDOU-start/airgate-core/internal/app/subscription"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
@@ -319,5 +321,66 @@ func TestSubscriptionGroupVisibility(t *testing.T) {
 	list, _, _ = groups.ListAvailable(ctx, appgroupAvailableFilter(u.ID))
 	if len(list) != 1 {
 		t.Fatalf("到期后应隐藏套餐分组，得到 %+v", list)
+	}
+}
+
+// TestStrandedVideoReservationsAreReconciledAtAdmission covers the asynchronous
+// video lifecycle: a task keeps its reservation past a local failure, but the
+// points must come back once the task is finished, unbilled and past its window.
+func TestStrandedVideoReservationsAreReconciledAtAdmission(t *testing.T) {
+	ctx := context.Background()
+	db := openSubscriptionTestDB(t)
+	store := NewSubscriptionStore(db)
+
+	u := db.User.Create().SetEmail("stranded@example.com").SetPasswordHash("hash").SaveX(ctx)
+	quotas := map[string]any{"monthly_credits": 1000, "per_request_credits": 100}
+	plan := db.Group.Create().SetName("主力").SetPlatform("seedance").
+		SetSubscriptionType(entgroup.SubscriptionTypeSubscription).SetQuotas(quotas).SaveX(ctx)
+	now := time.Now().UTC()
+	sub := db.UserSubscription.Create().SetUserID(u.ID).SetGroupID(plan.ID).
+		SetEffectiveAt(now.Add(-time.Hour)).SetExpiresAt(now.AddDate(0, 1, 0)).
+		SetPeriodStart(now.Add(-time.Hour)).SetPeriodEnd(now.AddDate(0, 1, 0)).
+		SetPlanSnapshot(quotas).SetIncludedGroupIds([]int{plan.ID}).SetCreditsLimit(1000).
+		SetCreditsReserved(900).SaveX(ctx)
+
+	// Three finished tasks, each holding 300 credits past its 48h window.
+	cases := []struct {
+		status   enttask.Status
+		observed bool
+		released bool
+	}{
+		{enttask.StatusFailed, false, true},      // nothing was ever charged
+		{enttask.StatusCompleted, true, false},   // awaiting settlement replay
+		{enttask.StatusProcessing, false, false}, // can still be charged
+	}
+	for i, tc := range cases {
+		task := db.Task.Create().SetPluginID("gateway-seedance").SetTaskType("video.generate").
+			SetUserID(u.ID).SetStatus(tc.status).SetSubscriptionUsageObserved(tc.observed).SaveX(ctx)
+		db.SubscriptionReservation.Create().SetSubscriptionID(sub.ID).
+			SetReservationKey(fmt.Sprintf("subscription:task:%d", i)).SetTaskID(task.ID).
+			SetUserIDSnapshot(u.ID).SetGroupIDSnapshot(plan.ID).
+			SetPeriodStart(sub.PeriodStart).SetPeriodEnd(sub.PeriodEnd).
+			SetCreditsReserved(300).SetExpiresAt(now.Add(-time.Hour)).SaveX(ctx)
+	}
+
+	// The next admission is what reconciles: without it the customer stays
+	// locked out by points that nothing will ever spend.
+	if _, err := store.Reserve(ctx, appsubscription.ReserveInput{
+		UserID: u.ID, GroupID: plan.ID, Key: "next-request", Credits: 50,
+		Now: now, ExpiresAt: now.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("admission after reconciliation: %v", err)
+	}
+	for i, tc := range cases {
+		row := db.SubscriptionReservation.Query().
+			Where(entsubscriptionreservation.ReservationKeyEQ(fmt.Sprintf("subscription:task:%d", i))).OnlyX(ctx)
+		released := row.Status == entsubscriptionreservation.StatusReleased
+		if released != tc.released {
+			t.Fatalf("task %d (%s observed=%v) released=%v, want %v", i, tc.status, tc.observed, released, tc.released)
+		}
+	}
+	// 900 held, 300 returned, 50 newly reserved.
+	if got := db.UserSubscription.GetX(ctx, sub.ID).CreditsReserved; got != 650 {
+		t.Fatalf("credits_reserved = %d, want 650", got)
 	}
 }
