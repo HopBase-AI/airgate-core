@@ -33,8 +33,8 @@ const maxSubscriptionImagesPerRequest = 1_000_000
 // 单次请求点数上限（per_request_credits）core 只能做保守预估：按请求体字节数估输入 token，
 // 乘目录官方输入价与分组倍率折算点数；输出侧（max_tokens）限制需插件配合，这里不判。
 
-// requestKindFor 判定请求的产品类型：先看模型目录能力，再按路径兜底。
-func requestKindFor(mgr *Manager, path, model string) billing.RequestKind {
+// requestKindFor 判定请求的产品类型：包括聊天模型强制调用的生图工具。
+func requestKindFor(mgr *Manager, path, model string, body []byte) billing.RequestKind {
 	if mgr != nil && model != "" {
 		if mgr.ModelHasCapability(model, sdk.ModelCapVideoGeneration) {
 			return billing.RequestKindVideo
@@ -48,6 +48,9 @@ func requestKindFor(mgr *Manager, path, model string) billing.RequestKind {
 	case strings.Contains(lower, "/video"), strings.Contains(lower, "/sd/"):
 		return billing.RequestKindVideo
 	case strings.Contains(lower, "/images"), strings.Contains(lower, "/image"):
+		return billing.RequestKindImage
+	}
+	if hasForcedImageGenerationTool(body) {
 		return billing.RequestKindImage
 	}
 	return billing.RequestKindChat
@@ -118,7 +121,7 @@ func (f *Forwarder) checkSubscription(c *gin.Context, state *forwardState) bool 
 		return false
 	}
 	quotas := billing.ParsePlanQuotas(state.keyInfo.GroupQuotas)
-	kind := requestKindFor(f.manager, state.requestPath, state.model)
+	kind := requestKindFor(f.manager, state.requestPath, state.model, state.body)
 	if cap := quotas.PerRequestCredits; cap > 0 {
 		if est := f.estimateInputCredits(state, quotas); est > cap {
 			message := i18n.En("gw.subscription_request_too_large")
@@ -208,7 +211,7 @@ func (h *HostService) entitleSubscriptionRoute(ctx context.Context, req hostForw
 		return status.Error(codes.Unavailable, i18n.En("gw.subscription_service_unavailable"))
 	}
 	plan := billing.ParsePlanQuotas(quotas)
-	kind := requestKindFor(h.manager, req.Path, req.Model)
+	kind := requestKindFor(h.manager, req.Path, req.Model, hostForwardBody(req.Body))
 	if _, err := h.subscriptions.Entitle(ctx, int(req.UserID), groupID, plan, kind); err != nil {
 		if denial, known := subscriptionDenialFor(err); known {
 			slog.Warn("host_forward_subscription_denied",
@@ -236,8 +239,8 @@ func (h *HostService) reserveHostSubscriptionRoute(ctx context.Context, req host
 		return "", status.Error(codes.Unavailable, i18n.En("gw.subscription_service_unavailable"))
 	}
 	key := fmt.Sprintf("subscription:host:%d:%s:%d", req.UserID, req.RequestID, groupID)
-	kind := requestKindFor(h.manager, req.Path, req.Model)
-	body, _ := json.Marshal(req.Body)
+	body := hostForwardBody(req.Body)
+	kind := requestKindFor(h.manager, req.Path, req.Model, body)
 	images := subscriptionImageCount(kind, body)
 	if _, err := h.subscriptions.Reserve(ctx, appsubscription.ReserveInput{
 		UserID: int(req.UserID), GroupID: groupID, Key: key, Images: images, Kind: kind,

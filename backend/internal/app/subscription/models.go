@@ -24,7 +24,8 @@ type Repository interface {
 
 	// FindByID 按 ID 查询（含分组权益配置）。
 	FindByID(context.Context, int) (Subscription, error)
-	// FindActiveByUserGroup 查询用户在某分组下最新一条未失效（active / suspended）订阅；无则 ErrSubscriptionNotFound。
+	// FindActiveByUserGroup selects the latest effective grant whose window contains now
+	// (active / suspended), regardless of callback arrival order; absent returns ErrSubscriptionNotFound.
 	FindActiveByUserGroup(ctx context.Context, userID, groupID int) (Subscription, error)
 	// FindPlan 查询订阅制分组作为套餐；非订阅制或不存在返回 ErrPlanNotFound。
 	FindPlan(context.Context, int) (Plan, error)

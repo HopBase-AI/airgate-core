@@ -60,6 +60,7 @@ func TestSubscriptionStorePurchaseTopupAndRollover(t *testing.T) {
 	}
 
 	now := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return now }
 	sub, err := store.Purchase(ctx, appsubscription.PurchaseTx{
 		UserID: u.ID, GroupID: plan.ID, Price: 128, Remark: "订阅套餐：主力（月付）",
 		EffectiveAt: now, ExpiresAt: now.AddDate(0, 1, 0), PeriodStart: now, PeriodEnd: now.AddDate(0, 1, 0),
@@ -156,6 +157,7 @@ func TestSubscriptionStoreExternalGrantSharedPoolAndReservation(t *testing.T) {
 		}).SaveX(ctx)
 	claude := db.Group.Create().SetName("Claude").SetPlatform("claude").SetSubscriptionType(entgroup.SubscriptionTypeSubscription).SaveX(ctx)
 	now := time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return now }
 	input := appsubscription.ExternalGrantInput{
 		UserID: u.ID, PlanGroupID: plan.ID, Cycle: appsubscription.BillingCycleAnnual,
 		Provider: "essevin-payments", ExecutionKey: "exec-1", PaymentKey: "pay-1",
