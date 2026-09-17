@@ -52,6 +52,7 @@ func ListEligibleGroups(ctx context.Context, db *ent.Client, userID int, platfor
 	}
 
 	candidates := make([]Candidate, 0, len(groups))
+	var subscriptionGroups map[int]bool
 	for _, g := range groups {
 		if !GroupMatchesRequirements(g, requirements) {
 			continue
@@ -71,27 +72,22 @@ func ListEligibleGroups(ctx context.Context, db *ent.Client, userID int, platfor
 				continue
 			}
 		}
-		// 订阅制分组：没有未到期 active 订阅的用户不参与自动路由，
-		// 否则会被路由进去再被准入拒绝（或更糟：漏到余额扣费）。
+		// Select the latest effective grant before checking its status, matching
+		// subscription admission; a paused grant must not expose an older one.
 		if g.SubscriptionType == group.SubscriptionTypeSubscription {
-			subscribed, err := db.UserSubscription.Query().
-				Where(
-					usersubscription.HasUserWith(user.IDEQ(userID)),
-					usersubscription.HasGroupWith(group.IDEQ(g.ID)),
-					usersubscription.StatusEQ(usersubscription.StatusActive),
-					usersubscription.ExpiresAtGT(time.Now()),
-				).
-				Exist(ctx)
-			if err != nil {
-				slog.Error("routing_load_failed",
-					sdk.LogFieldPlatform, platform,
-					sdk.LogFieldUserID, userID,
-					sdk.LogFieldGroupID, g.ID,
-					"stage", "subscription_check",
-					sdk.LogFieldError, err)
-				return nil, err
+			if subscriptionGroups == nil {
+				subscriptionGroups, err = eligibleSubscriptionGroups(ctx, db, userID, time.Now())
+				if err != nil {
+					slog.Error("routing_load_failed",
+						sdk.LogFieldPlatform, platform,
+						sdk.LogFieldUserID, userID,
+						sdk.LogFieldGroupID, g.ID,
+						"stage", "subscription_check",
+						sdk.LogFieldError, err)
+					return nil, err
+				}
 			}
-			if !subscribed {
+			if !subscriptionGroups[g.ID] {
 				continue
 			}
 		}
@@ -129,6 +125,49 @@ func ListEligibleGroups(ctx context.Context, db *ent.Client, userID int, platfor
 			"top_rate", candidates[0].EffectiveRate)
 	}
 	return candidates, nil
+}
+
+// eligibleSubscriptionGroups mirrors SubscriptionStore's current grant selection:
+// [effective_at, expires_at), newest effective time then ID, including suspended
+// grants so they cannot be bypassed. Load all platforms because one plan can grant
+// access to several model families through its snapshotted included_group_ids.
+func eligibleSubscriptionGroups(ctx context.Context, db *ent.Client, userID int, now time.Time) (map[int]bool, error) {
+	subscriptions, err := db.UserSubscription.Query().
+		Where(
+			usersubscription.HasUserWith(user.IDEQ(userID)),
+			usersubscription.StatusNEQ(usersubscription.StatusExpired),
+			usersubscription.EffectiveAtLTE(now),
+			usersubscription.ExpiresAtGT(now),
+		).
+		WithGroup().
+		Order(ent.Desc(usersubscription.FieldEffectiveAt), ent.Desc(usersubscription.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	eligible := make(map[int]bool)
+	for _, sub := range subscriptions {
+		included := sub.IncludedGroupIds
+		if len(included) == 0 {
+			quotas := sub.PlanSnapshot
+			if len(quotas) == 0 && sub.Edges.Group != nil {
+				quotas = sub.Edges.Group.Quotas
+			}
+			included = billing.ParsePlanQuotas(quotas).IncludedGroupIDs
+		}
+		// The owning plan group is always covered, even on legacy rows without
+		// an explicit included-group snapshot.
+		groupIDs := append([]int(nil), included...)
+		if sub.Edges.Group != nil {
+			groupIDs = append(groupIDs, sub.Edges.Group.ID)
+		}
+		for _, groupID := range groupIDs {
+			if _, selected := eligible[groupID]; !selected {
+				eligible[groupID] = sub.Status == usersubscription.StatusActive
+			}
+		}
+	}
+	return eligible, nil
 }
 
 // CandidatePrecedes defines the canonical automatic group-routing order.
