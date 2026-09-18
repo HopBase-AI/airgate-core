@@ -448,7 +448,7 @@ func (t officialTotals) add(block *dto.OfficialNativeCostResp) {
 		entry = &officialTotal{}
 		t[block.Currency] = entry
 	}
-	entry.cost += block.Cost
+	entry.cost += block.TotalCost()
 	switch {
 	case block.Divisor <= 0:
 	case entry.divisor == 0:
@@ -510,8 +510,10 @@ func writeUsageExportCSV(c *gin.Context, filename string, rows []exportRow, note
 		listCurrency, officialCost, discount, divisor := "", "", "", ""
 		if row.Official != nil {
 			listCurrency = row.Official.Currency
-			officialCost = exportMoney(row.Official.Cost)
-			discount = exportRate(row.Official.Discount)
+			// 全额 + 摊回后的折：缓存读不吃折扣的行在这里仍要满足「官方费用 × 折扣 = 扣费」，
+			// CSV 只有一格折扣可填，分档等式塞不进去。
+			officialCost = exportMoney(row.Official.TotalCost())
+			discount = exportRate(row.Official.EffectiveDiscount())
 			divisor = exportDivisor(row.Official.Divisor)
 			totals.add(row.Official)
 		}

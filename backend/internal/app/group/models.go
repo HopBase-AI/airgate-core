@@ -55,9 +55,12 @@ type Group struct {
 	NameI18n       map[string]string
 	Platform       string
 	RateMultiplier float64
-	IsExclusive    bool
-	StatusVisible  bool
-	Delisted       bool
+	// CachedInputFullPrice 缓存读不吃本分组折扣，按平台基准倍率（ledger.RateBase）计费，
+	// 即「缓存按厂商官方牌价原价卖」；输入/输出照旧按 RateMultiplier 打折。
+	CachedInputFullPrice bool
+	IsExclusive          bool
+	StatusVisible        bool
+	Delisted             bool
 	// AllowedUsers 仅在加载了 allowed_users 边时填充（管理员列表/详情）；
 	// 用户可用分组列表不填充，避免泄漏其他用户。
 	AllowedUsers     []GroupAllowedUser
@@ -114,9 +117,12 @@ type CreateInput struct {
 	NameI18n       map[string]string
 	Platform       string
 	RateMultiplier float64
-	IsExclusive    bool
-	StatusVisible  bool
-	Delisted       bool
+	// CachedInputFullPrice 缓存读不吃本分组折扣，按平台基准倍率（ledger.RateBase）计费，
+	// 即「缓存按厂商官方牌价原价卖」；输入/输出照旧按 RateMultiplier 打折。
+	CachedInputFullPrice bool
+	IsExclusive          bool
+	StatusVisible        bool
+	Delisted             bool
 	// AllowedUserIDs 专属分组的授权用户 ID 列表（仅 IsExclusive 时有意义；空=仅管理员可见）。
 	AllowedUserIDs    []int64
 	SubscriptionType  string
@@ -138,9 +144,12 @@ type UpdateInput struct {
 	// NameI18n / NoteI18n：nil=不修改；非 nil 时整体覆盖（清理空白 value 后为空 = 清空）。
 	NameI18n       map[string]string
 	RateMultiplier *float64
-	IsExclusive    *bool
-	StatusVisible  *bool
-	Delisted       *bool
+	// CachedInputFullPrice 缓存读不吃本分组折扣，按平台基准倍率（ledger.RateBase）计费，
+	// 即「缓存按厂商官方牌价原价卖」；输入/输出照旧按 RateMultiplier 打折。
+	CachedInputFullPrice *bool
+	IsExclusive          *bool
+	StatusVisible        *bool
+	Delisted             *bool
 	// AllowedUserIDs / HasAllowedUserIDs：HasAllowedUserIDs=false 时不改动授权用户；
 	// 为 true 时按 AllowedUserIDs 覆盖（空切片=清空，即仅管理员可见）。
 	AllowedUserIDs    []int64

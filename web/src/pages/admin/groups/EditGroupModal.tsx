@@ -139,6 +139,7 @@ export function GroupFormModal({
     note: group?.note ?? '',
     platform: group?.platform ?? '',
     rate_multiplier: group?.rate_multiplier ?? 1,
+    cached_input_full_price: group?.cached_input_full_price ?? false,
     sort_weight: group?.sort_weight ?? 0,
     status_visible: group?.status_visible ?? true,
     delisted: group?.delisted ?? false,
@@ -456,6 +457,19 @@ export function GroupFormModal({
             <span>{t('groups.rate_multiplier_warn')}</span>
           </div>
         </HeroTextField>
+
+        {/* 缓存读不吃折扣：只改缓存读那一档的计价倍率（按平台基准倍率 = 厂商官方牌价原价），
+            输入 / 输出仍按上面的倍率打折。缓存命中量远大于普通输入的模型，整单同折会抹平毛利。 */}
+        <div className="space-y-2 rounded-lg border border-glass-border p-3">
+          <NativeSwitch
+            isSelected={form.cached_input_full_price}
+            label={<span className="text-sm text-text">{t('groups.cached_input_full_price')}</span>}
+            onChange={(selected) => setForm({ ...form, cached_input_full_price: selected })}
+          />
+          <p className="text-[11px] leading-relaxed text-text-tertiary">
+            {t('groups.cached_input_full_price_hint')}
+          </p>
+        </div>
 
         <div className="space-y-3 rounded-lg border border-glass-border p-3">
           <Select

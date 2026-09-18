@@ -23,6 +23,8 @@ const (
 	FieldPlatform = "platform"
 	// FieldRateMultiplier holds the string denoting the rate_multiplier field in the database.
 	FieldRateMultiplier = "rate_multiplier"
+	// FieldCachedInputFullPrice holds the string denoting the cached_input_full_price field in the database.
+	FieldCachedInputFullPrice = "cached_input_full_price"
 	// FieldIsExclusive holds the string denoting the is_exclusive field in the database.
 	FieldIsExclusive = "is_exclusive"
 	// FieldStatusVisible holds the string denoting the status_visible field in the database.
@@ -103,6 +105,7 @@ var Columns = []string{
 	FieldNameI18n,
 	FieldPlatform,
 	FieldRateMultiplier,
+	FieldCachedInputFullPrice,
 	FieldIsExclusive,
 	FieldStatusVisible,
 	FieldDelisted,
@@ -145,6 +148,8 @@ var (
 	PlatformValidator func(string) error
 	// DefaultRateMultiplier holds the default value on creation for the "rate_multiplier" field.
 	DefaultRateMultiplier float64
+	// DefaultCachedInputFullPrice holds the default value on creation for the "cached_input_full_price" field.
+	DefaultCachedInputFullPrice bool
 	// DefaultIsExclusive holds the default value on creation for the "is_exclusive" field.
 	DefaultIsExclusive bool
 	// DefaultStatusVisible holds the default value on creation for the "status_visible" field.
@@ -214,6 +219,11 @@ func ByPlatform(opts ...sql.OrderTermOption) OrderOption {
 // ByRateMultiplier orders the results by the rate_multiplier field.
 func ByRateMultiplier(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRateMultiplier, opts...).ToFunc()
+}
+
+// ByCachedInputFullPrice orders the results by the cached_input_full_price field.
+func ByCachedInputFullPrice(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCachedInputFullPrice, opts...).ToFunc()
 }
 
 // ByIsExclusive orders the results by the is_exclusive field.

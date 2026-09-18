@@ -19,8 +19,10 @@ const listPriceEpsilon = 1e-6
 // 写死任何一个都会让这套用例只在一种账本下有意义——恰恰是本次要钉死的那件事。
 func rateFor(zhe float64) float64 { return zhe * ledger.RateBase }
 
-// assertVerificationCloses 不变式守卫：cost × discount ÷ divisor 必须等于该行 actual_cost。
-// 两种账本共用这一条断言，账本差异全部收在 rateFor 与 ledger.Divisor 里。
+// assertVerificationCloses 不变式守卫：(cost × discount + cached_cost) ÷ divisor 必须等于
+// 该行 actual_cost。cached_cost 只在分组开了「缓存读不吃折扣」时非零，其余行等式退化成
+// cost × discount ÷ divisor。两种账本共用这一条断言，账本差异全部收在 rateFor 与
+// ledger.Divisor 里。
 func assertVerificationCloses(t *testing.T, got *dto.OfficialNativeCostResp, actualCost float64) {
 	t.Helper()
 	if got == nil {
@@ -29,7 +31,7 @@ func assertVerificationCloses(t *testing.T, got *dto.OfficialNativeCostResp, act
 	if got.Divisor <= 0 {
 		t.Fatalf("账本除数应为正，got %+v", got)
 	}
-	if verified := got.Cost * got.Discount / got.Divisor; math.Abs(verified-actualCost) > listPriceEpsilon {
+	if verified := (got.Cost*got.Discount + got.CachedCost) / got.Divisor; math.Abs(verified-actualCost) > listPriceEpsilon {
 		t.Fatalf("验算 %g ≠ actual_cost %g（block = %+v）", verified, actualCost, got)
 	}
 	if got.LedgerCurrency != ledger.Currency {
@@ -316,4 +318,115 @@ func TestOfficialNativeCostDoesNotDoubleCountMetrics(t *testing.T) {
 		t.Fatalf("官方费用 = %+v, want 0.12（不得把 metric 再加一遍）", got)
 	}
 	assertVerificationCloses(t, got, record.ActualCost)
+}
+
+// dsFlashRecord 造一条 DeepSeek V4.1 Flash 的行：牌价 ¥2 / ¥0.04 / ¥8 per 1M，
+// 卖价 65 折，缓存读按牌价原价（分组开了 cached_input_full_price）。
+// 用量：输入 1M、缓存读 10M、输出 0.1M——缓存是输入的十倍，这正是要单列它的原因。
+func dsFlashRecord(cachedRate float64) appusage.LogRecord {
+	const (
+		baseInput  = 0.29411764705882354
+		baseCached = 0.0058823529411764705
+		baseOutput = 1.1764705882352942
+	)
+	inputCost := baseInput * 1.0
+	cachedCost := baseCached * 10.0
+	outputCost := baseOutput * 0.1
+
+	rate := rateFor(0.65)
+	actual := (inputCost+outputCost)*rate + cachedCost*ledger.RateBase
+	metadata := map[string]string{"list_currency": "CNY", "list_fx": "6.8"}
+	if cachedRate > 0 {
+		metadata["cached_rate_multiplier"] = "6.8"
+	} else {
+		actual = (inputCost + cachedCost + outputCost) * rate
+	}
+
+	return appusage.LogRecord{
+		Model:          "deepseek-v4.1-flash",
+		RateMultiplier: rate,
+		ActualCost:     actual,
+		UsageCostDetails: []sdk.UsageCostDetail{
+			{Key: "input_tokens", Label: "输入 Token", AccountCost: inputCost, Currency: "USD", Metadata: map[string]string{
+				"unit_price": "0.29411764705882354", "unit": "USD/1M tokens",
+				"list_currency": "CNY", "list_unit_price": "2", "list_fx": "6.8",
+			}},
+			{Key: "cached_input_tokens", Label: "缓存输入 Token", AccountCost: cachedCost, Currency: "USD", Metadata: map[string]string{
+				"unit_price": "0.0058823529411764705", "unit": "USD/1M tokens",
+				"list_currency": "CNY", "list_unit_price": "0.04", "list_fx": "6.8",
+			}},
+			{Key: "output_tokens", Label: "输出 Token", AccountCost: outputCost, Currency: "USD", Metadata: map[string]string{
+				"unit_price": "1.1764705882352942", "unit": "USD/1M tokens",
+				"list_currency": "CNY", "list_unit_price": "8", "list_fx": "6.8",
+			}},
+		},
+		UsageMetadata: metadata,
+	}
+}
+
+// 缓存读不吃折扣的行：缓存那一档从折扣费用里摘出来单列，等式仍然闭合。
+func TestOfficialNativeCostCachedFullPrice(t *testing.T) {
+	record := dsFlashRecord(ledger.RateBase)
+
+	got := toUserUsageLogResp(record).OfficialNative
+	if got == nil {
+		t.Fatalf("缓存读走基准倍率的行也应产出 official_native")
+	}
+	// 输入 ¥2 + 输出 ¥0.8 = ¥2.8 进折扣档；缓存 10M × ¥0.04 = ¥0.4 单列不打折。
+	if math.Abs(got.Cost-2.8) > listPriceEpsilon {
+		t.Fatalf("折扣档官方费用 = %g, want 2.8（不得含缓存读）", got.Cost)
+	}
+	if math.Abs(got.CachedCost-0.4) > listPriceEpsilon {
+		t.Fatalf("缓存档官方费用 = %g, want 0.4", got.CachedCost)
+	}
+	if math.Abs(got.Discount-0.65) > listPriceEpsilon {
+		t.Fatalf("折 = %g, want 0.65", got.Discount)
+	}
+	assertVerificationCloses(t, got, record.ActualCost)
+}
+
+// 同一模型、同样的明细，分组没开开关时缓存读照旧并进折扣档——不能因为认得 key 就乱拆。
+func TestOfficialNativeCostCachedFollowsDiscountByDefault(t *testing.T) {
+	record := dsFlashRecord(0)
+
+	got := toUserUsageLogResp(record).OfficialNative
+	if got == nil {
+		t.Fatalf("应产出 official_native")
+	}
+	if got.CachedCost != 0 {
+		t.Fatalf("缓存档官方费用 = %g, want 0（未开开关时不单列）", got.CachedCost)
+	}
+	if math.Abs(got.Cost-3.2) > listPriceEpsilon {
+		t.Fatalf("官方费用 = %g, want 3.2（2 + 0.4 + 0.8 全进折扣档）", got.Cost)
+	}
+	assertVerificationCloses(t, got, record.ActualCost)
+}
+
+// 快照说缓存走了基准倍率，实扣却是按整单折扣算的——两者对不上时整块不渲染，
+// 好过给客户一个算错的等式。
+func TestOfficialNativeCostCachedFullPriceMismatchNotRendered(t *testing.T) {
+	record := dsFlashRecord(ledger.RateBase)
+	record.ActualCost *= 0.8
+
+	if got := toUserUsageLogResp(record).OfficialNative; got != nil {
+		t.Fatalf("实扣与分档等式不闭合时不应渲染验算块，got %+v", got)
+	}
+}
+
+// 导出只有一格折扣可填：全额 × 摊回后的折必须精确等于分档算出来的实扣原币费用。
+func TestOfficialNativeEffectiveDiscountFoldsCachedBack(t *testing.T) {
+	record := dsFlashRecord(ledger.RateBase)
+	got := toUserUsageLogResp(record).OfficialNative
+
+	if math.Abs(got.TotalCost()-3.2) > listPriceEpsilon {
+		t.Fatalf("官方费用全额 = %g, want 3.2", got.TotalCost())
+	}
+	folded := got.TotalCost() * got.EffectiveDiscount() / got.Divisor
+	if math.Abs(folded-record.ActualCost) > listPriceEpsilon {
+		t.Fatalf("摊回后的验算 %g ≠ actual_cost %g", folded, record.ActualCost)
+	}
+	// 摊回的折必然落在「缓存不打折」与「整单打折」之间。
+	if got.EffectiveDiscount() <= 0.65 || got.EffectiveDiscount() >= 1 {
+		t.Fatalf("摊回折 = %g, 应严格落在 (0.65, 1) 之间", got.EffectiveDiscount())
+	}
 }

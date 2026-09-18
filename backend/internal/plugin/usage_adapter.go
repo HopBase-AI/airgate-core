@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/DouDOU-start/airgate-core/internal/billing"
+	"github.com/DouDOU-start/airgate-core/internal/pkg/listprice"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
 
@@ -35,6 +36,23 @@ type usageSnapshot struct {
 	ServiceTier  string
 	ImageSize    string
 	FirstTokenMs int64
+}
+
+// withCachedRateSnapshot 在缓存读走了与整单不同的倍率时（分组开了
+// cached_input_full_price），把该倍率写进行级 usage_metadata，供使用记录的牌价
+// 验算块把缓存档单独折算。
+//
+// 只在两者确实不同时写：绝大多数行不该为一个恒等于 rate_multiplier 的值多存一个键。
+func withCachedRateSnapshot(metadata map[string]string, calc billing.CalculateResult) map[string]string {
+	if calc.CachedInputCost <= 0 || calc.CachedInputRate <= 0 || calc.CachedInputRate == calc.RateMultiplier {
+		return metadata
+	}
+	cloned := make(map[string]string, len(metadata)+1)
+	for key, value := range metadata {
+		cloned[key] = value
+	}
+	cloned[listprice.SnapshotCachedRate] = strconv.FormatFloat(calc.CachedInputRate, 'g', -1, 64)
+	return cloned
 }
 
 func usageSnapshotFromSDK(usage *sdk.Usage) usageSnapshot {

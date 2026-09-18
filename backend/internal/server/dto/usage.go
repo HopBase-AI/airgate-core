@@ -143,7 +143,11 @@ type UserUsageLogResp struct {
 
 // OfficialNativeCostResp 官方牌价口径的单行费用，凑成一条客户可自行验算的等式：
 //
-//	cost（原币官方费用）× discount（折）÷ divisor（账本除数）= actual_cost（实扣，ledger_currency 计价）
+//	(cost（原币官方费用）× discount（折）+ cached_cost（不打折的缓存读）) ÷ divisor（账本除数）
+//	  = actual_cost（实扣，ledger_currency 计价）
+//
+// cached_cost 只在分组开了「缓存读不吃折扣」时非零，绝大多数行等式退化回
+// cost × discount ÷ divisor。
 //
 // 该等式与账本币种无关：discount 一律是客户读得懂的「折」（0.75 = 75 折），
 // 账本差异全部收进 divisor。¥ 账本 + 牌价折算率 6.8 时 divisor = 1（账本本来就是 ¥，
@@ -157,8 +161,11 @@ type OfficialNativeCostResp struct {
 	// FX 牌价折算率快照：1 USD = fx 原币。写入时的历史事实，不是当前汇率，
 	// 也不是验算式里的除数（那是 Divisor）——它属于价格定义，供排查与导出溯源。
 	FX float64 `json:"fx"`
-	// Cost 按官方牌价算出的本次费用（原币，折前）。
+	// Cost 按官方牌价算出的本次费用（原币，折前）。CachedCost 非零时这里已不含缓存读那一档。
 	Cost float64 `json:"cost"`
+	// CachedCost 缓存读那一档的官方费用（原币）。仅当本行缓存读不吃折扣（分组开了
+	// cached_input_full_price）时非零——它按牌价原价计，不乘 Discount。
+	CachedCost float64 `json:"cached_cost,omitempty"`
 	// Discount 本次生效的折（0.75 = 75 折）。已按账本口径把 rate_multiplier 还原成折，
 	// 不是 rate_multiplier 原值——¥ 账本下后者是 5.1 这种量纲，摊给客户读不懂。
 	Discount float64 `json:"discount"`
@@ -166,6 +173,32 @@ type OfficialNativeCostResp struct {
 	Divisor float64 `json:"divisor"`
 	// LedgerCurrency 实扣金额的计价币种（账本币种），供展示层给 actual_cost 配符号。
 	LedgerCurrency string `json:"ledger_currency"`
+}
+
+// TotalCost 本行官方牌价费用全额（原币），含不打折的缓存读那一档。
+// 供只有一格可填的展示面（CSV 导出）使用；分档展示请直接读 Cost / CachedCost。
+func (r *OfficialNativeCostResp) TotalCost() float64 {
+	if r == nil {
+		return 0
+	}
+	return r.Cost + r.CachedCost
+}
+
+// EffectiveDiscount 把「部分档位不打折」摊回成单个折，使
+// TotalCost × EffectiveDiscount ÷ Divisor = actual_cost 在任何行都精确成立
+// （不是近似：分子就是分档加权后的实扣原币费用）。
+//
+// 没有不打折档位时它恒等于 Discount；全额为 0 时同样回落 Discount，
+// 免得导出列出现一个 0 折。
+func (r *OfficialNativeCostResp) EffectiveDiscount() float64 {
+	if r == nil {
+		return 0
+	}
+	total := r.TotalCost()
+	if r.CachedCost == 0 || total == 0 {
+		return r.Discount
+	}
+	return (r.Cost*r.Discount + r.CachedCost) / total
 }
 
 // CustomerUsageLogResp 使用记录响应（end customer scope，剥离所有平台真实成本字段）

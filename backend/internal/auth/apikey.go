@@ -123,9 +123,11 @@ type APIKeyInfo struct {
 	UserGroupRates          map[int64]float64                      // 用户级专属倍率（按 group_id），用于 ResolveBillingRate 优先级链
 	UserGroupPluginSettings map[int64]map[string]map[string]string // 用户级分组插件配置覆盖（按 group_id）
 	GroupRateMultiplier     float64                                // 分组倍率
-	GroupServiceTier        string                                 // 分组 service tier
-	GroupForceInstructions  string                                 // 分组强制 instructions
-	GroupPluginSettings     map[string]map[string]string           // 分组插件级开关（claude_code_only 等）
+	// GroupCachedInputFullPrice 分组的「缓存读不吃折扣」开关，见 Group.cached_input_full_price。
+	GroupCachedInputFullPrice bool
+	GroupServiceTier          string                       // 分组 service tier
+	GroupForceInstructions    string                       // 分组强制 instructions
+	GroupPluginSettings       map[string]map[string]string // 分组插件级开关（claude_code_only 等）
 
 	// GroupModelRouting 分组的模型路由规则（model/glob → 账号 ID 列表），
 	// 随鉴权预载供转发入口做「模型-分组预校验」，零额外查询；只读消费，勿修改。
@@ -355,14 +357,15 @@ func ValidateAPIKey(ctx context.Context, db *ent.Client, key string) (*APIKeyInf
 		DepartmentQuotaUSD:  dv.QuotaUSD,
 		DepartmentUsedQuota: dv.UsedQuota,
 
-		UserBalance:             u.Balance,
-		UserGroupRates:          u.GroupRates,
-		UserGroupPluginSettings: u.GroupPluginSettings,
-		GroupRateMultiplier:     g.RateMultiplier,
-		GroupServiceTier:        g.ServiceTier,
-		GroupForceInstructions:  g.ForceInstructions,
-		GroupPluginSettings:     g.PluginSettings,
-		GroupModelRouting:       g.ModelRouting,
+		UserBalance:               u.Balance,
+		UserGroupRates:            u.GroupRates,
+		UserGroupPluginSettings:   u.GroupPluginSettings,
+		GroupRateMultiplier:       g.RateMultiplier,
+		GroupCachedInputFullPrice: g.CachedInputFullPrice,
+		GroupServiceTier:          g.ServiceTier,
+		GroupForceInstructions:    g.ForceInstructions,
+		GroupPluginSettings:       g.PluginSettings,
+		GroupModelRouting:         g.ModelRouting,
 	}
 	cacheAPIKeyResult(hash, info, nil)
 	return info, nil

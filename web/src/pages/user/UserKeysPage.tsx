@@ -380,6 +380,9 @@ export default function UserKeysPage() {
       ? usdMult * (standardRate / effectiveRate)
       : null;
     const rateTooltip = t('user_keys.rate_tooltip', { rate: effectiveRate });
+    // 缓存读按厂商官方牌价原价计的分组：摘要里补个小标记。报价客户不展示——
+    // 「不吃折扣」这句本身就是一个牌价锚点，与 quoteMode 的既有口径保持一致。
+    const cachedInputFullPrice = !quoteMode && quote?.cached_input_full_price === true;
     let suffix;
     if (quoteMode) {
       // 报价客户：只显示「¥X.XX / $1」；无 token 报价（固定图价组）则不加后缀
@@ -403,6 +406,7 @@ export default function UserKeysPage() {
             discountPercent: Math.round((1 - usdMult / pricingFx) * 100),
             standardMultiplier: standardMult ?? undefined,
             hasOfficialDiscount: true,
+            cachedInputFullPrice,
           }}
           title={rateTooltip}
         />
@@ -416,6 +420,7 @@ export default function UserKeysPage() {
             discountPercent: 0,
             standardMultiplier: hasOverride ? standardRate : undefined,
             hasOfficialDiscount: false,
+            cachedInputFullPrice,
           }}
           title={rateTooltip}
         />

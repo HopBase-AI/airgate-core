@@ -91,6 +91,9 @@ export interface MyPricingModel extends PublicPricingModel {
   // 部分图片尺寸有固定价时，实付倍率用于未配置尺寸的 token 回退。缺省表示
   // 无可用 token 报价，或三个图片尺寸均使用固定价。
   user_rate?: number;
+  // 缓存读那一档的实付倍率，仅当它与 user_rate 不同（分组的缓存读按厂商官方牌价原价计、
+  // 不吃折扣）时下发；缺省 = 缓存读与输入/输出同倍率。
+  cached_user_rate?: number;
   // 分组字段只归属 user_rate 的 token 报价，不代表固定图片档位的来源。
   group_id?: number;
   group_name?: string;
@@ -115,6 +118,8 @@ export interface MyGroupQuote {
   group_rate: number;
   effective_rate: number;
   usd_multiplier?: number;
+  // 该分组的缓存读按厂商官方牌价原价计，不吃折扣；缺省/false = 缓存读与输入/输出同折。
+  cached_input_full_price?: boolean;
 }
 
 export interface MyModelPricing {

@@ -59,6 +59,9 @@ interface DisplayPrice {
   officialSymbol: '$' | '¥';
   // 折扣（实付 ÷ 官方直付，输入价口径，0~1），null = 不展示徽章
   zhe: number | null;
+  // cachedFullPrice 缓存读按厂商官方牌价原价计（不吃分组折扣）：cachedInput 用的是
+  // 另一个倍率，展示端据此补一句说明，免得客户拿折扣去核缓存单价却对不上。
+  cachedFullPrice: boolean;
   groupName?: string;
   // 分组名多语言覆盖(en / zh-HK / ja),展示时经 localizedGroupText 按界面语言回退
   groupNameI18n?: Record<string, string>;
@@ -103,6 +106,10 @@ function officialUsdOf(model: ModelLedgerItem): { input: number; cachedInput: nu
 //   CNY 展示：sale = 基准价 × 实付倍率（余额 ¥1=$1 平价，即 ¥）；
 //   USD 展示：sale = 基准价 × 实付倍率 ÷ fx（美元等值，ToC 美元余额站群）。
 // 折 = 实付 ÷ 官方直付（同币比值，美元参考价按 fx 折算；人民币牌价直接比）。
+//
+// 缓存读那一档可能走另一个倍率：分组开了「缓存读不吃折扣」时 core 下发 cached_user_rate
+// （平台基准倍率 = 厂商官方牌价原价），此时缓存单价必须用它算——沿用 user_rate 会把
+// 广场单价标得比实扣低，客户按广场价核账单必然对不上。折扣徽章仍按输入价口径，不受影响。
 function resolveUserPrice(model: ModelLedgerItem, fx: number, saleCurrency: 'CNY' | 'USD'): DisplayPrice {
   const officialUsd = officialUsdOf(model);
   const official = officialUsd ?? { input: model.input, cachedInput: model.cached_input ?? 0, output: model.output };
@@ -111,20 +118,26 @@ function resolveUserPrice(model: ModelLedgerItem, fx: number, saleCurrency: 'CNY
   if (!(rate > 0)) {
     return {
       ...official, officialOnly: true, official,
-      saleSymbol: officialSymbol, officialSymbol, zhe: null,
+      saleSymbol: officialSymbol, officialSymbol, zhe: null, cachedFullPrice: false,
     };
   }
   const saleScale = saleCurrency === 'CNY' ? rate : rate / fx;
+  const cachedRate = model.cached_user_rate ?? 0;
+  const cachedFullPrice = cachedRate > 0 && cachedRate !== rate;
+  const cachedScale = cachedFullPrice
+    ? (saleCurrency === 'CNY' ? cachedRate : cachedRate / fx)
+    : saleScale;
   const officialCnyInput = officialUsd ? officialUsd.input * fx : model.input;
   return {
     input: model.input * saleScale,
-    cachedInput: (model.cached_input ?? 0) * saleScale,
+    cachedInput: (model.cached_input ?? 0) * cachedScale,
     output: model.output * saleScale,
     officialOnly: false,
     official,
     saleSymbol: saleCurrency === 'CNY' ? '¥' : '$',
     officialSymbol,
     zhe: officialCnyInput > 0 ? (model.input * rate) / officialCnyInput : null,
+    cachedFullPrice,
     groupName: model.group_name,
     groupNameI18n: model.group_name_i18n,
   };
@@ -142,7 +155,7 @@ function resolveStandardPrice(model: ModelLedgerItem, config: TocPricingConfig |
   const officialSymbol = officialPriceSymbol(model);
   const { multiplier, fx } = resolveMultiplier(model, config);
   if (multiplier == null) {
-    return { ...officialValues, officialOnly: true, official: officialValues, saleSymbol: officialSymbol, officialSymbol, zhe: null };
+    return { ...officialValues, officialOnly: true, official: officialValues, saleSymbol: officialSymbol, officialSymbol, zhe: null, cachedFullPrice: false };
   }
   return {
     input: model.input * multiplier / fx,
@@ -153,6 +166,8 @@ function resolveStandardPrice(model: ModelLedgerItem, config: TocPricingConfig |
     saleSymbol: '$',
     officialSymbol,
     zhe: null,
+    // 全站统一售价（未登录 / 回退口径）不涉及分组，缓存读没有单独倍率。
+    cachedFullPrice: false,
   };
 }
 
@@ -398,6 +413,11 @@ function PriceGrid({ model, price, video, image, videoSaleSymbol, fx, userMode, 
       </dl>
       {perCharacter ? <p className="ag-model-video-price-note">{t('model_plaza.character_price_note')}</p> : null}
       {discountMeta(price.zhe, price.groupName, price.groupNameI18n)}
+      {/* 缓存读按厂商官方牌价原价计的分组：上面那格缓存单价用的不是折扣倍率，这里点破，
+          免得客户拿折扣徽章去核缓存单价却对不上。报价客户不渲染——他们看不到任何牌价锚点。 */}
+      {price.cachedFullPrice && !quoteMode && !perCharacter ? (
+        <p className="ag-model-video-price-note">{t('model_plaza.cached_input_full_price_note')}</p>
+      ) : null}
       {price.officialOnly ? <p className="ag-model-official-label">{t('model_plaza.official_price')}</p> : null}
       {/^gpt-5\.6-(?:luna|sol|terra)$/.test(model.id) && model.long_context?.threshold ? (
         <p className="ag-model-long-context">

@@ -21,6 +21,14 @@ func (Group) Fields() []ent.Field {
 		field.JSON("name_i18n", map[string]string{}).Optional(),
 		field.String("platform").NotEmpty(),
 		field.Float("rate_multiplier").Default(1.0),
+		// cached_input_full_price 让「缓存读」这一档不吃本分组的折扣，改按平台基准
+		// 倍率（ledger.RateBase）计费——即缓存按厂商官方牌价原价卖，输入/输出照旧打折。
+		// 起因：DeepSeek V4.1 Flash 的缓存命中量是普通输入的几十倍（2026-09-17 单日
+		// 3.69 亿 : 925 万），缓存价跟着整单打折会把这一档的毛利抹平。
+		// 基准价自身的峰谷浮动不受影响——那是模型目录的事，本开关只管折扣。
+		// 默认 false（缓存与输入/输出同折），存量分组行为不变。
+		// 有意用布尔而不是「缓存倍率」：倍率要随 USD 割接整体 ÷6.8，布尔不用跟着改。
+		field.Bool("cached_input_full_price").Default(false),
 		field.Bool("is_exclusive").Default(false),
 		// status_visible 控制此分组是否在公开「服务状态」页展示。
 		// 默认 true 保持旧行为兼容；管理员可在「分组管理」中关掉以对外隐藏

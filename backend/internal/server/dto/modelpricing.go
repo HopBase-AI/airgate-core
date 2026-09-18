@@ -104,6 +104,9 @@ type MyPlatformPricingResp struct {
 type MyPricingModelResp struct {
 	PublicPricingModelResp
 	UserRate float64 `json:"user_rate,omitempty"`
+	// CachedUserRate 缓存读那一档的实付倍率，仅当它与 user_rate 不同（分组的缓存读不
+	// 吃折扣）时下发；省略 = 缓存读与输入/输出同倍率。
+	CachedUserRate float64 `json:"cached_user_rate,omitempty"`
 	// Group* 只描述 user_rate 的 token 报价来源，不代表固定图价来源。
 	GroupID   int    `json:"group_id,omitempty"`
 	GroupName string `json:"group_name,omitempty"`
@@ -123,4 +126,6 @@ type MyGroupQuoteResp struct {
 	GroupRate     float64 `json:"group_rate"`
 	EffectiveRate float64 `json:"effective_rate"`
 	USDMultiplier float64 `json:"usd_multiplier,omitempty"`
+	// CachedInputFullPrice 该分组的缓存读按官方牌价原价计，不吃折扣。
+	CachedInputFullPrice bool `json:"cached_input_full_price,omitempty"`
 }

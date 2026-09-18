@@ -9,6 +9,7 @@ import (
 	appgroup "github.com/DouDOU-start/airgate-core/internal/app/group"
 	apppluginadmin "github.com/DouDOU-start/airgate-core/internal/app/pluginadmin"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
+	"github.com/DouDOU-start/airgate-core/internal/pkg/ledger"
 	"github.com/DouDOU-start/airgate-core/internal/routing"
 	"github.com/DouDOU-start/airgate-core/internal/scheduler"
 )
@@ -85,6 +86,7 @@ func (s *Service) UserPricingScoped(ctx context.Context, userID int, allowedGrou
 				quote.GroupNameI18n = candidate.group.NameI18n
 				if !hasCompleteFixedImagePrices(quote) {
 					quote.UserRate = candidate.effective
+					quote.CachedUserRate = cachedQuoteRate(candidate.group, candidate.effective)
 				}
 			}
 			quotes.Models = append(quotes.Models, quote)
@@ -96,11 +98,12 @@ func (s *Service) UserPricingScoped(ctx context.Context, userID int, allowedGrou
 	for _, g := range groups {
 		effective := billing.ResolveBillingRateForGroup(u.GroupRates, g.ID, g.RateMultiplier)
 		result.Groups = append(result.Groups, GroupQuote{
-			ID:            g.ID,
-			Name:          g.Name,
-			Platform:      g.Platform,
-			GroupRate:     g.RateMultiplier,
-			EffectiveRate: effective,
+			ID:                   g.ID,
+			Name:                 g.Name,
+			Platform:             g.Platform,
+			GroupRate:            g.RateMultiplier,
+			EffectiveRate:        effective,
+			CachedInputFullPrice: g.CachedInputFullPrice,
 			USDMultiplier: groupUSDMultiplier(
 				catalog,
 				g,
@@ -407,4 +410,16 @@ func pricingModelNeedsImage(model apppluginadmin.PublicPricingModel) bool {
 // groupServesModel delegates to the scheduler's canonical model-routing matcher.
 func groupServesModel(routing map[string][]int64, model string) bool {
 	return scheduler.ModelRoutingServes(routing, model)
+}
+
+// cachedQuoteRate 缓存读那一档摊给用户看的倍率：分组开了「缓存读不吃折扣」时是平台
+// 基准倍率，否则 0（表示与 UserRate 同倍率，展示端不必单列）。
+//
+// 与 billing.Calculate 的 cachedRate 同口径——只上不下：倍率高于基准的溢价分组照旧用
+// 自己的倍率，展示与实扣必须是同一个数，否则客户按广场单价核不平账单。
+func cachedQuoteRate(g appgroup.Group, effective float64) float64 {
+	if !g.CachedInputFullPrice || ledger.RateBase <= effective {
+		return 0
+	}
+	return ledger.RateBase
 }

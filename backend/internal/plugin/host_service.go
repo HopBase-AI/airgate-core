@@ -2218,14 +2218,15 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 		actualModel = model
 	}
 	calcInput := billing.CalculateInput{
-		InputCost:         usageValues.InputCost,
-		ImageInputCost:    usageValues.ImageInputCost,
-		OutputCost:        usageValues.OutputCost,
-		CachedInputCost:   usageValues.CachedInputCost,
-		CacheCreationCost: usageValues.CacheCreationCost,
-		ImageCost:         usageValues.ImageCost,
-		BillingRate:       route.EffectiveRate,
-		AccountRate:       billing.ResolveAccountRateForModel(accFull.Extra, actualModel, accFull.RateMultiplier),
+		InputCost:            usageValues.InputCost,
+		ImageInputCost:       usageValues.ImageInputCost,
+		OutputCost:           usageValues.OutputCost,
+		CachedInputCost:      usageValues.CachedInputCost,
+		CacheCreationCost:    usageValues.CacheCreationCost,
+		ImageCost:            usageValues.ImageCost,
+		BillingRate:          route.EffectiveRate,
+		CachedInputFullPrice: route.GroupCachedInputFullPrice,
+		AccountRate:          billing.ResolveAccountRateForModel(accFull.Extra, actualModel, accFull.RateMultiplier),
 	}
 	var imageFixedPriceApplied bool
 	var imageFixedPriceReplacesTotal bool
@@ -2293,7 +2294,7 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 		UsageAttributes:              usage.Attributes,
 		UsageMetrics:                 usage.Metrics,
 		UsageCostDetails:             usage.CostDetails,
-		UsageMetadata:                usage.Metadata,
+		UsageMetadata:                withCachedRateSnapshot(usage.Metadata, calc),
 		ErrorCode:                    failure.code,
 		ErrorStatus:                  failure.status,
 		ErrorMessage:                 sanitizeFailureMessage(failure.message),
@@ -2995,15 +2996,16 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 			}
 		}
 		return []routing.Candidate{{
-			GroupID:                g.ID,
-			Platform:               g.Platform,
-			EffectiveRate:          billing.ResolveBillingRateForGroup(u.GroupRates, g.ID, g.RateMultiplier),
-			GroupRateMultiplier:    g.RateMultiplier,
-			GroupServiceTier:       g.ServiceTier,
-			GroupForceInstructions: g.ForceInstructions,
-			GroupPluginSettings:    clonePluginSettingsHost(g.PluginSettings),
-			UserPluginSettings:     clonePluginSettingsHost(u.GroupPluginSettings[int64(g.ID)]),
-			SortWeight:             g.SortWeight,
+			GroupID:                   g.ID,
+			Platform:                  g.Platform,
+			EffectiveRate:             billing.ResolveBillingRateForGroup(u.GroupRates, g.ID, g.RateMultiplier),
+			GroupRateMultiplier:       g.RateMultiplier,
+			GroupCachedInputFullPrice: g.CachedInputFullPrice,
+			GroupServiceTier:          g.ServiceTier,
+			GroupForceInstructions:    g.ForceInstructions,
+			GroupPluginSettings:       clonePluginSettingsHost(g.PluginSettings),
+			UserPluginSettings:        clonePluginSettingsHost(u.GroupPluginSettings[int64(g.ID)]),
+			SortWeight:                g.SortWeight,
 		}}, u.Email, nil
 	}
 

@@ -139,6 +139,10 @@ function TooltipDivider() {
  *
  *   官方费用 × 折 ÷ 账本除数 = 实扣
  *
+ * 分组开了「缓存读不吃折扣」的行多一档：缓存读按厂商官方牌价原价计、不乘折，等式变成
+ * `(官方费用 × 折 + 缓存读) ÷ 账本除数 = 实扣`（后端 official_native.cached_cost 非零，
+ * 此时 cost 已不含该档）。
+ *
  * 账本除数为 1（账本币种与牌价币种相同）时整行隐藏，等式收缩成「官方费用 × 折 = 实扣」。
  *
  * 数字全部来自写入时的快照，前端不自己算、也不查当前模型目录——模型改价后老行仍须
@@ -165,7 +169,7 @@ export function OfficialNativeVerification({
   t: TFunction;
   verification: UsageVerification;
 }) {
-  const { official, actualCost, unitPrices, showDivisor } = verification;
+  const { official, actualCost, unitPrices, showDivisor, showCachedCost } = verification;
 
   return (
     <>
@@ -186,6 +190,14 @@ export function OfficialNativeVerification({
         tone="strong"
       />
       <TooltipRow label={t('usage.discount', '折扣')} value={formatDiscount(official.discount)} />
+      {/* 缓存读按厂商官方牌价原价计的那一档：不乘折，单列一行，否则客户拿「折」去乘
+          上面的官方费用永远对不上实扣。金额同样取后端快照，前端不拆不算。 */}
+      {showCachedCost ? (
+        <TooltipRow
+          label={t('usage.cached_read_full_price', '缓存读（不打折）')}
+          value={formatNativeAmount(official.cached_cost ?? 0, official.currency)}
+        />
+      ) : null}
       {showDivisor ? (
         <TooltipRow label={t('usage.list_fx', '折算率')} value={formatDivisor(official.divisor)} />
       ) : null}

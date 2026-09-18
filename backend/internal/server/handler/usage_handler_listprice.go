@@ -32,9 +32,13 @@ var usdUnitPriceKeys = []string{"unit_price", "price_per_sec", "price_per_second
 func officialNativeCost(record appusage.LogRecord) *dto.OfficialNativeCostResp {
 	// 明细优先；只有明细一条都没带快照时才回退到 metric。
 	// 两者常共用同一份 metadata（airgate-openai 就是），先累加谁都行但绝不能都累加。
-	block, snapshotted, ok := sumOfficialNative(costDetailSnapshots(record))
+	// 缓存读可能单独走了基准倍率（分组开了 cached_input_full_price），此时这一档不参与
+	// 折扣，要从按折计价的部分里摘出来单列，否则单折等式会当着客户的面算错。
+	cachedRate := parseSnapshotFloat(record.UsageMetadata, listprice.SnapshotCachedRate)
+
+	block, snapshotted, ok := sumOfficialNative(costDetailSnapshots(record), cachedRate > 0)
 	if !ok {
-		block, snapshotted, ok = sumOfficialNative(metricSnapshots(record))
+		block, snapshotted, ok = sumOfficialNative(metricSnapshots(record), cachedRate > 0)
 	}
 	if !ok {
 		return nil
@@ -50,7 +54,7 @@ func officialNativeCost(record appusage.LogRecord) *dto.OfficialNativeCostResp {
 		// 币种或折算率缺失 = 验算等式凑不齐，宁可不渲染也不给半截数字。
 		return nil
 	}
-	if !billingClosed(record, snapshotted) {
+	if !billingClosed(record, snapshotted, cachedRate) {
 		return nil
 	}
 	block.Divisor = ledger.Divisor(block.FX)
@@ -76,8 +80,11 @@ func officialNativeCost(record appusage.LogRecord) *dto.OfficialNativeCostResp {
 //
 // 容差沿用 listprice 那一档：actual_cost 落库按 numeric 截位，浮点累加也有尾差，
 // 绝对 1e-6 打底、再放一档 0.1% 相对容差；固定图价行的偏差是数倍量级，照样被拦住。
-func billingClosed(record appusage.LogRecord, snapshottedAccountCost float64) bool {
-	expected := snapshottedAccountCost * ledger.EffectiveRate(record.RateMultiplier)
+func billingClosed(record appusage.LogRecord, snapshotted snapshottedCost, cachedRate float64) bool {
+	expected := snapshotted.discounted * ledger.EffectiveRate(record.RateMultiplier)
+	if cachedRate > 0 {
+		expected += snapshotted.fullPrice * cachedRate
+	}
 	diff := math.Abs(expected - record.ActualCost)
 	if diff <= listprice.AbsTolerance {
 		return true
@@ -87,14 +94,34 @@ func billingClosed(record appusage.LogRecord, snapshottedAccountCost float64) bo
 
 // costSnapshot 一条明细的快照视图（明细与 metric 结构不同，这里抹平）。
 type costSnapshot struct {
+	key         string
 	accountCost float64
 	metadata    map[string]string
+}
+
+// snapshottedCost 带快照明细的 account_cost 合计，按「吃不吃折扣」分两桶。
+// 未开 cached_input_full_price 的行 fullPrice 恒为 0，两桶等价于原先的单值。
+type snapshottedCost struct {
+	discounted float64
+	fullPrice  float64
+}
+
+// cachedInputCostKeys 缓存读这一档在明细/metric 里用过的 key 别名，与 core 计费侧
+// plugin.applyUsageCost 的同名分支保持一致：那里认哪些，这里就得认哪些，否则同一条
+// 明细会在计费时算进缓存、在验算时算进折扣档。
+var cachedInputCostKeys = map[string]bool{
+	"cached_input": true, "cached_input_tokens": true, "cached_input_token": true,
+	"cache_read_tokens": true, "cache_read_token": true,
+}
+
+func isCachedInputCostKey(key string) bool {
+	return cachedInputCostKeys[strings.ToLower(strings.TrimSpace(key))]
 }
 
 func costDetailSnapshots(record appusage.LogRecord) []costSnapshot {
 	out := make([]costSnapshot, 0, len(record.UsageCostDetails))
 	for _, item := range record.UsageCostDetails {
-		out = append(out, costSnapshot{accountCost: item.AccountCost, metadata: item.Metadata})
+		out = append(out, costSnapshot{key: item.Key, accountCost: item.AccountCost, metadata: item.Metadata})
 	}
 	return out
 }
@@ -102,7 +129,7 @@ func costDetailSnapshots(record appusage.LogRecord) []costSnapshot {
 func metricSnapshots(record appusage.LogRecord) []costSnapshot {
 	out := make([]costSnapshot, 0, len(record.UsageMetrics))
 	for _, item := range record.UsageMetrics {
-		out = append(out, costSnapshot{accountCost: item.AccountCost, metadata: item.Metadata})
+		out = append(out, costSnapshot{key: item.Key, accountCost: item.AccountCost, metadata: item.Metadata})
 	}
 	return out
 }
@@ -111,9 +138,9 @@ func metricSnapshots(record appusage.LogRecord) []costSnapshot {
 //
 // 第二个返回值是这些明细的 account_cost 合计（美元基准价口径），交给 billingClosed
 // 验证本行实扣确实由它们乘倍率而来；一条带快照的明细都没有时 ok=false。
-func sumOfficialNative(items []costSnapshot) (dto.OfficialNativeCostResp, float64, bool) {
+func sumOfficialNative(items []costSnapshot, splitCached bool) (dto.OfficialNativeCostResp, snapshottedCost, bool) {
 	var block dto.OfficialNativeCostResp
-	var snapshottedAccountCost float64
+	var snapshotted snapshottedCost
 	var found bool
 	for _, item := range items {
 		currency := strings.ToUpper(strings.TrimSpace(item.metadata[listprice.SnapshotCurrency]))
@@ -137,10 +164,15 @@ func sumOfficialNative(items []costSnapshot) (dto.OfficialNativeCostResp, float6
 			// 「官方费用覆盖不全」判定不闭合，整块不渲染——好过渲染一个少一截的等式。
 			continue
 		}
+		if splitCached && isCachedInputCostKey(item.key) {
+			block.CachedCost += native
+			snapshotted.fullPrice += item.accountCost
+			continue
+		}
 		block.Cost += native
-		snapshottedAccountCost += item.accountCost
+		snapshotted.discounted += item.accountCost
 	}
-	return block, snapshottedAccountCost, found
+	return block, snapshotted, found
 }
 
 // nativeCostOf 单条明细的原币费用 = 用量 × 原币单价，用量由 account_cost ÷ 美元单价反推。

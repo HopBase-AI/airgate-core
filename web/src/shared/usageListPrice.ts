@@ -6,8 +6,12 @@
  * `UserUsageLogResp.official_native` 里给出只读计算块（原币费用 / 折 / 账本除数 / 账本币种），
  * 各明细的 metadata 里带 `list_currency` / `list_unit_price` / `list_fx` 单价快照。
  *
- * 验算式：`官方费用(原币) × 折 ÷ 账本除数 = 实扣(账本币种)`。除数为 1 时不发生折算
- * （账本币种与牌价币种相同），展示层隐藏折算率那一行——摆一个「÷1」只会让人以为漏读了什么。
+ * 验算式：`(官方费用(原币) × 折 + 缓存读(不打折)) ÷ 账本除数 = 实扣(账本币种)`。
+ * 除数为 1 时不发生折算（账本币种与牌价币种相同），展示层隐藏折算率那一行——摆一个「÷1」
+ * 只会让人以为漏读了什么。
+ *
+ * `cached_cost` 只在分组开了「缓存读不吃折扣」时非零：那一档按厂商官方牌价原价计、不乘折，
+ * 此时 `cost` 已不含它。缺省/为 0 的绝大多数行退化回 `官方费用 × 折 ÷ 除数`。
  *
  * 本模块只做「读快照 → 整理成展示行」，**一分钱都不自己算**：
  * 金额一律取后端的 official_native，单价一律取明细快照。tooltip、插件渲染器、
@@ -55,6 +59,8 @@ export interface UsageVerification {
   unitPrices: ListUnitPriceRow[];
   /** 是否显示「折算率」行：除数为 1 时账本与牌价同币，不发生折算，整行隐藏。 */
   showDivisor: boolean;
+  /** 是否显示「缓存读（不打折）」行：仅当本行缓存读按牌价原价计（cached_cost 非零）。 */
+  showCachedCost: boolean;
 }
 
 /** 用量快照键名，与后端 internal/pkg/listprice 的常量一一对应。 */
@@ -116,12 +122,29 @@ export function hasDivisor(divisor: number): boolean {
 }
 
 /**
+ * 本行是否有「不打折的缓存读」那一档。缺省 / 0 = 缓存读与输入输出同折，等式退化回旧口径。
+ */
+export function hasCachedCost(official: OfficialNativeCost): boolean {
+  const cached = official.cached_cost;
+  return typeof cached === 'number' && Number.isFinite(cached) && cached > 0;
+}
+
+/**
  * 验算式文案：`¥0.1560 × 0.75 ÷ 6.8`；除数为 1 时是 `¥0.1560 × 0.75`。
+ * 带不打折的缓存读那一档时是 `(¥0.1560 × 0.75 + ¥0.0400) ÷ 6.8`——括号不能省，
+ * 否则会被读成「只有缓存那一档参与了除法」。
  * 刻意不带 "= x"——结果就在紧邻的「实扣」行里，重复三遍反而看不清。
  */
 export function verificationFormula(official: OfficialNativeCost): string {
-  const head = `${formatNativeAmount(official.cost, official.currency)} × ${formatDiscount(official.discount)}`;
-  return hasDivisor(official.divisor) ? `${head} ÷ ${formatDivisor(official.divisor)}` : head;
+  const discounted = `${formatNativeAmount(official.cost, official.currency)} × ${formatDiscount(official.discount)}`;
+  const cached = hasCachedCost(official);
+  const head = cached
+    ? `${discounted} + ${formatNativeAmount(official.cached_cost ?? 0, official.currency)}`
+    : discounted;
+  if (!hasDivisor(official.divisor)) return head;
+  return cached
+    ? `(${head}) ÷ ${formatDivisor(official.divisor)}`
+    : `${head} ÷ ${formatDivisor(official.divisor)}`;
 }
 
 /** 明细 key → 已知档位的 i18n 标签键。认不出的档位回落明细自带 label。 */
@@ -205,11 +228,19 @@ export function buildUsageVerification(row: UsageRowWithOfficialNative | undefin
   const detailRows = collectUnitPrices(row?.usage_cost_details ?? []);
   const unitPrices = detailRows.length > 0 ? detailRows : collectUnitPrices(row?.usage_metrics ?? []);
 
+  // 缓存读那一档：后端缺省不下发，脏值（NaN / 负数）一律按 0 处理退化回旧等式，
+  // 绝不自己拿 cost 反推——这里一分钱都不算。
+  const cachedCost = typeof official.cached_cost === 'number' && Number.isFinite(official.cached_cost)
+    && official.cached_cost > 0
+    ? official.cached_cost
+    : 0;
+
   return {
     official: {
       currency,
       fx: official.fx,
       cost: Number.isFinite(official.cost) ? official.cost : 0,
+      cached_cost: cachedCost,
       discount: official.discount > 0 ? official.discount : 1,
       divisor: official.divisor,
       // 账本币种缺省回落原币：¥ 账本下两者本来就相同，标错币种比不标更糟。
@@ -218,5 +249,6 @@ export function buildUsageVerification(row: UsageRowWithOfficialNative | undefin
     actualCost: row?.actual_cost ?? 0,
     unitPrices: unitPrices.filter((item) => item.currency === currency),
     showDivisor: hasDivisor(official.divisor),
+    showCachedCost: cachedCost > 0,
   };
 }

@@ -19,15 +19,17 @@ type Requirements struct {
 }
 
 type Candidate struct {
-	GroupID                int
-	Platform               string
-	EffectiveRate          float64
-	GroupRateMultiplier    float64
-	GroupServiceTier       string
-	GroupForceInstructions string
-	GroupPluginSettings    map[string]map[string]string
-	UserPluginSettings     map[string]map[string]string
-	SortWeight             int
+	GroupID             int
+	Platform            string
+	EffectiveRate       float64
+	GroupRateMultiplier float64
+	// GroupCachedInputFullPrice 缓存读不吃本分组折扣，按平台基准倍率计费。
+	GroupCachedInputFullPrice bool
+	GroupServiceTier          string
+	GroupForceInstructions    string
+	GroupPluginSettings       map[string]map[string]string
+	UserPluginSettings        map[string]map[string]string
+	SortWeight                int
 }
 
 func ListEligibleGroups(ctx context.Context, db *ent.Client, userID int, platform string, userGroupRates map[int64]float64, userGroupPluginSettings map[int64]map[string]map[string]string, requirements Requirements) ([]Candidate, error) {
@@ -66,15 +68,16 @@ func ListEligibleGroups(ctx context.Context, db *ent.Client, userID int, platfor
 			}
 		}
 		candidates = append(candidates, Candidate{
-			GroupID:                g.ID,
-			Platform:               g.Platform,
-			EffectiveRate:          billing.ResolveBillingRateForGroup(userGroupRates, g.ID, g.RateMultiplier),
-			GroupRateMultiplier:    g.RateMultiplier,
-			GroupServiceTier:       g.ServiceTier,
-			GroupForceInstructions: g.ForceInstructions,
-			GroupPluginSettings:    clonePluginSettings(g.PluginSettings),
-			UserPluginSettings:     clonePluginSettings(userGroupPluginSettings[int64(g.ID)]),
-			SortWeight:             g.SortWeight,
+			GroupID:                   g.ID,
+			Platform:                  g.Platform,
+			EffectiveRate:             billing.ResolveBillingRateForGroup(userGroupRates, g.ID, g.RateMultiplier),
+			GroupRateMultiplier:       g.RateMultiplier,
+			GroupCachedInputFullPrice: g.CachedInputFullPrice,
+			GroupServiceTier:          g.ServiceTier,
+			GroupForceInstructions:    g.ForceInstructions,
+			GroupPluginSettings:       clonePluginSettings(g.PluginSettings),
+			UserPluginSettings:        clonePluginSettings(userGroupPluginSettings[int64(g.ID)]),
+			SortWeight:                g.SortWeight,
 		})
 	}
 

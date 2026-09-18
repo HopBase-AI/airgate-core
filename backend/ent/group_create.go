@@ -57,6 +57,20 @@ func (gc *GroupCreate) SetNillableRateMultiplier(f *float64) *GroupCreate {
 	return gc
 }
 
+// SetCachedInputFullPrice sets the "cached_input_full_price" field.
+func (gc *GroupCreate) SetCachedInputFullPrice(b bool) *GroupCreate {
+	gc.mutation.SetCachedInputFullPrice(b)
+	return gc
+}
+
+// SetNillableCachedInputFullPrice sets the "cached_input_full_price" field if the given value is not nil.
+func (gc *GroupCreate) SetNillableCachedInputFullPrice(b *bool) *GroupCreate {
+	if b != nil {
+		gc.SetCachedInputFullPrice(*b)
+	}
+	return gc
+}
+
 // SetIsExclusive sets the "is_exclusive" field.
 func (gc *GroupCreate) SetIsExclusive(b bool) *GroupCreate {
 	gc.mutation.SetIsExclusive(b)
@@ -335,6 +349,10 @@ func (gc *GroupCreate) defaults() {
 		v := group.DefaultRateMultiplier
 		gc.mutation.SetRateMultiplier(v)
 	}
+	if _, ok := gc.mutation.CachedInputFullPrice(); !ok {
+		v := group.DefaultCachedInputFullPrice
+		gc.mutation.SetCachedInputFullPrice(v)
+	}
 	if _, ok := gc.mutation.IsExclusive(); !ok {
 		v := group.DefaultIsExclusive
 		gc.mutation.SetIsExclusive(v)
@@ -397,6 +415,9 @@ func (gc *GroupCreate) check() error {
 	}
 	if _, ok := gc.mutation.RateMultiplier(); !ok {
 		return &ValidationError{Name: "rate_multiplier", err: errors.New(`ent: missing required field "Group.rate_multiplier"`)}
+	}
+	if _, ok := gc.mutation.CachedInputFullPrice(); !ok {
+		return &ValidationError{Name: "cached_input_full_price", err: errors.New(`ent: missing required field "Group.cached_input_full_price"`)}
 	}
 	if _, ok := gc.mutation.IsExclusive(); !ok {
 		return &ValidationError{Name: "is_exclusive", err: errors.New(`ent: missing required field "Group.is_exclusive"`)}
@@ -474,6 +495,10 @@ func (gc *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := gc.mutation.RateMultiplier(); ok {
 		_spec.SetField(group.FieldRateMultiplier, field.TypeFloat64, value)
 		_node.RateMultiplier = value
+	}
+	if value, ok := gc.mutation.CachedInputFullPrice(); ok {
+		_spec.SetField(group.FieldCachedInputFullPrice, field.TypeBool, value)
+		_node.CachedInputFullPrice = value
 	}
 	if value, ok := gc.mutation.IsExclusive(); ok {
 		_spec.SetField(group.FieldIsExclusive, field.TypeBool, value)

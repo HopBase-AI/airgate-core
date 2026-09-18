@@ -37,6 +37,10 @@ type ModelQuote struct {
 	// 部分图片尺寸有固定价时，它表示未配置尺寸的 token 回退倍率。0 表示没有可用
 	// token 报价，或所有图片尺寸均使用固定价。
 	UserRate float64
+	// CachedUserRate 缓存读那一档的实付倍率。仅当来源分组开了「缓存读不吃折扣」
+	// （cached_input_full_price）时非零——此时缓存单价按平台基准倍率算，与 UserRate 不同。
+	// 0 = 缓存读与输入/输出同倍率，展示端照常用 UserRate。
+	CachedUserRate float64
 	// GroupID/GroupName/GroupNameI18n 标识该模型整份报价的真实分组来源；固定档位
 	// 与缺失档位的 token 回退始终来自同一分组。
 	GroupID   int
@@ -65,6 +69,9 @@ type GroupQuote struct {
 	//（user.group_rates 覆盖后，billing.ResolveBillingRateForGroup 口径）。
 	GroupRate     float64
 	EffectiveRate float64
+	// CachedInputFullPrice 本分组的缓存读不吃折扣，按牌价原价计。
+	// 展示端据此在折扣旁注明例外，免得客户按折扣去核缓存单价却对不上。
+	CachedInputFullPrice bool
 	// USDMultiplier 相对官方美元价的有效倍率（输入价口径）：
 	// 展示端 折扣 = USDMultiplier / 汇率。常规（基准价即官方美元价）等于 EffectiveRate；
 	// CNY 基准模型（如 GLM）按 official_pricing 换算；0 = 无法计算（无可换算模型）。
