@@ -62,6 +62,8 @@
   "gw.department_quota_exceeded": "部門額度已用盡",
   "gw.pinned_account_unavailable": "指定的上游帳號暫時無法使用，請稍後重試",
   "gw.pinned_account_rate_limited": "指定的上游帳號目前受到速率限制，請稍後重試",
+  "gw.session_account_unavailable": "本次對話綁定的有狀態工作階段已無法繼續，請不帶 previous_response_id 重新開始一輪對話。",
+  "gw.session_account_unavailable_detail": "previous_response_id 綁定的工作階段無法續接：綁定的上游工作階段不可用",
   "gw.budget_insufficient_balance": "餘額不足：可用 $%.2f，進行中預留 $%.2f，本次預估 $%.2f",
   "gw.budget_insufficient_quota": "額度不足：可用 $%.2f，進行中預留 $%.2f，本次預估 $%.2f",
   "gw.user_not_found": "用戶不存在",

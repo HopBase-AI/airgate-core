@@ -86,3 +86,68 @@ func (s *StickySession) Set(ctx context.Context, userID int, platform, sessionID
 	key := stickyKey(userID, platform, sessionID)
 	s.rdb.Set(ctx, key, strconv.Itoa(accountID), ttl)
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 会话亲和：response_id → 产出它的账号
+//
+// Responses API 的 `previous_response_id` 指向「某一个上游账号上的一次 response」：
+// 上游把会话状态存在自己那边（火山方舟 store 默认 true、expire_at 默认 3 天），
+// 换一个账号续聊，上游只会回 not found。所以带 previous_response_id 的后续请求
+// 必须回到产出该 response 的账号。
+//
+// 复用 StickySession 的存储与 TTL 口径，只在 session id 上加 `resp:` 命名空间——
+// 缓存亲和已经是「同一个会话钉同一个账号」，这里是同一件事的另一个 key 来源，
+// 不值得再造一套 Redis 结构。userID 仍然进 key，别的用户拿到 id 也钉不过来。
+//
+// 与缓存亲和的区别只在**强度**：缓存亲和命中不了就换号重建缓存（贵一点，仍然对）；
+// 会话亲和命中不了就没有上下文，必须明确失败（见 forwarder 的 pinnedAccountID 分支），
+// 不能静默换号——那是「200 但没有记忆」，客户查不出来。
+// ──────────────────────────────────────────────────────────────────────────────
+
+const (
+	// defaultResponseAffinityTTL 会话亲和绑定的默认存活时长。
+	//
+	// 对齐上游的留存窗口：火山方舟 store 的 expire_at 默认 3 天（最长 7 天）。
+	// **绑定必须活得不比上游的会话短**——绑定先过期时我们不再钉账号，多账号分组下
+	// 这一轮可能落到别的账号，上游回 not found，等于把「静默丢上下文」换成
+	// 「莫名其妙的 400」。上游侧 TTL 更长的账号（改了 expire_at）按
+	// Extra["response_affinity_ttl"]（秒）调大。
+	//
+	// Redis 成本：每条 response 一个小 key，按当前量级三天也只有几十 MB。
+	defaultResponseAffinityTTL = 72 * time.Hour
+
+	// responseAffinityTTLExtraKey account.Extra 中覆盖会话亲和 TTL 的键（单位：秒）。
+	responseAffinityTTLExtraKey = "response_affinity_ttl"
+
+	// responseAffinitySessionPrefix 会话亲和在 sticky 命名空间下的前缀。
+	// 客户端自定义的 metadata.user_id 理论上也可能长这样，但两者都只是
+	// 「session → account」绑定，撞上也只是钉到同一个账号，没有正确性问题。
+	responseAffinitySessionPrefix = "resp:"
+)
+
+// responseAffinityTTLFromExtra 从账号 Extra 解析会话亲和 TTL，未配置或非法时回退默认值。
+func (s *StickySession) responseAffinityTTLFromExtra(extra map[string]interface{}) time.Duration {
+	if secs := ExtraInt(extra, responseAffinityTTLExtraKey); secs > 0 {
+		return time.Duration(secs) * time.Second
+	}
+	return defaultResponseAffinityTTL
+}
+
+// BindResponse 记录「这条 response 由哪个账号产出」。
+func (s *StickySession) BindResponse(ctx context.Context, userID int, platform, responseID string, accountID int, ttl time.Duration) {
+	if responseID == "" || accountID <= 0 {
+		return
+	}
+	if ttl <= 0 {
+		ttl = defaultResponseAffinityTTL
+	}
+	s.Set(ctx, userID, platform, responseAffinitySessionPrefix+responseID, accountID, ttl)
+}
+
+// ResponseAccount 查「这条 response 是哪个账号产出的」。
+func (s *StickySession) ResponseAccount(ctx context.Context, userID int, platform, responseID string) (accountID int, found bool) {
+	if responseID == "" {
+		return 0, false
+	}
+	return s.Get(ctx, userID, platform, responseAffinitySessionPrefix+responseID)
+}

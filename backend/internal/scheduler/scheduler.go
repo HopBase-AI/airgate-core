@@ -202,6 +202,17 @@ func (s *Scheduler) RefreshSession(ctx context.Context, accountID int, sessionID
 	}
 }
 
+// BindResponseAffinity 记录「本次 response 由哪个账号产出」，供带
+// previous_response_id 的后续请求钉回同一账号（见 sticky.go 的会话亲和一节）。
+func (s *Scheduler) BindResponseAffinity(ctx context.Context, userID int, platform, responseID string, accountID int, extra map[string]interface{}) {
+	s.sticky.BindResponse(ctx, userID, platform, responseID, accountID, s.sticky.responseAffinityTTLFromExtra(extra))
+}
+
+// ResponseAffinityAccount 查 previous_response_id 对应的账号；未绑定或已过期时 found=false。
+func (s *Scheduler) ResponseAffinityAccount(ctx context.Context, userID int, platform, responseID string) (int, bool) {
+	return s.sticky.ResponseAccount(ctx, userID, platform, responseID)
+}
+
 // RegisterSession 登记会话（选中账号时调用）。
 func (s *Scheduler) RegisterSession(ctx context.Context, accountID int, sessionID string, extra map[string]interface{}) bool {
 	if sessionID == "" {

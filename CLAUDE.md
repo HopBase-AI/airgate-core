@@ -58,6 +58,11 @@
 ## 子系统边界
 
 - `internal/scheduler/` — 账号调度/并发/家族冷却/sticky 路由，瞬态状态在 Redis。
+  - **两种亲和，强度不同，别混**：缓存亲和（`sticky`，按 `metadata.user_id`）命中不了就换号，
+    最多丢上游缓存；**会话亲和**（`sticky.go` 的 `resp:` 命名空间 + `AccountRequirements.PinnedAccountID`，
+    按 Responses API 的 `previous_response_id`）钉的是「上游那边存着的会话状态」，
+    换号等于悄悄清空上下文，因此钉不住时必须明确报错，绝不回落——链路见
+    `internal/plugin/session_affinity.go`，绑定由插件经 Host `scheduler.bind_response_account` 写入。
 - `internal/billing/` — 用量计费、费率、记账（`calculator`/`rate`/`recorder`）。
 - `internal/plugin/` — 插件生命周期、转发管线、HostService 宿主能力、任务执行、资产服务；core 调插件经此，反向仅经 `Host.Invoke`。
 - `internal/routing/` — 模型 → 账号选择。

@@ -39,6 +39,12 @@ type forwardState struct {
 	realtime         bool
 	sessionID        string
 
+	// previousResponseID 客户端在 Responses API 里声明的续聊锚点。
+	// pinnedAccountID 是它解析出的账号（0 = 没有绑定记录，本次不钉）。
+	// 二者非空时本次请求只能落在 pinnedAccountID 上，见 forwarder 的会话亲和分支。
+	previousResponseID string
+	pinnedAccountID    int
+
 	// 推理强度档位快照。
 	reasoningEffort string
 	accountReq      scheduler.AccountRequirements
@@ -80,6 +86,10 @@ type parsedRequest struct {
 	SessionID       string
 	ReasoningEffort string // 推理强度档位
 
+	// PreviousResponseID 是 OpenAI Responses API 的续聊锚点（标准字段，非平台扩展）。
+	// 上游把会话状态存在自己那边，所以它同时是一条调度约束：必须回到产出它的账号。
+	PreviousResponseID string
+
 	// 缓存 image tool payload 解析结果，避免 requestNeedsImage / accountRequirementsForRequest 重复反序列化 body
 	imageToolPayloadValid bool
 	imageToolPayload      imageToolPayload
@@ -92,8 +102,9 @@ type requestFields struct {
 	Metadata struct {
 		UserID string `json:"user_id"`
 	} `json:"metadata"`
-	ReasoningEffort string `json:"reasoning_effort"`
-	Reasoning       *struct {
+	PreviousResponseID string `json:"previous_response_id"`
+	ReasoningEffort    string `json:"reasoning_effort"`
+	Reasoning          *struct {
 		Effort string `json:"effort"`
 	} `json:"reasoning"`
 	OutputConfig *struct {
