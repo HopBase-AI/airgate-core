@@ -1,12 +1,12 @@
 import { useSyncExternalStore } from 'react';
-// 品牌判定:同一套控制台服务 HopBase(ToB)与 Essevin / kite 等 ToC 品牌。
+// 品牌判定:同一套控制台服务 HopBase(ToB)与 Essevin 等 ToC 品牌。
 // 视觉皮肤(styles/brand-hopbase.css)只对 <html data-brand="hopbase"> 生效,
 // 因此这里集中决定「当前是哪个品牌」,并把结果写到 <html> 与 localStorage:
 //   · 首屏(站点设置尚未返回)按域名给临时值,域名不能判定时用上次记住的;
 //   · 站点设置返回后按 site_id / site_name / sites_branding 复算,以设置为准;
 //   · 复算不出(站名不认识)就保持首屏的判定,绝不"回落成 HopBase"。
 
-export type BrandId = 'hopbase' | 'essevin' | 'kite' | (string & {});
+export type BrandId = 'hopbase' | 'essevin' | (string & {});
 
 const STORAGE_KEY = 'ag_brand';
 const BRAND_ATTR = 'data-brand';
@@ -36,14 +36,15 @@ export interface ResolveBrandInput {
 
 /**
  * 按站点设置解析品牌。返回 null 表示"认不出",调用方应保持当前判定不动。
- * ink / 站名 Essevin → essevin;kite → kite;有 sites_branding 配置的来源站按 site_id;
+ * ink / 站名 Essevin → essevin;有 sites_branding 配置的来源站按 site_id;
  * 站名是 HopBase(或空)→ hopbase。不认识的站名不猜。
+ * 落地页下架后要连它的 sites_branding 条目一起删——写死在这里的品牌删不掉,
+ * 老用户的注册归因会一直把控制台顶成一个已经不存在的站。
  */
 export function resolveBrand(input: ResolveBrandInput): BrandId | null {
   const siteId = (input.siteId ?? '').trim().toLowerCase();
   const siteName = (input.siteName ?? '').trim().toLowerCase();
   if (siteId === 'ink' || siteName === 'essevin') return 'essevin';
-  if (siteId === 'kite' || siteName === 'kite') return 'kite';
   if (siteId && input.hasSiteBranding && BRAND_PATTERN.test(siteId)) return siteId;
   if (siteName === '' || siteName === 'hopbase' || siteName === 'hop-base') return 'hopbase';
   return null;

@@ -5,7 +5,7 @@
    SDK(@doudou-start/airgate-theme)在运行时以 `:root[data-theme="…"]` 注入默认的
    中性灰 --ag-* token,且不接受自定义主题;本文件用更高特异性的
    `:root[data-brand="hopbase"][data-theme="…"]` 覆盖,不依赖样式注入顺序。
-   `data-brand` 由 shared/brand.ts 写到 <html>,Essevin / kite 等 ToC 品牌不命中。
+   `data-brand` 由 shared/brand.ts 写到 <html>,Essevin 等 ToC 品牌不命中。
 
    每套主题先按「角色」声明一组 --hb-* 别名(与 landing.css 的变量名一一对应),
    再把 --ag-* 指向别名:官网调色板变了只改别名一处。

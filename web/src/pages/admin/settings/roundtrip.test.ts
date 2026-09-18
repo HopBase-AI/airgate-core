@@ -137,7 +137,7 @@ describe('sites_branding 圆环往返', () => {
       doc_url: 'https://late.essevin.com/docs',
       host: 'late.essevin.com',
     },
-    kite: { name: 'KITE', logo: 'data:image/svg+xml;base64,AAAA', doc_url: 'https://kite.essevin.com/docs' },
+    partner: { name: 'Partner', logo: 'data:image/svg+xml;base64,AAAA', doc_url: 'https://partner.example.com/docs' },
   });
 
   it('parse → serialize 语义等价（含嵌套 blog_chrome）', () => {
@@ -186,7 +186,7 @@ describe('sites_branding 圆环往返', () => {
 });
 
 describe('blog_sites 圆环往返', () => {
-  const prod = '[{"key":"essevin","label":"Essevin 主站"},{"key":"kite","label":"KITE"}]';
+  const prod = '[{"key":"essevin","label":"Essevin 主站"},{"key":"partner","label":"Partner"}]';
 
   it('parse → serialize 语义等价', () => {
     expect(JSON.parse(serializeBlogSites(parseBlogSites(prod)))).toEqual(JSON.parse(prod));
