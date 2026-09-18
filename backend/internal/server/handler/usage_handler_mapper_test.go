@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"strings"
 	"testing"
 
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
@@ -55,6 +56,15 @@ func TestUserFacingErrorMessage(t *testing.T) {
 		{name: "余额不足给原文", code: appusage.ErrorCodeInsufficientQuota, want: message},
 		{name: "能力未开通给原文", code: appusage.ErrorCodeCapabilityDenied, want: message},
 		{name: "并发超限给原文", code: appusage.ErrorCodeConcurrencyLimit, want: message},
+		// 插件任务的可行动失败码同口径给原文：用户改得动就得看得到
+		// （2026-09-18：上游按 InvalidParameter 连拒三次，用户侧只看到「服务繁忙」）。
+		{name: "上游判参数非法给原文", code: "upstream_invalid_request", want: message},
+		{name: "内容审核给原文", code: "output_audio_copyright", want: message},
+		{name: "参考素材非法给原文", code: "reference_image_invalid", want: message},
+		{name: "余额预检不足给原文", code: "insufficient_balance", want: message},
+
+		{name: "上游生成失败只给分类", code: "upstream_generation_failed", want: ""},
+		{name: "任务超时只给分类", code: "task_timeout", want: ""},
 
 		{name: "账号失效只给分类", code: appusage.ErrorCodeAccountDead, want: ""},
 		{name: "账号限流只给分类", code: appusage.ErrorCodeAccountRateLimited, want: ""},
@@ -110,5 +120,29 @@ func TestToUsageLogRespCarriesAdminDiagnostics(t *testing.T) {
 	resp := toUsageLogResp(record)
 	if resp.RequestID != record.RequestID || resp.GroupID != 21 || resp.APIKeyID != 206 || resp.AccountID != 33 {
 		t.Fatalf("admin diagnostics = %+v", resp)
+	}
+}
+
+// TestUserFacingErrorMessageScrubsUpstreamIdentity 落库的是上游原文，读取侧给用户前
+// 必须过一遍出网清洗——否则同一条报错在响应体里被剥干净了，却从使用记录第二个出口漏出去。
+func TestUserFacingErrorMessageScrubsUpstreamIdentity(t *testing.T) {
+	record := appusage.LogRecord{
+		Status:       appusage.StatusError,
+		ErrorCode:    appusage.ErrorCodeClientError,
+		ErrorStatus:  400,
+		ErrorMessage: "Upstream request failed: duration must be <= 15 (see https://model.some-upstream-vendor.com/docs) (Request-ID: USA-20434252906100)",
+	}
+	got := userFacingErrorMessage(record)
+	if !strings.Contains(got, "duration must be <= 15") {
+		t.Fatalf("清洗把可操作信息一起删了: %q", got)
+	}
+	for _, leaked := range []string{"some-upstream-vendor", "https://", "USA-20434252906100", "Upstream request failed"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("清洗后仍带 %q: %q", leaked, got)
+		}
+	}
+	// 管理员视角保留原文，排障要靠它。
+	if toUsageLogResp(record).ErrorMessage != record.ErrorMessage {
+		t.Fatal("管理员视角不应被清洗")
 	}
 }

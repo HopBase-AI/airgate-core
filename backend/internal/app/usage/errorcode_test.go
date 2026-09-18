@@ -37,6 +37,18 @@ func TestErrorMessageVisibleToUser(t *testing.T) {
 		{name: "插件错误不可见", code: ErrorCodePluginError, want: false},
 		{name: "插件不可用不可见", code: ErrorCodePluginUnavailable, want: false},
 		{name: "元数据收敛错误不可见", code: ErrorCodeMetadataScopeFailed, want: false},
+		// 插件任务的可行动失败码：用户改得动，就必须看得到原文
+		// （2026-09-18：上游按 InvalidParameter 连拒三次，用户侧只看到「服务繁忙」）。
+		{name: "上游判参数非法可见", code: "upstream_invalid_request", want: true},
+		{name: "提交被拒可见", code: "submission_rejected", want: true},
+		{name: "内容审核可见", code: "output_audio_copyright", want: true},
+		{name: "参考素材非法可见", code: "reference_image_invalid", want: true},
+		{name: "余额预检不足可见", code: "insufficient_balance", want: true},
+		{name: "参考素材时长非法可见", code: "invalid_asset_duration", want: true},
+		// 服务侧故障仍然只给分类，原文不出网
+		{name: "上游生成失败不可见", code: "upstream_generation_failed", want: false},
+		{name: "上游鉴权失败不可见", code: "upstream_authentication_failed", want: false},
+		{name: "任务超时不可见", code: "task_timeout", want: false},
 		{name: "空 code 不可见", code: "", want: false},
 		{name: "未知 code 不可见", code: "brand_new_code", want: false},
 	}
