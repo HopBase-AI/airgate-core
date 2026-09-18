@@ -10,9 +10,11 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
+	"github.com/DouDOU-start/airgate-core/ent/subscriptionreservation"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 	"github.com/DouDOU-start/airgate-core/ent/usersubscription"
 )
@@ -84,6 +86,347 @@ func (usu *UserSubscriptionUpdate) SetNillableStatus(u *usersubscription.Status)
 	return usu
 }
 
+// SetPeriodStart sets the "period_start" field.
+func (usu *UserSubscriptionUpdate) SetPeriodStart(t time.Time) *UserSubscriptionUpdate {
+	usu.mutation.SetPeriodStart(t)
+	return usu
+}
+
+// SetNillablePeriodStart sets the "period_start" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillablePeriodStart(t *time.Time) *UserSubscriptionUpdate {
+	if t != nil {
+		usu.SetPeriodStart(*t)
+	}
+	return usu
+}
+
+// ClearPeriodStart clears the value of the "period_start" field.
+func (usu *UserSubscriptionUpdate) ClearPeriodStart() *UserSubscriptionUpdate {
+	usu.mutation.ClearPeriodStart()
+	return usu
+}
+
+// SetPeriodEnd sets the "period_end" field.
+func (usu *UserSubscriptionUpdate) SetPeriodEnd(t time.Time) *UserSubscriptionUpdate {
+	usu.mutation.SetPeriodEnd(t)
+	return usu
+}
+
+// SetNillablePeriodEnd sets the "period_end" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillablePeriodEnd(t *time.Time) *UserSubscriptionUpdate {
+	if t != nil {
+		usu.SetPeriodEnd(*t)
+	}
+	return usu
+}
+
+// ClearPeriodEnd clears the value of the "period_end" field.
+func (usu *UserSubscriptionUpdate) ClearPeriodEnd() *UserSubscriptionUpdate {
+	usu.mutation.ClearPeriodEnd()
+	return usu
+}
+
+// SetPlanSnapshot sets the "plan_snapshot" field.
+func (usu *UserSubscriptionUpdate) SetPlanSnapshot(m map[string]interface{}) *UserSubscriptionUpdate {
+	usu.mutation.SetPlanSnapshot(m)
+	return usu
+}
+
+// ClearPlanSnapshot clears the value of the "plan_snapshot" field.
+func (usu *UserSubscriptionUpdate) ClearPlanSnapshot() *UserSubscriptionUpdate {
+	usu.mutation.ClearPlanSnapshot()
+	return usu
+}
+
+// SetIncludedGroupIds sets the "included_group_ids" field.
+func (usu *UserSubscriptionUpdate) SetIncludedGroupIds(i []int) *UserSubscriptionUpdate {
+	usu.mutation.SetIncludedGroupIds(i)
+	return usu
+}
+
+// AppendIncludedGroupIds appends i to the "included_group_ids" field.
+func (usu *UserSubscriptionUpdate) AppendIncludedGroupIds(i []int) *UserSubscriptionUpdate {
+	usu.mutation.AppendIncludedGroupIds(i)
+	return usu
+}
+
+// ClearIncludedGroupIds clears the value of the "included_group_ids" field.
+func (usu *UserSubscriptionUpdate) ClearIncludedGroupIds() *UserSubscriptionUpdate {
+	usu.mutation.ClearIncludedGroupIds()
+	return usu
+}
+
+// SetCreditsLimit sets the "credits_limit" field.
+func (usu *UserSubscriptionUpdate) SetCreditsLimit(i int64) *UserSubscriptionUpdate {
+	usu.mutation.ResetCreditsLimit()
+	usu.mutation.SetCreditsLimit(i)
+	return usu
+}
+
+// SetNillableCreditsLimit sets the "credits_limit" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillableCreditsLimit(i *int64) *UserSubscriptionUpdate {
+	if i != nil {
+		usu.SetCreditsLimit(*i)
+	}
+	return usu
+}
+
+// AddCreditsLimit adds i to the "credits_limit" field.
+func (usu *UserSubscriptionUpdate) AddCreditsLimit(i int64) *UserSubscriptionUpdate {
+	usu.mutation.AddCreditsLimit(i)
+	return usu
+}
+
+// SetCreditsUsed sets the "credits_used" field.
+func (usu *UserSubscriptionUpdate) SetCreditsUsed(i int64) *UserSubscriptionUpdate {
+	usu.mutation.ResetCreditsUsed()
+	usu.mutation.SetCreditsUsed(i)
+	return usu
+}
+
+// SetNillableCreditsUsed sets the "credits_used" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillableCreditsUsed(i *int64) *UserSubscriptionUpdate {
+	if i != nil {
+		usu.SetCreditsUsed(*i)
+	}
+	return usu
+}
+
+// AddCreditsUsed adds i to the "credits_used" field.
+func (usu *UserSubscriptionUpdate) AddCreditsUsed(i int64) *UserSubscriptionUpdate {
+	usu.mutation.AddCreditsUsed(i)
+	return usu
+}
+
+// SetCreditsReserved sets the "credits_reserved" field.
+func (usu *UserSubscriptionUpdate) SetCreditsReserved(i int64) *UserSubscriptionUpdate {
+	usu.mutation.ResetCreditsReserved()
+	usu.mutation.SetCreditsReserved(i)
+	return usu
+}
+
+// SetNillableCreditsReserved sets the "credits_reserved" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillableCreditsReserved(i *int64) *UserSubscriptionUpdate {
+	if i != nil {
+		usu.SetCreditsReserved(*i)
+	}
+	return usu
+}
+
+// AddCreditsReserved adds i to the "credits_reserved" field.
+func (usu *UserSubscriptionUpdate) AddCreditsReserved(i int64) *UserSubscriptionUpdate {
+	usu.mutation.AddCreditsReserved(i)
+	return usu
+}
+
+// SetExtraCredits sets the "extra_credits" field.
+func (usu *UserSubscriptionUpdate) SetExtraCredits(i int64) *UserSubscriptionUpdate {
+	usu.mutation.ResetExtraCredits()
+	usu.mutation.SetExtraCredits(i)
+	return usu
+}
+
+// SetNillableExtraCredits sets the "extra_credits" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillableExtraCredits(i *int64) *UserSubscriptionUpdate {
+	if i != nil {
+		usu.SetExtraCredits(*i)
+	}
+	return usu
+}
+
+// AddExtraCredits adds i to the "extra_credits" field.
+func (usu *UserSubscriptionUpdate) AddExtraCredits(i int64) *UserSubscriptionUpdate {
+	usu.mutation.AddExtraCredits(i)
+	return usu
+}
+
+// SetImagesUsed sets the "images_used" field.
+func (usu *UserSubscriptionUpdate) SetImagesUsed(i int) *UserSubscriptionUpdate {
+	usu.mutation.ResetImagesUsed()
+	usu.mutation.SetImagesUsed(i)
+	return usu
+}
+
+// SetNillableImagesUsed sets the "images_used" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillableImagesUsed(i *int) *UserSubscriptionUpdate {
+	if i != nil {
+		usu.SetImagesUsed(*i)
+	}
+	return usu
+}
+
+// AddImagesUsed adds i to the "images_used" field.
+func (usu *UserSubscriptionUpdate) AddImagesUsed(i int) *UserSubscriptionUpdate {
+	usu.mutation.AddImagesUsed(i)
+	return usu
+}
+
+// SetImagesReserved sets the "images_reserved" field.
+func (usu *UserSubscriptionUpdate) SetImagesReserved(i int) *UserSubscriptionUpdate {
+	usu.mutation.ResetImagesReserved()
+	usu.mutation.SetImagesReserved(i)
+	return usu
+}
+
+// SetNillableImagesReserved sets the "images_reserved" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillableImagesReserved(i *int) *UserSubscriptionUpdate {
+	if i != nil {
+		usu.SetImagesReserved(*i)
+	}
+	return usu
+}
+
+// AddImagesReserved adds i to the "images_reserved" field.
+func (usu *UserSubscriptionUpdate) AddImagesReserved(i int) *UserSubscriptionUpdate {
+	usu.mutation.AddImagesReserved(i)
+	return usu
+}
+
+// SetImageLimit sets the "image_limit" field.
+func (usu *UserSubscriptionUpdate) SetImageLimit(i int) *UserSubscriptionUpdate {
+	usu.mutation.ResetImageLimit()
+	usu.mutation.SetImageLimit(i)
+	return usu
+}
+
+// SetNillableImageLimit sets the "image_limit" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillableImageLimit(i *int) *UserSubscriptionUpdate {
+	if i != nil {
+		usu.SetImageLimit(*i)
+	}
+	return usu
+}
+
+// AddImageLimit adds i to the "image_limit" field.
+func (usu *UserSubscriptionUpdate) AddImageLimit(i int) *UserSubscriptionUpdate {
+	usu.mutation.AddImageLimit(i)
+	return usu
+}
+
+// SetLedgerVersion sets the "ledger_version" field.
+func (usu *UserSubscriptionUpdate) SetLedgerVersion(i int64) *UserSubscriptionUpdate {
+	usu.mutation.ResetLedgerVersion()
+	usu.mutation.SetLedgerVersion(i)
+	return usu
+}
+
+// SetNillableLedgerVersion sets the "ledger_version" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillableLedgerVersion(i *int64) *UserSubscriptionUpdate {
+	if i != nil {
+		usu.SetLedgerVersion(*i)
+	}
+	return usu
+}
+
+// AddLedgerVersion adds i to the "ledger_version" field.
+func (usu *UserSubscriptionUpdate) AddLedgerVersion(i int64) *UserSubscriptionUpdate {
+	usu.mutation.AddLedgerVersion(i)
+	return usu
+}
+
+// SetBillingCycle sets the "billing_cycle" field.
+func (usu *UserSubscriptionUpdate) SetBillingCycle(uc usersubscription.BillingCycle) *UserSubscriptionUpdate {
+	usu.mutation.SetBillingCycle(uc)
+	return usu
+}
+
+// SetNillableBillingCycle sets the "billing_cycle" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillableBillingCycle(uc *usersubscription.BillingCycle) *UserSubscriptionUpdate {
+	if uc != nil {
+		usu.SetBillingCycle(*uc)
+	}
+	return usu
+}
+
+// SetSourceProvider sets the "source_provider" field.
+func (usu *UserSubscriptionUpdate) SetSourceProvider(s string) *UserSubscriptionUpdate {
+	usu.mutation.SetSourceProvider(s)
+	return usu
+}
+
+// SetNillableSourceProvider sets the "source_provider" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillableSourceProvider(s *string) *UserSubscriptionUpdate {
+	if s != nil {
+		usu.SetSourceProvider(*s)
+	}
+	return usu
+}
+
+// SetSourceExecutionKey sets the "source_execution_key" field.
+func (usu *UserSubscriptionUpdate) SetSourceExecutionKey(s string) *UserSubscriptionUpdate {
+	usu.mutation.SetSourceExecutionKey(s)
+	return usu
+}
+
+// SetNillableSourceExecutionKey sets the "source_execution_key" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillableSourceExecutionKey(s *string) *UserSubscriptionUpdate {
+	if s != nil {
+		usu.SetSourceExecutionKey(*s)
+	}
+	return usu
+}
+
+// ClearSourceExecutionKey clears the value of the "source_execution_key" field.
+func (usu *UserSubscriptionUpdate) ClearSourceExecutionKey() *UserSubscriptionUpdate {
+	usu.mutation.ClearSourceExecutionKey()
+	return usu
+}
+
+// SetSourcePaymentKey sets the "source_payment_key" field.
+func (usu *UserSubscriptionUpdate) SetSourcePaymentKey(s string) *UserSubscriptionUpdate {
+	usu.mutation.SetSourcePaymentKey(s)
+	return usu
+}
+
+// SetNillableSourcePaymentKey sets the "source_payment_key" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillableSourcePaymentKey(s *string) *UserSubscriptionUpdate {
+	if s != nil {
+		usu.SetSourcePaymentKey(*s)
+	}
+	return usu
+}
+
+// ClearSourcePaymentKey clears the value of the "source_payment_key" field.
+func (usu *UserSubscriptionUpdate) ClearSourcePaymentKey() *UserSubscriptionUpdate {
+	usu.mutation.ClearSourcePaymentKey()
+	return usu
+}
+
+// SetPaymentAmountMinor sets the "payment_amount_minor" field.
+func (usu *UserSubscriptionUpdate) SetPaymentAmountMinor(i int64) *UserSubscriptionUpdate {
+	usu.mutation.ResetPaymentAmountMinor()
+	usu.mutation.SetPaymentAmountMinor(i)
+	return usu
+}
+
+// SetNillablePaymentAmountMinor sets the "payment_amount_minor" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillablePaymentAmountMinor(i *int64) *UserSubscriptionUpdate {
+	if i != nil {
+		usu.SetPaymentAmountMinor(*i)
+	}
+	return usu
+}
+
+// AddPaymentAmountMinor adds i to the "payment_amount_minor" field.
+func (usu *UserSubscriptionUpdate) AddPaymentAmountMinor(i int64) *UserSubscriptionUpdate {
+	usu.mutation.AddPaymentAmountMinor(i)
+	return usu
+}
+
+// SetPaymentCurrency sets the "payment_currency" field.
+func (usu *UserSubscriptionUpdate) SetPaymentCurrency(s string) *UserSubscriptionUpdate {
+	usu.mutation.SetPaymentCurrency(s)
+	return usu
+}
+
+// SetNillablePaymentCurrency sets the "payment_currency" field if the given value is not nil.
+func (usu *UserSubscriptionUpdate) SetNillablePaymentCurrency(s *string) *UserSubscriptionUpdate {
+	if s != nil {
+		usu.SetPaymentCurrency(*s)
+	}
+	return usu
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (usu *UserSubscriptionUpdate) SetUpdatedAt(t time.Time) *UserSubscriptionUpdate {
 	usu.mutation.SetUpdatedAt(t)
@@ -112,6 +455,21 @@ func (usu *UserSubscriptionUpdate) SetGroup(g *Group) *UserSubscriptionUpdate {
 	return usu.SetGroupID(g.ID)
 }
 
+// AddReservationIDs adds the "reservations" edge to the SubscriptionReservation entity by IDs.
+func (usu *UserSubscriptionUpdate) AddReservationIDs(ids ...int) *UserSubscriptionUpdate {
+	usu.mutation.AddReservationIDs(ids...)
+	return usu
+}
+
+// AddReservations adds the "reservations" edges to the SubscriptionReservation entity.
+func (usu *UserSubscriptionUpdate) AddReservations(s ...*SubscriptionReservation) *UserSubscriptionUpdate {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return usu.AddReservationIDs(ids...)
+}
+
 // Mutation returns the UserSubscriptionMutation object of the builder.
 func (usu *UserSubscriptionUpdate) Mutation() *UserSubscriptionMutation {
 	return usu.mutation
@@ -127,6 +485,27 @@ func (usu *UserSubscriptionUpdate) ClearUser() *UserSubscriptionUpdate {
 func (usu *UserSubscriptionUpdate) ClearGroup() *UserSubscriptionUpdate {
 	usu.mutation.ClearGroup()
 	return usu
+}
+
+// ClearReservations clears all "reservations" edges to the SubscriptionReservation entity.
+func (usu *UserSubscriptionUpdate) ClearReservations() *UserSubscriptionUpdate {
+	usu.mutation.ClearReservations()
+	return usu
+}
+
+// RemoveReservationIDs removes the "reservations" edge to SubscriptionReservation entities by IDs.
+func (usu *UserSubscriptionUpdate) RemoveReservationIDs(ids ...int) *UserSubscriptionUpdate {
+	usu.mutation.RemoveReservationIDs(ids...)
+	return usu
+}
+
+// RemoveReservations removes "reservations" edges to SubscriptionReservation entities.
+func (usu *UserSubscriptionUpdate) RemoveReservations(s ...*SubscriptionReservation) *UserSubscriptionUpdate {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return usu.RemoveReservationIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -172,6 +551,11 @@ func (usu *UserSubscriptionUpdate) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "UserSubscription.status": %w`, err)}
 		}
 	}
+	if v, ok := usu.mutation.BillingCycle(); ok {
+		if err := usersubscription.BillingCycleValidator(v); err != nil {
+			return &ValidationError{Name: "billing_cycle", err: fmt.Errorf(`ent: validator failed for field "UserSubscription.billing_cycle": %w`, err)}
+		}
+	}
 	if _, ok := usu.mutation.UserID(); usu.mutation.UserCleared() && !ok {
 		return errors.New(`ent: clearing a required unique edge "UserSubscription.user"`)
 	}
@@ -207,6 +591,110 @@ func (usu *UserSubscriptionUpdate) sqlSave(ctx context.Context) (n int, err erro
 	}
 	if value, ok := usu.mutation.Status(); ok {
 		_spec.SetField(usersubscription.FieldStatus, field.TypeEnum, value)
+	}
+	if value, ok := usu.mutation.PeriodStart(); ok {
+		_spec.SetField(usersubscription.FieldPeriodStart, field.TypeTime, value)
+	}
+	if usu.mutation.PeriodStartCleared() {
+		_spec.ClearField(usersubscription.FieldPeriodStart, field.TypeTime)
+	}
+	if value, ok := usu.mutation.PeriodEnd(); ok {
+		_spec.SetField(usersubscription.FieldPeriodEnd, field.TypeTime, value)
+	}
+	if usu.mutation.PeriodEndCleared() {
+		_spec.ClearField(usersubscription.FieldPeriodEnd, field.TypeTime)
+	}
+	if value, ok := usu.mutation.PlanSnapshot(); ok {
+		_spec.SetField(usersubscription.FieldPlanSnapshot, field.TypeJSON, value)
+	}
+	if usu.mutation.PlanSnapshotCleared() {
+		_spec.ClearField(usersubscription.FieldPlanSnapshot, field.TypeJSON)
+	}
+	if value, ok := usu.mutation.IncludedGroupIds(); ok {
+		_spec.SetField(usersubscription.FieldIncludedGroupIds, field.TypeJSON, value)
+	}
+	if value, ok := usu.mutation.AppendedIncludedGroupIds(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, usersubscription.FieldIncludedGroupIds, value)
+		})
+	}
+	if usu.mutation.IncludedGroupIdsCleared() {
+		_spec.ClearField(usersubscription.FieldIncludedGroupIds, field.TypeJSON)
+	}
+	if value, ok := usu.mutation.CreditsLimit(); ok {
+		_spec.SetField(usersubscription.FieldCreditsLimit, field.TypeInt64, value)
+	}
+	if value, ok := usu.mutation.AddedCreditsLimit(); ok {
+		_spec.AddField(usersubscription.FieldCreditsLimit, field.TypeInt64, value)
+	}
+	if value, ok := usu.mutation.CreditsUsed(); ok {
+		_spec.SetField(usersubscription.FieldCreditsUsed, field.TypeInt64, value)
+	}
+	if value, ok := usu.mutation.AddedCreditsUsed(); ok {
+		_spec.AddField(usersubscription.FieldCreditsUsed, field.TypeInt64, value)
+	}
+	if value, ok := usu.mutation.CreditsReserved(); ok {
+		_spec.SetField(usersubscription.FieldCreditsReserved, field.TypeInt64, value)
+	}
+	if value, ok := usu.mutation.AddedCreditsReserved(); ok {
+		_spec.AddField(usersubscription.FieldCreditsReserved, field.TypeInt64, value)
+	}
+	if value, ok := usu.mutation.ExtraCredits(); ok {
+		_spec.SetField(usersubscription.FieldExtraCredits, field.TypeInt64, value)
+	}
+	if value, ok := usu.mutation.AddedExtraCredits(); ok {
+		_spec.AddField(usersubscription.FieldExtraCredits, field.TypeInt64, value)
+	}
+	if value, ok := usu.mutation.ImagesUsed(); ok {
+		_spec.SetField(usersubscription.FieldImagesUsed, field.TypeInt, value)
+	}
+	if value, ok := usu.mutation.AddedImagesUsed(); ok {
+		_spec.AddField(usersubscription.FieldImagesUsed, field.TypeInt, value)
+	}
+	if value, ok := usu.mutation.ImagesReserved(); ok {
+		_spec.SetField(usersubscription.FieldImagesReserved, field.TypeInt, value)
+	}
+	if value, ok := usu.mutation.AddedImagesReserved(); ok {
+		_spec.AddField(usersubscription.FieldImagesReserved, field.TypeInt, value)
+	}
+	if value, ok := usu.mutation.ImageLimit(); ok {
+		_spec.SetField(usersubscription.FieldImageLimit, field.TypeInt, value)
+	}
+	if value, ok := usu.mutation.AddedImageLimit(); ok {
+		_spec.AddField(usersubscription.FieldImageLimit, field.TypeInt, value)
+	}
+	if value, ok := usu.mutation.LedgerVersion(); ok {
+		_spec.SetField(usersubscription.FieldLedgerVersion, field.TypeInt64, value)
+	}
+	if value, ok := usu.mutation.AddedLedgerVersion(); ok {
+		_spec.AddField(usersubscription.FieldLedgerVersion, field.TypeInt64, value)
+	}
+	if value, ok := usu.mutation.BillingCycle(); ok {
+		_spec.SetField(usersubscription.FieldBillingCycle, field.TypeEnum, value)
+	}
+	if value, ok := usu.mutation.SourceProvider(); ok {
+		_spec.SetField(usersubscription.FieldSourceProvider, field.TypeString, value)
+	}
+	if value, ok := usu.mutation.SourceExecutionKey(); ok {
+		_spec.SetField(usersubscription.FieldSourceExecutionKey, field.TypeString, value)
+	}
+	if usu.mutation.SourceExecutionKeyCleared() {
+		_spec.ClearField(usersubscription.FieldSourceExecutionKey, field.TypeString)
+	}
+	if value, ok := usu.mutation.SourcePaymentKey(); ok {
+		_spec.SetField(usersubscription.FieldSourcePaymentKey, field.TypeString, value)
+	}
+	if usu.mutation.SourcePaymentKeyCleared() {
+		_spec.ClearField(usersubscription.FieldSourcePaymentKey, field.TypeString)
+	}
+	if value, ok := usu.mutation.PaymentAmountMinor(); ok {
+		_spec.SetField(usersubscription.FieldPaymentAmountMinor, field.TypeInt64, value)
+	}
+	if value, ok := usu.mutation.AddedPaymentAmountMinor(); ok {
+		_spec.AddField(usersubscription.FieldPaymentAmountMinor, field.TypeInt64, value)
+	}
+	if value, ok := usu.mutation.PaymentCurrency(); ok {
+		_spec.SetField(usersubscription.FieldPaymentCurrency, field.TypeString, value)
 	}
 	if value, ok := usu.mutation.UpdatedAt(); ok {
 		_spec.SetField(usersubscription.FieldUpdatedAt, field.TypeTime, value)
@@ -262,6 +750,51 @@ func (usu *UserSubscriptionUpdate) sqlSave(ctx context.Context) (n int, err erro
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if usu.mutation.ReservationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   usersubscription.ReservationsTable,
+			Columns: []string{usersubscription.ReservationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionreservation.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := usu.mutation.RemovedReservationsIDs(); len(nodes) > 0 && !usu.mutation.ReservationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   usersubscription.ReservationsTable,
+			Columns: []string{usersubscription.ReservationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionreservation.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := usu.mutation.ReservationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   usersubscription.ReservationsTable,
+			Columns: []string{usersubscription.ReservationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionreservation.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -343,6 +876,347 @@ func (usuo *UserSubscriptionUpdateOne) SetNillableStatus(u *usersubscription.Sta
 	return usuo
 }
 
+// SetPeriodStart sets the "period_start" field.
+func (usuo *UserSubscriptionUpdateOne) SetPeriodStart(t time.Time) *UserSubscriptionUpdateOne {
+	usuo.mutation.SetPeriodStart(t)
+	return usuo
+}
+
+// SetNillablePeriodStart sets the "period_start" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillablePeriodStart(t *time.Time) *UserSubscriptionUpdateOne {
+	if t != nil {
+		usuo.SetPeriodStart(*t)
+	}
+	return usuo
+}
+
+// ClearPeriodStart clears the value of the "period_start" field.
+func (usuo *UserSubscriptionUpdateOne) ClearPeriodStart() *UserSubscriptionUpdateOne {
+	usuo.mutation.ClearPeriodStart()
+	return usuo
+}
+
+// SetPeriodEnd sets the "period_end" field.
+func (usuo *UserSubscriptionUpdateOne) SetPeriodEnd(t time.Time) *UserSubscriptionUpdateOne {
+	usuo.mutation.SetPeriodEnd(t)
+	return usuo
+}
+
+// SetNillablePeriodEnd sets the "period_end" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillablePeriodEnd(t *time.Time) *UserSubscriptionUpdateOne {
+	if t != nil {
+		usuo.SetPeriodEnd(*t)
+	}
+	return usuo
+}
+
+// ClearPeriodEnd clears the value of the "period_end" field.
+func (usuo *UserSubscriptionUpdateOne) ClearPeriodEnd() *UserSubscriptionUpdateOne {
+	usuo.mutation.ClearPeriodEnd()
+	return usuo
+}
+
+// SetPlanSnapshot sets the "plan_snapshot" field.
+func (usuo *UserSubscriptionUpdateOne) SetPlanSnapshot(m map[string]interface{}) *UserSubscriptionUpdateOne {
+	usuo.mutation.SetPlanSnapshot(m)
+	return usuo
+}
+
+// ClearPlanSnapshot clears the value of the "plan_snapshot" field.
+func (usuo *UserSubscriptionUpdateOne) ClearPlanSnapshot() *UserSubscriptionUpdateOne {
+	usuo.mutation.ClearPlanSnapshot()
+	return usuo
+}
+
+// SetIncludedGroupIds sets the "included_group_ids" field.
+func (usuo *UserSubscriptionUpdateOne) SetIncludedGroupIds(i []int) *UserSubscriptionUpdateOne {
+	usuo.mutation.SetIncludedGroupIds(i)
+	return usuo
+}
+
+// AppendIncludedGroupIds appends i to the "included_group_ids" field.
+func (usuo *UserSubscriptionUpdateOne) AppendIncludedGroupIds(i []int) *UserSubscriptionUpdateOne {
+	usuo.mutation.AppendIncludedGroupIds(i)
+	return usuo
+}
+
+// ClearIncludedGroupIds clears the value of the "included_group_ids" field.
+func (usuo *UserSubscriptionUpdateOne) ClearIncludedGroupIds() *UserSubscriptionUpdateOne {
+	usuo.mutation.ClearIncludedGroupIds()
+	return usuo
+}
+
+// SetCreditsLimit sets the "credits_limit" field.
+func (usuo *UserSubscriptionUpdateOne) SetCreditsLimit(i int64) *UserSubscriptionUpdateOne {
+	usuo.mutation.ResetCreditsLimit()
+	usuo.mutation.SetCreditsLimit(i)
+	return usuo
+}
+
+// SetNillableCreditsLimit sets the "credits_limit" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillableCreditsLimit(i *int64) *UserSubscriptionUpdateOne {
+	if i != nil {
+		usuo.SetCreditsLimit(*i)
+	}
+	return usuo
+}
+
+// AddCreditsLimit adds i to the "credits_limit" field.
+func (usuo *UserSubscriptionUpdateOne) AddCreditsLimit(i int64) *UserSubscriptionUpdateOne {
+	usuo.mutation.AddCreditsLimit(i)
+	return usuo
+}
+
+// SetCreditsUsed sets the "credits_used" field.
+func (usuo *UserSubscriptionUpdateOne) SetCreditsUsed(i int64) *UserSubscriptionUpdateOne {
+	usuo.mutation.ResetCreditsUsed()
+	usuo.mutation.SetCreditsUsed(i)
+	return usuo
+}
+
+// SetNillableCreditsUsed sets the "credits_used" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillableCreditsUsed(i *int64) *UserSubscriptionUpdateOne {
+	if i != nil {
+		usuo.SetCreditsUsed(*i)
+	}
+	return usuo
+}
+
+// AddCreditsUsed adds i to the "credits_used" field.
+func (usuo *UserSubscriptionUpdateOne) AddCreditsUsed(i int64) *UserSubscriptionUpdateOne {
+	usuo.mutation.AddCreditsUsed(i)
+	return usuo
+}
+
+// SetCreditsReserved sets the "credits_reserved" field.
+func (usuo *UserSubscriptionUpdateOne) SetCreditsReserved(i int64) *UserSubscriptionUpdateOne {
+	usuo.mutation.ResetCreditsReserved()
+	usuo.mutation.SetCreditsReserved(i)
+	return usuo
+}
+
+// SetNillableCreditsReserved sets the "credits_reserved" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillableCreditsReserved(i *int64) *UserSubscriptionUpdateOne {
+	if i != nil {
+		usuo.SetCreditsReserved(*i)
+	}
+	return usuo
+}
+
+// AddCreditsReserved adds i to the "credits_reserved" field.
+func (usuo *UserSubscriptionUpdateOne) AddCreditsReserved(i int64) *UserSubscriptionUpdateOne {
+	usuo.mutation.AddCreditsReserved(i)
+	return usuo
+}
+
+// SetExtraCredits sets the "extra_credits" field.
+func (usuo *UserSubscriptionUpdateOne) SetExtraCredits(i int64) *UserSubscriptionUpdateOne {
+	usuo.mutation.ResetExtraCredits()
+	usuo.mutation.SetExtraCredits(i)
+	return usuo
+}
+
+// SetNillableExtraCredits sets the "extra_credits" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillableExtraCredits(i *int64) *UserSubscriptionUpdateOne {
+	if i != nil {
+		usuo.SetExtraCredits(*i)
+	}
+	return usuo
+}
+
+// AddExtraCredits adds i to the "extra_credits" field.
+func (usuo *UserSubscriptionUpdateOne) AddExtraCredits(i int64) *UserSubscriptionUpdateOne {
+	usuo.mutation.AddExtraCredits(i)
+	return usuo
+}
+
+// SetImagesUsed sets the "images_used" field.
+func (usuo *UserSubscriptionUpdateOne) SetImagesUsed(i int) *UserSubscriptionUpdateOne {
+	usuo.mutation.ResetImagesUsed()
+	usuo.mutation.SetImagesUsed(i)
+	return usuo
+}
+
+// SetNillableImagesUsed sets the "images_used" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillableImagesUsed(i *int) *UserSubscriptionUpdateOne {
+	if i != nil {
+		usuo.SetImagesUsed(*i)
+	}
+	return usuo
+}
+
+// AddImagesUsed adds i to the "images_used" field.
+func (usuo *UserSubscriptionUpdateOne) AddImagesUsed(i int) *UserSubscriptionUpdateOne {
+	usuo.mutation.AddImagesUsed(i)
+	return usuo
+}
+
+// SetImagesReserved sets the "images_reserved" field.
+func (usuo *UserSubscriptionUpdateOne) SetImagesReserved(i int) *UserSubscriptionUpdateOne {
+	usuo.mutation.ResetImagesReserved()
+	usuo.mutation.SetImagesReserved(i)
+	return usuo
+}
+
+// SetNillableImagesReserved sets the "images_reserved" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillableImagesReserved(i *int) *UserSubscriptionUpdateOne {
+	if i != nil {
+		usuo.SetImagesReserved(*i)
+	}
+	return usuo
+}
+
+// AddImagesReserved adds i to the "images_reserved" field.
+func (usuo *UserSubscriptionUpdateOne) AddImagesReserved(i int) *UserSubscriptionUpdateOne {
+	usuo.mutation.AddImagesReserved(i)
+	return usuo
+}
+
+// SetImageLimit sets the "image_limit" field.
+func (usuo *UserSubscriptionUpdateOne) SetImageLimit(i int) *UserSubscriptionUpdateOne {
+	usuo.mutation.ResetImageLimit()
+	usuo.mutation.SetImageLimit(i)
+	return usuo
+}
+
+// SetNillableImageLimit sets the "image_limit" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillableImageLimit(i *int) *UserSubscriptionUpdateOne {
+	if i != nil {
+		usuo.SetImageLimit(*i)
+	}
+	return usuo
+}
+
+// AddImageLimit adds i to the "image_limit" field.
+func (usuo *UserSubscriptionUpdateOne) AddImageLimit(i int) *UserSubscriptionUpdateOne {
+	usuo.mutation.AddImageLimit(i)
+	return usuo
+}
+
+// SetLedgerVersion sets the "ledger_version" field.
+func (usuo *UserSubscriptionUpdateOne) SetLedgerVersion(i int64) *UserSubscriptionUpdateOne {
+	usuo.mutation.ResetLedgerVersion()
+	usuo.mutation.SetLedgerVersion(i)
+	return usuo
+}
+
+// SetNillableLedgerVersion sets the "ledger_version" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillableLedgerVersion(i *int64) *UserSubscriptionUpdateOne {
+	if i != nil {
+		usuo.SetLedgerVersion(*i)
+	}
+	return usuo
+}
+
+// AddLedgerVersion adds i to the "ledger_version" field.
+func (usuo *UserSubscriptionUpdateOne) AddLedgerVersion(i int64) *UserSubscriptionUpdateOne {
+	usuo.mutation.AddLedgerVersion(i)
+	return usuo
+}
+
+// SetBillingCycle sets the "billing_cycle" field.
+func (usuo *UserSubscriptionUpdateOne) SetBillingCycle(uc usersubscription.BillingCycle) *UserSubscriptionUpdateOne {
+	usuo.mutation.SetBillingCycle(uc)
+	return usuo
+}
+
+// SetNillableBillingCycle sets the "billing_cycle" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillableBillingCycle(uc *usersubscription.BillingCycle) *UserSubscriptionUpdateOne {
+	if uc != nil {
+		usuo.SetBillingCycle(*uc)
+	}
+	return usuo
+}
+
+// SetSourceProvider sets the "source_provider" field.
+func (usuo *UserSubscriptionUpdateOne) SetSourceProvider(s string) *UserSubscriptionUpdateOne {
+	usuo.mutation.SetSourceProvider(s)
+	return usuo
+}
+
+// SetNillableSourceProvider sets the "source_provider" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillableSourceProvider(s *string) *UserSubscriptionUpdateOne {
+	if s != nil {
+		usuo.SetSourceProvider(*s)
+	}
+	return usuo
+}
+
+// SetSourceExecutionKey sets the "source_execution_key" field.
+func (usuo *UserSubscriptionUpdateOne) SetSourceExecutionKey(s string) *UserSubscriptionUpdateOne {
+	usuo.mutation.SetSourceExecutionKey(s)
+	return usuo
+}
+
+// SetNillableSourceExecutionKey sets the "source_execution_key" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillableSourceExecutionKey(s *string) *UserSubscriptionUpdateOne {
+	if s != nil {
+		usuo.SetSourceExecutionKey(*s)
+	}
+	return usuo
+}
+
+// ClearSourceExecutionKey clears the value of the "source_execution_key" field.
+func (usuo *UserSubscriptionUpdateOne) ClearSourceExecutionKey() *UserSubscriptionUpdateOne {
+	usuo.mutation.ClearSourceExecutionKey()
+	return usuo
+}
+
+// SetSourcePaymentKey sets the "source_payment_key" field.
+func (usuo *UserSubscriptionUpdateOne) SetSourcePaymentKey(s string) *UserSubscriptionUpdateOne {
+	usuo.mutation.SetSourcePaymentKey(s)
+	return usuo
+}
+
+// SetNillableSourcePaymentKey sets the "source_payment_key" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillableSourcePaymentKey(s *string) *UserSubscriptionUpdateOne {
+	if s != nil {
+		usuo.SetSourcePaymentKey(*s)
+	}
+	return usuo
+}
+
+// ClearSourcePaymentKey clears the value of the "source_payment_key" field.
+func (usuo *UserSubscriptionUpdateOne) ClearSourcePaymentKey() *UserSubscriptionUpdateOne {
+	usuo.mutation.ClearSourcePaymentKey()
+	return usuo
+}
+
+// SetPaymentAmountMinor sets the "payment_amount_minor" field.
+func (usuo *UserSubscriptionUpdateOne) SetPaymentAmountMinor(i int64) *UserSubscriptionUpdateOne {
+	usuo.mutation.ResetPaymentAmountMinor()
+	usuo.mutation.SetPaymentAmountMinor(i)
+	return usuo
+}
+
+// SetNillablePaymentAmountMinor sets the "payment_amount_minor" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillablePaymentAmountMinor(i *int64) *UserSubscriptionUpdateOne {
+	if i != nil {
+		usuo.SetPaymentAmountMinor(*i)
+	}
+	return usuo
+}
+
+// AddPaymentAmountMinor adds i to the "payment_amount_minor" field.
+func (usuo *UserSubscriptionUpdateOne) AddPaymentAmountMinor(i int64) *UserSubscriptionUpdateOne {
+	usuo.mutation.AddPaymentAmountMinor(i)
+	return usuo
+}
+
+// SetPaymentCurrency sets the "payment_currency" field.
+func (usuo *UserSubscriptionUpdateOne) SetPaymentCurrency(s string) *UserSubscriptionUpdateOne {
+	usuo.mutation.SetPaymentCurrency(s)
+	return usuo
+}
+
+// SetNillablePaymentCurrency sets the "payment_currency" field if the given value is not nil.
+func (usuo *UserSubscriptionUpdateOne) SetNillablePaymentCurrency(s *string) *UserSubscriptionUpdateOne {
+	if s != nil {
+		usuo.SetPaymentCurrency(*s)
+	}
+	return usuo
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (usuo *UserSubscriptionUpdateOne) SetUpdatedAt(t time.Time) *UserSubscriptionUpdateOne {
 	usuo.mutation.SetUpdatedAt(t)
@@ -371,6 +1245,21 @@ func (usuo *UserSubscriptionUpdateOne) SetGroup(g *Group) *UserSubscriptionUpdat
 	return usuo.SetGroupID(g.ID)
 }
 
+// AddReservationIDs adds the "reservations" edge to the SubscriptionReservation entity by IDs.
+func (usuo *UserSubscriptionUpdateOne) AddReservationIDs(ids ...int) *UserSubscriptionUpdateOne {
+	usuo.mutation.AddReservationIDs(ids...)
+	return usuo
+}
+
+// AddReservations adds the "reservations" edges to the SubscriptionReservation entity.
+func (usuo *UserSubscriptionUpdateOne) AddReservations(s ...*SubscriptionReservation) *UserSubscriptionUpdateOne {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return usuo.AddReservationIDs(ids...)
+}
+
 // Mutation returns the UserSubscriptionMutation object of the builder.
 func (usuo *UserSubscriptionUpdateOne) Mutation() *UserSubscriptionMutation {
 	return usuo.mutation
@@ -386,6 +1275,27 @@ func (usuo *UserSubscriptionUpdateOne) ClearUser() *UserSubscriptionUpdateOne {
 func (usuo *UserSubscriptionUpdateOne) ClearGroup() *UserSubscriptionUpdateOne {
 	usuo.mutation.ClearGroup()
 	return usuo
+}
+
+// ClearReservations clears all "reservations" edges to the SubscriptionReservation entity.
+func (usuo *UserSubscriptionUpdateOne) ClearReservations() *UserSubscriptionUpdateOne {
+	usuo.mutation.ClearReservations()
+	return usuo
+}
+
+// RemoveReservationIDs removes the "reservations" edge to SubscriptionReservation entities by IDs.
+func (usuo *UserSubscriptionUpdateOne) RemoveReservationIDs(ids ...int) *UserSubscriptionUpdateOne {
+	usuo.mutation.RemoveReservationIDs(ids...)
+	return usuo
+}
+
+// RemoveReservations removes "reservations" edges to SubscriptionReservation entities.
+func (usuo *UserSubscriptionUpdateOne) RemoveReservations(s ...*SubscriptionReservation) *UserSubscriptionUpdateOne {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return usuo.RemoveReservationIDs(ids...)
 }
 
 // Where appends a list predicates to the UserSubscriptionUpdate builder.
@@ -444,6 +1354,11 @@ func (usuo *UserSubscriptionUpdateOne) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "UserSubscription.status": %w`, err)}
 		}
 	}
+	if v, ok := usuo.mutation.BillingCycle(); ok {
+		if err := usersubscription.BillingCycleValidator(v); err != nil {
+			return &ValidationError{Name: "billing_cycle", err: fmt.Errorf(`ent: validator failed for field "UserSubscription.billing_cycle": %w`, err)}
+		}
+	}
 	if _, ok := usuo.mutation.UserID(); usuo.mutation.UserCleared() && !ok {
 		return errors.New(`ent: clearing a required unique edge "UserSubscription.user"`)
 	}
@@ -496,6 +1411,110 @@ func (usuo *UserSubscriptionUpdateOne) sqlSave(ctx context.Context) (_node *User
 	}
 	if value, ok := usuo.mutation.Status(); ok {
 		_spec.SetField(usersubscription.FieldStatus, field.TypeEnum, value)
+	}
+	if value, ok := usuo.mutation.PeriodStart(); ok {
+		_spec.SetField(usersubscription.FieldPeriodStart, field.TypeTime, value)
+	}
+	if usuo.mutation.PeriodStartCleared() {
+		_spec.ClearField(usersubscription.FieldPeriodStart, field.TypeTime)
+	}
+	if value, ok := usuo.mutation.PeriodEnd(); ok {
+		_spec.SetField(usersubscription.FieldPeriodEnd, field.TypeTime, value)
+	}
+	if usuo.mutation.PeriodEndCleared() {
+		_spec.ClearField(usersubscription.FieldPeriodEnd, field.TypeTime)
+	}
+	if value, ok := usuo.mutation.PlanSnapshot(); ok {
+		_spec.SetField(usersubscription.FieldPlanSnapshot, field.TypeJSON, value)
+	}
+	if usuo.mutation.PlanSnapshotCleared() {
+		_spec.ClearField(usersubscription.FieldPlanSnapshot, field.TypeJSON)
+	}
+	if value, ok := usuo.mutation.IncludedGroupIds(); ok {
+		_spec.SetField(usersubscription.FieldIncludedGroupIds, field.TypeJSON, value)
+	}
+	if value, ok := usuo.mutation.AppendedIncludedGroupIds(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, usersubscription.FieldIncludedGroupIds, value)
+		})
+	}
+	if usuo.mutation.IncludedGroupIdsCleared() {
+		_spec.ClearField(usersubscription.FieldIncludedGroupIds, field.TypeJSON)
+	}
+	if value, ok := usuo.mutation.CreditsLimit(); ok {
+		_spec.SetField(usersubscription.FieldCreditsLimit, field.TypeInt64, value)
+	}
+	if value, ok := usuo.mutation.AddedCreditsLimit(); ok {
+		_spec.AddField(usersubscription.FieldCreditsLimit, field.TypeInt64, value)
+	}
+	if value, ok := usuo.mutation.CreditsUsed(); ok {
+		_spec.SetField(usersubscription.FieldCreditsUsed, field.TypeInt64, value)
+	}
+	if value, ok := usuo.mutation.AddedCreditsUsed(); ok {
+		_spec.AddField(usersubscription.FieldCreditsUsed, field.TypeInt64, value)
+	}
+	if value, ok := usuo.mutation.CreditsReserved(); ok {
+		_spec.SetField(usersubscription.FieldCreditsReserved, field.TypeInt64, value)
+	}
+	if value, ok := usuo.mutation.AddedCreditsReserved(); ok {
+		_spec.AddField(usersubscription.FieldCreditsReserved, field.TypeInt64, value)
+	}
+	if value, ok := usuo.mutation.ExtraCredits(); ok {
+		_spec.SetField(usersubscription.FieldExtraCredits, field.TypeInt64, value)
+	}
+	if value, ok := usuo.mutation.AddedExtraCredits(); ok {
+		_spec.AddField(usersubscription.FieldExtraCredits, field.TypeInt64, value)
+	}
+	if value, ok := usuo.mutation.ImagesUsed(); ok {
+		_spec.SetField(usersubscription.FieldImagesUsed, field.TypeInt, value)
+	}
+	if value, ok := usuo.mutation.AddedImagesUsed(); ok {
+		_spec.AddField(usersubscription.FieldImagesUsed, field.TypeInt, value)
+	}
+	if value, ok := usuo.mutation.ImagesReserved(); ok {
+		_spec.SetField(usersubscription.FieldImagesReserved, field.TypeInt, value)
+	}
+	if value, ok := usuo.mutation.AddedImagesReserved(); ok {
+		_spec.AddField(usersubscription.FieldImagesReserved, field.TypeInt, value)
+	}
+	if value, ok := usuo.mutation.ImageLimit(); ok {
+		_spec.SetField(usersubscription.FieldImageLimit, field.TypeInt, value)
+	}
+	if value, ok := usuo.mutation.AddedImageLimit(); ok {
+		_spec.AddField(usersubscription.FieldImageLimit, field.TypeInt, value)
+	}
+	if value, ok := usuo.mutation.LedgerVersion(); ok {
+		_spec.SetField(usersubscription.FieldLedgerVersion, field.TypeInt64, value)
+	}
+	if value, ok := usuo.mutation.AddedLedgerVersion(); ok {
+		_spec.AddField(usersubscription.FieldLedgerVersion, field.TypeInt64, value)
+	}
+	if value, ok := usuo.mutation.BillingCycle(); ok {
+		_spec.SetField(usersubscription.FieldBillingCycle, field.TypeEnum, value)
+	}
+	if value, ok := usuo.mutation.SourceProvider(); ok {
+		_spec.SetField(usersubscription.FieldSourceProvider, field.TypeString, value)
+	}
+	if value, ok := usuo.mutation.SourceExecutionKey(); ok {
+		_spec.SetField(usersubscription.FieldSourceExecutionKey, field.TypeString, value)
+	}
+	if usuo.mutation.SourceExecutionKeyCleared() {
+		_spec.ClearField(usersubscription.FieldSourceExecutionKey, field.TypeString)
+	}
+	if value, ok := usuo.mutation.SourcePaymentKey(); ok {
+		_spec.SetField(usersubscription.FieldSourcePaymentKey, field.TypeString, value)
+	}
+	if usuo.mutation.SourcePaymentKeyCleared() {
+		_spec.ClearField(usersubscription.FieldSourcePaymentKey, field.TypeString)
+	}
+	if value, ok := usuo.mutation.PaymentAmountMinor(); ok {
+		_spec.SetField(usersubscription.FieldPaymentAmountMinor, field.TypeInt64, value)
+	}
+	if value, ok := usuo.mutation.AddedPaymentAmountMinor(); ok {
+		_spec.AddField(usersubscription.FieldPaymentAmountMinor, field.TypeInt64, value)
+	}
+	if value, ok := usuo.mutation.PaymentCurrency(); ok {
+		_spec.SetField(usersubscription.FieldPaymentCurrency, field.TypeString, value)
 	}
 	if value, ok := usuo.mutation.UpdatedAt(); ok {
 		_spec.SetField(usersubscription.FieldUpdatedAt, field.TypeTime, value)
@@ -551,6 +1570,51 @@ func (usuo *UserSubscriptionUpdateOne) sqlSave(ctx context.Context) (_node *User
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if usuo.mutation.ReservationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   usersubscription.ReservationsTable,
+			Columns: []string{usersubscription.ReservationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionreservation.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := usuo.mutation.RemovedReservationsIDs(); len(nodes) > 0 && !usuo.mutation.ReservationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   usersubscription.ReservationsTable,
+			Columns: []string{usersubscription.ReservationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionreservation.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := usuo.mutation.ReservationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   usersubscription.ReservationsTable,
+			Columns: []string{usersubscription.ReservationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionreservation.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

@@ -24,7 +24,9 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/setting"
 	entusagelog "github.com/DouDOU-start/airgate-core/ent/usagelog"
 	"github.com/DouDOU-start/airgate-core/ent/user"
+	entusersubscription "github.com/DouDOU-start/airgate-core/ent/usersubscription"
 	appreferral "github.com/DouDOU-start/airgate-core/internal/app/referral"
+	appsubscription "github.com/DouDOU-start/airgate-core/internal/app/subscription"
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	appuser "github.com/DouDOU-start/airgate-core/internal/app/user"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
@@ -57,6 +59,8 @@ type HostService struct {
 	recorder    *billing.Recorder
 	users       *appuser.Service
 	referral    *appreferral.Service
+	// subscriptions 订阅制分组准入（可为 nil：未装配时放行）。
+	subscriptions *appsubscription.Service
 }
 
 // NewHostService 构造 HostService 工厂。
@@ -200,6 +204,7 @@ const (
 	hostMethodUsersGet               = "users.get"
 	hostMethodBillingBudget          = "billing.budget"
 	hostMethodUsersUpdateBalance     = "users.update_balance"
+	hostMethodSubscriptionsGrant     = "subscriptions.grant"
 	hostMethodUsageRecord            = "usage.record"
 	hostMethodUsersNotifyTopup       = "users.notify_topup"
 	hostMethodAssetsStore            = "assets.store"
@@ -295,6 +300,15 @@ func (h *HostService) invoke(
 			req.IdempotencyKey = idempotencyKey
 		}
 		return h.updateUserBalance(ctx, pluginID, req)
+	case hostMethodSubscriptionsGrant:
+		var req hostGrantSubscriptionRequest
+		if err := decodeHostPayload(payload, &req); err != nil {
+			return nil, err
+		}
+		if idempotencyKey != "" && req.ExecutionKey == "" {
+			req.ExecutionKey = idempotencyKey
+		}
+		return h.grantSubscription(ctx, pluginID, req)
 	case hostMethodUsageRecord:
 		var req hostRecordUsageRequest
 		if err := decodeHostPayload(payload, &req); err != nil {
@@ -466,12 +480,14 @@ type hostForwardRequest struct {
 	// member 留着算本期剩余额度。
 	// submitterID 是**改写前**的原始调用账号：任务行的 user_id 记的是提交人本人，
 	// 在途预留必须按它统计，按企业主查一条都查不到。
-	memberID            int
-	departmentID        int
-	memberAllowedGroups []int64
-	member              *ent.Member
-	department          *ent.Department
-	submitterID         int
+	memberID                   int
+	departmentID               int
+	memberAllowedGroups        []int64
+	subscriptionReservationKey string
+	subscriptionBillingRate    float64
+	member                     *ent.Member
+	department                 *ent.Department
+	submitterID                int
 }
 
 // resolveHostForwardIdentity 把成员账号发起的 Host 转发映射到付费身份：
@@ -1159,6 +1175,9 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 	if err := h.resolveHostForwardIdentity(ctx, &req); err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(req.RequestID) == "" {
+		req.RequestID = uuid.NewString()
+	}
 	// 只读元信息路径（如视频价格预估 /v1/video/estimate）不打上游、不计费、不占预留，
 	// 对余额与预算门禁一律放行——与转发管线 Forwarder.checkBalance 的口径一致。
 	// 否则余额已经见底的用户连"这条要花多少钱"都问不出来，恰恰是最需要提示的人拿不到提示。
@@ -1177,13 +1196,8 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 	if err != nil {
 		return nil, err
 	}
-	// 预算预留门禁：只拦带预估的提交（是否带预估由插件决定，钉选路径同样会过一遍
-	// 同一个门禁，见 forwardPinned）。元信息路径不带预估，天然 no-op。倍率取首候选
-	// ——真正落账的多半就是它，failover 到后面的分组只会更贵/更便宜一档，不值得为了
-	// 精确到分而把选号提前到这里。
-	if err := h.checkSubmissionBudget(ctx, &req, routes[0].EffectiveRate); err != nil {
-		return nil, err
-	}
+	// Admission uses the actual candidate's rate; asynchronous reservations are
+	// bound after account selection and survive the submit HTTP response.
 	fwdCtx, cancel := context.WithTimeout(ctx, hostForwardTimeout(h.manager, req))
 	defer cancel()
 
@@ -1198,7 +1212,34 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 	hasLastClientUpstream := false
 	var lastClientUpstreamScrubber *identityScrubber
 	failureSummary := allRoutesFailureSummary{}
+	activeReservationKey := ""
+	defer func() {
+		if activeReservationKey != "" && h.subscriptions != nil {
+			if err := h.subscriptions.Release(context.Background(), activeReservationKey); err != nil {
+				slog.Error("host_subscription_reservation_release_failed", "reservation_key", activeReservationKey, sdk.LogFieldError, err)
+			}
+		}
+	}()
 	for _, route := range routes {
+		if activeReservationKey != "" && h.subscriptions != nil {
+			if err := h.subscriptions.Release(ctx, activeReservationKey); err != nil {
+				return nil, hostInternalError("host_subscription_reservation_release_failed", err)
+			}
+			activeReservationKey = ""
+		}
+		req.subscriptionReservationKey = ""
+		if route.SubscriptionType != "subscription" {
+			if err := h.checkSubmissionBudget(ctx, &req, route.EffectiveRate); err != nil {
+				return nil, err
+			}
+		} else if req.TaskID == 0 && !metadataOnly {
+			key, err := h.reserveHostSubscriptionRoute(ctx, &req, route)
+			if err != nil {
+				return nil, err
+			}
+			activeReservationKey = key
+			req.subscriptionReservationKey = key
+		}
 		model := h.resolveHostModel(route.Platform, req.Model)
 		if model == "" {
 			slog.Warn("host_forward_no_model",
@@ -1289,6 +1330,25 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 				continue
 			}
 
+			if route.SubscriptionType == "subscription" && req.TaskID > 0 && !metadataOnly {
+				key, err := h.reserveHostTaskSubscriptionForAccount(ctx, req, route.GroupID, int64(acc.ID))
+				if err != nil {
+					releaseAccountSlot()
+					h.scheduler.DecrementRPM(context.Background(), acc.ID)
+					h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, probeToken)
+					return nil, err
+				}
+				// The durable task owns this reservation beyond the submit response.
+				req.subscriptionReservationKey = key
+				t, err := h.subscriptionTask(ctx, req)
+				if err != nil {
+					releaseAccountSlot()
+					h.scheduler.DecrementRPM(context.Background(), acc.ID)
+					h.releaseHostFamilyProbe(acc.ID, acc.Platform, model, probeToken)
+					return nil, err
+				}
+				req.subscriptionBillingRate = t.SubscriptionBillingRate
+			}
 			headers := hostForwardHeaders(req, route)
 			applyAccountCapabilityHeaders(headers, accFull)
 			fwdReq := &sdk.ForwardRequest{
@@ -1310,6 +1370,9 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 			attempt++
 			duration := time.Since(start)
 			releaseAccountSlot()
+			if outcome.Usage != nil {
+				activeReservationKey = ""
+			}
 			if !h.applyHostOutcome(fwdCtx, acc.ID, accFull, model, outcome, duration, probeToken, fwdErr, true) {
 				h.recordCanceledHostForwardUsage(req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration, hostCanceledRequestStatus(fwdCtx, fwdErr))
 				return nil, hostForwardContextError(fwdCtx, fwdErr)
@@ -1320,11 +1383,33 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 				lastUpstreamScrubber = newIdentityScrubber(accFull, model)
 			}
 			if cerr := hostForwardContextError(fwdCtx, fwdErr); cerr != nil {
+				h.recordCanceledHostForwardUsage(req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration, hostCanceledRequestStatus(fwdCtx, fwdErr))
 				return nil, cerr
 			}
 
+			resp := hostForwardPayload(outcome, nil)
+			if outcome.Usage != nil && req.subscriptionReservationKey != "" {
+				if usageID, err := h.recordHostForwardUsage(ctx, req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration); err != nil {
+					slog.Error("host_forward_record_usage_failed",
+						sdk.LogFieldUserID, req.UserID,
+						sdk.LogFieldAccountID, acc.ID,
+						sdk.LogFieldError, err)
+					return nil, hostInternalError("host_forward_subscription_settlement_failed", err)
+				} else if usageID > 0 {
+					resp["usage_id"] = usageID
+				}
+				resp["usage"] = outcome.Usage
+			}
+
 			replayableClient := outcome.Kind == sdk.OutcomeClientError && replayableClientError(outcome)
-			if fwdErr != nil || outcome.Kind.ShouldFailover() || replayableClient {
+			canRetry := fwdErr != nil || outcome.Kind.ShouldFailover() || replayableClient
+			if req.subscriptionReservationKey != "" && (outcome.Usage != nil || req.TaskID > 0) {
+				canRetry = false
+				if fwdErr != nil {
+					return hostPinnedGatewayError(outcome, fwdErr, newIdentityScrubber(accFull, model))
+				}
+			}
+			if canRetry {
 				if replayableClient && returnableUpstream(outcome.Upstream) {
 					lastClientUpstream = outcome.Upstream
 					hasLastClientUpstream = true
@@ -1367,24 +1452,21 @@ func (h *HostService) forward(ctx context.Context, req hostForwardRequest) (map[
 				if returnableUpstream(outcome.Upstream) {
 					return hostForwardPayload(outcome, newIdentityScrubber(accFull, model)), nil
 				}
+				if req.subscriptionReservationKey != "" && (outcome.Usage != nil || req.TaskID > 0) {
+					return nil, hostForwardGenericError()
+				}
 				break
 			}
 
-			resp := hostForwardPayload(outcome, nil)
-
-			if outcome.Usage != nil {
+			if outcome.Usage != nil && req.subscriptionReservationKey == "" {
 				if usageID, err := h.recordHostForwardUsage(ctx, req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration); err != nil {
-					slog.Error("host_forward_record_usage_failed",
-						sdk.LogFieldUserID, req.UserID,
-						sdk.LogFieldAccountID, acc.ID,
-						sdk.LogFieldError, err,
-					)
+					slog.Error("host_forward_record_usage_failed", sdk.LogFieldUserID, req.UserID,
+						sdk.LogFieldAccountID, acc.ID, sdk.LogFieldError, err)
 				} else if usageID > 0 {
 					resp["usage_id"] = usageID
 				}
 				resp["usage"] = outcome.Usage
 			}
-
 			return resp, nil
 		}
 	}
@@ -1409,12 +1491,30 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 		return nil, err
 	}
 	route := routes[0]
+	reservationConsumed := false
+	if route.SubscriptionType == "subscription" && req.TaskID == 0 && !h.isHostMetadataOnlyPath(req.Path) {
+		key, err := h.reserveHostSubscriptionRoute(ctx, &req, route)
+		if err != nil {
+			return nil, err
+		}
+		req.subscriptionReservationKey = key
+		defer func() {
+			if reservationConsumed || req.TaskID > 0 {
+				return
+			}
+			if err := h.subscriptions.Release(context.Background(), key); err != nil {
+				slog.Error("host_subscription_reservation_release_failed", "reservation_key", key, sdk.LogFieldError, err)
+			}
+		}()
+	}
 	// 钉选路径同样要过预算门禁：视频插件的**首次提交本身就是钉选转发**
 	// （参考图素材绑在选中账号上，必须钉住），只有它带 estimated_official_cost；
 	// 后续的进度轮询/结算不带，checkSubmissionBudget 会直接 no-op 放行——
 	// 这正是 2026-09-04「已提交任务被余额门禁卡死」那条教训要保住的边界。
-	if err := h.checkSubmissionBudget(ctx, &req, route.EffectiveRate); err != nil {
-		return nil, err
+	if route.SubscriptionType != "subscription" {
+		if err := h.checkSubmissionBudget(ctx, &req, route.EffectiveRate); err != nil {
+			return nil, err
+		}
 	}
 	inst := h.manager.GetPluginByPlatform(route.Platform)
 	if inst == nil || inst.Gateway == nil {
@@ -1481,6 +1581,25 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 		h.scheduler.DecrementRPM(context.Background(), accFull.ID)
 		return hostAccountGatePayload(gate), nil
 	}
+	// Admit only after the plugin, account and scheduler gates are ready. A
+	// local pre-forward rejection must not leave a new task's quota locked.
+	if route.SubscriptionType == "subscription" && req.TaskID > 0 && !h.isHostMetadataOnlyPath(req.Path) {
+		key, admissionErr := h.reserveHostTaskSubscription(ctx, req, route.GroupID)
+		if admissionErr == nil {
+			req.subscriptionReservationKey = key
+			var admittedTask *ent.Task
+			admittedTask, admissionErr = h.subscriptionTask(ctx, req)
+			if admissionErr == nil {
+				req.subscriptionBillingRate = admittedTask.SubscriptionBillingRate
+			}
+		}
+		if admissionErr != nil {
+			releaseAccountSlot()
+			h.scheduler.DecrementRPM(context.Background(), accFull.ID)
+			h.releaseHostFamilyProbe(accFull.ID, accFull.Platform, model, probeToken)
+			return nil, admissionErr
+		}
+	}
 	claimedProbeToken := ""
 	stopProbeLease := func() {}
 	if gate.ProbeClaimed {
@@ -1504,9 +1623,23 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 	h.persistHostUpdatedCredentials(accFull.ID, outcome.UpdatedCredentials)
 	duration := time.Since(start)
 	releaseAccountSlot()
+	reservationConsumed = outcome.Usage != nil
 	if !h.applyHostOutcome(fwdCtx, accFull.ID, accFull, model, outcome, duration, claimedProbeToken, fwdErr, true) {
 		h.recordCanceledHostForwardUsage(req, route, accFull.ID, route.Platform, model, accFull, userEmail, outcome, duration, hostCanceledRequestStatus(fwdCtx, fwdErr))
 		return nil, hostForwardContextError(fwdCtx, fwdErr)
+	}
+	resp := hostForwardPayload(outcome, newIdentityScrubber(accFull, model))
+	if outcome.Usage != nil && req.subscriptionReservationKey != "" {
+		if usageID, err := h.recordHostForwardUsage(ctx, req, route, accFull.ID, route.Platform, model, accFull, userEmail, outcome, duration); err != nil {
+			slog.Error("host_forward_pinned_record_usage_failed",
+				sdk.LogFieldUserID, req.UserID,
+				sdk.LogFieldAccountID, accFull.ID,
+				sdk.LogFieldError, err)
+			return nil, hostInternalError("host_forward_pinned_subscription_settlement_failed", err)
+		} else if usageID > 0 {
+			resp["usage_id"] = usageID
+		}
+		resp["usage"] = outcome.Usage
 	}
 	if fwdErr != nil {
 		payload, terminalErr := hostPinnedGatewayError(outcome, fwdErr, newIdentityScrubber(accFull, model))
@@ -1525,14 +1658,10 @@ func (h *HostService) forwardPinned(ctx context.Context, req hostForwardRequest)
 		return nil, hostForwardGenericError()
 	}
 
-	resp := hostForwardPayload(outcome, newIdentityScrubber(accFull, model))
-	if outcome.Kind == sdk.OutcomeSuccess && outcome.Usage != nil {
+	if outcome.Kind == sdk.OutcomeSuccess && outcome.Usage != nil && req.subscriptionReservationKey == "" {
 		if usageID, err := h.recordHostForwardUsage(ctx, req, route, accFull.ID, route.Platform, model, accFull, userEmail, outcome, duration); err != nil {
-			slog.Error("host_forward_pinned_record_usage_failed",
-				sdk.LogFieldUserID, req.UserID,
-				sdk.LogFieldAccountID, accFull.ID,
-				sdk.LogFieldError, err,
-			)
+			slog.Error("host_forward_pinned_record_usage_failed", sdk.LogFieldUserID, req.UserID,
+				sdk.LogFieldAccountID, accFull.ID, sdk.LogFieldError, err)
 		} else if usageID > 0 {
 			resp["usage_id"] = usageID
 		}
@@ -1564,11 +1693,19 @@ func (h *HostService) signRelayURL(pluginID string, req hostRelaySignURLRequest)
 // 账号级故障自动 failover：通过 failoverStreamWriter 延迟提交，
 // 成功（< 400）时立即切换到真流式，失败时缓冲数据后丢弃重试。
 func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest, stream pb.CoreInvokeService_InvokeStreamServer) error {
+	if req.TaskID > 0 {
+		return status.Error(codes.InvalidArgument, "task forwarding requires a non-streaming request")
+	}
 	if req.UserID <= 0 {
 		return status.Error(codes.InvalidArgument, "user_id must be > 0")
 	}
+	req.submitterID = int(req.UserID)
 	if err := h.resolveHostForwardIdentity(ctx, &req); err != nil {
 		return err
+	}
+	req.RequestID = strings.TrimSpace(req.RequestID)
+	if req.RequestID == "" {
+		req.RequestID = uuid.NewString()
 	}
 	if err := h.checkHostForwardBalance(ctx, req.UserID); err != nil {
 		return err
@@ -1587,8 +1724,31 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 	// 与 Forwarder 一致：4xx 判决也换号重试，穷尽后回放最后一次客户端错误。
 	var lastClientError *sdk.ForwardOutcome
 	var lastClientErrorScrubber *identityScrubber
+	activeReservationKey := ""
+	defer func() {
+		if activeReservationKey != "" && h.subscriptions != nil {
+			if err := h.subscriptions.Release(context.Background(), activeReservationKey); err != nil {
+				slog.Error("host_subscription_reservation_release_failed", "reservation_key", activeReservationKey, sdk.LogFieldError, err)
+			}
+		}
+	}()
 
 	for _, route := range routes {
+		if activeReservationKey != "" && h.subscriptions != nil {
+			if err := h.subscriptions.Release(ctx, activeReservationKey); err != nil {
+				return hostInternalError("host_subscription_reservation_release_failed", err)
+			}
+			activeReservationKey = ""
+		}
+		req.subscriptionReservationKey = ""
+		if route.SubscriptionType == "subscription" {
+			key, err := h.reserveHostSubscriptionRoute(ctx, &req, route)
+			if err != nil {
+				return err
+			}
+			activeReservationKey = key
+			req.subscriptionReservationKey = key
+		}
 		model := h.resolveHostModel(route.Platform, req.Model)
 		if model == "" {
 			slog.Warn("host_forward_stream_no_model",
@@ -1703,12 +1863,18 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 			duration := time.Since(start)
 			releaseAccountSlot()
 			if !h.applyHostOutcome(fwdCtx, acc.ID, accFull, model, outcome, duration, probeToken, fwdErr, true) {
+				if outcome.Usage != nil {
+					activeReservationKey = ""
+				}
 				h.recordCanceledHostForwardUsage(req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration, hostCanceledRequestStatus(fwdCtx, fwdErr))
 				return hostForwardContextError(fwdCtx, fwdErr)
 			}
 
 			replayableClient := outcome.Kind == sdk.OutcomeClientError && replayableClientError(outcome)
 			canRetry := !fw.committed && (fwdErr != nil || outcome.Kind.ShouldFailover() || replayableClient)
+			if req.subscriptionReservationKey != "" && outcome.Usage != nil {
+				canRetry = false
+			}
 			if canRetry {
 				if replayableClient {
 					snapshot := outcome
@@ -1727,6 +1893,27 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 				)
 				hardExclude = append(hardExclude, acc.ID)
 				continue
+			}
+
+			var usage *sdk.Usage
+			if outcome.Usage != nil {
+				// Once usage exists, settlement owns the reservation. Never release
+				// consumed quota merely because persistence or delivery failed.
+				activeReservationKey = ""
+				settleCtx, settleCancel := context.WithTimeout(context.Background(), 10*time.Second)
+				_, settleErr := h.recordHostForwardUsage(settleCtx, req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration)
+				settleCancel()
+				if settleErr != nil {
+					slog.Error("host_forward_stream_record_usage_failed",
+						sdk.LogFieldUserID, req.UserID,
+						sdk.LogFieldAccountID, acc.ID,
+						"reservation_key", req.subscriptionReservationKey,
+						sdk.LogFieldError, settleErr)
+					if req.subscriptionReservationKey != "" {
+						return hostInternalError("host_forward_stream_subscription_settlement_failed", settleErr)
+					}
+				}
+				usage = outcome.Usage
 			}
 
 			if outcome.Kind == sdk.OutcomeClientError {
@@ -1762,18 +1949,6 @@ func (h *HostService) forwardStream(ctx context.Context, req hostForwardRequest,
 					sdk.LogFieldError, fwdErr,
 				)
 				return hostForwardGenericError()
-			}
-
-			var usage *sdk.Usage
-			if outcome.Usage != nil {
-				if _, err := h.recordHostForwardUsage(ctx, req, route, acc.ID, route.Platform, model, accFull, userEmail, outcome, duration); err != nil {
-					slog.Error("host_forward_stream_record_usage_failed",
-						sdk.LogFieldUserID, req.UserID,
-						sdk.LogFieldAccountID, acc.ID,
-						sdk.LogFieldError, err,
-					)
-				}
-				usage = outcome.Usage
 			}
 
 			return stream.Send(&pb.HostStreamFrame{
@@ -2161,10 +2336,26 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 	if usage == nil {
 		return 0, nil
 	}
+	if req.subscriptionReservationKey != "" {
+		// Billing must survive the request context after usage was consumed.
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+	}
 	// 只读元信息路径（如 /v1/video/estimate 估价）不计费也不落使用记录：否则每次估价都写一条
 	// 零费用的 usage_logs，污染使用记录、概览模型分布与总请求数。
 	if h.isHostMetadataOnlyPath(req.Path) {
 		return 0, nil
+	}
+	if req.TaskID > 0 && req.subscriptionReservationKey != "" {
+		if err := h.markTaskSubscriptionUsage(ctx, req); err != nil {
+			// The reservation is retained regardless of this advisory marker.
+			// Continue to the durable billing/WAL path with the admission snapshot.
+			slog.Error("task_subscription_usage_marker_failed", "task_id", req.TaskID, sdk.LogFieldError, err)
+		}
+		route.EffectiveRate = req.subscriptionBillingRate
+		// Core supplies the identity even if a plugin omits or varies request_id.
+		req.RequestID = fmt.Sprintf("subscription-task:%d:settlement", req.TaskID)
 	}
 	req.RequestID = strings.TrimSpace(req.RequestID)
 	usageValues := usageSnapshotFromSDK(usage)
@@ -2193,8 +2384,12 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 	applyHostForwardBilling(usage, calc)
 	applyHostForwardTrace(usage, req.TraceID)
 
+	var lookupFailure error
 	if usageID, found, err := h.existingHostForwardUsageID(ctx, req, platform, actualModel); err != nil {
-		return 0, err
+		if req.subscriptionReservationKey == "" || status.Code(err) == codes.FailedPrecondition {
+			return 0, err
+		}
+		lookupFailure = err
 	} else if found {
 		return usageID, nil
 	}
@@ -2221,6 +2416,7 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 		CacheCreation1hTokens:        usageValues.CacheCreation1hTokens,
 		ReasoningOutputTokens:        usageValues.ReasoningOutputTokens,
 		RequestID:                    req.RequestID,
+		SubscriptionReservationKey:   req.subscriptionReservationKey,
 		InputPrice:                   usageValues.InputPrice,
 		OutputPrice:                  usageValues.OutputPrice,
 		CachedInputPrice:             usageValues.CachedInputPrice,
@@ -2255,17 +2451,34 @@ func (h *HostService) recordHostForwardUsageWithFailure(
 		ErrorMessage:                 sanitizeFailureMessage(failure.message),
 	}
 	if h.recorder == nil {
+		if req.subscriptionReservationKey != "" {
+			return 0, errors.New("subscription usage recorder is not configured")
+		}
 		return 0, nil
 	}
-	usageID, err := h.recorder.RecordSync(ctx, record)
+	var usageID int
+	err := lookupFailure
+	if err == nil {
+		usageID, err = h.recorder.RecordSync(ctx, record)
+	}
 	if err != nil {
 		// A concurrent retry can win the unique request_id insert after our first
 		// lookup. Resolve that race to the committed row instead of reporting a
 		// zero usage ID and leaving an async task stranded.
 		if existingID, found, lookupErr := h.existingHostForwardUsageID(ctx, req, platform, actualModel); lookupErr != nil {
-			return 0, lookupErr
+			if status.Code(lookupErr) == codes.FailedPrecondition || record.SubscriptionReservationKey == "" {
+				return 0, lookupErr
+			}
+			err = errors.Join(err, lookupErr)
 		} else if found {
 			return existingID, nil
+		}
+		if record.SubscriptionReservationKey != "" {
+			if retryErr := h.recorder.RecordRetry(record); retryErr != nil {
+				slog.Error("host_subscription_settlement_retry_failed", "request_id", record.RequestID,
+					"reservation_key", record.SubscriptionReservationKey, sdk.LogFieldError, retryErr)
+				return 0, errors.Join(err, retryErr)
+			}
 		}
 		return 0, err
 	}
@@ -2506,6 +2719,66 @@ type hostUpdateBalanceRequest struct {
 	// IdempotencyKey 必填。同一键的变更只入账一次（balance_logs 唯一索引保证），
 	// 支付回调等场景重试不会重复加扣款。建议格式 "<plugin>:<业务单号>"。
 	IdempotencyKey string `json:"idempotency_key"`
+}
+
+type hostGrantSubscriptionRequest struct {
+	UserID       int64  `json:"user_id"`
+	PlanGroupID  int64  `json:"plan_group_id"`
+	Cycle        string `json:"cycle"`
+	ExecutionKey string `json:"execution_key"`
+	PaymentKey   string `json:"payment_key"`
+	AmountMinor  int64  `json:"amount_minor"`
+	Currency     string `json:"currency"`
+	EffectiveAt  string `json:"effective_at"`
+	ExpiresAt    string `json:"expires_at"`
+}
+
+func (h *HostService) grantSubscription(ctx context.Context, pluginID string, req hostGrantSubscriptionRequest) (map[string]interface{}, error) {
+	if h.subscriptions == nil {
+		return nil, status.Error(codes.Unavailable, "subscription service unavailable")
+	}
+	parseTime := func(value string) (time.Time, error) {
+		if strings.TrimSpace(value) == "" {
+			return time.Time{}, nil
+		}
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err != nil {
+			return time.Time{}, status.Error(codes.InvalidArgument, "subscription dates must use RFC3339")
+		}
+		return parsed, nil
+	}
+	effectiveAt, err := parseTime(req.EffectiveAt)
+	if err != nil {
+		return nil, err
+	}
+	expiresAt, err := parseTime(req.ExpiresAt)
+	if err != nil {
+		return nil, err
+	}
+	sub, err := h.subscriptions.GrantExternal(ctx, appsubscription.ExternalGrantInput{
+		UserID: int(req.UserID), PlanGroupID: int(req.PlanGroupID), Cycle: req.Cycle,
+		Provider: pluginID, ExecutionKey: req.ExecutionKey, PaymentKey: req.PaymentKey,
+		AmountMinor: req.AmountMinor, Currency: strings.ToUpper(strings.TrimSpace(req.Currency)),
+		EffectiveAt: effectiveAt, ExpiresAt: expiresAt,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, appsubscription.ErrInvalidPaymentGrant), errors.Is(err, appsubscription.ErrInvalidBillingCycle):
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		case errors.Is(err, appsubscription.ErrPlanNotFound), errors.Is(err, appsubscription.ErrPlanNotPurchasable):
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		default:
+			return nil, hostInternalError("host_subscription_grant_failed", err, sdk.LogFieldUserID, req.UserID)
+		}
+	}
+	return map[string]interface{}{
+		"subscription_id": sub.ID,
+		"status":          sub.Status,
+		"effective_at":    sub.EffectiveAt.Format(time.RFC3339),
+		"expires_at":      sub.ExpiresAt.Format(time.RFC3339),
+		"period_start":    sub.PeriodStart.Format(time.RFC3339),
+		"period_end":      sub.PeriodEnd.Format(time.RFC3339),
+	}, nil
 }
 
 // updateUserBalance 调整用户余额并写 balance_logs 流水。
@@ -2950,6 +3223,12 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 				return nil, "", hostForwardGenericError()
 			}
 		}
+		// 订阅制分组：显式指定同样要过订阅准入（有效订阅 / 点数 / 张数 / 视频权益）。
+		if string(g.SubscriptionType) == "subscription" {
+			if err := h.entitleSubscriptionRoute(ctx, req, g.ID, g.Quotas); err != nil {
+				return nil, "", err
+			}
+		}
 		return []routing.Candidate{{
 			GroupID:                g.ID,
 			Platform:               g.Platform,
@@ -2960,6 +3239,8 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 			GroupPluginSettings:    clonePluginSettingsHost(g.PluginSettings),
 			UserPluginSettings:     clonePluginSettingsHost(u.GroupPluginSettings[int64(g.ID)]),
 			SortWeight:             g.SortWeight,
+			SubscriptionType:       string(g.SubscriptionType),
+			Quotas:                 g.Quotas,
 		}}, u.Email, nil
 	}
 
@@ -2992,7 +3273,12 @@ func (h *HostService) hostForwardRoutes(ctx context.Context, req hostForwardRequ
 		)
 		return nil, "", hostForwardGenericError()
 	}
+	// 自动路由候选里的订阅制分组逐个过准入；全被拒时把订阅语义的原因回给调用方。
+	routes, gateErr := h.filterSubscriptionRoutes(ctx, req, routes)
 	if len(routes) == 0 {
+		if gateErr != nil {
+			return nil, "", gateErr
+		}
 		slog.Warn("host_forward_no_eligible_route",
 			sdk.LogFieldPlatform, platform,
 			sdk.LogFieldUserID, req.UserID,
@@ -3207,6 +3493,28 @@ func (h *HostService) checkHostForwardBalance(ctx context.Context, userID int64)
 		return hostForwardGenericError()
 	}
 	if u.Balance <= 0 {
+		// 订阅用户余额常为 0（余额已换成套餐）：持有未到期的 active 订阅即放行，
+		// 点数/张数等具体准入在路由阶段按分组判定。
+		now := time.Now()
+		subscribed, err := h.db.UserSubscription.Query().
+			Where(
+				entusersubscription.HasUserWith(user.IDEQ(int(userID))),
+				entusersubscription.StatusEQ(entusersubscription.StatusActive),
+				entusersubscription.EffectiveAtLTE(now),
+				entusersubscription.ExpiresAtGT(now),
+			).
+			Exist(ctx)
+		if err != nil {
+			if cerr := hostContextError(err); cerr != nil {
+				return cerr
+			}
+			slog.Error("host_forward_balance_check_subscription_lookup_failed",
+				sdk.LogFieldUserID, userID, sdk.LogFieldError, err)
+			return hostForwardGenericError()
+		}
+		if subscribed {
+			return nil
+		}
 		return hostForwardInsufficientQuotaError()
 	}
 	return nil
@@ -3221,6 +3529,11 @@ func (h *HostService) checkHostForwardBalance(ctx context.Context, userID int64)
 // 视频、上游成本白付、账也没记。故钉选后续一律放行,结算像 API 转发一样允许扣成负数;
 // 余额是否够用由提交时(非钉选路径)的检查负责。
 // 已记账的请求重放同样放行(幂等 usage 命中),整段上下文校验防止复用 request_id 绕过配额。
+
+// hostSubscriptionDeniedError 订阅准入拒绝：与余额不足同用 FailedPrecondition，插件侧按业务错误呈现。
+func hostSubscriptionDeniedError(message string) error {
+	return status.Error(codes.FailedPrecondition, message)
+}
 func (h *HostService) checkHostForwardBalanceOrReplay(ctx context.Context, req hostForwardRequest) error {
 	requestID := strings.TrimSpace(req.RequestID)
 	platform := h.hostForwardRequestPlatform(req)

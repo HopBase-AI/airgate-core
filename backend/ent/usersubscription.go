@@ -28,6 +28,42 @@ type UserSubscription struct {
 	Usage map[string]interface{} `json:"usage,omitempty"`
 	// Status holds the value of the "status" field.
 	Status usersubscription.Status `json:"status,omitempty"`
+	// PeriodStart holds the value of the "period_start" field.
+	PeriodStart time.Time `json:"period_start,omitempty"`
+	// PeriodEnd holds the value of the "period_end" field.
+	PeriodEnd time.Time `json:"period_end,omitempty"`
+	// PlanSnapshot holds the value of the "plan_snapshot" field.
+	PlanSnapshot map[string]interface{} `json:"plan_snapshot,omitempty"`
+	// IncludedGroupIds holds the value of the "included_group_ids" field.
+	IncludedGroupIds []int `json:"included_group_ids,omitempty"`
+	// CreditsLimit holds the value of the "credits_limit" field.
+	CreditsLimit int64 `json:"credits_limit,omitempty"`
+	// CreditsUsed holds the value of the "credits_used" field.
+	CreditsUsed int64 `json:"credits_used,omitempty"`
+	// CreditsReserved holds the value of the "credits_reserved" field.
+	CreditsReserved int64 `json:"credits_reserved,omitempty"`
+	// ExtraCredits holds the value of the "extra_credits" field.
+	ExtraCredits int64 `json:"extra_credits,omitempty"`
+	// ImagesUsed holds the value of the "images_used" field.
+	ImagesUsed int `json:"images_used,omitempty"`
+	// ImagesReserved holds the value of the "images_reserved" field.
+	ImagesReserved int `json:"images_reserved,omitempty"`
+	// ImageLimit holds the value of the "image_limit" field.
+	ImageLimit int `json:"image_limit,omitempty"`
+	// LedgerVersion holds the value of the "ledger_version" field.
+	LedgerVersion int64 `json:"ledger_version,omitempty"`
+	// BillingCycle holds the value of the "billing_cycle" field.
+	BillingCycle usersubscription.BillingCycle `json:"billing_cycle,omitempty"`
+	// SourceProvider holds the value of the "source_provider" field.
+	SourceProvider string `json:"source_provider,omitempty"`
+	// SourceExecutionKey holds the value of the "source_execution_key" field.
+	SourceExecutionKey *string `json:"source_execution_key,omitempty"`
+	// SourcePaymentKey holds the value of the "source_payment_key" field.
+	SourcePaymentKey *string `json:"source_payment_key,omitempty"`
+	// PaymentAmountMinor holds the value of the "payment_amount_minor" field.
+	PaymentAmountMinor int64 `json:"payment_amount_minor,omitempty"`
+	// PaymentCurrency holds the value of the "payment_currency" field.
+	PaymentCurrency string `json:"payment_currency,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -46,9 +82,11 @@ type UserSubscriptionEdges struct {
 	User *User `json:"user,omitempty"`
 	// Group holds the value of the group edge.
 	Group *Group `json:"group,omitempty"`
+	// Reservations holds the value of the reservations edge.
+	Reservations []*SubscriptionReservation `json:"reservations,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [3]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -73,18 +111,27 @@ func (e UserSubscriptionEdges) GroupOrErr() (*Group, error) {
 	return nil, &NotLoadedError{edge: "group"}
 }
 
+// ReservationsOrErr returns the Reservations value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserSubscriptionEdges) ReservationsOrErr() ([]*SubscriptionReservation, error) {
+	if e.loadedTypes[2] {
+		return e.Reservations, nil
+	}
+	return nil, &NotLoadedError{edge: "reservations"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*UserSubscription) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case usersubscription.FieldUsage:
+		case usersubscription.FieldUsage, usersubscription.FieldPlanSnapshot, usersubscription.FieldIncludedGroupIds:
 			values[i] = new([]byte)
-		case usersubscription.FieldID:
+		case usersubscription.FieldID, usersubscription.FieldCreditsLimit, usersubscription.FieldCreditsUsed, usersubscription.FieldCreditsReserved, usersubscription.FieldExtraCredits, usersubscription.FieldImagesUsed, usersubscription.FieldImagesReserved, usersubscription.FieldImageLimit, usersubscription.FieldLedgerVersion, usersubscription.FieldPaymentAmountMinor:
 			values[i] = new(sql.NullInt64)
-		case usersubscription.FieldStatus:
+		case usersubscription.FieldStatus, usersubscription.FieldBillingCycle, usersubscription.FieldSourceProvider, usersubscription.FieldSourceExecutionKey, usersubscription.FieldSourcePaymentKey, usersubscription.FieldPaymentCurrency:
 			values[i] = new(sql.NullString)
-		case usersubscription.FieldEffectiveAt, usersubscription.FieldExpiresAt, usersubscription.FieldCreatedAt, usersubscription.FieldUpdatedAt:
+		case usersubscription.FieldEffectiveAt, usersubscription.FieldExpiresAt, usersubscription.FieldPeriodStart, usersubscription.FieldPeriodEnd, usersubscription.FieldCreatedAt, usersubscription.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
 		case usersubscription.ForeignKeys[0]: // group_subscriptions
 			values[i] = new(sql.NullInt64)
@@ -137,6 +184,120 @@ func (us *UserSubscription) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				us.Status = usersubscription.Status(value.String)
 			}
+		case usersubscription.FieldPeriodStart:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field period_start", values[i])
+			} else if value.Valid {
+				us.PeriodStart = value.Time
+			}
+		case usersubscription.FieldPeriodEnd:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field period_end", values[i])
+			} else if value.Valid {
+				us.PeriodEnd = value.Time
+			}
+		case usersubscription.FieldPlanSnapshot:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field plan_snapshot", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &us.PlanSnapshot); err != nil {
+					return fmt.Errorf("unmarshal field plan_snapshot: %w", err)
+				}
+			}
+		case usersubscription.FieldIncludedGroupIds:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field included_group_ids", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &us.IncludedGroupIds); err != nil {
+					return fmt.Errorf("unmarshal field included_group_ids: %w", err)
+				}
+			}
+		case usersubscription.FieldCreditsLimit:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field credits_limit", values[i])
+			} else if value.Valid {
+				us.CreditsLimit = value.Int64
+			}
+		case usersubscription.FieldCreditsUsed:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field credits_used", values[i])
+			} else if value.Valid {
+				us.CreditsUsed = value.Int64
+			}
+		case usersubscription.FieldCreditsReserved:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field credits_reserved", values[i])
+			} else if value.Valid {
+				us.CreditsReserved = value.Int64
+			}
+		case usersubscription.FieldExtraCredits:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field extra_credits", values[i])
+			} else if value.Valid {
+				us.ExtraCredits = value.Int64
+			}
+		case usersubscription.FieldImagesUsed:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field images_used", values[i])
+			} else if value.Valid {
+				us.ImagesUsed = int(value.Int64)
+			}
+		case usersubscription.FieldImagesReserved:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field images_reserved", values[i])
+			} else if value.Valid {
+				us.ImagesReserved = int(value.Int64)
+			}
+		case usersubscription.FieldImageLimit:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field image_limit", values[i])
+			} else if value.Valid {
+				us.ImageLimit = int(value.Int64)
+			}
+		case usersubscription.FieldLedgerVersion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field ledger_version", values[i])
+			} else if value.Valid {
+				us.LedgerVersion = value.Int64
+			}
+		case usersubscription.FieldBillingCycle:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field billing_cycle", values[i])
+			} else if value.Valid {
+				us.BillingCycle = usersubscription.BillingCycle(value.String)
+			}
+		case usersubscription.FieldSourceProvider:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field source_provider", values[i])
+			} else if value.Valid {
+				us.SourceProvider = value.String
+			}
+		case usersubscription.FieldSourceExecutionKey:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field source_execution_key", values[i])
+			} else if value.Valid {
+				us.SourceExecutionKey = new(string)
+				*us.SourceExecutionKey = value.String
+			}
+		case usersubscription.FieldSourcePaymentKey:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field source_payment_key", values[i])
+			} else if value.Valid {
+				us.SourcePaymentKey = new(string)
+				*us.SourcePaymentKey = value.String
+			}
+		case usersubscription.FieldPaymentAmountMinor:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field payment_amount_minor", values[i])
+			} else if value.Valid {
+				us.PaymentAmountMinor = value.Int64
+			}
+		case usersubscription.FieldPaymentCurrency:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field payment_currency", values[i])
+			} else if value.Valid {
+				us.PaymentCurrency = value.String
+			}
 		case usersubscription.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field created_at", values[i])
@@ -186,6 +347,11 @@ func (us *UserSubscription) QueryGroup() *GroupQuery {
 	return NewUserSubscriptionClient(us.config).QueryGroup(us)
 }
 
+// QueryReservations queries the "reservations" edge of the UserSubscription entity.
+func (us *UserSubscription) QueryReservations() *SubscriptionReservationQuery {
+	return NewUserSubscriptionClient(us.config).QueryReservations(us)
+}
+
 // Update returns a builder for updating this UserSubscription.
 // Note that you need to call UserSubscription.Unwrap() before calling this method if this UserSubscription
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -220,6 +386,64 @@ func (us *UserSubscription) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(fmt.Sprintf("%v", us.Status))
+	builder.WriteString(", ")
+	builder.WriteString("period_start=")
+	builder.WriteString(us.PeriodStart.Format(time.ANSIC))
+	builder.WriteString(", ")
+	builder.WriteString("period_end=")
+	builder.WriteString(us.PeriodEnd.Format(time.ANSIC))
+	builder.WriteString(", ")
+	builder.WriteString("plan_snapshot=")
+	builder.WriteString(fmt.Sprintf("%v", us.PlanSnapshot))
+	builder.WriteString(", ")
+	builder.WriteString("included_group_ids=")
+	builder.WriteString(fmt.Sprintf("%v", us.IncludedGroupIds))
+	builder.WriteString(", ")
+	builder.WriteString("credits_limit=")
+	builder.WriteString(fmt.Sprintf("%v", us.CreditsLimit))
+	builder.WriteString(", ")
+	builder.WriteString("credits_used=")
+	builder.WriteString(fmt.Sprintf("%v", us.CreditsUsed))
+	builder.WriteString(", ")
+	builder.WriteString("credits_reserved=")
+	builder.WriteString(fmt.Sprintf("%v", us.CreditsReserved))
+	builder.WriteString(", ")
+	builder.WriteString("extra_credits=")
+	builder.WriteString(fmt.Sprintf("%v", us.ExtraCredits))
+	builder.WriteString(", ")
+	builder.WriteString("images_used=")
+	builder.WriteString(fmt.Sprintf("%v", us.ImagesUsed))
+	builder.WriteString(", ")
+	builder.WriteString("images_reserved=")
+	builder.WriteString(fmt.Sprintf("%v", us.ImagesReserved))
+	builder.WriteString(", ")
+	builder.WriteString("image_limit=")
+	builder.WriteString(fmt.Sprintf("%v", us.ImageLimit))
+	builder.WriteString(", ")
+	builder.WriteString("ledger_version=")
+	builder.WriteString(fmt.Sprintf("%v", us.LedgerVersion))
+	builder.WriteString(", ")
+	builder.WriteString("billing_cycle=")
+	builder.WriteString(fmt.Sprintf("%v", us.BillingCycle))
+	builder.WriteString(", ")
+	builder.WriteString("source_provider=")
+	builder.WriteString(us.SourceProvider)
+	builder.WriteString(", ")
+	if v := us.SourceExecutionKey; v != nil {
+		builder.WriteString("source_execution_key=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := us.SourcePaymentKey; v != nil {
+		builder.WriteString("source_payment_key=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	builder.WriteString("payment_amount_minor=")
+	builder.WriteString(fmt.Sprintf("%v", us.PaymentAmountMinor))
+	builder.WriteString(", ")
+	builder.WriteString("payment_currency=")
+	builder.WriteString(us.PaymentCurrency)
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(us.CreatedAt.Format(time.ANSIC))

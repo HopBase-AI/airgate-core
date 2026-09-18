@@ -487,6 +487,57 @@ var (
 		Columns:    SettingsColumns,
 		PrimaryKey: []*schema.Column{SettingsColumns[0]},
 	}
+	// SubscriptionReservationsColumns holds the columns for the "subscription_reservations" table.
+	SubscriptionReservationsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "reservation_key", Type: field.TypeString},
+		{Name: "user_id_snapshot", Type: field.TypeInt},
+		{Name: "group_id_snapshot", Type: field.TypeInt},
+		{Name: "task_id", Type: field.TypeInt, Default: 0},
+		{Name: "account_id_snapshot", Type: field.TypeInt, Default: 0},
+		{Name: "period_start", Type: field.TypeTime},
+		{Name: "period_end", Type: field.TypeTime},
+		{Name: "credits_reserved", Type: field.TypeInt64, Default: 0},
+		{Name: "images_reserved", Type: field.TypeInt, Default: 0},
+		{Name: "credits_settled", Type: field.TypeInt64, Default: 0},
+		{Name: "images_settled", Type: field.TypeInt, Default: 0},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"reserved", "settled", "released"}, Default: "reserved"},
+		{Name: "expires_at", Type: field.TypeTime},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "user_subscription_reservations", Type: field.TypeInt},
+	}
+	// SubscriptionReservationsTable holds the schema information for the "subscription_reservations" table.
+	SubscriptionReservationsTable = &schema.Table{
+		Name:       "subscription_reservations",
+		Columns:    SubscriptionReservationsColumns,
+		PrimaryKey: []*schema.Column{SubscriptionReservationsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "subscription_reservations_user_subscriptions_reservations",
+				Columns:    []*schema.Column{SubscriptionReservationsColumns[16]},
+				RefColumns: []*schema.Column{UserSubscriptionsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "subscriptionreservation_reservation_key",
+				Unique:  true,
+				Columns: []*schema.Column{SubscriptionReservationsColumns[1]},
+			},
+			{
+				Name:    "subscriptionreservation_status_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionReservationsColumns[12], SubscriptionReservationsColumns[13]},
+			},
+			{
+				Name:    "subscriptionreservation_user_id_snapshot_period_start",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionReservationsColumns[2], SubscriptionReservationsColumns[6]},
+			},
+		},
+	}
 	// TasksColumns holds the columns for the "tasks" table.
 	TasksColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -504,6 +555,10 @@ var (
 		{Name: "error_message", Type: field.TypeString, Default: ""},
 		{Name: "usage_id", Type: field.TypeInt, Nullable: true},
 		{Name: "estimated_cost", Type: field.TypeFloat64, Default: 0},
+		{Name: "subscription_reservation_key", Type: field.TypeString, Default: ""},
+		{Name: "subscription_account_id", Type: field.TypeInt, Default: 0},
+		{Name: "subscription_billing_rate", Type: field.TypeFloat64, Default: 0},
+		{Name: "subscription_usage_observed", Type: field.TypeBool, Default: false},
 		{Name: "progress", Type: field.TypeInt, Default: 0},
 		{Name: "priority", Type: field.TypeInt, Default: 0},
 		{Name: "attempts", Type: field.TypeInt, Default: 0},
@@ -526,12 +581,12 @@ var (
 			{
 				Name:    "task_plugin_id_status_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{TasksColumns[1], TasksColumns[3], TasksColumns[21]},
+				Columns: []*schema.Column{TasksColumns[1], TasksColumns[3], TasksColumns[25]},
 			},
 			{
 				Name:    "task_user_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{TasksColumns[5], TasksColumns[21]},
+				Columns: []*schema.Column{TasksColumns[5], TasksColumns[25]},
 			},
 			{
 				Name:    "task_user_id_status",
@@ -539,19 +594,24 @@ var (
 				Columns: []*schema.Column{TasksColumns[5], TasksColumns[3]},
 			},
 			{
+				Name:    "task_subscription_reservation_key",
+				Unique:  false,
+				Columns: []*schema.Column{TasksColumns[15]},
+			},
+			{
 				Name:    "task_status_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{TasksColumns[3], TasksColumns[21]},
+				Columns: []*schema.Column{TasksColumns[3], TasksColumns[25]},
 			},
 			{
 				Name:    "task_public_task_id",
 				Unique:  true,
-				Columns: []*schema.Column{TasksColumns[19]},
+				Columns: []*schema.Column{TasksColumns[23]},
 			},
 			{
 				Name:    "task_plugin_id_user_id_task_type_idempotency_key",
 				Unique:  true,
-				Columns: []*schema.Column{TasksColumns[1], TasksColumns[5], TasksColumns[2], TasksColumns[20]},
+				Columns: []*schema.Column{TasksColumns[1], TasksColumns[5], TasksColumns[2], TasksColumns[24]},
 			},
 		},
 	}
@@ -868,6 +928,24 @@ var (
 		{Name: "expires_at", Type: field.TypeTime},
 		{Name: "usage", Type: field.TypeJSON, Nullable: true},
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "expired", "suspended"}, Default: "active"},
+		{Name: "period_start", Type: field.TypeTime, Nullable: true},
+		{Name: "period_end", Type: field.TypeTime, Nullable: true},
+		{Name: "plan_snapshot", Type: field.TypeJSON, Nullable: true},
+		{Name: "included_group_ids", Type: field.TypeJSON, Nullable: true},
+		{Name: "credits_limit", Type: field.TypeInt64, Default: 0},
+		{Name: "credits_used", Type: field.TypeInt64, Default: 0},
+		{Name: "credits_reserved", Type: field.TypeInt64, Default: 0},
+		{Name: "extra_credits", Type: field.TypeInt64, Default: 0},
+		{Name: "images_used", Type: field.TypeInt, Default: 0},
+		{Name: "images_reserved", Type: field.TypeInt, Default: 0},
+		{Name: "image_limit", Type: field.TypeInt, Default: 0},
+		{Name: "ledger_version", Type: field.TypeInt64, Default: 0},
+		{Name: "billing_cycle", Type: field.TypeEnum, Enums: []string{"monthly", "annual"}, Default: "monthly"},
+		{Name: "source_provider", Type: field.TypeString, Default: "admin"},
+		{Name: "source_execution_key", Type: field.TypeString, Nullable: true},
+		{Name: "source_payment_key", Type: field.TypeString, Nullable: true},
+		{Name: "payment_amount_minor", Type: field.TypeInt64, Default: 0},
+		{Name: "payment_currency", Type: field.TypeString, Default: ""},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "group_subscriptions", Type: field.TypeInt},
@@ -881,13 +959,13 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "user_subscriptions_groups_subscriptions",
-				Columns:    []*schema.Column{UserSubscriptionsColumns[7]},
+				Columns:    []*schema.Column{UserSubscriptionsColumns[25]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "user_subscriptions_users_subscriptions",
-				Columns:    []*schema.Column{UserSubscriptionsColumns[8]},
+				Columns:    []*schema.Column{UserSubscriptionsColumns[26]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -897,6 +975,16 @@ var (
 				Name:    "usersubscription_status",
 				Unique:  false,
 				Columns: []*schema.Column{UserSubscriptionsColumns[4]},
+			},
+			{
+				Name:    "usersubscription_source_provider_source_execution_key",
+				Unique:  true,
+				Columns: []*schema.Column{UserSubscriptionsColumns[18], UserSubscriptionsColumns[19]},
+			},
+			{
+				Name:    "usersubscription_source_provider_source_payment_key",
+				Unique:  true,
+				Columns: []*schema.Column{UserSubscriptionsColumns[18], UserSubscriptionsColumns[20]},
 			},
 		},
 	}
@@ -965,6 +1053,7 @@ var (
 		ProxiesTable,
 		ReferralCommissionsTable,
 		SettingsTable,
+		SubscriptionReservationsTable,
 		TasksTable,
 		TeamAuditLogsTable,
 		UsageLogsTable,
@@ -989,6 +1078,7 @@ func init() {
 	DepartmentsTable.ForeignKeys[1].RefTable = UsersTable
 	MembersTable.ForeignKeys[0].RefTable = DepartmentsTable
 	MembersTable.ForeignKeys[1].RefTable = UsersTable
+	SubscriptionReservationsTable.ForeignKeys[0].RefTable = UserSubscriptionsTable
 	UsageLogsTable.ForeignKeys[0].RefTable = APIKeysTable
 	UsageLogsTable.ForeignKeys[1].RefTable = AccountsTable
 	UsageLogsTable.ForeignKeys[2].RefTable = GroupsTable

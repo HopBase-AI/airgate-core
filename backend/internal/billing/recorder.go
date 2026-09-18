@@ -45,7 +45,9 @@ var flushInterval = 5 * time.Second
 type UsageRecord struct {
 	// RequestID 计费幂等 ID（UUID）。Record/RecordSync 入口自动补齐；
 	// 落库带唯一索引，WAL 回放与重试据此去重，防重复入账/扣费。
-	RequestID                    string
+	RequestID string
+	// SubscriptionReservationKey links strict pre-forward admission to atomic settlement.
+	SubscriptionReservationKey   string
 	UserID                       int
 	UserEmail                    string
 	APIKeyID                     int
@@ -275,6 +277,22 @@ func (r *Recorder) Record(record UsageRecord) {
 	}
 }
 
+// RecordRetry durably queues an already identified charge after synchronous
+// settlement failed. The caller must retain its reservation until replay settles it.
+func (r *Recorder) RecordRetry(record UsageRecord) error {
+	if strings.TrimSpace(record.RequestID) == "" {
+		return errors.New("billing retry requires a stable request ID")
+	}
+	if r.wal == nil {
+		return errors.New("billing retry WAL is not enabled")
+	}
+	if err := r.wal.writeBatch([]UsageRecord{record}); err != nil {
+		return fmt.Errorf("persist billing retry: %w", err)
+	}
+	r.spilledTotal.Add(1)
+	return nil
+}
+
 // RecordSync 同步写入一条使用记录并返回 usage_log.id。
 // 需要立即把 usage_id 关联到任务时使用；普通转发仍走异步 Record。
 func (r *Recorder) RecordSync(ctx context.Context, record UsageRecord) (int, error) {
@@ -297,8 +315,15 @@ func (r *Recorder) RecordSync(ctx context.Context, record UsageRecord) (int, err
 	if err != nil {
 		return 0, fmt.Errorf("插入 UsageLog 失败: %w", err)
 	}
-	charged, err := applyUsageCharges(ctx, tx, []UsageRecord{record}, refs)
+	metered, err := resolveSubscriptionMetering(ctx, tx, []UsageRecord{record})
 	if err != nil {
+		return 0, err
+	}
+	charged, err := applyUsageCharges(ctx, tx, []UsageRecord{record}, refs, metered)
+	if err != nil {
+		return 0, err
+	}
+	if err := applySubscriptionCharges(ctx, tx, metered); err != nil {
 		return 0, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -333,7 +358,16 @@ func (r *Recorder) RecordSyncCharge(ctx context.Context, record UsageRecord) (in
 	if err != nil {
 		return 0, fmt.Errorf("插入 UsageLog 失败: %w", err)
 	}
-	if record.ActualCost > 0 && refs.hasUser(record.UserID) {
+	metered, err := resolveSubscriptionMetering(ctx, tx, []UsageRecord{record})
+	if err != nil {
+		return 0, err
+	}
+	if m, ok := metered[0]; ok {
+		// 订阅制：从点数账本扣，余额不动。
+		if err := chargeSubscriptionSync(ctx, tx, m); err != nil {
+			return 0, err
+		}
+	} else if record.ActualCost > 0 && refs.hasUser(record.UserID) {
 		updated, err := tx.User.Update().
 			Where(entuser.IDEQ(record.UserID), entuser.BalanceGTE(record.ActualCost)).
 			AddBalance(-record.ActualCost).
@@ -478,8 +512,16 @@ func (r *Recorder) batchInsert(ctx context.Context, batch []UsageRecord) error {
 		return fmt.Errorf("批量插入 UsageLog 失败: %w", err)
 	}
 
-	charged, err := applyUsageCharges(ctx, tx, batch, refs)
+	// 2. 扣费：订阅制分组的记录进订阅点数账本，其余扣用户余额；API Key 累加器两边都记。
+	metered, err := resolveSubscriptionMetering(ctx, tx, batch)
 	if err != nil {
+		return err
+	}
+	charged, err := applyUsageCharges(ctx, tx, batch, refs, metered)
+	if err != nil {
+		return err
+	}
+	if err := applySubscriptionCharges(ctx, tx, metered); err != nil {
 		return err
 	}
 
@@ -985,9 +1027,9 @@ func parseCostMetadataPositiveInt(metadata map[string]string, key string) int {
 }
 
 // applyUsageCharges 在事务内扣费/累加，返回本批实际发生扣费/累加的对象 ID（供提交后回调）。
-func applyUsageCharges(ctx context.Context, tx *ent.Tx, batch []UsageRecord, refs *usageLogRefs) (ChargeEvent, error) {
+func applyUsageCharges(ctx context.Context, tx *ent.Tx, batch []UsageRecord, refs *usageLogRefs, metered map[int]meteredRecord) (ChargeEvent, error) {
 	// 在同一事务中扣费 —— 独立累加器：
-	// - User.balance：按 actual_cost 扣减。
+	// - User.balance：按 actual_cost 扣减（metered 中的记录已改记订阅账本，跳过）。
 	// - APIKey.used_quota：按 billed_cost 累加。
 	// - APIKey.used_quota_actual：按 actual_cost 累加。
 	// - Member.used_quota / used_quota_actual：与 APIKey 同口径累加到 key 所属的团队成员，
@@ -1001,9 +1043,11 @@ func applyUsageCharges(ctx context.Context, tx *ent.Tx, batch []UsageRecord, ref
 	deptBilledCosts := make(map[int]float64)
 	deptActualCosts := make(map[int]float64)
 
-	for _, rec := range batch {
+	for i, rec := range batch {
 		if rec.ActualCost > 0 && refs.hasUser(rec.UserID) {
-			userActualCosts[rec.UserID] += rec.ActualCost
+			if _, onSubscription := metered[i]; !onSubscription {
+				userActualCosts[rec.UserID] += rec.ActualCost
+			}
 			if refs.hasAPIKey(rec.APIKeyID) {
 				keyActualCosts[rec.APIKeyID] += rec.ActualCost
 			}

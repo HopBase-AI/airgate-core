@@ -237,6 +237,76 @@ func (tu *TaskUpdate) AddEstimatedCost(f float64) *TaskUpdate {
 	return tu
 }
 
+// SetSubscriptionReservationKey sets the "subscription_reservation_key" field.
+func (tu *TaskUpdate) SetSubscriptionReservationKey(s string) *TaskUpdate {
+	tu.mutation.SetSubscriptionReservationKey(s)
+	return tu
+}
+
+// SetNillableSubscriptionReservationKey sets the "subscription_reservation_key" field if the given value is not nil.
+func (tu *TaskUpdate) SetNillableSubscriptionReservationKey(s *string) *TaskUpdate {
+	if s != nil {
+		tu.SetSubscriptionReservationKey(*s)
+	}
+	return tu
+}
+
+// SetSubscriptionAccountID sets the "subscription_account_id" field.
+func (tu *TaskUpdate) SetSubscriptionAccountID(i int) *TaskUpdate {
+	tu.mutation.ResetSubscriptionAccountID()
+	tu.mutation.SetSubscriptionAccountID(i)
+	return tu
+}
+
+// SetNillableSubscriptionAccountID sets the "subscription_account_id" field if the given value is not nil.
+func (tu *TaskUpdate) SetNillableSubscriptionAccountID(i *int) *TaskUpdate {
+	if i != nil {
+		tu.SetSubscriptionAccountID(*i)
+	}
+	return tu
+}
+
+// AddSubscriptionAccountID adds i to the "subscription_account_id" field.
+func (tu *TaskUpdate) AddSubscriptionAccountID(i int) *TaskUpdate {
+	tu.mutation.AddSubscriptionAccountID(i)
+	return tu
+}
+
+// SetSubscriptionBillingRate sets the "subscription_billing_rate" field.
+func (tu *TaskUpdate) SetSubscriptionBillingRate(f float64) *TaskUpdate {
+	tu.mutation.ResetSubscriptionBillingRate()
+	tu.mutation.SetSubscriptionBillingRate(f)
+	return tu
+}
+
+// SetNillableSubscriptionBillingRate sets the "subscription_billing_rate" field if the given value is not nil.
+func (tu *TaskUpdate) SetNillableSubscriptionBillingRate(f *float64) *TaskUpdate {
+	if f != nil {
+		tu.SetSubscriptionBillingRate(*f)
+	}
+	return tu
+}
+
+// AddSubscriptionBillingRate adds f to the "subscription_billing_rate" field.
+func (tu *TaskUpdate) AddSubscriptionBillingRate(f float64) *TaskUpdate {
+	tu.mutation.AddSubscriptionBillingRate(f)
+	return tu
+}
+
+// SetSubscriptionUsageObserved sets the "subscription_usage_observed" field.
+func (tu *TaskUpdate) SetSubscriptionUsageObserved(b bool) *TaskUpdate {
+	tu.mutation.SetSubscriptionUsageObserved(b)
+	return tu
+}
+
+// SetNillableSubscriptionUsageObserved sets the "subscription_usage_observed" field if the given value is not nil.
+func (tu *TaskUpdate) SetNillableSubscriptionUsageObserved(b *bool) *TaskUpdate {
+	if b != nil {
+		tu.SetSubscriptionUsageObserved(*b)
+	}
+	return tu
+}
+
 // SetProgress sets the "progress" field.
 func (tu *TaskUpdate) SetProgress(i int) *TaskUpdate {
 	tu.mutation.ResetProgress()
@@ -593,6 +663,24 @@ func (tu *TaskUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := tu.mutation.AddedEstimatedCost(); ok {
 		_spec.AddField(task.FieldEstimatedCost, field.TypeFloat64, value)
 	}
+	if value, ok := tu.mutation.SubscriptionReservationKey(); ok {
+		_spec.SetField(task.FieldSubscriptionReservationKey, field.TypeString, value)
+	}
+	if value, ok := tu.mutation.SubscriptionAccountID(); ok {
+		_spec.SetField(task.FieldSubscriptionAccountID, field.TypeInt, value)
+	}
+	if value, ok := tu.mutation.AddedSubscriptionAccountID(); ok {
+		_spec.AddField(task.FieldSubscriptionAccountID, field.TypeInt, value)
+	}
+	if value, ok := tu.mutation.SubscriptionBillingRate(); ok {
+		_spec.SetField(task.FieldSubscriptionBillingRate, field.TypeFloat64, value)
+	}
+	if value, ok := tu.mutation.AddedSubscriptionBillingRate(); ok {
+		_spec.AddField(task.FieldSubscriptionBillingRate, field.TypeFloat64, value)
+	}
+	if value, ok := tu.mutation.SubscriptionUsageObserved(); ok {
+		_spec.SetField(task.FieldSubscriptionUsageObserved, field.TypeBool, value)
+	}
 	if value, ok := tu.mutation.Progress(); ok {
 		_spec.SetField(task.FieldProgress, field.TypeInt, value)
 	}
@@ -882,6 +970,76 @@ func (tuo *TaskUpdateOne) SetNillableEstimatedCost(f *float64) *TaskUpdateOne {
 // AddEstimatedCost adds f to the "estimated_cost" field.
 func (tuo *TaskUpdateOne) AddEstimatedCost(f float64) *TaskUpdateOne {
 	tuo.mutation.AddEstimatedCost(f)
+	return tuo
+}
+
+// SetSubscriptionReservationKey sets the "subscription_reservation_key" field.
+func (tuo *TaskUpdateOne) SetSubscriptionReservationKey(s string) *TaskUpdateOne {
+	tuo.mutation.SetSubscriptionReservationKey(s)
+	return tuo
+}
+
+// SetNillableSubscriptionReservationKey sets the "subscription_reservation_key" field if the given value is not nil.
+func (tuo *TaskUpdateOne) SetNillableSubscriptionReservationKey(s *string) *TaskUpdateOne {
+	if s != nil {
+		tuo.SetSubscriptionReservationKey(*s)
+	}
+	return tuo
+}
+
+// SetSubscriptionAccountID sets the "subscription_account_id" field.
+func (tuo *TaskUpdateOne) SetSubscriptionAccountID(i int) *TaskUpdateOne {
+	tuo.mutation.ResetSubscriptionAccountID()
+	tuo.mutation.SetSubscriptionAccountID(i)
+	return tuo
+}
+
+// SetNillableSubscriptionAccountID sets the "subscription_account_id" field if the given value is not nil.
+func (tuo *TaskUpdateOne) SetNillableSubscriptionAccountID(i *int) *TaskUpdateOne {
+	if i != nil {
+		tuo.SetSubscriptionAccountID(*i)
+	}
+	return tuo
+}
+
+// AddSubscriptionAccountID adds i to the "subscription_account_id" field.
+func (tuo *TaskUpdateOne) AddSubscriptionAccountID(i int) *TaskUpdateOne {
+	tuo.mutation.AddSubscriptionAccountID(i)
+	return tuo
+}
+
+// SetSubscriptionBillingRate sets the "subscription_billing_rate" field.
+func (tuo *TaskUpdateOne) SetSubscriptionBillingRate(f float64) *TaskUpdateOne {
+	tuo.mutation.ResetSubscriptionBillingRate()
+	tuo.mutation.SetSubscriptionBillingRate(f)
+	return tuo
+}
+
+// SetNillableSubscriptionBillingRate sets the "subscription_billing_rate" field if the given value is not nil.
+func (tuo *TaskUpdateOne) SetNillableSubscriptionBillingRate(f *float64) *TaskUpdateOne {
+	if f != nil {
+		tuo.SetSubscriptionBillingRate(*f)
+	}
+	return tuo
+}
+
+// AddSubscriptionBillingRate adds f to the "subscription_billing_rate" field.
+func (tuo *TaskUpdateOne) AddSubscriptionBillingRate(f float64) *TaskUpdateOne {
+	tuo.mutation.AddSubscriptionBillingRate(f)
+	return tuo
+}
+
+// SetSubscriptionUsageObserved sets the "subscription_usage_observed" field.
+func (tuo *TaskUpdateOne) SetSubscriptionUsageObserved(b bool) *TaskUpdateOne {
+	tuo.mutation.SetSubscriptionUsageObserved(b)
+	return tuo
+}
+
+// SetNillableSubscriptionUsageObserved sets the "subscription_usage_observed" field if the given value is not nil.
+func (tuo *TaskUpdateOne) SetNillableSubscriptionUsageObserved(b *bool) *TaskUpdateOne {
+	if b != nil {
+		tuo.SetSubscriptionUsageObserved(*b)
+	}
 	return tuo
 }
 
@@ -1270,6 +1428,24 @@ func (tuo *TaskUpdateOne) sqlSave(ctx context.Context) (_node *Task, err error) 
 	}
 	if value, ok := tuo.mutation.AddedEstimatedCost(); ok {
 		_spec.AddField(task.FieldEstimatedCost, field.TypeFloat64, value)
+	}
+	if value, ok := tuo.mutation.SubscriptionReservationKey(); ok {
+		_spec.SetField(task.FieldSubscriptionReservationKey, field.TypeString, value)
+	}
+	if value, ok := tuo.mutation.SubscriptionAccountID(); ok {
+		_spec.SetField(task.FieldSubscriptionAccountID, field.TypeInt, value)
+	}
+	if value, ok := tuo.mutation.AddedSubscriptionAccountID(); ok {
+		_spec.AddField(task.FieldSubscriptionAccountID, field.TypeInt, value)
+	}
+	if value, ok := tuo.mutation.SubscriptionBillingRate(); ok {
+		_spec.SetField(task.FieldSubscriptionBillingRate, field.TypeFloat64, value)
+	}
+	if value, ok := tuo.mutation.AddedSubscriptionBillingRate(); ok {
+		_spec.AddField(task.FieldSubscriptionBillingRate, field.TypeFloat64, value)
+	}
+	if value, ok := tuo.mutation.SubscriptionUsageObserved(); ok {
+		_spec.SetField(task.FieldSubscriptionUsageObserved, field.TypeBool, value)
 	}
 	if value, ok := tuo.mutation.Progress(); ok {
 		_spec.SetField(task.FieldProgress, field.TypeInt, value)

@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"log/slog"
+	"math"
 	"strings"
 	"time"
 
@@ -140,6 +141,11 @@ func (h *HostService) checkSubmissionBudget(ctx context.Context, req *hostForwar
 	if req == nil || req.EstimatedOfficialCost <= 0 {
 		return nil
 	}
+	if req.subscriptionReservationKey != "" {
+		// The atomic subscription ledger already admitted this supplier cost.
+		// Consumer subscribers need no wallet balance for the same request.
+		return nil
+	}
 	if rate <= 0 {
 		rate = 1
 	}
@@ -234,6 +240,9 @@ func (h *HostService) billingBudget(ctx context.Context, req hostBillingBudgetRe
 	if req.UserID <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "user_id must be > 0")
 	}
+	if req.EstimatedOfficialCost < 0 || math.IsNaN(req.EstimatedOfficialCost) || math.IsInf(req.EstimatedOfficialCost, 0) {
+		return nil, status.Error(codes.InvalidArgument, "estimated_official_cost must be finite and non-negative")
+	}
 	identity, err := auth.ResolveTeamIdentity(ctx, h.db, int(req.UserID))
 	if err != nil {
 		if cerr := hostContextError(err); cerr != nil {
@@ -279,57 +288,137 @@ func (h *HostService) billingBudget(ctx context.Context, req hostBillingBudgetRe
 	}
 
 	estimate := 0.0
-	if req.EstimatedOfficialCost > 0 {
-		rate, err := h.resolveBudgetRate(ctx, u, req.Platform, req.GroupID, allowedGroups)
+	if req.GroupID > 0 || strings.TrimSpace(req.Platform) != "" || req.EstimatedOfficialCost > 0 {
+		routes, err := h.resolveBudgetRoutes(ctx, u, req.Platform, req.GroupID, allowedGroups)
 		if err != nil {
 			return nil, err
 		}
-		estimate = req.EstimatedOfficialCost * rate
+		var denied map[string]interface{}
+		for _, route := range routes {
+			estimate = req.EstimatedOfficialCost * route.EffectiveRate
+			if math.IsInf(estimate, 0) || math.IsNaN(estimate) {
+				return nil, status.Error(codes.InvalidArgument, "estimated cost is unbounded")
+			}
+			if route.SubscriptionType != "subscription" {
+				return budgetPayload(evaluateBudget(u.Balance, reserved, limited, quotaRemaining, estimate)), nil
+			}
+			if h.subscriptions == nil {
+				return nil, status.Error(codes.Unavailable, i18n.En("gw.subscription_service_unavailable"))
+			}
+			kind := billing.RequestKindChat
+			// Legacy Seedance callers provide only platform, not a model/path.
+			if strings.EqualFold(strings.TrimSpace(route.Platform), "seedance") {
+				kind = billing.RequestKindVideo
+			}
+			entitlement, err := h.subscriptions.Entitle(ctx, billingUserID, route.GroupID, billing.ParsePlanQuotas(route.Quotas), kind)
+			if err != nil {
+				if denial, known := subscriptionDenialFor(err); known {
+					denied = budgetPayload(evaluateBudget(0, 0, limited, quotaRemaining, estimate))
+					denied["sufficient"] = false
+					denied["message"] = i18n.En(denial.msgKey)
+					denied["billing_source"] = "subscription"
+					denied["group_id"] = route.GroupID
+					continue
+				}
+				if cerr := hostContextError(err); cerr != nil {
+					return nil, cerr
+				}
+				return nil, hostInternalError("host_budget_subscription_failed", err, sdk.LogFieldGroupID, route.GroupID)
+			}
+			// Remaining already subtracts the subscription ledger's reservations.
+			// Task estimates belong to wallet/member admission and must not be
+			// subtracted from this pool a second time.
+			available := float64(entitlement.Remaining) / float64(entitlement.Quotas.CreditsPerUnitOrDefault())
+			if entitlement.Unlimited {
+				available = math.MaxFloat64
+			}
+			memberAvailable := quotaRemaining
+			if limited {
+				memberAvailable -= reserved
+			}
+			decision := evaluateBudget(available, 0, limited, memberAvailable, estimate)
+			if !entitlement.Unlimited && entitlement.Quotas.Credits(estimate) > entitlement.Remaining {
+				decision.Sufficient = false
+				decision.Message = i18n.En("gw.subscription_quota_exceeded")
+			}
+			out := budgetPayload(decision)
+			out["billing_source"] = "subscription"
+			out["group_id"] = route.GroupID
+			out["subscription_id"] = entitlement.SubscriptionID
+			out["credits_remaining"] = entitlement.Remaining
+			out["credits_per_unit"] = entitlement.Quotas.CreditsPerUnitOrDefault()
+			out["unlimited"] = entitlement.Unlimited
+			return out, nil
+		}
+		if denied != nil {
+			return denied, nil
+		}
 	}
 
 	decision := evaluateBudget(u.Balance, reserved, limited, quotaRemaining, estimate)
-	return map[string]interface{}{
-		"balance":         u.Balance,
-		"reserved":        reserved,
-		"available":       decision.Available,
-		"currency":        budgetCurrencyUSD,
-		"limited":         limited,
-		"quota_remaining": quotaRemaining,
-		"estimate":        estimate,
-		"sufficient":      decision.Sufficient,
-		"message":         decision.Message,
-	}, nil
+	return budgetPayload(decision), nil
 }
 
-// resolveBudgetRate 与 hostForwardRoutes 同口径地取倍率，否则预判出来的数会和提交时
+func budgetPayload(decision budgetDecision) map[string]interface{} {
+	return map[string]interface{}{
+		"balance":         decision.Balance,
+		"reserved":        decision.Reserved,
+		"available":       decision.Available,
+		"currency":        budgetCurrencyUSD,
+		"limited":         decision.Limited,
+		"quota_remaining": decision.QuotaRemaining,
+		"estimate":        decision.Estimate,
+		"sufficient":      decision.Sufficient,
+		"message":         decision.Message,
+	}
+}
+
+// resolveBudgetRoutes 与 hostForwardRoutes 同口径地取候选，否则预判出来的数会和提交时
 // 实际用的不一样，用户就会看到「查着够、提交被拒」。
-func (h *HostService) resolveBudgetRate(ctx context.Context, u *ent.User, platform string, groupID int64, allowedGroups []int64) (float64, error) {
+func (h *HostService) resolveBudgetRoutes(ctx context.Context, u *ent.User, platform string, groupID int64, allowedGroups []int64) ([]routing.Candidate, error) {
 	if groupID > 0 {
 		g, err := h.db.Group.Get(ctx, int(groupID))
 		if err != nil {
 			if cerr := hostContextError(err); cerr != nil {
-				return 0, cerr
+				return nil, cerr
 			}
 			if ent.IsNotFound(err) {
-				return 0, status.Error(codes.NotFound, i18n.En("gw.group_not_found"))
+				return nil, status.Error(codes.NotFound, i18n.En("gw.group_not_found"))
 			}
-			return 0, hostInternalError("host_budget_group_lookup_failed", err, sdk.LogFieldGroupID, groupID)
+			return nil, hostInternalError("host_budget_group_lookup_failed", err, sdk.LogFieldGroupID, groupID)
 		}
-		return billing.ResolveBillingRateForGroup(u.GroupRates, g.ID, g.RateMultiplier), nil
+		if !auth.MemberAllowsGroup(allowedGroups, g.ID) {
+			return nil, status.Error(codes.PermissionDenied, i18n.En("gw.member_group_forbidden"))
+		}
+		if platform != "" && !strings.EqualFold(strings.TrimSpace(platform), g.Platform) {
+			return nil, status.Error(codes.InvalidArgument, "group platform mismatch")
+		}
+		if g.IsExclusive {
+			allowed, err := g.QueryAllowedUsers().Where(user.IDEQ(u.ID)).Exist(ctx)
+			if err != nil {
+				return nil, hostInternalError("host_budget_group_authorization_failed", err)
+			}
+			if !allowed {
+				return nil, status.Error(codes.PermissionDenied, i18n.En("gw.no_eligible_group"))
+			}
+		}
+		return []routing.Candidate{{GroupID: g.ID, Platform: g.Platform,
+			EffectiveRate:    billing.ResolveBillingRateForGroup(u.GroupRates, g.ID, g.RateMultiplier),
+			SubscriptionType: string(g.SubscriptionType), Quotas: g.Quotas}}, nil
 	}
 	if strings.TrimSpace(platform) == "" {
-		return 0, status.Error(codes.InvalidArgument, "platform is required")
+		return nil, status.Error(codes.InvalidArgument, "platform is required")
 	}
 	routes, err := routing.ListEligibleGroups(ctx, h.db, u.ID, platform, u.GroupRates, u.GroupPluginSettings, routing.Requirements{})
 	if err != nil {
 		if cerr := hostContextError(err); cerr != nil {
-			return 0, cerr
+			return nil, cerr
 		}
-		return 0, hostInternalError("host_budget_routing_failed", err, sdk.LogFieldUserID, u.ID, sdk.LogFieldPlatform, platform)
+		return nil, hostInternalError("host_budget_routing_failed", err, sdk.LogFieldUserID, u.ID, sdk.LogFieldPlatform, platform)
 	}
 	routes = filterCandidatesByMemberGroups(routes, allowedGroups)
 	if len(routes) == 0 {
-		return 0, status.Error(codes.FailedPrecondition, i18n.En("gw.no_eligible_group"))
+		return nil, status.Error(codes.FailedPrecondition, i18n.En("gw.no_eligible_group"))
 	}
-	return routes[0].EffectiveRate, nil
+	return routes, nil
 }

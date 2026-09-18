@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/DouDOU-start/airgate-core/ent"
+	appsubscription "github.com/DouDOU-start/airgate-core/internal/app/subscription"
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
 	"github.com/DouDOU-start/airgate-core/internal/auth"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
@@ -39,6 +40,8 @@ type Forwarder struct {
 	concurrency *scheduler.ConcurrencyManager
 	calculator  *billing.Calculator
 	recorder    *billing.Recorder
+	// subscriptions 订阅制分组准入（可为 nil：未装配时放行）。
+	subscriptions *appsubscription.Service
 }
 
 // NewForwarder 创建转发器。
@@ -116,6 +119,13 @@ func (f *Forwarder) Forward(c *gin.Context) {
 	if !f.checkBalance(c, state) {
 		return
 	}
+	defer func() {
+		if state.subscriptionReservationKey != "" && !state.subscriptionReservationSettled && f.subscriptions != nil {
+			if err := f.subscriptions.Release(context.Background(), state.subscriptionReservationKey); err != nil {
+				sdk.LoggerFromContext(c.Request.Context()).Error("subscription_reservation_release_failed", sdk.LogFieldError, err)
+			}
+		}
+	}()
 
 	// 请求级 logger：继承 middleware 注入的 request_id / user_id / group_id 等字段，
 	// 再叠加 model / platform 让所有 forward 阶段日志自带上下文。

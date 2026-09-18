@@ -95,13 +95,18 @@ func newHostStabilityFixture(t *testing.T, accountCount int, forward func(int32,
 
 	gateway := &hostQuotaTestGateway{forward: forward}
 	client := newHostQuotaGatewayClient(t, gateway)
-	manager := &Manager{instances: map[string]*PluginInstance{
-		"gateway-quota-test": {
-			Name:     "gateway-quota-test",
-			Platform: "quota-test",
-			Gateway:  client,
+	manager := &Manager{
+		instances: map[string]*PluginInstance{
+			"gateway-quota-test": {
+				Name:     "gateway-quota-test",
+				Platform: "quota-test",
+				Gateway:  client,
+			},
 		},
-	}}
+		// Core caches the plugin's catalog at startup; subscription admission
+		// reads its declared prices to bound the request before forwarding.
+		modelCache: map[string][]sdk.ModelInfo{"quota-test": gateway.Models()},
+	}
 	sched := scheduler.NewScheduler(db, rdb)
 	concurrency := scheduler.NewConcurrencyManager(rdb)
 	host := &HostService{

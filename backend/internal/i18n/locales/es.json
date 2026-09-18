@@ -96,5 +96,13 @@
   "export.summary_failed_free": "Solicitudes fallidas: %d, ninguna cobrada",
   "export.summary_failed_mixed": "Solicitudes fallidas sin cargo: %d; solicitudes interrumpidas cobradas por el uso ya generado: %d",
   "export.summary_truncated": "Demasiados registros; este archivo solo contiene los %d más recientes, por lo que el total no representa todo el consumo del rango",
-  "export.summary_separator": "; "
+  "export.summary_separator": "; ",
+  "gw.subscription_required": "Este grupo requiere una suscripción activa",
+  "gw.subscription_expired": "Tu suscripción ha caducado. Renuévala para continuar",
+  "gw.subscription_suspended": "Tu suscripción está suspendida",
+  "gw.subscription_quota_exceeded": "Has agotado los créditos de este período. Añade más créditos o espera al próximo reinicio",
+  "gw.subscription_video_not_included": "Tu plan actual no incluye la generación de vídeo",
+  "gw.subscription_image_limit_reached": "Has alcanzado el límite de generación de imágenes de este período",
+  "gw.subscription_request_too_large": "Esta solicitud supera el límite de créditos por solicitud de tu plan. Reduce el contenido o mejora tu plan",
+  "gw.subscription_service_unavailable": "El servicio de suscripciones no está disponible temporalmente. Inténtalo de nuevo más tarde"
 }

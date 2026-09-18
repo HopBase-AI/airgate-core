@@ -4,6 +4,7 @@ package ent
 
 import (
 	"context"
+	"database/sql/driver"
 	"fmt"
 	"math"
 
@@ -12,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/predicate"
+	"github.com/DouDOU-start/airgate-core/ent/subscriptionreservation"
 	"github.com/DouDOU-start/airgate-core/ent/user"
 	"github.com/DouDOU-start/airgate-core/ent/usersubscription"
 )
@@ -19,13 +21,14 @@ import (
 // UserSubscriptionQuery is the builder for querying UserSubscription entities.
 type UserSubscriptionQuery struct {
 	config
-	ctx        *QueryContext
-	order      []usersubscription.OrderOption
-	inters     []Interceptor
-	predicates []predicate.UserSubscription
-	withUser   *UserQuery
-	withGroup  *GroupQuery
-	withFKs    bool
+	ctx              *QueryContext
+	order            []usersubscription.OrderOption
+	inters           []Interceptor
+	predicates       []predicate.UserSubscription
+	withUser         *UserQuery
+	withGroup        *GroupQuery
+	withReservations *SubscriptionReservationQuery
+	withFKs          bool
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -99,6 +102,28 @@ func (usq *UserSubscriptionQuery) QueryGroup() *GroupQuery {
 			sqlgraph.From(usersubscription.Table, usersubscription.FieldID, selector),
 			sqlgraph.To(group.Table, group.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, usersubscription.GroupTable, usersubscription.GroupColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(usq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryReservations chains the current query on the "reservations" edge.
+func (usq *UserSubscriptionQuery) QueryReservations() *SubscriptionReservationQuery {
+	query := (&SubscriptionReservationClient{config: usq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := usq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := usq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(usersubscription.Table, usersubscription.FieldID, selector),
+			sqlgraph.To(subscriptionreservation.Table, subscriptionreservation.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, usersubscription.ReservationsTable, usersubscription.ReservationsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(usq.driver.Dialect(), step)
 		return fromU, nil
@@ -293,13 +318,14 @@ func (usq *UserSubscriptionQuery) Clone() *UserSubscriptionQuery {
 		return nil
 	}
 	return &UserSubscriptionQuery{
-		config:     usq.config,
-		ctx:        usq.ctx.Clone(),
-		order:      append([]usersubscription.OrderOption{}, usq.order...),
-		inters:     append([]Interceptor{}, usq.inters...),
-		predicates: append([]predicate.UserSubscription{}, usq.predicates...),
-		withUser:   usq.withUser.Clone(),
-		withGroup:  usq.withGroup.Clone(),
+		config:           usq.config,
+		ctx:              usq.ctx.Clone(),
+		order:            append([]usersubscription.OrderOption{}, usq.order...),
+		inters:           append([]Interceptor{}, usq.inters...),
+		predicates:       append([]predicate.UserSubscription{}, usq.predicates...),
+		withUser:         usq.withUser.Clone(),
+		withGroup:        usq.withGroup.Clone(),
+		withReservations: usq.withReservations.Clone(),
 		// clone intermediate query.
 		sql:  usq.sql.Clone(),
 		path: usq.path,
@@ -325,6 +351,17 @@ func (usq *UserSubscriptionQuery) WithGroup(opts ...func(*GroupQuery)) *UserSubs
 		opt(query)
 	}
 	usq.withGroup = query
+	return usq
+}
+
+// WithReservations tells the query-builder to eager-load the nodes that are connected to
+// the "reservations" edge. The optional arguments are used to configure the query builder of the edge.
+func (usq *UserSubscriptionQuery) WithReservations(opts ...func(*SubscriptionReservationQuery)) *UserSubscriptionQuery {
+	query := (&SubscriptionReservationClient{config: usq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	usq.withReservations = query
 	return usq
 }
 
@@ -407,9 +444,10 @@ func (usq *UserSubscriptionQuery) sqlAll(ctx context.Context, hooks ...queryHook
 		nodes       = []*UserSubscription{}
 		withFKs     = usq.withFKs
 		_spec       = usq.querySpec()
-		loadedTypes = [2]bool{
+		loadedTypes = [3]bool{
 			usq.withUser != nil,
 			usq.withGroup != nil,
+			usq.withReservations != nil,
 		}
 	)
 	if usq.withUser != nil || usq.withGroup != nil {
@@ -445,6 +483,15 @@ func (usq *UserSubscriptionQuery) sqlAll(ctx context.Context, hooks ...queryHook
 	if query := usq.withGroup; query != nil {
 		if err := usq.loadGroup(ctx, query, nodes, nil,
 			func(n *UserSubscription, e *Group) { n.Edges.Group = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := usq.withReservations; query != nil {
+		if err := usq.loadReservations(ctx, query, nodes,
+			func(n *UserSubscription) { n.Edges.Reservations = []*SubscriptionReservation{} },
+			func(n *UserSubscription, e *SubscriptionReservation) {
+				n.Edges.Reservations = append(n.Edges.Reservations, e)
+			}); err != nil {
 			return nil, err
 		}
 	}
@@ -512,6 +559,37 @@ func (usq *UserSubscriptionQuery) loadGroup(ctx context.Context, query *GroupQue
 		for i := range nodes {
 			assign(nodes[i], n)
 		}
+	}
+	return nil
+}
+func (usq *UserSubscriptionQuery) loadReservations(ctx context.Context, query *SubscriptionReservationQuery, nodes []*UserSubscription, init func(*UserSubscription), assign func(*UserSubscription, *SubscriptionReservation)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*UserSubscription)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	query.withFKs = true
+	query.Where(predicate.SubscriptionReservation(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(usersubscription.ReservationsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.user_subscription_reservations
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "user_subscription_reservations" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_subscription_reservations" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
 	}
 	return nil
 }

@@ -96,5 +96,13 @@
   "export.summary_failed_free": "うち %d 件のリクエストが失敗し、いずれも未課金です",
   "export.summary_failed_mixed": "うち %d 件は失敗のため未課金、別の %d 件は中断され発生済みの使用量で課金されています",
   "export.summary_truncated": "レコードが多すぎるため、このファイルには直近 %d 件のみが含まれます。合計額はこの期間のすべての利用を表しません",
-  "export.summary_separator": "、"
+  "export.summary_separator": "、",
+  "gw.subscription_required": "このグループを利用するには有効なサブスクリプションが必要です",
+  "gw.subscription_expired": "サブスクリプションの有効期限が切れています。更新してからご利用ください",
+  "gw.subscription_suspended": "サブスクリプションは一時停止されています",
+  "gw.subscription_quota_exceeded": "今期のクレジットを使い切りました。追加購入するか、次回のリセットまでお待ちください",
+  "gw.subscription_video_not_included": "現在のプランには動画生成が含まれていません",
+  "gw.subscription_image_limit_reached": "今期の画像生成上限に達しました",
+  "gw.subscription_request_too_large": "このリクエストはプランの1回あたりのクレジット上限を超えています。内容を短くするか、プランをアップグレードしてください",
+  "gw.subscription_service_unavailable": "サブスクリプション権限サービスは一時的に利用できません。しばらくしてから再試行してください"
 }

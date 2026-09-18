@@ -28,6 +28,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/proxy"
 	"github.com/DouDOU-start/airgate-core/ent/referralcommission"
 	"github.com/DouDOU-start/airgate-core/ent/setting"
+	"github.com/DouDOU-start/airgate-core/ent/subscriptionreservation"
 	"github.com/DouDOU-start/airgate-core/ent/task"
 	"github.com/DouDOU-start/airgate-core/ent/teamauditlog"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
@@ -68,6 +69,8 @@ type Client struct {
 	ReferralCommission *ReferralCommissionClient
 	// Setting is the client for interacting with the Setting builders.
 	Setting *SettingClient
+	// SubscriptionReservation is the client for interacting with the SubscriptionReservation builders.
+	SubscriptionReservation *SubscriptionReservationClient
 	// Task is the client for interacting with the Task builders.
 	Task *TaskClient
 	// TeamAuditLog is the client for interacting with the TeamAuditLog builders.
@@ -106,6 +109,7 @@ func (c *Client) init() {
 	c.Proxy = NewProxyClient(c.config)
 	c.ReferralCommission = NewReferralCommissionClient(c.config)
 	c.Setting = NewSettingClient(c.config)
+	c.SubscriptionReservation = NewSubscriptionReservationClient(c.config)
 	c.Task = NewTaskClient(c.config)
 	c.TeamAuditLog = NewTeamAuditLogClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
@@ -203,28 +207,29 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:                ctx,
-		config:             cfg,
-		APIKey:             NewAPIKeyClient(cfg),
-		Account:            NewAccountClient(cfg),
-		AccountEvent:       NewAccountEventClient(cfg),
-		BalanceLog:         NewBalanceLogClient(cfg),
-		BlogPost:           NewBlogPostClient(cfg),
-		Department:         NewDepartmentClient(cfg),
-		Group:              NewGroupClient(cfg),
-		Member:             NewMemberClient(cfg),
-		Plugin:             NewPluginClient(cfg),
-		PluginSource:       NewPluginSourceClient(cfg),
-		Proxy:              NewProxyClient(cfg),
-		ReferralCommission: NewReferralCommissionClient(cfg),
-		Setting:            NewSettingClient(cfg),
-		Task:               NewTaskClient(cfg),
-		TeamAuditLog:       NewTeamAuditLogClient(cfg),
-		UsageLog:           NewUsageLogClient(cfg),
-		User:               NewUserClient(cfg),
-		UserIdentity:       NewUserIdentityClient(cfg),
-		UserNotification:   NewUserNotificationClient(cfg),
-		UserSubscription:   NewUserSubscriptionClient(cfg),
+		ctx:                     ctx,
+		config:                  cfg,
+		APIKey:                  NewAPIKeyClient(cfg),
+		Account:                 NewAccountClient(cfg),
+		AccountEvent:            NewAccountEventClient(cfg),
+		BalanceLog:              NewBalanceLogClient(cfg),
+		BlogPost:                NewBlogPostClient(cfg),
+		Department:              NewDepartmentClient(cfg),
+		Group:                   NewGroupClient(cfg),
+		Member:                  NewMemberClient(cfg),
+		Plugin:                  NewPluginClient(cfg),
+		PluginSource:            NewPluginSourceClient(cfg),
+		Proxy:                   NewProxyClient(cfg),
+		ReferralCommission:      NewReferralCommissionClient(cfg),
+		Setting:                 NewSettingClient(cfg),
+		SubscriptionReservation: NewSubscriptionReservationClient(cfg),
+		Task:                    NewTaskClient(cfg),
+		TeamAuditLog:            NewTeamAuditLogClient(cfg),
+		UsageLog:                NewUsageLogClient(cfg),
+		User:                    NewUserClient(cfg),
+		UserIdentity:            NewUserIdentityClient(cfg),
+		UserNotification:        NewUserNotificationClient(cfg),
+		UserSubscription:        NewUserSubscriptionClient(cfg),
 	}, nil
 }
 
@@ -242,28 +247,29 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:                ctx,
-		config:             cfg,
-		APIKey:             NewAPIKeyClient(cfg),
-		Account:            NewAccountClient(cfg),
-		AccountEvent:       NewAccountEventClient(cfg),
-		BalanceLog:         NewBalanceLogClient(cfg),
-		BlogPost:           NewBlogPostClient(cfg),
-		Department:         NewDepartmentClient(cfg),
-		Group:              NewGroupClient(cfg),
-		Member:             NewMemberClient(cfg),
-		Plugin:             NewPluginClient(cfg),
-		PluginSource:       NewPluginSourceClient(cfg),
-		Proxy:              NewProxyClient(cfg),
-		ReferralCommission: NewReferralCommissionClient(cfg),
-		Setting:            NewSettingClient(cfg),
-		Task:               NewTaskClient(cfg),
-		TeamAuditLog:       NewTeamAuditLogClient(cfg),
-		UsageLog:           NewUsageLogClient(cfg),
-		User:               NewUserClient(cfg),
-		UserIdentity:       NewUserIdentityClient(cfg),
-		UserNotification:   NewUserNotificationClient(cfg),
-		UserSubscription:   NewUserSubscriptionClient(cfg),
+		ctx:                     ctx,
+		config:                  cfg,
+		APIKey:                  NewAPIKeyClient(cfg),
+		Account:                 NewAccountClient(cfg),
+		AccountEvent:            NewAccountEventClient(cfg),
+		BalanceLog:              NewBalanceLogClient(cfg),
+		BlogPost:                NewBlogPostClient(cfg),
+		Department:              NewDepartmentClient(cfg),
+		Group:                   NewGroupClient(cfg),
+		Member:                  NewMemberClient(cfg),
+		Plugin:                  NewPluginClient(cfg),
+		PluginSource:            NewPluginSourceClient(cfg),
+		Proxy:                   NewProxyClient(cfg),
+		ReferralCommission:      NewReferralCommissionClient(cfg),
+		Setting:                 NewSettingClient(cfg),
+		SubscriptionReservation: NewSubscriptionReservationClient(cfg),
+		Task:                    NewTaskClient(cfg),
+		TeamAuditLog:            NewTeamAuditLogClient(cfg),
+		UsageLog:                NewUsageLogClient(cfg),
+		User:                    NewUserClient(cfg),
+		UserIdentity:            NewUserIdentityClient(cfg),
+		UserNotification:        NewUserNotificationClient(cfg),
+		UserSubscription:        NewUserSubscriptionClient(cfg),
 	}, nil
 }
 
@@ -295,8 +301,8 @@ func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.APIKey, c.Account, c.AccountEvent, c.BalanceLog, c.BlogPost, c.Department,
 		c.Group, c.Member, c.Plugin, c.PluginSource, c.Proxy, c.ReferralCommission,
-		c.Setting, c.Task, c.TeamAuditLog, c.UsageLog, c.User, c.UserIdentity,
-		c.UserNotification, c.UserSubscription,
+		c.Setting, c.SubscriptionReservation, c.Task, c.TeamAuditLog, c.UsageLog,
+		c.User, c.UserIdentity, c.UserNotification, c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -308,8 +314,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.APIKey, c.Account, c.AccountEvent, c.BalanceLog, c.BlogPost, c.Department,
 		c.Group, c.Member, c.Plugin, c.PluginSource, c.Proxy, c.ReferralCommission,
-		c.Setting, c.Task, c.TeamAuditLog, c.UsageLog, c.User, c.UserIdentity,
-		c.UserNotification, c.UserSubscription,
+		c.Setting, c.SubscriptionReservation, c.Task, c.TeamAuditLog, c.UsageLog,
+		c.User, c.UserIdentity, c.UserNotification, c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -344,6 +350,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ReferralCommission.mutate(ctx, m)
 	case *SettingMutation:
 		return c.Setting.mutate(ctx, m)
+	case *SubscriptionReservationMutation:
+		return c.SubscriptionReservation.mutate(ctx, m)
 	case *TaskMutation:
 		return c.Task.mutate(ctx, m)
 	case *TeamAuditLogMutation:
@@ -2492,6 +2500,155 @@ func (c *SettingClient) mutate(ctx context.Context, m *SettingMutation) (Value, 
 	}
 }
 
+// SubscriptionReservationClient is a client for the SubscriptionReservation schema.
+type SubscriptionReservationClient struct {
+	config
+}
+
+// NewSubscriptionReservationClient returns a client for the SubscriptionReservation from the given config.
+func NewSubscriptionReservationClient(c config) *SubscriptionReservationClient {
+	return &SubscriptionReservationClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `subscriptionreservation.Hooks(f(g(h())))`.
+func (c *SubscriptionReservationClient) Use(hooks ...Hook) {
+	c.hooks.SubscriptionReservation = append(c.hooks.SubscriptionReservation, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `subscriptionreservation.Intercept(f(g(h())))`.
+func (c *SubscriptionReservationClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SubscriptionReservation = append(c.inters.SubscriptionReservation, interceptors...)
+}
+
+// Create returns a builder for creating a SubscriptionReservation entity.
+func (c *SubscriptionReservationClient) Create() *SubscriptionReservationCreate {
+	mutation := newSubscriptionReservationMutation(c.config, OpCreate)
+	return &SubscriptionReservationCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SubscriptionReservation entities.
+func (c *SubscriptionReservationClient) CreateBulk(builders ...*SubscriptionReservationCreate) *SubscriptionReservationCreateBulk {
+	return &SubscriptionReservationCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SubscriptionReservationClient) MapCreateBulk(slice any, setFunc func(*SubscriptionReservationCreate, int)) *SubscriptionReservationCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SubscriptionReservationCreateBulk{err: fmt.Errorf("calling to SubscriptionReservationClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SubscriptionReservationCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SubscriptionReservationCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SubscriptionReservation.
+func (c *SubscriptionReservationClient) Update() *SubscriptionReservationUpdate {
+	mutation := newSubscriptionReservationMutation(c.config, OpUpdate)
+	return &SubscriptionReservationUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SubscriptionReservationClient) UpdateOne(sr *SubscriptionReservation) *SubscriptionReservationUpdateOne {
+	mutation := newSubscriptionReservationMutation(c.config, OpUpdateOne, withSubscriptionReservation(sr))
+	return &SubscriptionReservationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SubscriptionReservationClient) UpdateOneID(id int) *SubscriptionReservationUpdateOne {
+	mutation := newSubscriptionReservationMutation(c.config, OpUpdateOne, withSubscriptionReservationID(id))
+	return &SubscriptionReservationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SubscriptionReservation.
+func (c *SubscriptionReservationClient) Delete() *SubscriptionReservationDelete {
+	mutation := newSubscriptionReservationMutation(c.config, OpDelete)
+	return &SubscriptionReservationDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SubscriptionReservationClient) DeleteOne(sr *SubscriptionReservation) *SubscriptionReservationDeleteOne {
+	return c.DeleteOneID(sr.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SubscriptionReservationClient) DeleteOneID(id int) *SubscriptionReservationDeleteOne {
+	builder := c.Delete().Where(subscriptionreservation.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SubscriptionReservationDeleteOne{builder}
+}
+
+// Query returns a query builder for SubscriptionReservation.
+func (c *SubscriptionReservationClient) Query() *SubscriptionReservationQuery {
+	return &SubscriptionReservationQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSubscriptionReservation},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SubscriptionReservation entity by its id.
+func (c *SubscriptionReservationClient) Get(ctx context.Context, id int) (*SubscriptionReservation, error) {
+	return c.Query().Where(subscriptionreservation.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SubscriptionReservationClient) GetX(ctx context.Context, id int) *SubscriptionReservation {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QuerySubscription queries the subscription edge of a SubscriptionReservation.
+func (c *SubscriptionReservationClient) QuerySubscription(sr *SubscriptionReservation) *UserSubscriptionQuery {
+	query := (&UserSubscriptionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := sr.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(subscriptionreservation.Table, subscriptionreservation.FieldID, id),
+			sqlgraph.To(usersubscription.Table, usersubscription.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, subscriptionreservation.SubscriptionTable, subscriptionreservation.SubscriptionColumn),
+		)
+		fromV = sqlgraph.Neighbors(sr.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *SubscriptionReservationClient) Hooks() []Hook {
+	return c.hooks.SubscriptionReservation
+}
+
+// Interceptors returns the client interceptors.
+func (c *SubscriptionReservationClient) Interceptors() []Interceptor {
+	return c.inters.SubscriptionReservation
+}
+
+func (c *SubscriptionReservationClient) mutate(ctx context.Context, m *SubscriptionReservationMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SubscriptionReservationCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SubscriptionReservationUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SubscriptionReservationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SubscriptionReservationDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SubscriptionReservation mutation op: %q", m.Op())
+	}
+}
+
 // TaskClient is a client for the Task schema.
 type TaskClient struct {
 	config
@@ -3654,6 +3811,22 @@ func (c *UserSubscriptionClient) QueryGroup(us *UserSubscription) *GroupQuery {
 	return query
 }
 
+// QueryReservations queries the reservations edge of a UserSubscription.
+func (c *UserSubscriptionClient) QueryReservations(us *UserSubscription) *SubscriptionReservationQuery {
+	query := (&SubscriptionReservationClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := us.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(usersubscription.Table, usersubscription.FieldID, id),
+			sqlgraph.To(subscriptionreservation.Table, subscriptionreservation.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, usersubscription.ReservationsTable, usersubscription.ReservationsColumn),
+		)
+		fromV = sqlgraph.Neighbors(us.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *UserSubscriptionClient) Hooks() []Hook {
 	return c.hooks.UserSubscription
@@ -3683,13 +3856,14 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 type (
 	hooks struct {
 		APIKey, Account, AccountEvent, BalanceLog, BlogPost, Department, Group, Member,
-		Plugin, PluginSource, Proxy, ReferralCommission, Setting, Task, TeamAuditLog,
-		UsageLog, User, UserIdentity, UserNotification, UserSubscription []ent.Hook
+		Plugin, PluginSource, Proxy, ReferralCommission, Setting,
+		SubscriptionReservation, Task, TeamAuditLog, UsageLog, User, UserIdentity,
+		UserNotification, UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountEvent, BalanceLog, BlogPost, Department, Group, Member,
-		Plugin, PluginSource, Proxy, ReferralCommission, Setting, Task, TeamAuditLog,
-		UsageLog, User, UserIdentity, UserNotification,
-		UserSubscription []ent.Interceptor
+		Plugin, PluginSource, Proxy, ReferralCommission, Setting,
+		SubscriptionReservation, Task, TeamAuditLog, UsageLog, User, UserIdentity,
+		UserNotification, UserSubscription []ent.Interceptor
 	}
 )

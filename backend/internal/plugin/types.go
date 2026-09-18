@@ -20,6 +20,9 @@ type forwardState struct {
 	startedAt   time.Time
 	requestPath string
 	requestID   string
+	// subscriptionReservationKey stays stable across every failover attempt.
+	subscriptionReservationKey     string
+	subscriptionReservationSettled bool
 
 	// grpcCallAt 最后一次（成功的）gRPC 调插件的时刻。与 startedAt 之差即
 	// core 前置耗时（鉴权/余额/调度/闸门，含 failover 排队），用于 TTFT 分段。

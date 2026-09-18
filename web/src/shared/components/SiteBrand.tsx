@@ -17,7 +17,6 @@ export function SiteBrand({ className = '', iconOnly = false, iconSize = 30 }: S
   const siteName = site.site_name.trim();
   // 品牌判定集中在 SiteSettingsProvider(shared/brand.ts),这里只消费结果
   const isEssevin = site.brand === 'essevin';
-  const isKite = site.brand === 'kite';
   const language = i18n.resolvedLanguage || i18n.language || '';
   const isChinese = language.startsWith('zh');
   const localName = language === 'zh-CN' || language === 'zh' ? '萃灵' : '萃靈';
@@ -56,13 +55,8 @@ export function SiteBrand({ className = '', iconOnly = false, iconSize = 30 }: S
       ) : (
         <span
           aria-hidden="true"
-          className={`inline-flex shrink-0 items-center justify-center overflow-hidden ${isKite ? 'bg-[#f3f7f3]' : ''}`}
-          style={{
-            borderRadius: isKite ? 4 : 0,
-            height: iconSize,
-            padding: isKite ? Math.max(2, Math.round(iconSize * 0.075)) : 0,
-            width: iconSize,
-          }}
+          className="inline-flex shrink-0 items-center justify-center overflow-hidden"
+          style={{ height: iconSize, width: iconSize }}
         >
           <img
             alt=""

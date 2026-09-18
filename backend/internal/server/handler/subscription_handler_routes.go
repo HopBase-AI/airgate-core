@@ -188,3 +188,78 @@ func (h *SubscriptionHandler) AdminAdjust(c *gin.Context) {
 
 	response.Success(c, toSubscriptionRespFromDomain(sub))
 }
+
+// Plans 用户查看可购套餐（订阅制分组）及自己在各套餐下的当前订阅。
+func (h *SubscriptionHandler) Plans(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		response.Unauthorized(c, "用户未认证")
+		return
+	}
+
+	views, err := h.service.Plans(c.Request.Context(), userID)
+	if err != nil {
+		httpCode, message := h.handleError("查询套餐失败", "查询失败", err)
+		response.Error(c, httpCode, httpCode, message)
+		return
+	}
+
+	list := make([]dto.PlanResp, 0, len(views))
+	for _, item := range views {
+		list = append(list, toPlanRespFromDomain(item))
+	}
+	response.Success(c, list)
+}
+
+// Purchase 用户用余额自助购买/续期套餐。
+func (h *SubscriptionHandler) Purchase(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		response.Unauthorized(c, "用户未认证")
+		return
+	}
+
+	var req dto.PurchaseSubscriptionReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BindError(c, err)
+		return
+	}
+
+	sub, err := h.service.Purchase(c.Request.Context(), appsubscription.PurchaseInput{
+		UserID:  userID,
+		GroupID: int(req.GroupID),
+		Cycle:   req.Cycle,
+	})
+	if err != nil {
+		httpCode, message := h.handleError("购买套餐失败", "购买失败", err)
+		response.Error(c, httpCode, httpCode, message)
+		return
+	}
+	response.Success(c, toSubscriptionRespFromDomain(sub))
+}
+
+// Topup 用户用余额购买加购点数包。
+func (h *SubscriptionHandler) Topup(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		response.Unauthorized(c, "用户未认证")
+		return
+	}
+
+	id, err := parseSubscriptionID(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "无效的订阅 ID")
+		return
+	}
+
+	sub, err := h.service.Topup(c.Request.Context(), appsubscription.TopupInput{
+		UserID:         userID,
+		SubscriptionID: id,
+	})
+	if err != nil {
+		httpCode, message := h.handleError("加购点数失败", "加购失败", err)
+		response.Error(c, httpCode, httpCode, message)
+		return
+	}
+	response.Success(c, toSubscriptionRespFromDomain(sub))
+}

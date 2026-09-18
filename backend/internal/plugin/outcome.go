@@ -362,7 +362,9 @@ func (f *Forwarder) recordUsageWithFailureOverride(c *gin.Context, state *forwar
 		failure = failureFromOutcome(execution)
 	}
 
-	f.recorder.Record(billing.UsageRecord{
+	record := billing.UsageRecord{
+		RequestID:                    state.subscriptionReservationKey,
+		SubscriptionReservationKey:   state.subscriptionReservationKey,
 		UserID:                       state.keyInfo.UserID,
 		UserEmail:                    state.keyInfo.UserEmail,
 		APIKeyID:                     state.keyInfo.KeyID,
@@ -414,7 +416,26 @@ func (f *Forwarder) recordUsageWithFailureOverride(c *gin.Context, state *forwar
 		ErrorCode:                    failure.code,
 		ErrorStatus:                  failure.status,
 		ErrorMessage:                 sanitizeFailureMessage(failure.message),
-	})
+	}
+	if state.subscriptionReservationKey != "" {
+		// Measured usage owns this reservation even when persistence fails.
+		// Releasing it here would admit another request against consumed quota.
+		state.subscriptionReservationSettled = true
+		settleCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if _, err := f.recorder.RecordSync(settleCtx, record); err != nil {
+			sdk.LoggerFromContext(ctx).Error("subscription_usage_settlement_failed",
+				"reservation_key", state.subscriptionReservationKey,
+				sdk.LogFieldError, err)
+			if retryErr := f.recorder.RecordRetry(record); retryErr != nil {
+				sdk.LoggerFromContext(ctx).Error("subscription_usage_retry_persist_failed",
+					"reservation_key", state.subscriptionReservationKey,
+					sdk.LogFieldError, retryErr)
+			}
+		}
+	} else {
+		f.recorder.Record(record)
+	}
 
 	if state.stream {
 		f.logTTFTBreakdown(ctx, c, state, usage, actualModel)

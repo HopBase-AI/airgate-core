@@ -38,6 +38,8 @@ type Tx struct {
 	ReferralCommission *ReferralCommissionClient
 	// Setting is the client for interacting with the Setting builders.
 	Setting *SettingClient
+	// SubscriptionReservation is the client for interacting with the SubscriptionReservation builders.
+	SubscriptionReservation *SubscriptionReservationClient
 	// Task is the client for interacting with the Task builders.
 	Task *TaskClient
 	// TeamAuditLog is the client for interacting with the TeamAuditLog builders.
@@ -196,6 +198,7 @@ func (tx *Tx) init() {
 	tx.Proxy = NewProxyClient(tx.config)
 	tx.ReferralCommission = NewReferralCommissionClient(tx.config)
 	tx.Setting = NewSettingClient(tx.config)
+	tx.SubscriptionReservation = NewSubscriptionReservationClient(tx.config)
 	tx.Task = NewTaskClient(tx.config)
 	tx.TeamAuditLog = NewTeamAuditLogClient(tx.config)
 	tx.UsageLog = NewUsageLogClient(tx.config)

@@ -5,12 +5,14 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"time"
 
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 
 	"github.com/DouDOU-start/airgate-core/ent"
 	"github.com/DouDOU-start/airgate-core/ent/group"
 	"github.com/DouDOU-start/airgate-core/ent/user"
+	"github.com/DouDOU-start/airgate-core/ent/usersubscription"
 	"github.com/DouDOU-start/airgate-core/internal/billing"
 )
 
@@ -28,6 +30,10 @@ type Candidate struct {
 	GroupPluginSettings    map[string]map[string]string
 	UserPluginSettings     map[string]map[string]string
 	SortWeight             int
+	// SubscriptionType / Quotas 订阅制分组的类型与权益配置，供转发前准入（点数/张数/视频）判定；
+	// 普通分组 SubscriptionType 为 "standard"，Quotas 为空。
+	SubscriptionType string
+	Quotas           map[string]any
 }
 
 func ListEligibleGroups(ctx context.Context, db *ent.Client, userID int, platform string, userGroupRates map[int64]float64, userGroupPluginSettings map[int64]map[string]map[string]string, requirements Requirements) ([]Candidate, error) {
@@ -46,6 +52,7 @@ func ListEligibleGroups(ctx context.Context, db *ent.Client, userID int, platfor
 	}
 
 	candidates := make([]Candidate, 0, len(groups))
+	var subscriptionGroups map[int]bool
 	for _, g := range groups {
 		if !GroupMatchesRequirements(g, requirements) {
 			continue
@@ -65,6 +72,25 @@ func ListEligibleGroups(ctx context.Context, db *ent.Client, userID int, platfor
 				continue
 			}
 		}
+		// Select the latest effective grant before checking its status, matching
+		// subscription admission; a paused grant must not expose an older one.
+		if g.SubscriptionType == group.SubscriptionTypeSubscription {
+			if subscriptionGroups == nil {
+				subscriptionGroups, err = eligibleSubscriptionGroups(ctx, db, userID, time.Now())
+				if err != nil {
+					slog.Error("routing_load_failed",
+						sdk.LogFieldPlatform, platform,
+						sdk.LogFieldUserID, userID,
+						sdk.LogFieldGroupID, g.ID,
+						"stage", "subscription_check",
+						sdk.LogFieldError, err)
+					return nil, err
+				}
+			}
+			if !subscriptionGroups[g.ID] {
+				continue
+			}
+		}
 		candidates = append(candidates, Candidate{
 			GroupID:                g.ID,
 			Platform:               g.Platform,
@@ -75,6 +101,8 @@ func ListEligibleGroups(ctx context.Context, db *ent.Client, userID int, platfor
 			GroupPluginSettings:    clonePluginSettings(g.PluginSettings),
 			UserPluginSettings:     clonePluginSettings(userGroupPluginSettings[int64(g.ID)]),
 			SortWeight:             g.SortWeight,
+			SubscriptionType:       string(g.SubscriptionType),
+			Quotas:                 g.Quotas,
 		})
 	}
 
@@ -97,6 +125,49 @@ func ListEligibleGroups(ctx context.Context, db *ent.Client, userID int, platfor
 			"top_rate", candidates[0].EffectiveRate)
 	}
 	return candidates, nil
+}
+
+// eligibleSubscriptionGroups mirrors SubscriptionStore's current grant selection:
+// [effective_at, expires_at), newest effective time then ID, including suspended
+// grants so they cannot be bypassed. Load all platforms because one plan can grant
+// access to several model families through its snapshotted included_group_ids.
+func eligibleSubscriptionGroups(ctx context.Context, db *ent.Client, userID int, now time.Time) (map[int]bool, error) {
+	subscriptions, err := db.UserSubscription.Query().
+		Where(
+			usersubscription.HasUserWith(user.IDEQ(userID)),
+			usersubscription.StatusNEQ(usersubscription.StatusExpired),
+			usersubscription.EffectiveAtLTE(now),
+			usersubscription.ExpiresAtGT(now),
+		).
+		WithGroup().
+		Order(ent.Desc(usersubscription.FieldEffectiveAt), ent.Desc(usersubscription.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	eligible := make(map[int]bool)
+	for _, sub := range subscriptions {
+		included := sub.IncludedGroupIds
+		if len(included) == 0 {
+			quotas := sub.PlanSnapshot
+			if len(quotas) == 0 && sub.Edges.Group != nil {
+				quotas = sub.Edges.Group.Quotas
+			}
+			included = billing.ParsePlanQuotas(quotas).IncludedGroupIDs
+		}
+		// The owning plan group is always covered, even on legacy rows without
+		// an explicit included-group snapshot.
+		groupIDs := append([]int(nil), included...)
+		if sub.Edges.Group != nil {
+			groupIDs = append(groupIDs, sub.Edges.Group.ID)
+		}
+		for _, groupID := range groupIDs {
+			if _, selected := eligible[groupID]; !selected {
+				eligible[groupID] = sub.Status == usersubscription.StatusActive
+			}
+		}
+	}
+	return eligible, nil
 }
 
 // CandidatePrecedes defines the canonical automatic group-routing order.

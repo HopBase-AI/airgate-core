@@ -2,13 +2,16 @@ package subscription
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
+	"github.com/DouDOU-start/airgate-core/internal/billing"
 	"github.com/DouDOU-start/airgate-core/internal/pkg/pagination"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
 
-// Service 提供订阅域用例编排。
+// Service 提供订阅域用例编排：管理员分配/调整、用户自助购买/加购、点数账本惰性推进与转发准入。
 type Service struct {
 	repo Repository
 	now  func() time.Time
@@ -40,15 +43,417 @@ func (s *Service) UserSubscriptions(ctx context.Context, filter UserListFilter) 
 	}, nil
 }
 
-// ActiveSubscriptions 用户查看活跃订阅。
+// ActiveSubscriptions 用户查看活跃订阅。已过 expires_at 的行顺手标记 expired 并剔除，
+// 让「active」口径始终可信（没有独立到期任务，到期惰性落库）。
 func (s *Service) ActiveSubscriptions(ctx context.Context, userID int) ([]Subscription, error) {
-	return s.repo.ListActiveByUser(ctx, userID)
+	list, err := s.repo.ListActiveByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	out := make([]Subscription, 0, len(list))
+	for _, sub := range list {
+		if sub.EffectiveAt.After(now) {
+			continue
+		}
+		if !sub.ExpiresAt.After(now) {
+			if err := s.repo.MarkExpired(ctx, sub.ID); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		out = append(out, sub)
+	}
+	return out, nil
 }
 
-// SubscriptionProgress 用户查看订阅使用进度。
-// 当前保持与历史行为一致，返回空列表占位。
-func (s *Service) SubscriptionProgress(_ context.Context, _ int) ([]SubscriptionProgress, error) {
-	return []SubscriptionProgress{}, nil
+// SubscriptionProgress 用户查看各有效订阅的点数/张数进度（读路径同样触发惰性到期与换期）。
+func (s *Service) SubscriptionProgress(ctx context.Context, userID int) ([]SubscriptionProgress, error) {
+	list, err := s.repo.ListActiveByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	out := make([]SubscriptionProgress, 0, len(list))
+	for i := range list {
+		sub := list[i]
+		q := subscriptionQuotas(sub)
+		if err := s.refresh(ctx, &sub, q, now); err != nil {
+			if errors.Is(err, ErrSubscriptionExpired) || errors.Is(err, ErrSubscriptionSuspended) || errors.Is(err, ErrSubscriptionRequired) {
+				continue
+			}
+			return nil, err
+		}
+		out = append(out, buildProgress(sub, q))
+	}
+	return out, nil
+}
+
+func buildProgress(sub Subscription, q billing.PlanQuotas) SubscriptionProgress {
+	p := SubscriptionProgress{
+		SubscriptionID: sub.ID,
+		GroupID:        sub.GroupID,
+		GroupName:      sub.GroupName,
+		Status:         sub.Status,
+		BillingCycle:   sub.BillingCycle,
+		ExpiresAt:      sub.ExpiresAt,
+		PeriodStart:    sub.PeriodStart,
+		PeriodEnd:      sub.PeriodEnd,
+		Credits: UsageWindow{
+			Used:     sub.CreditsUsed,
+			Reserved: sub.CreditsReserved,
+			Limit:    q.MonthlyCredits,
+			Reset:    sub.PeriodEnd,
+		},
+		Unlimited:         q.Unlimited(),
+		ExtraCredits:      sub.ExtraCredits,
+		VideoEnabled:      q.VideoEnabled,
+		PerRequestCredits: q.PerRequestCredits,
+		TopupAvailable:    q.TopupAvailable(),
+		TopupCredits:      q.TopupCredits,
+		TopupPrice:        q.TopupPrice,
+	}
+	if q.ImageMonthlyLimit > 0 {
+		p.Images = &UsageWindow{
+			Used:     int64(sub.ImagesUsed),
+			Reserved: int64(sub.ImagesReserved),
+			Limit:    int64(q.ImageMonthlyLimit),
+			Reset:    sub.PeriodEnd,
+		}
+	}
+	return p
+}
+
+// Plans 用户视角的套餐列表：未下架的订阅制分组 + 各自当前有效订阅。
+func (s *Service) Plans(ctx context.Context, userID int) ([]PlanView, error) {
+	plans, err := s.repo.ListPlans(ctx)
+	if err != nil {
+		return nil, err
+	}
+	active, err := s.ActiveSubscriptions(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	byGroup := make(map[int]Subscription, len(active))
+	for _, sub := range active {
+		// Compare business effective times, independent of callback arrival order.
+		if current, seen := byGroup[sub.GroupID]; !seen || sub.EffectiveAt.After(current.EffectiveAt) ||
+			(sub.EffectiveAt.Equal(current.EffectiveAt) && sub.ID > current.ID) {
+			byGroup[sub.GroupID] = sub
+		}
+	}
+	views := make([]PlanView, 0, len(plans))
+	for _, plan := range plans {
+		view := PlanView{Plan: plan}
+		if sub, ok := byGroup[plan.GroupID]; ok {
+			cur := sub
+			view.Current = &cur
+		}
+		views = append(views, view)
+	}
+	return views, nil
+}
+
+// Purchase 用余额自助购买/续期套餐。已有有效订阅则在原到期日上顺延一个周期，账本不动；
+// 否则新建订阅并从现在起算首个计量期。
+func (s *Service) Purchase(ctx context.Context, input PurchaseInput) (Subscription, error) {
+	logger := sdk.LoggerFromContext(ctx)
+	months := cycleMonths(input.Cycle)
+	if months == 0 {
+		return Subscription{}, ErrInvalidBillingCycle
+	}
+	plan, err := s.repo.FindPlan(ctx, input.GroupID)
+	if err != nil {
+		return Subscription{}, err
+	}
+	if plan.Delisted {
+		return Subscription{}, ErrPlanNotPurchasable
+	}
+	q := billing.ParsePlanQuotas(plan.Quotas)
+	price := q.PriceMonthly
+	cycleLabel := "月付"
+	if input.Cycle == BillingCycleAnnual {
+		price = q.PriceAnnual
+		cycleLabel = "年付"
+	}
+	if price <= 0 {
+		return Subscription{}, ErrPlanNotPurchasable
+	}
+
+	now := s.now()
+	tx := PurchaseTx{
+		UserID:       input.UserID,
+		GroupID:      input.GroupID,
+		Price:        price,
+		Remark:       fmt.Sprintf("订阅套餐：%s（%s）", plan.Name, cycleLabel),
+		BillingCycle: input.Cycle,
+	}
+	existing, err := s.repo.FindActiveByUserGroup(ctx, input.UserID, input.GroupID)
+	switch {
+	case err == nil && existing.Status == "active" && existing.ExpiresAt.After(now):
+		tx.ExistingID = existing.ID
+		tx.ExpiresAt = AddMonths(existing.ExpiresAt, months)
+	case err == nil || errors.Is(err, ErrSubscriptionNotFound):
+		if err == nil && existing.Status == "active" {
+			// 已过期但仍标 active 的旧行：先落 expired，再开新订阅。
+			if markErr := s.repo.MarkExpired(ctx, existing.ID); markErr != nil {
+				return Subscription{}, markErr
+			}
+		}
+		tx.EffectiveAt = now
+		tx.ExpiresAt = AddMonths(now, months)
+		tx.PeriodStart, tx.PeriodEnd = PeriodContaining(now, now)
+	default:
+		return Subscription{}, err
+	}
+
+	sub, err := s.repo.Purchase(ctx, tx)
+	if err != nil {
+		if !errors.Is(err, ErrInsufficientBalance) {
+			logger.Error("subscription_purchase_failed",
+				sdk.LogFieldUserID, input.UserID,
+				sdk.LogFieldGroupID, input.GroupID,
+				sdk.LogFieldError, err)
+		}
+		return Subscription{}, err
+	}
+	logger.Info("subscription_purchased",
+		"subscription_id", sub.ID,
+		sdk.LogFieldUserID, sub.UserID,
+		sdk.LogFieldGroupID, sub.GroupID,
+		"cycle", input.Cycle,
+		"price", price,
+		"renewal", tx.ExistingID > 0)
+	return sub, nil
+}
+
+// Topup 用余额购买加购包，点数累加到 extra_credits（不随月重置）。
+func (s *Service) Topup(ctx context.Context, input TopupInput) (Subscription, error) {
+	logger := sdk.LoggerFromContext(ctx)
+	sub, err := s.repo.FindByID(ctx, input.SubscriptionID)
+	if err != nil {
+		return Subscription{}, err
+	}
+	if sub.UserID != input.UserID {
+		return Subscription{}, ErrSubscriptionNotFound
+	}
+	now := s.now()
+	q := subscriptionQuotas(sub)
+	if err := s.refresh(ctx, &sub, q, now); err != nil {
+		return Subscription{}, err
+	}
+	if !q.TopupAvailable() {
+		return Subscription{}, ErrTopupUnavailable
+	}
+	updated, err := s.repo.Topup(ctx, TopupTx{
+		UserID:         input.UserID,
+		SubscriptionID: sub.ID,
+		Price:          q.TopupPrice,
+		Credits:        q.TopupCredits,
+		Remark:         fmt.Sprintf("加购点数包：%s（%d 点）", sub.GroupName, q.TopupCredits),
+	})
+	if err != nil {
+		if !errors.Is(err, ErrInsufficientBalance) {
+			logger.Error("subscription_topup_failed",
+				"subscription_id", sub.ID,
+				sdk.LogFieldUserID, input.UserID,
+				sdk.LogFieldError, err)
+		}
+		return Subscription{}, err
+	}
+	logger.Info("subscription_topped_up",
+		"subscription_id", sub.ID,
+		sdk.LogFieldUserID, input.UserID,
+		"credits", q.TopupCredits,
+		"price", q.TopupPrice)
+	return updated, nil
+}
+
+// Entitle 转发前准入：用户在订阅制分组下必须有有效订阅、本期点数未用尽，
+// 且请求类型在套餐权益内（视频开放、生图张数未达上限）。
+// 顺手完成到期落库与计量期推进——没有独立定时任务，账本靠请求驱动。
+func (s *Service) Entitle(ctx context.Context, userID, groupID int, q billing.PlanQuotas, kind billing.RequestKind) (Entitlement, error) {
+	sub, err := s.repo.FindActiveByUserGroup(ctx, userID, groupID)
+	if err != nil {
+		if errors.Is(err, ErrSubscriptionNotFound) {
+			return Entitlement{}, ErrSubscriptionRequired
+		}
+		return Entitlement{}, err
+	}
+	q = subscriptionQuotasOr(sub, q)
+	if err := s.refresh(ctx, &sub, q, s.now()); err != nil {
+		return Entitlement{}, err
+	}
+	ent := Entitlement{
+		SubscriptionID: sub.ID,
+		Quotas:         q,
+		Unlimited:      q.Unlimited(),
+		Remaining:      remainingCredits(q, sub),
+	}
+	if !ent.Unlimited && ent.Remaining <= 0 {
+		return ent, ErrCreditsExhausted
+	}
+	switch kind {
+	case billing.RequestKindVideo:
+		if !q.VideoEnabled {
+			return ent, ErrVideoNotIncluded
+		}
+	case billing.RequestKindImage:
+		if q.ImageMonthlyLimit > 0 && sub.ImagesUsed >= q.ImageMonthlyLimit {
+			return ent, ErrImageLimitReached
+		}
+	}
+	return ent, nil
+}
+
+// Reserve performs strict request admission. Every billable subscription request must
+// provide a stable key and a positive upper bound; unknown/unbounded costs fail closed.
+func (s *Service) Reserve(ctx context.Context, input ReserveInput) (Reservation, error) {
+	if input.UserID <= 0 || input.GroupID <= 0 || input.Key == "" {
+		return Reservation{}, ErrRequestCostUnbounded
+	}
+	if input.Credits < 0 || input.Images < 0 {
+		return Reservation{}, ErrRequestCostUnbounded
+	}
+	if input.Now.IsZero() {
+		input.Now = s.now()
+	}
+	if input.ExpiresAt.IsZero() {
+		input.ExpiresAt = input.Now.Add(30 * time.Minute)
+	}
+	sub, err := s.repo.FindActiveByUserGroup(ctx, input.UserID, input.GroupID)
+	if err != nil {
+		if errors.Is(err, ErrSubscriptionNotFound) {
+			return Reservation{}, ErrSubscriptionRequired
+		}
+		return Reservation{}, err
+	}
+	q := subscriptionQuotas(sub)
+	if sub.EffectiveAt.After(input.Now) {
+		return Reservation{}, ErrSubscriptionRequired
+	}
+	if input.Kind == billing.RequestKindChat || input.Kind == "" {
+		if q.PerRequestCredits <= 0 || input.Credits > q.PerRequestCredits {
+			return Reservation{}, ErrRequestCostUnbounded
+		}
+		if input.Credits == 0 {
+			input.Credits = q.PerRequestCredits
+		}
+	}
+	return s.repo.Reserve(ctx, input)
+}
+
+// subscriptionQuotas prefers the immutable rights snapshot stored when the
+// entitlement was granted. Falling back to the current group is only for old
+// rows created before plan snapshots existed.
+func subscriptionQuotas(sub Subscription) billing.PlanQuotas {
+	if len(sub.PlanSnapshot) > 0 {
+		return billing.ParsePlanQuotas(sub.PlanSnapshot)
+	}
+	return billing.ParsePlanQuotas(sub.GroupQuotas)
+}
+
+func subscriptionQuotasOr(sub Subscription, fallback billing.PlanQuotas) billing.PlanQuotas {
+	if len(sub.PlanSnapshot) > 0 || len(sub.GroupQuotas) > 0 {
+		return subscriptionQuotas(sub)
+	}
+	return fallback
+}
+
+// Release releases a request reservation when forwarding ends without billable usage.
+func (s *Service) Release(ctx context.Context, key string) error {
+	if key == "" {
+		return nil
+	}
+	return s.repo.Release(ctx, key)
+}
+
+// GrantExternal converts a provider-verified recurring payment into a snapshotted entitlement.
+func (s *Service) GrantExternal(ctx context.Context, input ExternalGrantInput) (Subscription, error) {
+	months := cycleMonths(input.Cycle)
+	if input.UserID <= 0 || input.PlanGroupID <= 0 || months == 0 || input.Provider == "" ||
+		input.ExecutionKey == "" || input.PaymentKey == "" || input.AmountMinor <= 0 || input.Currency == "" {
+		return Subscription{}, ErrInvalidPaymentGrant
+	}
+	plan, err := s.repo.FindPlan(ctx, input.PlanGroupID)
+	if err != nil {
+		return Subscription{}, err
+	}
+	if plan.Delisted {
+		return Subscription{}, ErrPlanNotPurchasable
+	}
+	q := billing.ParsePlanQuotas(plan.Quotas)
+	if q.MonthlyCredits <= 0 || q.PerRequestCredits <= 0 {
+		return Subscription{}, ErrRequestCostUnbounded
+	}
+	if input.EffectiveAt.IsZero() {
+		input.EffectiveAt = s.now()
+	}
+	if input.ExpiresAt.IsZero() {
+		input.ExpiresAt = AddMonths(input.EffectiveAt, months)
+	}
+	input.PlanSnapshot = q.ToMap()
+	input.IncludedGroupIDs = normalizedIncludedGroups(input.PlanGroupID, q.IncludedGroupIDs)
+	return s.repo.GrantExternal(ctx, input)
+}
+
+func normalizedIncludedGroups(planGroupID int, configured []int) []int {
+	result := make([]int, 0, len(configured)+1)
+	seen := make(map[int]struct{}, len(configured)+1)
+	for _, id := range append([]int{planGroupID}, configured...) {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+	return result
+}
+
+// refresh 对一条订阅做到期判定与计量期推进，就地更新 sub。
+func (s *Service) refresh(ctx context.Context, sub *Subscription, q billing.PlanQuotas, now time.Time) error {
+	if sub.EffectiveAt.After(now) {
+		return ErrSubscriptionRequired
+	}
+	switch sub.Status {
+	case "suspended":
+		return ErrSubscriptionSuspended
+	case "expired":
+		return ErrSubscriptionExpired
+	}
+	if !sub.ExpiresAt.After(now) {
+		if err := s.repo.MarkExpired(ctx, sub.ID); err != nil {
+			return err
+		}
+		sub.Status = "expired"
+		return ErrSubscriptionExpired
+	}
+	if !sub.PeriodEnd.IsZero() && now.Before(sub.PeriodEnd) {
+		return nil
+	}
+	start, end := PeriodContaining(sub.EffectiveAt, now)
+	input := RolloverInput{PeriodStart: start, PeriodEnd: end, ExtraCredits: carryOverExtra(q, *sub)}
+	won, err := s.repo.ApplyRollover(ctx, sub.ID, sub.PeriodEnd, input)
+	if err != nil {
+		return err
+	}
+	if won {
+		sub.PeriodStart, sub.PeriodEnd = start, end
+		sub.CreditsUsed, sub.ImagesUsed = 0, 0
+		sub.CreditsReserved, sub.ImagesReserved = 0, 0
+		sub.ExtraCredits = input.ExtraCredits
+		return nil
+	}
+	// 并发换期被别人抢先：重读已推进后的行。
+	fresh, err := s.repo.FindByID(ctx, sub.ID)
+	if err != nil {
+		return err
+	}
+	*sub = fresh
+	return nil
 }
 
 // AdminListSubscriptions 管理员查看订阅列表。
@@ -80,13 +485,23 @@ func (s *Service) AdminAssign(ctx context.Context, input AssignInput) (Subscript
 			sdk.LogFieldGroupID, input.GroupID)
 		return Subscription{}, ErrInvalidExpiresAt
 	}
+	plan, err := s.repo.FindPlan(ctx, input.GroupID)
+	if err != nil {
+		return Subscription{}, err
+	}
+	q := billing.ParsePlanQuotas(plan.Quotas)
+	if q.MonthlyCredits <= 0 || q.PerRequestCredits <= 0 {
+		return Subscription{}, ErrRequestCostUnbounded
+	}
+	effectiveAt := s.now()
+	periodStart, periodEnd := PeriodContaining(effectiveAt, effectiveAt)
 
 	sub, err := s.repo.Create(ctx, CreateInput{
-		UserID:      input.UserID,
-		GroupID:     input.GroupID,
-		EffectiveAt: s.now(),
-		ExpiresAt:   expiresAt,
-		Status:      "active",
+		UserID: input.UserID, GroupID: input.GroupID,
+		EffectiveAt: effectiveAt, ExpiresAt: expiresAt,
+		PeriodStart: periodStart, PeriodEnd: periodEnd, Status: "active",
+		PlanSnapshot: q.ToMap(), IncludedGroupIDs: normalizedIncludedGroups(input.GroupID, q.IncludedGroupIDs),
+		CreditsLimit: q.MonthlyCredits, ImageLimit: q.ImageMonthlyLimit,
 	})
 	if err != nil {
 		logger.Error("subscription_persist_failed",
@@ -114,13 +529,23 @@ func (s *Service) AdminBulkAssign(ctx context.Context, input BulkAssignInput) (i
 			sdk.LogFieldGroupID, input.GroupID)
 		return 0, ErrInvalidExpiresAt
 	}
+	plan, err := s.repo.FindPlan(ctx, input.GroupID)
+	if err != nil {
+		return 0, err
+	}
+	q := billing.ParsePlanQuotas(plan.Quotas)
+	if q.MonthlyCredits <= 0 || q.PerRequestCredits <= 0 {
+		return 0, ErrRequestCostUnbounded
+	}
+	effectiveAt := s.now()
+	periodStart, periodEnd := PeriodContaining(effectiveAt, effectiveAt)
 
 	count, err := s.repo.BulkCreate(ctx, BulkCreateInput{
-		UserIDs:     append([]int(nil), input.UserIDs...),
-		GroupID:     input.GroupID,
-		EffectiveAt: s.now(),
-		ExpiresAt:   expiresAt,
-		Status:      "active",
+		UserIDs: append([]int(nil), input.UserIDs...), GroupID: input.GroupID,
+		EffectiveAt: effectiveAt, ExpiresAt: expiresAt,
+		PeriodStart: periodStart, PeriodEnd: periodEnd, Status: "active",
+		PlanSnapshot: q.ToMap(), IncludedGroupIDs: normalizedIncludedGroups(input.GroupID, q.IncludedGroupIDs),
+		CreditsLimit: q.MonthlyCredits, ImageLimit: q.ImageMonthlyLimit,
 	})
 	if err != nil {
 		logger.Error("subscription_persist_failed",
@@ -162,8 +587,8 @@ func (s *Service) AdminAdjust(ctx context.Context, id int, input AdjustInput) (S
 			sdk.LogFieldError, err)
 		return sub, err
 	}
-	if input.Status != nil && *input.Status == "cancelled" {
-		logger.Info("subscription_cancelled", "subscription_id", id)
+	if input.Status != nil && *input.Status == "suspended" {
+		logger.Info("subscription_suspended", "subscription_id", id)
 	} else {
 		logger.Info("subscription_plan_changed", "subscription_id", id)
 	}

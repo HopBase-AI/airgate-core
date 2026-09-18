@@ -58,6 +58,7 @@ export const UserUsagePage = lazyWithPreload(() => import('../pages/user/UserUsa
 export const InvitePage = lazyWithPreload(() => import('../pages/user/InvitePage'));
 export const TeamPage = lazyWithPreload(() => import('../pages/user/TeamPage'));
 export const TeamAuditPage = lazyWithPreload(() => import('../pages/user/TeamAuditPage'));
+export const PlansPage = lazyWithPreload(() => import('../pages/user/PlansPage'));
 
 export const ADMIN_IDLE_PRELOADS = [
   DashboardPage,
@@ -84,6 +85,7 @@ const ROUTE_PRELOADS = new Map<string, AnyPreloadableLazyComponent[]>([
   ['/invite', [InvitePage]],
   ['/team', [TeamPage]],
   ['/team/audit', [TeamAuditPage]],
+  ['/plans', [PlansPage]],
   ['/models', [ModelPlazaPage]],
   ['/chat', [PluginPage]],
   ['/studio', [PluginPage]],

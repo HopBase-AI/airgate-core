@@ -25,6 +25,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/ent/proxy"
 	"github.com/DouDOU-start/airgate-core/ent/referralcommission"
 	"github.com/DouDOU-start/airgate-core/ent/setting"
+	"github.com/DouDOU-start/airgate-core/ent/subscriptionreservation"
 	"github.com/DouDOU-start/airgate-core/ent/task"
 	"github.com/DouDOU-start/airgate-core/ent/teamauditlog"
 	"github.com/DouDOU-start/airgate-core/ent/usagelog"
@@ -92,26 +93,27 @@ var (
 func checkColumn(table, column string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			apikey.Table:             apikey.ValidColumn,
-			account.Table:            account.ValidColumn,
-			accountevent.Table:       accountevent.ValidColumn,
-			balancelog.Table:         balancelog.ValidColumn,
-			blogpost.Table:           blogpost.ValidColumn,
-			department.Table:         department.ValidColumn,
-			group.Table:              group.ValidColumn,
-			member.Table:             member.ValidColumn,
-			plugin.Table:             plugin.ValidColumn,
-			pluginsource.Table:       pluginsource.ValidColumn,
-			proxy.Table:              proxy.ValidColumn,
-			referralcommission.Table: referralcommission.ValidColumn,
-			setting.Table:            setting.ValidColumn,
-			task.Table:               task.ValidColumn,
-			teamauditlog.Table:       teamauditlog.ValidColumn,
-			usagelog.Table:           usagelog.ValidColumn,
-			user.Table:               user.ValidColumn,
-			useridentity.Table:       useridentity.ValidColumn,
-			usernotification.Table:   usernotification.ValidColumn,
-			usersubscription.Table:   usersubscription.ValidColumn,
+			apikey.Table:                  apikey.ValidColumn,
+			account.Table:                 account.ValidColumn,
+			accountevent.Table:            accountevent.ValidColumn,
+			balancelog.Table:              balancelog.ValidColumn,
+			blogpost.Table:                blogpost.ValidColumn,
+			department.Table:              department.ValidColumn,
+			group.Table:                   group.ValidColumn,
+			member.Table:                  member.ValidColumn,
+			plugin.Table:                  plugin.ValidColumn,
+			pluginsource.Table:            pluginsource.ValidColumn,
+			proxy.Table:                   proxy.ValidColumn,
+			referralcommission.Table:      referralcommission.ValidColumn,
+			setting.Table:                 setting.ValidColumn,
+			subscriptionreservation.Table: subscriptionreservation.ValidColumn,
+			task.Table:                    task.ValidColumn,
+			teamauditlog.Table:            teamauditlog.ValidColumn,
+			usagelog.Table:                usagelog.ValidColumn,
+			user.Table:                    user.ValidColumn,
+			useridentity.Table:            useridentity.ValidColumn,
+			usernotification.Table:        usernotification.ValidColumn,
+			usersubscription.Table:        usersubscription.ValidColumn,
 		})
 	})
 	return columnCheck(table, column)

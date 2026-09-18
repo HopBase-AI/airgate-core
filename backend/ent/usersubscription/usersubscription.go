@@ -23,6 +23,42 @@ const (
 	FieldUsage = "usage"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
+	// FieldPeriodStart holds the string denoting the period_start field in the database.
+	FieldPeriodStart = "period_start"
+	// FieldPeriodEnd holds the string denoting the period_end field in the database.
+	FieldPeriodEnd = "period_end"
+	// FieldPlanSnapshot holds the string denoting the plan_snapshot field in the database.
+	FieldPlanSnapshot = "plan_snapshot"
+	// FieldIncludedGroupIds holds the string denoting the included_group_ids field in the database.
+	FieldIncludedGroupIds = "included_group_ids"
+	// FieldCreditsLimit holds the string denoting the credits_limit field in the database.
+	FieldCreditsLimit = "credits_limit"
+	// FieldCreditsUsed holds the string denoting the credits_used field in the database.
+	FieldCreditsUsed = "credits_used"
+	// FieldCreditsReserved holds the string denoting the credits_reserved field in the database.
+	FieldCreditsReserved = "credits_reserved"
+	// FieldExtraCredits holds the string denoting the extra_credits field in the database.
+	FieldExtraCredits = "extra_credits"
+	// FieldImagesUsed holds the string denoting the images_used field in the database.
+	FieldImagesUsed = "images_used"
+	// FieldImagesReserved holds the string denoting the images_reserved field in the database.
+	FieldImagesReserved = "images_reserved"
+	// FieldImageLimit holds the string denoting the image_limit field in the database.
+	FieldImageLimit = "image_limit"
+	// FieldLedgerVersion holds the string denoting the ledger_version field in the database.
+	FieldLedgerVersion = "ledger_version"
+	// FieldBillingCycle holds the string denoting the billing_cycle field in the database.
+	FieldBillingCycle = "billing_cycle"
+	// FieldSourceProvider holds the string denoting the source_provider field in the database.
+	FieldSourceProvider = "source_provider"
+	// FieldSourceExecutionKey holds the string denoting the source_execution_key field in the database.
+	FieldSourceExecutionKey = "source_execution_key"
+	// FieldSourcePaymentKey holds the string denoting the source_payment_key field in the database.
+	FieldSourcePaymentKey = "source_payment_key"
+	// FieldPaymentAmountMinor holds the string denoting the payment_amount_minor field in the database.
+	FieldPaymentAmountMinor = "payment_amount_minor"
+	// FieldPaymentCurrency holds the string denoting the payment_currency field in the database.
+	FieldPaymentCurrency = "payment_currency"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
@@ -31,6 +67,8 @@ const (
 	EdgeUser = "user"
 	// EdgeGroup holds the string denoting the group edge name in mutations.
 	EdgeGroup = "group"
+	// EdgeReservations holds the string denoting the reservations edge name in mutations.
+	EdgeReservations = "reservations"
 	// Table holds the table name of the usersubscription in the database.
 	Table = "user_subscriptions"
 	// UserTable is the table that holds the user relation/edge.
@@ -47,6 +85,13 @@ const (
 	GroupInverseTable = "groups"
 	// GroupColumn is the table column denoting the group relation/edge.
 	GroupColumn = "group_subscriptions"
+	// ReservationsTable is the table that holds the reservations relation/edge.
+	ReservationsTable = "subscription_reservations"
+	// ReservationsInverseTable is the table name for the SubscriptionReservation entity.
+	// It exists in this package in order to avoid circular dependency with the "subscriptionreservation" package.
+	ReservationsInverseTable = "subscription_reservations"
+	// ReservationsColumn is the table column denoting the reservations relation/edge.
+	ReservationsColumn = "user_subscription_reservations"
 )
 
 // Columns holds all SQL columns for usersubscription fields.
@@ -56,6 +101,24 @@ var Columns = []string{
 	FieldExpiresAt,
 	FieldUsage,
 	FieldStatus,
+	FieldPeriodStart,
+	FieldPeriodEnd,
+	FieldPlanSnapshot,
+	FieldIncludedGroupIds,
+	FieldCreditsLimit,
+	FieldCreditsUsed,
+	FieldCreditsReserved,
+	FieldExtraCredits,
+	FieldImagesUsed,
+	FieldImagesReserved,
+	FieldImageLimit,
+	FieldLedgerVersion,
+	FieldBillingCycle,
+	FieldSourceProvider,
+	FieldSourceExecutionKey,
+	FieldSourcePaymentKey,
+	FieldPaymentAmountMinor,
+	FieldPaymentCurrency,
 	FieldCreatedAt,
 	FieldUpdatedAt,
 }
@@ -83,6 +146,28 @@ func ValidColumn(column string) bool {
 }
 
 var (
+	// DefaultCreditsLimit holds the default value on creation for the "credits_limit" field.
+	DefaultCreditsLimit int64
+	// DefaultCreditsUsed holds the default value on creation for the "credits_used" field.
+	DefaultCreditsUsed int64
+	// DefaultCreditsReserved holds the default value on creation for the "credits_reserved" field.
+	DefaultCreditsReserved int64
+	// DefaultExtraCredits holds the default value on creation for the "extra_credits" field.
+	DefaultExtraCredits int64
+	// DefaultImagesUsed holds the default value on creation for the "images_used" field.
+	DefaultImagesUsed int
+	// DefaultImagesReserved holds the default value on creation for the "images_reserved" field.
+	DefaultImagesReserved int
+	// DefaultImageLimit holds the default value on creation for the "image_limit" field.
+	DefaultImageLimit int
+	// DefaultLedgerVersion holds the default value on creation for the "ledger_version" field.
+	DefaultLedgerVersion int64
+	// DefaultSourceProvider holds the default value on creation for the "source_provider" field.
+	DefaultSourceProvider string
+	// DefaultPaymentAmountMinor holds the default value on creation for the "payment_amount_minor" field.
+	DefaultPaymentAmountMinor int64
+	// DefaultPaymentCurrency holds the default value on creation for the "payment_currency" field.
+	DefaultPaymentCurrency string
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -118,6 +203,32 @@ func StatusValidator(s Status) error {
 	}
 }
 
+// BillingCycle defines the type for the "billing_cycle" enum field.
+type BillingCycle string
+
+// BillingCycleMonthly is the default value of the BillingCycle enum.
+const DefaultBillingCycle = BillingCycleMonthly
+
+// BillingCycle values.
+const (
+	BillingCycleMonthly BillingCycle = "monthly"
+	BillingCycleAnnual  BillingCycle = "annual"
+)
+
+func (bc BillingCycle) String() string {
+	return string(bc)
+}
+
+// BillingCycleValidator is a validator for the "billing_cycle" field enum values. It is called by the builders before save.
+func BillingCycleValidator(bc BillingCycle) error {
+	switch bc {
+	case BillingCycleMonthly, BillingCycleAnnual:
+		return nil
+	default:
+		return fmt.Errorf("usersubscription: invalid enum value for billing_cycle field: %q", bc)
+	}
+}
+
 // OrderOption defines the ordering options for the UserSubscription queries.
 type OrderOption func(*sql.Selector)
 
@@ -139,6 +250,86 @@ func ByExpiresAt(opts ...sql.OrderTermOption) OrderOption {
 // ByStatus orders the results by the status field.
 func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
+}
+
+// ByPeriodStart orders the results by the period_start field.
+func ByPeriodStart(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPeriodStart, opts...).ToFunc()
+}
+
+// ByPeriodEnd orders the results by the period_end field.
+func ByPeriodEnd(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPeriodEnd, opts...).ToFunc()
+}
+
+// ByCreditsLimit orders the results by the credits_limit field.
+func ByCreditsLimit(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreditsLimit, opts...).ToFunc()
+}
+
+// ByCreditsUsed orders the results by the credits_used field.
+func ByCreditsUsed(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreditsUsed, opts...).ToFunc()
+}
+
+// ByCreditsReserved orders the results by the credits_reserved field.
+func ByCreditsReserved(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreditsReserved, opts...).ToFunc()
+}
+
+// ByExtraCredits orders the results by the extra_credits field.
+func ByExtraCredits(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldExtraCredits, opts...).ToFunc()
+}
+
+// ByImagesUsed orders the results by the images_used field.
+func ByImagesUsed(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldImagesUsed, opts...).ToFunc()
+}
+
+// ByImagesReserved orders the results by the images_reserved field.
+func ByImagesReserved(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldImagesReserved, opts...).ToFunc()
+}
+
+// ByImageLimit orders the results by the image_limit field.
+func ByImageLimit(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldImageLimit, opts...).ToFunc()
+}
+
+// ByLedgerVersion orders the results by the ledger_version field.
+func ByLedgerVersion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLedgerVersion, opts...).ToFunc()
+}
+
+// ByBillingCycle orders the results by the billing_cycle field.
+func ByBillingCycle(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBillingCycle, opts...).ToFunc()
+}
+
+// BySourceProvider orders the results by the source_provider field.
+func BySourceProvider(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSourceProvider, opts...).ToFunc()
+}
+
+// BySourceExecutionKey orders the results by the source_execution_key field.
+func BySourceExecutionKey(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSourceExecutionKey, opts...).ToFunc()
+}
+
+// BySourcePaymentKey orders the results by the source_payment_key field.
+func BySourcePaymentKey(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSourcePaymentKey, opts...).ToFunc()
+}
+
+// ByPaymentAmountMinor orders the results by the payment_amount_minor field.
+func ByPaymentAmountMinor(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPaymentAmountMinor, opts...).ToFunc()
+}
+
+// ByPaymentCurrency orders the results by the payment_currency field.
+func ByPaymentCurrency(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPaymentCurrency, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.
@@ -164,6 +355,20 @@ func ByGroupField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newGroupStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// ByReservationsCount orders the results by reservations count.
+func ByReservationsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newReservationsStep(), opts...)
+	}
+}
+
+// ByReservations orders the results by reservations terms.
+func ByReservations(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newReservationsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newUserStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -176,5 +381,12 @@ func newGroupStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(GroupInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, GroupTable, GroupColumn),
+	)
+}
+func newReservationsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ReservationsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, ReservationsTable, ReservationsColumn),
 	)
 }

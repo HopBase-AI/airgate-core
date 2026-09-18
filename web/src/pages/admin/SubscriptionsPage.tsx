@@ -190,7 +190,7 @@ export default function SubscriptionsPage() {
             totalPages={totalPages}
           />
         )}
-        minWidth={920}
+        minWidth={1080}
       >
             <CommonTable.Header>
               <CommonTable.Column id="id" style={{ width: 72 }}>
@@ -200,15 +200,16 @@ export default function SubscriptionsPage() {
               <CommonTable.Column id="group_name">{t('subscriptions.group')}</CommonTable.Column>
               <CommonTable.Column id="effective_at">{t('subscriptions.effective_time')}</CommonTable.Column>
               <CommonTable.Column id="expires_at">{t('subscriptions.expire_time')}</CommonTable.Column>
+              <CommonTable.Column id="ledger">{t('subscriptions.ledger')}</CommonTable.Column>
               <CommonTable.Column id="status">{t('common.status')}</CommonTable.Column>
               <CommonTable.Column id="actions">{t('common.actions')}</CommonTable.Column>
             </CommonTable.Header>
             <CommonTable.Body>
               {isLoading ? (
-                <TableLoadingRow colSpan={7} />
+                <TableLoadingRow colSpan={8} />
               ) : rows.length === 0 ? (
                 <CommonTable.Row id="empty">
-                  <CommonTable.Cell colSpan={7}>
+                  <CommonTable.Cell colSpan={8}>
                     <EmptyState>
                       <div className="text-sm text-default-500">{t('common.no_data')}</div>
                     </EmptyState>
@@ -237,6 +238,17 @@ export default function SubscriptionsPage() {
                     </CommonTable.Cell>
                     <CommonTable.Cell>
                       <span className="font-mono">{formatDate(row.expires_at)}</span>
+                    </CommonTable.Cell>
+                    <CommonTable.Cell>
+                      <span className="text-xs text-text-secondary" title={row.period_end ? `${t('subscriptions.period')}: ${formatDate(row.period_start ?? '')} → ${formatDate(row.period_end)}` : undefined}>
+                        {t('subscriptions.ledger_cell', {
+                          used: Math.round(row.credits_used ?? 0).toLocaleString(),
+                          extra: Math.round(row.extra_credits ?? 0).toLocaleString(),
+                          images: row.images_used ?? 0,
+                        })}
+                        {' · '}
+                        {row.billing_cycle === 'annual' ? t('plans.cycle_annual') : t('plans.cycle_monthly')}
+                      </span>
                     </CommonTable.Cell>
                     <CommonTable.Cell>
                       <StatusChip status={row.status} />
