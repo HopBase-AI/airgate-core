@@ -306,6 +306,7 @@ var (
 		{Name: "name_i18n", Type: field.TypeJSON, Nullable: true},
 		{Name: "platform", Type: field.TypeString},
 		{Name: "rate_multiplier", Type: field.TypeFloat64, Default: 1},
+		{Name: "cached_input_full_price", Type: field.TypeBool, Default: false},
 		{Name: "is_exclusive", Type: field.TypeBool, Default: false},
 		{Name: "status_visible", Type: field.TypeBool, Default: true},
 		{Name: "delisted", Type: field.TypeBool, Default: false},

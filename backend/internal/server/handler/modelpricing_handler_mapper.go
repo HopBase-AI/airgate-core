@@ -13,6 +13,7 @@ func toMyModelPricingResp(result appmodelpricing.Result) dto.MyModelPricingResp 
 			models = append(models, dto.MyPricingModelResp{
 				PublicPricingModelResp: toPublicPricingModelResp(m.PublicPricingModel),
 				UserRate:               m.UserRate,
+				CachedUserRate:         m.CachedUserRate,
 				GroupID:                m.GroupID,
 				GroupName:              m.GroupName,
 				GroupNameI18n:          m.GroupNameI18n,
@@ -27,12 +28,13 @@ func toMyModelPricingResp(result appmodelpricing.Result) dto.MyModelPricingResp 
 	groups := make([]dto.MyGroupQuoteResp, 0, len(result.Groups))
 	for _, g := range result.Groups {
 		groups = append(groups, dto.MyGroupQuoteResp{
-			ID:            g.ID,
-			Name:          g.Name,
-			Platform:      g.Platform,
-			GroupRate:     g.GroupRate,
-			EffectiveRate: g.EffectiveRate,
-			USDMultiplier: g.USDMultiplier,
+			ID:                   g.ID,
+			Name:                 g.Name,
+			Platform:             g.Platform,
+			GroupRate:            g.GroupRate,
+			EffectiveRate:        g.EffectiveRate,
+			USDMultiplier:        g.USDMultiplier,
+			CachedInputFullPrice: g.CachedInputFullPrice,
 		})
 	}
 	return dto.MyModelPricingResp{Platforms: platforms, Groups: groups, PricingMode: result.PricingMode}

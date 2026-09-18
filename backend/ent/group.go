@@ -26,6 +26,8 @@ type Group struct {
 	Platform string `json:"platform,omitempty"`
 	// RateMultiplier holds the value of the "rate_multiplier" field.
 	RateMultiplier float64 `json:"rate_multiplier,omitempty"`
+	// CachedInputFullPrice holds the value of the "cached_input_full_price" field.
+	CachedInputFullPrice bool `json:"cached_input_full_price,omitempty"`
 	// IsExclusive holds the value of the "is_exclusive" field.
 	IsExclusive bool `json:"is_exclusive,omitempty"`
 	// StatusVisible holds the value of the "status_visible" field.
@@ -129,7 +131,7 @@ func (*Group) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case group.FieldNameI18n, group.FieldQuotas, group.FieldModelRouting, group.FieldPluginSettings, group.FieldNoteI18n:
 			values[i] = new([]byte)
-		case group.FieldIsExclusive, group.FieldStatusVisible, group.FieldDelisted:
+		case group.FieldCachedInputFullPrice, group.FieldIsExclusive, group.FieldStatusVisible, group.FieldDelisted:
 			values[i] = new(sql.NullBool)
 		case group.FieldRateMultiplier:
 			values[i] = new(sql.NullFloat64)
@@ -185,6 +187,12 @@ func (gr *Group) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field rate_multiplier", values[i])
 			} else if value.Valid {
 				gr.RateMultiplier = value.Float64
+			}
+		case group.FieldCachedInputFullPrice:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field cached_input_full_price", values[i])
+			} else if value.Valid {
+				gr.CachedInputFullPrice = value.Bool
 			}
 		case group.FieldIsExclusive:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -350,6 +358,9 @@ func (gr *Group) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("rate_multiplier=")
 	builder.WriteString(fmt.Sprintf("%v", gr.RateMultiplier))
+	builder.WriteString(", ")
+	builder.WriteString("cached_input_full_price=")
+	builder.WriteString(fmt.Sprintf("%v", gr.CachedInputFullPrice))
 	builder.WriteString(", ")
 	builder.WriteString("is_exclusive=")
 	builder.WriteString(fmt.Sprintf("%v", gr.IsExclusive))

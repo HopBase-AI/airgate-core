@@ -4,6 +4,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/DouDOU-start/airgate-core/internal/pkg/ledger"
 	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
 
@@ -462,5 +463,99 @@ func TestEnrichUsageCostDetails_FreeFixedImagePriceDoesNotFallBackToTokenCost(t 
 	}
 	if got := items[1].Metadata["fixed_unit"]; got != "CNY/image" {
 		t.Fatalf("fixed_unit = %q, want CNY/image", got)
+	}
+}
+
+// 「缓存读不吃折扣」：输入/输出照旧按分组倍率打折，缓存读单独按平台基准倍率
+// （ledger.RateBase）计——即缓存按厂商官方牌价原价卖。
+func TestCalculate_CachedInputFullPrice(t *testing.T) {
+	c := NewCalculator()
+	// 组 55（DeepSeek V4.1 Flash）的实配：卖价 65 折 = 4.42，基准 6.8。
+	res := c.Calculate(CalculateInput{
+		InputCost:            0.6,
+		OutputCost:           0.3,
+		CachedInputCost:      0.1,
+		BillingRate:          4.42,
+		CachedInputFullPrice: true,
+		AccountRate:          3.4,
+	})
+
+	want := 0.9*4.42 + 0.1*ledger.RateBase
+	if !almostEqual(res.ActualCost, want) {
+		t.Fatalf("ActualCost = %v, want %v", res.ActualCost, want)
+	}
+	if !almostEqual(res.CachedInputRate, ledger.RateBase) {
+		t.Fatalf("CachedInputRate = %v, want %v", res.CachedInputRate, ledger.RateBase)
+	}
+	// 成本侧与用户计费无关：account_cost 仍是整单 × account_rate。
+	if !almostEqual(res.AccountCost, 1.0*3.4) {
+		t.Fatalf("AccountCost = %v, want %v", res.AccountCost, 3.4)
+	}
+	// 开关不改总基准成本，也不改快照倍率。
+	if !almostEqual(res.TotalCost, 1.0) {
+		t.Fatalf("TotalCost = %v, want 1.0", res.TotalCost)
+	}
+	if !almostEqual(res.RateMultiplier, 4.42) {
+		t.Fatalf("RateMultiplier = %v, want 4.42", res.RateMultiplier)
+	}
+}
+
+// 开关只上不下：倍率已高于基准的溢价分组不该因为「不打折」反而把缓存卖得更便宜。
+func TestCalculate_CachedInputFullPriceNeverCheapens(t *testing.T) {
+	c := NewCalculator()
+	premium := ledger.RateBase + 1.2
+	res := c.Calculate(CalculateInput{
+		InputCost:            0.6,
+		OutputCost:           0.3,
+		CachedInputCost:      0.1,
+		BillingRate:          premium,
+		CachedInputFullPrice: true,
+		AccountRate:          1,
+	})
+
+	if !almostEqual(res.ActualCost, 1.0*premium) {
+		t.Fatalf("ActualCost = %v, want %v（整单同倍率）", res.ActualCost, 1.0*premium)
+	}
+	if !almostEqual(res.CachedInputRate, premium) {
+		t.Fatalf("CachedInputRate = %v, want %v", res.CachedInputRate, premium)
+	}
+}
+
+// 关着开关时的结果必须与开关引入前逐字节一致（存量分组零行为变化）。
+func TestCalculate_CachedInputFullPriceOffUnchanged(t *testing.T) {
+	c := NewCalculator()
+	in := CalculateInput{
+		InputCost:       0.6,
+		OutputCost:      0.3,
+		CachedInputCost: 0.1,
+		BillingRate:     4.42,
+		SellRate:        5.1,
+		AccountRate:     3.4,
+	}
+	res := c.Calculate(in)
+
+	if !almostEqual(res.ActualCost, 1.0*4.42) {
+		t.Fatalf("ActualCost = %v, want %v", res.ActualCost, 4.42)
+	}
+	if !almostEqual(res.CachedInputRate, 4.42) {
+		t.Fatalf("CachedInputRate = %v, want 4.42（未开开关时等于 BillingRate）", res.CachedInputRate)
+	}
+}
+
+// billed_cost 走 reseller 自设的 sell_rate，是另一套定价，不该被平台的折扣口径改写。
+func TestCalculate_CachedInputFullPriceLeavesSellRateAlone(t *testing.T) {
+	c := NewCalculator()
+	res := c.Calculate(CalculateInput{
+		InputCost:            0.6,
+		OutputCost:           0.3,
+		CachedInputCost:      0.1,
+		BillingRate:          4.42,
+		CachedInputFullPrice: true,
+		SellRate:             5.1,
+		AccountRate:          1,
+	})
+
+	if !almostEqual(res.BilledCost, 1.0*5.1) {
+		t.Fatalf("BilledCost = %v, want %v（整单 × sell_rate）", res.BilledCost, 5.1)
 	}
 }

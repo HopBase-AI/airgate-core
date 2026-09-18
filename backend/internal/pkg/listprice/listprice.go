@@ -38,6 +38,10 @@ const (
 	SnapshotUnitPrice = "list_unit_price"
 	// SnapshotFX 该明细的折算率快照（行级 usage_metadata 亦可带，作兜底）。
 	SnapshotFX = "list_fx"
+	// SnapshotCachedRate 本行缓存读实际生效的倍率，只在它与行级 rate_multiplier 不同时
+	// 写（即分组开了 cached_input_full_price）。验算块据此把缓存档单独折算——否则整块
+	// 按单一折扣算出来的实扣对不上，等式会当着客户的面算错。
+	SnapshotCachedRate = "cached_rate_multiplier"
 )
 
 // 覆盖层条目同义字段名（settings models.catalog.<platform> 每个条目的 "list_price" 对象）。

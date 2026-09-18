@@ -8242,48 +8242,49 @@ func (m *DepartmentMutation) ResetEdge(name string) error {
 // GroupMutation represents an operation that mutates the Group nodes in the graph.
 type GroupMutation struct {
 	config
-	op                   Op
-	typ                  string
-	id                   *int
-	name                 *string
-	name_i18n            *map[string]string
-	platform             *string
-	rate_multiplier      *float64
-	addrate_multiplier   *float64
-	is_exclusive         *bool
-	status_visible       *bool
-	delisted             *bool
-	subscription_type    *group.SubscriptionType
-	quotas               *map[string]interface{}
-	model_routing        *map[string][]int64
-	plugin_settings      *map[string]map[string]string
-	service_tier         *string
-	force_instructions   *string
-	note                 *string
-	note_i18n            *map[string]string
-	sort_weight          *int
-	addsort_weight       *int
-	created_at           *time.Time
-	updated_at           *time.Time
-	clearedFields        map[string]struct{}
-	accounts             map[int]struct{}
-	removedaccounts      map[int]struct{}
-	clearedaccounts      bool
-	allowed_users        map[int]struct{}
-	removedallowed_users map[int]struct{}
-	clearedallowed_users bool
-	api_keys             map[int]struct{}
-	removedapi_keys      map[int]struct{}
-	clearedapi_keys      bool
-	subscriptions        map[int]struct{}
-	removedsubscriptions map[int]struct{}
-	clearedsubscriptions bool
-	usage_logs           map[int]struct{}
-	removedusage_logs    map[int]struct{}
-	clearedusage_logs    bool
-	done                 bool
-	oldValue             func(context.Context) (*Group, error)
-	predicates           []predicate.Group
+	op                      Op
+	typ                     string
+	id                      *int
+	name                    *string
+	name_i18n               *map[string]string
+	platform                *string
+	rate_multiplier         *float64
+	addrate_multiplier      *float64
+	cached_input_full_price *bool
+	is_exclusive            *bool
+	status_visible          *bool
+	delisted                *bool
+	subscription_type       *group.SubscriptionType
+	quotas                  *map[string]interface{}
+	model_routing           *map[string][]int64
+	plugin_settings         *map[string]map[string]string
+	service_tier            *string
+	force_instructions      *string
+	note                    *string
+	note_i18n               *map[string]string
+	sort_weight             *int
+	addsort_weight          *int
+	created_at              *time.Time
+	updated_at              *time.Time
+	clearedFields           map[string]struct{}
+	accounts                map[int]struct{}
+	removedaccounts         map[int]struct{}
+	clearedaccounts         bool
+	allowed_users           map[int]struct{}
+	removedallowed_users    map[int]struct{}
+	clearedallowed_users    bool
+	api_keys                map[int]struct{}
+	removedapi_keys         map[int]struct{}
+	clearedapi_keys         bool
+	subscriptions           map[int]struct{}
+	removedsubscriptions    map[int]struct{}
+	clearedsubscriptions    bool
+	usage_logs              map[int]struct{}
+	removedusage_logs       map[int]struct{}
+	clearedusage_logs       bool
+	done                    bool
+	oldValue                func(context.Context) (*Group, error)
+	predicates              []predicate.Group
 }
 
 var _ ent.Mutation = (*GroupMutation)(nil)
@@ -8559,6 +8560,42 @@ func (m *GroupMutation) AddedRateMultiplier() (r float64, exists bool) {
 func (m *GroupMutation) ResetRateMultiplier() {
 	m.rate_multiplier = nil
 	m.addrate_multiplier = nil
+}
+
+// SetCachedInputFullPrice sets the "cached_input_full_price" field.
+func (m *GroupMutation) SetCachedInputFullPrice(b bool) {
+	m.cached_input_full_price = &b
+}
+
+// CachedInputFullPrice returns the value of the "cached_input_full_price" field in the mutation.
+func (m *GroupMutation) CachedInputFullPrice() (r bool, exists bool) {
+	v := m.cached_input_full_price
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCachedInputFullPrice returns the old "cached_input_full_price" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldCachedInputFullPrice(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCachedInputFullPrice is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCachedInputFullPrice requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCachedInputFullPrice: %w", err)
+	}
+	return oldValue.CachedInputFullPrice, nil
+}
+
+// ResetCachedInputFullPrice resets all changes to the "cached_input_full_price" field.
+func (m *GroupMutation) ResetCachedInputFullPrice() {
+	m.cached_input_full_price = nil
 }
 
 // SetIsExclusive sets the "is_exclusive" field.
@@ -9441,7 +9478,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 18)
+	fields := make([]string, 0, 19)
 	if m.name != nil {
 		fields = append(fields, group.FieldName)
 	}
@@ -9453,6 +9490,9 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.rate_multiplier != nil {
 		fields = append(fields, group.FieldRateMultiplier)
+	}
+	if m.cached_input_full_price != nil {
+		fields = append(fields, group.FieldCachedInputFullPrice)
 	}
 	if m.is_exclusive != nil {
 		fields = append(fields, group.FieldIsExclusive)
@@ -9512,6 +9552,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.Platform()
 	case group.FieldRateMultiplier:
 		return m.RateMultiplier()
+	case group.FieldCachedInputFullPrice:
+		return m.CachedInputFullPrice()
 	case group.FieldIsExclusive:
 		return m.IsExclusive()
 	case group.FieldStatusVisible:
@@ -9557,6 +9599,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldPlatform(ctx)
 	case group.FieldRateMultiplier:
 		return m.OldRateMultiplier(ctx)
+	case group.FieldCachedInputFullPrice:
+		return m.OldCachedInputFullPrice(ctx)
 	case group.FieldIsExclusive:
 		return m.OldIsExclusive(ctx)
 	case group.FieldStatusVisible:
@@ -9621,6 +9665,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRateMultiplier(v)
+		return nil
+	case group.FieldCachedInputFullPrice:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCachedInputFullPrice(v)
 		return nil
 	case group.FieldIsExclusive:
 		v, ok := value.(bool)
@@ -9840,6 +9891,9 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldRateMultiplier:
 		m.ResetRateMultiplier()
+		return nil
+	case group.FieldCachedInputFullPrice:
+		m.ResetCachedInputFullPrice()
 		return nil
 	case group.FieldIsExclusive:
 		m.ResetIsExclusive()

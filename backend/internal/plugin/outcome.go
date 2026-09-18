@@ -328,15 +328,16 @@ func (f *Forwarder) recordUsageWithFailureOverride(c *gin.Context, state *forwar
 	//   sellRate:    reseller 对客户的销售倍率（独立 markup 管道）
 	//   accountRate: 账号自身的真实成本系数（"账号计费"统计管道）
 	calcInput := billing.CalculateInput{
-		InputCost:         usageValues.InputCost,
-		ImageInputCost:    usageValues.ImageInputCost,
-		OutputCost:        usageValues.OutputCost,
-		CachedInputCost:   usageValues.CachedInputCost,
-		CacheCreationCost: usageValues.CacheCreationCost,
-		ImageCost:         usageValues.ImageCost,
-		BillingRate:       billing.ResolveBillingRate(state.keyInfo),
-		SellRate:          state.keyInfo.SellRate,
-		AccountRate:       billing.ResolveAccountRateForModel(state.account.Extra, actualModel, state.account.RateMultiplier),
+		InputCost:            usageValues.InputCost,
+		ImageInputCost:       usageValues.ImageInputCost,
+		OutputCost:           usageValues.OutputCost,
+		CachedInputCost:      usageValues.CachedInputCost,
+		CacheCreationCost:    usageValues.CacheCreationCost,
+		ImageCost:            usageValues.ImageCost,
+		BillingRate:          billing.ResolveBillingRate(state.keyInfo),
+		CachedInputFullPrice: state.keyInfo.GroupCachedInputFullPrice,
+		SellRate:             state.keyInfo.SellRate,
+		AccountRate:          billing.ResolveAccountRateForModel(state.account.Extra, actualModel, state.account.RateMultiplier),
 	}
 	userPluginSettings := map[string]map[string]string(nil)
 	if state.keyInfo.UserGroupPluginSettings != nil {
@@ -410,7 +411,7 @@ func (f *Forwarder) recordUsageWithFailureOverride(c *gin.Context, state *forwar
 		UsageAttributes:              usage.Attributes,
 		UsageMetrics:                 usage.Metrics,
 		UsageCostDetails:             usage.CostDetails,
-		UsageMetadata:                usageMetadataWithTrace(usage.Metadata, c.Request.Context()),
+		UsageMetadata:                withCachedRateSnapshot(usageMetadataWithTrace(usage.Metadata, c.Request.Context()), calc),
 		ErrorCode:                    failure.code,
 		ErrorStatus:                  failure.status,
 		ErrorMessage:                 sanitizeFailureMessage(failure.message),

@@ -5,8 +5,10 @@ import {
   formatDiscount,
   formatDivisor,
   formatNativeAmount,
+  hasCachedCost,
   hasDivisor,
   verificationFormula,
+  type OfficialNativeCost,
   type UsageRowWithOfficialNative,
 } from './usageListPrice';
 import en from '../i18n/en.json';
@@ -58,7 +60,8 @@ describe('官方牌价验算块：渲染与不渲染', () => {
   it('有 official_native 即给出验算数据与各档牌价单价', () => {
     const verification = buildUsageVerification(qwenRow());
     expect(verification).not.toBeNull();
-    expect(verification?.official).toEqual({ currency: 'CNY', fx: 6.8, cost: 0.12, discount: 0.7, divisor: 6.8, ledger_currency: 'USD' });
+    expect(verification?.official).toEqual({ currency: 'CNY', fx: 6.8, cost: 0.12, cached_cost: 0, discount: 0.7, divisor: 6.8, ledger_currency: 'USD' });
+    expect(verification?.showCachedCost).toBe(false);
     expect(verification?.showDivisor).toBe(true);
     expect(verification?.actualCost).toBe(0.012353);
     expect(verification?.unitPrices).toEqual([
@@ -189,6 +192,93 @@ describe('官方牌价验算块：渲染与不渲染', () => {
   });
 });
 
+// —— 分组开了「缓存读不吃折扣」的行（cached_input_full_price） ——
+// 缓存读按厂商官方牌价原价计、不乘折，后端把这一档从 cost 里摘出来放进 cached_cost，
+// 等式变成 (cost × 折 + cached_cost) ÷ 除数 = 实扣。
+// 算例取 DeepSeek V4.1 Flash 场景：折前输入+输出 ¥0.12、缓存读 ¥0.04、7 折、USD 账本 →
+//   actual_cost = (0.12 × 0.7 + 0.04) ÷ 6.8 = 0.124 ÷ 6.8 = 0.018235
+function cachedSplitRow(overrides: Partial<OfficialNativeCost> = {}): UsageRowWithOfficialNative {
+  return {
+    actual_cost: 0.018235,
+    usage_cost_details: [
+      {
+        key: 'input_tokens',
+        label: '输入 Token',
+        account_cost: 0.017647,
+        metadata: { unit_price: '1.7647', list_currency: 'CNY', list_unit_price: '12', list_fx: '6.8' },
+      },
+      {
+        key: 'cached_input',
+        label: '缓存读 Token',
+        account_cost: 0.005882,
+        metadata: { unit_price: '0.1765', list_currency: 'CNY', list_unit_price: '1.2', list_fx: '6.8' },
+      },
+    ],
+    official_native: {
+      currency: 'CNY', fx: 6.8, cost: 0.12, cached_cost: 0.04,
+      discount: 0.7, divisor: 6.8, ledger_currency: 'USD',
+      ...overrides,
+    },
+  };
+}
+
+describe('缓存读不吃折扣的行：单列一档且等式自洽', () => {
+  it('cached_cost 非零时单列缓存读一行，金额原样取后端快照', () => {
+    const verification = buildUsageVerification(cachedSplitRow());
+    if (!verification) throw new Error('带缓存读档位的行应产出验算块');
+    expect(verification.showCachedCost).toBe(true);
+    expect(verification.official.cached_cost).toBe(0.04);
+    // cost 已不含缓存读那一档，前端不得把两者合并再摊折。
+    expect(verification.official.cost).toBe(0.12);
+  });
+
+  it('验算式带括号：(官方费用 × 折 + 缓存读) ÷ 除数', () => {
+    const verification = buildUsageVerification(cachedSplitRow());
+    if (!verification) throw new Error('带缓存读档位的行应产出验算块');
+    expect(verificationFormula(verification.official)).toBe('(¥0.1200 × 0.70 + ¥0.0400) ÷ 6.8');
+    // 括号不能省：没括号会被读成「只有缓存那一档参与了除法」，算出来差一个折。
+    expect(verificationFormula(verification.official)).not.toBe('¥0.1200 × 0.70 + ¥0.0400 ÷ 6.8');
+    // 展示出来的等式确实闭合到实扣（这里只是核对口径，展示层不做这个乘除）。
+    const { cost, cached_cost: cached, discount, divisor } = verification.official;
+    expect((cost * discount + (cached ?? 0)) / divisor).toBeCloseTo(verification.actualCost, 6);
+  });
+
+  it('¥ 账本（除数 1）：等式收缩成「官方费用 × 折 + 缓存读」，不加括号', () => {
+    const row = cachedSplitRow({ currency: 'CNY', fx: 6.8, cost: 0.12, cached_cost: 0.04, discount: 0.7, divisor: 1, ledger_currency: 'CNY' });
+    row.actual_cost = 0.124;
+    const verification = buildUsageVerification(row);
+    if (!verification) throw new Error('¥ 账本的行应产出验算块');
+    expect(verification.showDivisor).toBe(false);
+    expect(verificationFormula(verification.official)).toBe('¥0.1200 × 0.70 + ¥0.0400');
+    expect(verification.official.cost * verification.official.discount + (verification.official.cached_cost ?? 0))
+      .toBeCloseTo(verification.actualCost, 6);
+  });
+
+  it('cached_cost 缺省 / 0 / 脏值一律退化回旧等式，绝不自己反推', () => {
+    // 老后端不下发该字段：整块回到 cost × 折 ÷ 除数。
+    const plain = buildUsageVerification(qwenRow());
+    if (!plain) throw new Error('普通行应产出验算块');
+    expect(plain.showCachedCost).toBe(false);
+    expect(plain.official.cached_cost).toBe(0);
+    expect(verificationFormula(plain.official)).toBe('¥0.1200 × 0.70 ÷ 6.8');
+
+    for (const dirty of [0, -1, Number.NaN]) {
+      const verification = buildUsageVerification(cachedSplitRow({ cached_cost: dirty }));
+      if (!verification) throw new Error('脏 cached_cost 不该让整块消失');
+      expect(verification.showCachedCost, String(dirty)).toBe(false);
+      expect(verification.official.cached_cost, String(dirty)).toBe(0);
+      expect(verificationFormula(verification.official), String(dirty)).toBe('¥0.1200 × 0.70 ÷ 6.8');
+    }
+  });
+
+  it('hasCachedCost 只认正数，老后端不下发该字段时为 false', () => {
+    const base = { currency: 'CNY', fx: 6.8, cost: 0.12, discount: 0.7, divisor: 6.8, ledger_currency: 'USD' };
+    expect(hasCachedCost(base)).toBe(false);
+    expect(hasCachedCost({ ...base, cached_cost: 0 })).toBe(false);
+    expect(hasCachedCost({ ...base, cached_cost: 0.04 })).toBe(true);
+  });
+});
+
 describe('金额格式化', () => {
   it('币种符号按 list_currency 映射，认不出的币种不硬标 $', () => {
     expect(currencySymbol('CNY')).toBe('¥');
@@ -233,7 +323,8 @@ describe('验算块文案五语齐备', () => {
   // docs/i18n-sop.md：新增用户可见文案必须五包同批落地，不许靠回退兜底。
   const KEYS = [
     'official_list_price', 'official_cost_native', 'discount', 'actual_charged',
-    'verify_formula', 'list_fx', 'per_million_tokens', 'per_second', 'per_image', 'per_call',
+    'verify_formula', 'list_fx', 'cached_read_full_price',
+    'per_million_tokens', 'per_second', 'per_image', 'per_call',
   ];
   const PACKS: Record<string, { usage: Record<string, string> }> = { zh, 'zh-HK': zhHK, en, ja, es };
 

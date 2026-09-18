@@ -9,6 +9,9 @@ export interface GroupQuoteSuffixData {
   // quoteOnly 报价客户模式：只显示「¥X.XX / $1」报价本身，
   // 不渲染划线标准价与折扣徽章（报价客户不该看到任何牌价锚点）。
   quoteOnly?: boolean;
+  // cachedInputFullPrice 该分组的缓存读按厂商官方牌价原价计、不吃折扣：
+  // 补一个小标记 + 悬浮说明，免得客户拿这里的折扣去核缓存单价却对不上。
+  cachedInputFullPrice?: boolean;
 }
 
 interface GroupQuoteSuffixProps {
@@ -25,6 +28,16 @@ export function GroupQuoteSuffix({ data, title }: GroupQuoteSuffixProps) {
   const price = (multiplier: number) => t('user_keys.group_quote_price', {
     m: formatMultiplier(multiplier),
   });
+
+  // 缓存读原价标记：文案只提「厂商官方牌价」，不涉及任何上游通道。
+  const cachedTag = data.cachedInputFullPrice ? (
+    <span
+      className="rounded-[var(--radius)] bg-surface px-1.5 py-0.5 text-[11px] font-normal text-text-tertiary"
+      title={t('user_keys.group_cached_full_price_hint')}
+    >
+      {t('user_keys.group_cached_full_price_tag')}
+    </span>
+  ) : null;
 
   if (data.quoteOnly) {
     return (
@@ -46,6 +59,7 @@ export function GroupQuoteSuffix({ data, title }: GroupQuoteSuffixProps) {
         <span className={data.standardMultiplier != null ? 'font-medium text-primary' : undefined}>
           {formatMultiplier(data.multiplier)}x {t('user_keys.rate_suffix')}
         </span>
+        {cachedTag}
       </span>
     );
   }
@@ -67,6 +81,7 @@ export function GroupQuoteSuffix({ data, title }: GroupQuoteSuffixProps) {
           off: data.discountPercent,
         })}
       </span>
+      {cachedTag}
     </span>
   );
 }

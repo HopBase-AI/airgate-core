@@ -474,6 +474,8 @@ export interface GroupResp {
   name_i18n?: Record<string, string>;
   platform: string;
   rate_multiplier: number;
+  // 缓存读不吃本分组折扣:按平台基准倍率(厂商官方牌价原价)计费,输入/输出照旧按 rate_multiplier 打折
+  cached_input_full_price: boolean;
   is_exclusive: boolean;
   status_visible: boolean;
   delisted: boolean;
@@ -506,6 +508,8 @@ export interface CreateGroupReq {
   name_i18n?: Record<string, string>;
   platform: string;
   rate_multiplier?: number;
+  // 缺省 false = 缓存读与输入/输出同折
+  cached_input_full_price?: boolean;
   is_exclusive?: boolean;
   status_visible?: boolean;
   delisted?: boolean;
@@ -536,6 +540,8 @@ export interface UpdateGroupReq {
   // 省略=不修改;提交则整体覆盖(剔除空白 value 后为空 = 清空)
   name_i18n?: Record<string, string>;
   rate_multiplier?: number;
+  // 省略=不修改
+  cached_input_full_price?: boolean;
   is_exclusive?: boolean;
   status_visible?: boolean;
   delisted?: boolean;
@@ -833,7 +839,11 @@ export interface UsageCostDetail {
  * OfficialNativeCost 厂商官方牌价口径的单行费用（后端只读计算块，不落库、不参与计费）。
  *
  * 国内厂商模型的官网标价是 ¥，客户据此逐笔验算：
- *   cost（原币官方费用）× discount（折）÷ divisor（账本除数）= actual_cost（实扣，ledger_currency 计价）
+ *   (cost（原币官方费用）× discount（折）+ cached_cost（不打折的缓存读）) ÷ divisor（账本除数）
+ *     = actual_cost（实扣，ledger_currency 计价）
+ *
+ * cached_cost 只在分组开了「缓存读不吃折扣」时非零，绝大多数行退化回
+ * cost × discount ÷ divisor。
  *
  * 该等式与账本币种无关：discount 一律是客户读得懂的「折」，账本差异全部收进 divisor。
  * ¥ 账本 + 牌价折算率 6.8 时 divisor = 1（不发生折算，展示层隐藏折算率那一行）。
@@ -847,8 +857,13 @@ export interface OfficialNativeCost {
   currency: string;
   /** 牌价折算率快照：1 USD = fx 原币。价格定义的一部分，不是验算式里的除数。 */
   fx: number;
-  /** 按官方牌价算出的本次费用（原币，折前）。 */
+  /** 按官方牌价算出的本次费用（原币，折前）。cached_cost 非零时这里已不含缓存读那一档。 */
   cost: number;
+  /**
+   * 缓存读那一档的官方费用（原币）。仅当本行缓存读按牌价原价计（分组开了
+   * cached_input_full_price）时非零——它不乘 discount。
+   */
+  cached_cost?: number;
   /** 本次生效的折（0.75 = 75 折）。后端已按账本口径还原，不是 rate_multiplier 原值。 */
   discount: number;
   /** 验算式里的账本除数 = fx ÷ 账本口径。为 1 时不发生折算，展示层隐藏该行。 */

@@ -94,6 +94,20 @@ func (gu *GroupUpdate) AddRateMultiplier(f float64) *GroupUpdate {
 	return gu
 }
 
+// SetCachedInputFullPrice sets the "cached_input_full_price" field.
+func (gu *GroupUpdate) SetCachedInputFullPrice(b bool) *GroupUpdate {
+	gu.mutation.SetCachedInputFullPrice(b)
+	return gu
+}
+
+// SetNillableCachedInputFullPrice sets the "cached_input_full_price" field if the given value is not nil.
+func (gu *GroupUpdate) SetNillableCachedInputFullPrice(b *bool) *GroupUpdate {
+	if b != nil {
+		gu.SetCachedInputFullPrice(*b)
+	}
+	return gu
+}
+
 // SetIsExclusive sets the "is_exclusive" field.
 func (gu *GroupUpdate) SetIsExclusive(b bool) *GroupUpdate {
 	gu.mutation.SetIsExclusive(b)
@@ -538,6 +552,9 @@ func (gu *GroupUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := gu.mutation.AddedRateMultiplier(); ok {
 		_spec.AddField(group.FieldRateMultiplier, field.TypeFloat64, value)
 	}
+	if value, ok := gu.mutation.CachedInputFullPrice(); ok {
+		_spec.SetField(group.FieldCachedInputFullPrice, field.TypeBool, value)
+	}
 	if value, ok := gu.mutation.IsExclusive(); ok {
 		_spec.SetField(group.FieldIsExclusive, field.TypeBool, value)
 	}
@@ -895,6 +912,20 @@ func (guo *GroupUpdateOne) SetNillableRateMultiplier(f *float64) *GroupUpdateOne
 // AddRateMultiplier adds f to the "rate_multiplier" field.
 func (guo *GroupUpdateOne) AddRateMultiplier(f float64) *GroupUpdateOne {
 	guo.mutation.AddRateMultiplier(f)
+	return guo
+}
+
+// SetCachedInputFullPrice sets the "cached_input_full_price" field.
+func (guo *GroupUpdateOne) SetCachedInputFullPrice(b bool) *GroupUpdateOne {
+	guo.mutation.SetCachedInputFullPrice(b)
+	return guo
+}
+
+// SetNillableCachedInputFullPrice sets the "cached_input_full_price" field if the given value is not nil.
+func (guo *GroupUpdateOne) SetNillableCachedInputFullPrice(b *bool) *GroupUpdateOne {
+	if b != nil {
+		guo.SetCachedInputFullPrice(*b)
+	}
 	return guo
 }
 
@@ -1371,6 +1402,9 @@ func (guo *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error
 	}
 	if value, ok := guo.mutation.AddedRateMultiplier(); ok {
 		_spec.AddField(group.FieldRateMultiplier, field.TypeFloat64, value)
+	}
+	if value, ok := guo.mutation.CachedInputFullPrice(); ok {
+		_spec.SetField(group.FieldCachedInputFullPrice, field.TypeBool, value)
 	}
 	if value, ok := guo.mutation.IsExclusive(); ok {
 		_spec.SetField(group.FieldIsExclusive, field.TypeBool, value)

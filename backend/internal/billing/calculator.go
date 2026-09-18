@@ -1,6 +1,8 @@
 // Package billing 提供费用计算和使用量异步记录
 package billing
 
+import "github.com/DouDOU-start/airgate-core/internal/pkg/ledger"
+
 // Calculator 费用计算器
 type Calculator struct{}
 
@@ -26,6 +28,13 @@ type CalculateInput struct {
 	// 用于计算 billed_cost（对客户的账面消耗），累加到 APIKey.used_quota。
 	// 平台账户体系永远不读这个字段。
 	SellRate float64
+
+	// CachedInputFullPrice 表示本分组的「缓存读」不吃折扣：该档按平台基准倍率
+	// （ledger.RateBase）计费，而不是 BillingRate。见 Group.cached_input_full_price。
+	//
+	// 只作用于 actual_cost 管道。billed_cost 走 reseller 自设的 SellRate，是另一套
+	// 定价，不该被平台的折扣口径改写。
+	CachedInputFullPrice bool
 
 	// AccountRate 账号实际成本倍率（账号自身相对上游的成本系数，比如代购账号 1.2x）。
 	// 用于计算 account_cost（账号实际消耗），写入 usage_log，仅供"账号计费"统计使用。
@@ -62,6 +71,7 @@ type CalculateResult struct {
 	ActualCost            float64 // 平台真实成本或固定图片单价（扣 reseller 余额）
 	BilledCost            float64 // 客户账面消耗；sell_rate=0 时回退为 ActualCost
 	AccountCost           float64 // 账号实际成本 = TotalCost × AccountRate（仅服务于"账号计费"统计）
+	CachedInputRate       float64 // 快照：本次缓存读实际生效的倍率（未开开关时等于 RateMultiplier）
 	RateMultiplier        float64 // 快照：本次生效的 BillingRate
 	SellRate              float64 // 快照：本次生效的 SellRate
 	AccountRateMultiplier float64 // 快照：本次生效的 AccountRate
@@ -101,15 +111,27 @@ func (c *Calculator) Calculate(input CalculateInput) CalculateResult {
 	}
 	nonOutputCost := billableInputCost + input.CachedInputCost + input.CacheCreationCost
 	nonImageCost := nonOutputCost + input.OutputCost
-	actualCost := nonImageCost*billingRate + input.ImageCost*billingRate
+
+	// 缓存读不吃折扣时，这一档从「按倍率整单乘」里摘出来单算。cachedRate 只上不下：
+	// 开关意在取消折扣，绝不该让倍率高于基准的溢价分组反而把缓存卖得更便宜。
+	cachedRate := billingRate
+	if input.CachedInputFullPrice && ledger.RateBase > cachedRate {
+		cachedRate = ledger.RateBase
+	}
+	cachedActualCost := input.CachedInputCost * cachedRate
+	// 三个 override 分支共用：从按折扣计价的小计里扣掉缓存读，缓存读随后单独加回。
+	discountedNonOutputCost := nonOutputCost - input.CachedInputCost
+	discountedNonImageCost := nonImageCost - input.CachedInputCost
+
+	actualCost := discountedNonImageCost*billingRate + cachedActualCost + input.ImageCost*billingRate
 	if input.OutputBillingCostOverride != nil {
-		actualCost = nonOutputCost*billingRate + *input.OutputBillingCostOverride + input.ImageCost*billingRate
+		actualCost = discountedNonOutputCost*billingRate + cachedActualCost + *input.OutputBillingCostOverride + input.ImageCost*billingRate
 	}
 	if input.ImageBillingCostOverride != nil {
 		if input.ImageBillingCostOverrideReplacesTotal {
 			actualCost = *input.ImageBillingCostOverride
 		} else {
-			actualCost = nonImageCost*billingRate + *input.ImageBillingCostOverride
+			actualCost = discountedNonImageCost*billingRate + cachedActualCost + *input.ImageBillingCostOverride
 		}
 	}
 
@@ -145,6 +167,7 @@ func (c *Calculator) Calculate(input CalculateInput) CalculateResult {
 		ActualCost:            actualCost,
 		BilledCost:            billedCost,
 		AccountCost:           accountCost,
+		CachedInputRate:       cachedRate,
 		RateMultiplier:        billingRate,
 		SellRate:              input.SellRate,
 		AccountRateMultiplier: accountRate,

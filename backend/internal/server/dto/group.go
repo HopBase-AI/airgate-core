@@ -5,21 +5,23 @@ type GroupResp struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
 	// NameI18n / NoteI18n 展示文案多语言覆盖（键=语言码 en / zh-HK / ja；zh 基准即 name / note）。
-	NameI18n          map[string]string            `json:"name_i18n,omitempty"`
-	Platform          string                       `json:"platform"`
-	RateMultiplier    float64                      `json:"rate_multiplier"`
-	IsExclusive       bool                         `json:"is_exclusive"`
-	StatusVisible     bool                         `json:"status_visible"`    // 是否在公开 /status 页展示
-	Delisted          bool                         `json:"delisted"`          // 是否已下架
-	SubscriptionType  string                       `json:"subscription_type"` // standard / subscription
-	Quotas            map[string]interface{}       `json:"quotas,omitempty"`  // 日/周/月限额
-	ModelRouting      map[string][]int64           `json:"model_routing,omitempty"`
-	PluginSettings    map[string]map[string]string `json:"plugin_settings,omitempty"` // 插件命名空间开关
-	ServiceTier       string                       `json:"service_tier,omitempty"`
-	ForceInstructions string                       `json:"force_instructions,omitempty"`
-	Note              string                       `json:"note,omitempty"`
-	NoteI18n          map[string]string            `json:"note_i18n,omitempty"`
-	SortWeight        int                          `json:"sort_weight"`
+	NameI18n       map[string]string `json:"name_i18n,omitempty"`
+	Platform       string            `json:"platform"`
+	RateMultiplier float64           `json:"rate_multiplier"`
+	// CachedInputFullPrice 缓存读不吃本分组折扣，按平台基准倍率计价（缓存按官方牌价原价卖）。
+	CachedInputFullPrice bool                         `json:"cached_input_full_price"`
+	IsExclusive          bool                         `json:"is_exclusive"`
+	StatusVisible        bool                         `json:"status_visible"`    // 是否在公开 /status 页展示
+	Delisted             bool                         `json:"delisted"`          // 是否已下架
+	SubscriptionType     string                       `json:"subscription_type"` // standard / subscription
+	Quotas               map[string]interface{}       `json:"quotas,omitempty"`  // 日/周/月限额
+	ModelRouting         map[string][]int64           `json:"model_routing,omitempty"`
+	PluginSettings       map[string]map[string]string `json:"plugin_settings,omitempty"` // 插件命名空间开关
+	ServiceTier          string                       `json:"service_tier,omitempty"`
+	ForceInstructions    string                       `json:"force_instructions,omitempty"`
+	Note                 string                       `json:"note,omitempty"`
+	NoteI18n             map[string]string            `json:"note_i18n,omitempty"`
+	SortWeight           int                          `json:"sort_weight"`
 
 	// AllowedUsers 专属分组的授权用户摘要（仅管理员列表/详情返回；用户可用列表不含）。
 	AllowedUsers []GroupAllowedUserResp `json:"allowed_users,omitempty"`
@@ -60,7 +62,9 @@ type CreateGroupReq struct {
 	NameI18n       map[string]string `json:"name_i18n"`
 	Platform       string            `json:"platform" binding:"required"`
 	RateMultiplier float64           `json:"rate_multiplier"`
-	IsExclusive    bool              `json:"is_exclusive"`
+	// CachedInputFullPrice 缓存读不吃折扣，按平台基准倍率计价；缺省 false（与输入输出同折）。
+	CachedInputFullPrice bool `json:"cached_input_full_price"`
+	IsExclusive          bool `json:"is_exclusive"`
 	// StatusVisible 用指针区分"字段未提交"和"显式置 false"，缺省视为 true（在公开状态页可见）。
 	StatusVisible *bool `json:"status_visible"`
 	Delisted      *bool `json:"delisted"` // 是否下架，缺省 false（未下架）
@@ -85,9 +89,11 @@ type UpdateGroupReq struct {
 	// NameI18n / NoteI18n：nil=不修改；非 nil 时整体覆盖（剔除空白 value 后为空 = 清空）。
 	NameI18n       map[string]string `json:"name_i18n"`
 	RateMultiplier *float64          `json:"rate_multiplier"`
-	IsExclusive    *bool             `json:"is_exclusive"`
-	StatusVisible  *bool             `json:"status_visible"`
-	Delisted       *bool             `json:"delisted"`
+	// CachedInputFullPrice nil=不修改。
+	CachedInputFullPrice *bool `json:"cached_input_full_price"`
+	IsExclusive          *bool `json:"is_exclusive"`
+	StatusVisible        *bool `json:"status_visible"`
+	Delisted             *bool `json:"delisted"`
 	// AllowedUserIDs nil=不修改授权用户，[]=清空（仅管理员可见），[1,2]=设置。
 	AllowedUserIDs    *[]int64                     `json:"allowed_user_ids"`
 	SubscriptionType  *string                      `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`

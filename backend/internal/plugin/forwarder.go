@@ -953,14 +953,15 @@ func apiKeyGroupRequirementError(keyInfo *auth.APIKeyInfo, requirements routing.
 
 func keyInfoRoute(keyInfo *auth.APIKeyInfo) routing.Candidate {
 	return routing.Candidate{
-		GroupID:                keyInfo.GroupID,
-		Platform:               keyInfo.GroupPlatform,
-		EffectiveRate:          billing.ResolveBillingRateForGroup(keyInfo.UserGroupRates, keyInfo.GroupID, keyInfo.GroupRateMultiplier),
-		GroupRateMultiplier:    keyInfo.GroupRateMultiplier,
-		GroupServiceTier:       keyInfo.GroupServiceTier,
-		GroupForceInstructions: keyInfo.GroupForceInstructions,
-		GroupPluginSettings:    clonePluginSettingsForKey(keyInfo.GroupPluginSettings),
-		UserPluginSettings:     clonePluginSettingsForKey(keyInfo.UserGroupPluginSettings[int64(keyInfo.GroupID)]),
+		GroupID:                   keyInfo.GroupID,
+		Platform:                  keyInfo.GroupPlatform,
+		EffectiveRate:             billing.ResolveBillingRateForGroup(keyInfo.UserGroupRates, keyInfo.GroupID, keyInfo.GroupRateMultiplier),
+		GroupRateMultiplier:       keyInfo.GroupRateMultiplier,
+		GroupCachedInputFullPrice: keyInfo.GroupCachedInputFullPrice,
+		GroupServiceTier:          keyInfo.GroupServiceTier,
+		GroupForceInstructions:    keyInfo.GroupForceInstructions,
+		GroupPluginSettings:       clonePluginSettingsForKey(keyInfo.GroupPluginSettings),
+		UserPluginSettings:        clonePluginSettingsForKey(keyInfo.UserGroupPluginSettings[int64(keyInfo.GroupID)]),
 	}
 }
 
@@ -986,6 +987,7 @@ func keyInfoForRoute(base *auth.APIKeyInfo, route routing.Candidate) *auth.APIKe
 	info.GroupID = route.GroupID
 	info.GroupPlatform = route.Platform
 	info.GroupRateMultiplier = route.GroupRateMultiplier
+	info.GroupCachedInputFullPrice = route.GroupCachedInputFullPrice
 	info.GroupServiceTier = route.GroupServiceTier
 	info.GroupForceInstructions = route.GroupForceInstructions
 	info.GroupPluginSettings = route.GroupPluginSettings

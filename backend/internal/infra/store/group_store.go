@@ -128,6 +128,7 @@ func (s *GroupStore) Create(ctx context.Context, input appgroup.CreateInput) (ap
 			SetName(input.Name).
 			SetPlatform(input.Platform).
 			SetRateMultiplier(input.RateMultiplier).
+			SetCachedInputFullPrice(input.CachedInputFullPrice).
 			SetIsExclusive(input.IsExclusive).
 			SetStatusVisible(input.StatusVisible).
 			SetDelisted(input.Delisted).
@@ -211,6 +212,7 @@ func (s *GroupStore) Create(ctx context.Context, input appgroup.CreateInput) (ap
 		SetName(input.Name).
 		SetPlatform(input.Platform).
 		SetRateMultiplier(input.RateMultiplier).
+		SetCachedInputFullPrice(input.CachedInputFullPrice).
 		SetIsExclusive(input.IsExclusive).
 		SetStatusVisible(input.StatusVisible).
 		SetDelisted(input.Delisted).
@@ -278,6 +280,9 @@ func (s *GroupStore) Update(ctx context.Context, id int, input appgroup.UpdateIn
 	}
 	if input.RateMultiplier != nil {
 		builder = builder.SetRateMultiplier(*input.RateMultiplier)
+	}
+	if input.CachedInputFullPrice != nil {
+		builder = builder.SetCachedInputFullPrice(*input.CachedInputFullPrice)
 	}
 	if input.IsExclusive != nil {
 		builder = builder.SetIsExclusive(*input.IsExclusive)
@@ -740,6 +745,7 @@ func mapGroup(item *ent.Group) appgroup.Group {
 		NameI18n:                 maps.Clone(item.NameI18n),
 		Platform:                 item.Platform,
 		RateMultiplier:           item.RateMultiplier,
+		CachedInputFullPrice:     item.CachedInputFullPrice,
 		IsExclusive:              item.IsExclusive,
 		StatusVisible:            item.StatusVisible,
 		Delisted:                 item.Delisted,
