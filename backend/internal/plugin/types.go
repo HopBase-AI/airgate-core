@@ -85,6 +85,9 @@ type parsedRequest struct {
 	Stream          bool
 	SessionID       string
 	ReasoningEffort string // 推理强度档位
+	// bodyValid 区分「请求体无法按入口协议解析」和「JSON 对象缺少业务字段」。
+	// 两者都必须在账号调度前返回 400，不能落入 no_available_account。
+	bodyValid bool
 
 	// PreviousResponseID 是 OpenAI Responses API 的续聊锚点（标准字段，非平台扩展）。
 	// 上游把会话状态存在自己那边，所以它同时是一条调度约束：必须回到产出它的账号。

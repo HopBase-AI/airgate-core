@@ -83,6 +83,21 @@ func (f *Forwarder) parseRequest(c *gin.Context) (*forwardState, bool) {
 		}
 		return nil, false
 	}
+	// 先绑定插件归属，再做入口校验，保证错误体格式和失败日志都与目标协议一致。
+	state.plugin = inst
+	setRequestErrorFormat(c, f.manager.ErrorFormat(inst.Name, state.requestPath))
+	state.model = parsed.Model
+	state.stream = parsed.Stream
+	state.realtime = parsed.Stream
+	state.sessionID = parsed.SessionID
+	state.previousResponseID = parsed.PreviousResponseID
+	state.reasoningEffort = parsed.ReasoningEffort
+	if state.usageModel == "" {
+		state.usageModel = f.manager.UsageModel(inst.Name, state.requestPath)
+	}
+	if !f.validateParsedRequest(c, state, parsed, body) {
+		return nil, false
+	}
 	schedulingModels := schedulingModelsForRequest(f.manager, state.requestedPlatform, inst.Name, state.requestPath, parsed.Model)
 	schedulingModel := ""
 	if len(schedulingModels) > 0 {
@@ -90,22 +105,50 @@ func (f *Forwarder) parseRequest(c *gin.Context) (*forwardState, bool) {
 	}
 
 	state.body = body
-	state.model = parsed.Model
 	state.schedulingModels = schedulingModels
 	state.schedulingModel = schedulingModel
-	state.stream = parsed.Stream
-	state.realtime = parsed.Stream
-	state.sessionID = parsed.SessionID
-	state.previousResponseID = parsed.PreviousResponseID
-	state.reasoningEffort = parsed.ReasoningEffort
 	state.accountReq = accountRequirementsForRequestCached(f.manager, state.requestPath, parsed.Model, &parsed)
 	state.imageToolPayloadValid = parsed.imageToolPayloadValid
 	state.imageToolPayload = parsed.imageToolPayload
-	state.plugin = inst
-	if state.usageModel == "" {
-		state.usageModel = f.manager.UsageModel(inst.Name, state.requestPath)
-	}
 	return state, true
+}
+
+// Only validate creation endpoints: other plugin routes may accept multipart,
+// native payloads, or model-less task operations.
+func (f *Forwarder) validateParsedRequest(c *gin.Context, state *forwardState, parsed parsedRequest, body []byte) bool {
+	path := strings.TrimRight(state.requestPath, "/")
+	chat := path == "/v1/chat/completions" || path == "/chat/completions"
+	responses := path == "/v1/responses" || path == "/responses"
+	if c.Request.Method != http.MethodPost || (!chat && !responses) {
+		return true
+	}
+	msgKey := ""
+	switch {
+	case !parsed.bodyValid:
+		msgKey = "gw.invalid_json_body"
+	case strings.TrimSpace(parsed.Model) == "":
+		msgKey = "gw.missing_model"
+	case chat && state.plugin.Platform == "openai":
+		// Gemini also accepts native contents on this path. Keep messages
+		// validation scoped to the OpenAI plugin's existing contract.
+		var payload struct {
+			Messages []json.RawMessage `json:"messages"`
+		}
+		if json.Unmarshal(body, &payload) != nil || len(payload.Messages) == 0 {
+			msgKey = "gw.invalid_chat_messages"
+		}
+	}
+	if msgKey == "" {
+		return true
+	}
+	const code = appusage.ErrorCodeInvalidRequest
+	protocolError(c, http.StatusBadRequest, "invalid_request_error", code, i18n.Tc(c, msgKey))
+	f.recordFailureUsage(c, state, usageFailure{
+		code:    code,
+		status:  http.StatusBadRequest,
+		message: i18n.En(msgKey),
+	})
+	return false
 }
 
 func requireKeyInfo(c *gin.Context) (*auth.APIKeyInfo, bool) {
@@ -162,14 +205,19 @@ func (f *Forwarder) declaredUsageModel(platform, path string) string {
 
 func parseBody(body []byte, contentType string) parsedRequest {
 	var fields requestFields
-	if json.Unmarshal(body, &fields) == nil {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return parsedRequest{}
+	}
+	if json.Unmarshal(body, &fields) == nil && trimmed[0] == '{' {
 		effort := extractAndNormalizeReasoningEffort(fields)
 		pr := parsedRequest{
-			Model:              fields.Model,
+			Model:              strings.TrimSpace(fields.Model),
 			Stream:             fields.Stream,
 			SessionID:          fields.Metadata.UserID,
 			PreviousResponseID: strings.TrimSpace(fields.PreviousResponseID),
 			ReasoningEffort:    effort,
+			bodyValid:          true,
 		}
 		// 一次性提取 image tool 信息，避免后续 requestNeedsImage / accountRequirementsForRequest 重复反序列化 body
 		if payload, ok := parseImageToolPayloadFromFields(body); ok {
@@ -181,7 +229,7 @@ func parseBody(body []byte, contentType string) parsedRequest {
 	if strings.HasPrefix(contentType, "multipart/") {
 		return parseMultipartFields(body, contentType)
 	}
-	return parsedRequest{}
+	return parsedRequest{bodyValid: false}
 }
 
 // extractAndNormalizeReasoningEffort 提取并归一化推理强度档位。

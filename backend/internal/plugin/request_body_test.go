@@ -21,6 +21,7 @@ import (
 	"github.com/DouDOU-start/airgate-core/internal/billing"
 	"github.com/DouDOU-start/airgate-core/internal/i18n"
 	"github.com/DouDOU-start/airgate-core/internal/server/middleware"
+	sdk "github.com/DouDOU-start/airgate-sdk/sdkgo"
 )
 
 // request_body_test.go — 请求体读取错误 → 对外状态码映射测试。
@@ -159,5 +160,49 @@ func TestParseRequestRecordsAuthenticatedPluginRouteFailure(t *testing.T) {
 	}
 	if log.ErrorCode != appusage.ErrorCodePluginUnavailable || log.ErrorStatus != http.StatusServiceUnavailable {
 		t.Fatalf("failure fields = (%q, %d), want (plugin_unavailable, 503)", log.ErrorCode, log.ErrorStatus)
+	}
+}
+
+func TestParseRequestRejectsClientErrorsBeforeAccountSelection(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	manager := &Manager{
+		instances: map[string]*PluginInstance{
+			"openai": {Name: "openai", Platform: "openai"},
+		},
+		routeCache: map[string][]sdk.RouteDefinition{
+			"openai": {
+				{Method: "POST", Path: "/v1/chat/completions"},
+			},
+		},
+	}
+	forwarder := &Forwarder{manager: manager}
+
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+		wantText   string
+		wantState  bool
+	}{
+		{name: "malformed JSON", body: `{"model":"deepseek-v4.1-flash",`, wantStatus: http.StatusBadRequest, wantText: "valid field", wantState: false},
+		{name: "missing model", body: `{"messages":[{"role":"user","content":"hi"}]}`, wantStatus: http.StatusBadRequest, wantText: "model", wantState: false},
+		{name: "missing messages", body: `{"model":"deepseek-v4.1-flash"}`, wantStatus: http.StatusBadRequest, wantText: "messages", wantState: false},
+		{name: "valid request", body: `{"model":"deepseek-v4.1-flash","messages":[{"role":"user","content":"hi"}]}`, wantStatus: http.StatusOK, wantState: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, response := authenticatedRequestContext(io.NopCloser(strings.NewReader(tt.body)), "/v1/chat/completions")
+			c.Request.Header.Set("Content-Type", "application/json")
+			state, ok := forwarder.parseRequest(c)
+			if ok != tt.wantState || (state != nil) != tt.wantState {
+				t.Fatalf("parseRequest = (%#v, %v), want state=%v", state, ok, tt.wantState)
+			}
+			if response.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body=%s", response.Code, tt.wantStatus, response.Body.String())
+			}
+			if tt.wantText != "" && !strings.Contains(response.Body.String(), tt.wantText) {
+				t.Fatalf("response %q does not contain %q", response.Body.String(), tt.wantText)
+			}
+		})
 	}
 }
