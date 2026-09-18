@@ -62,6 +62,8 @@
   "gw.department_quota_exceeded": "Cuota del departamento agotada",
   "gw.pinned_account_unavailable": "La cuenta upstream especificada no está disponible temporalmente, inténtelo de nuevo más tarde",
   "gw.pinned_account_rate_limited": "La cuenta upstream especificada está sujeta a límite de tasa en este momento, inténtelo de nuevo más tarde",
+  "gw.session_account_unavailable": "Esta conversación está vinculada a una sesión con estado que ya no puede reanudarse. Inicie una conversación nueva sin previous_response_id.",
+  "gw.session_account_unavailable_detail": "No se pudo reanudar la conversación vinculada por previous_response_id: la sesión upstream vinculada no está disponible",
   "gw.budget_insufficient_balance": "Saldo insuficiente: disponible $%.2f, reservado en curso $%.2f, estimado de esta solicitud $%.2f",
   "gw.budget_insufficient_quota": "Cuota insuficiente: disponible $%.2f, reservado en curso $%.2f, estimado de esta solicitud $%.2f",
   "gw.user_not_found": "Usuario no encontrado",

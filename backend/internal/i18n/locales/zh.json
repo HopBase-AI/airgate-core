@@ -62,6 +62,8 @@
   "gw.department_quota_exceeded": "部门额度已用尽",
   "gw.pinned_account_unavailable": "指定上游账号暂时不可用，请稍后重试",
   "gw.pinned_account_rate_limited": "指定上游账号当前受到限流，请稍后重试",
+  "gw.session_account_unavailable": "本次对话绑定的有状态会话已无法继续，请不带 previous_response_id 重新开始一轮对话。",
+  "gw.session_account_unavailable_detail": "previous_response_id 绑定的会话无法续接：绑定的上游会话不可用",
   "gw.budget_insufficient_balance": "余额不足：可用 $%.2f，在途预留 $%.2f，本条预估 $%.2f",
   "gw.budget_insufficient_quota": "额度不足：可用 $%.2f，在途预留 $%.2f，本条预估 $%.2f",
   "gw.user_not_found": "用户不存在",

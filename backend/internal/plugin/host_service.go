@@ -190,6 +190,7 @@ func (h *pluginHostHandle) InvokeStream(stream pb.CoreInvokeService_InvokeStream
 const (
 	hostMethodSchedulerSelectAccount = "scheduler.select_account"
 	hostMethodSchedulerReportResult  = "scheduler.report_account_result"
+	hostMethodSchedulerBindResponse  = "scheduler.bind_response_account"
 	hostMethodProbeForward           = "probe.forward"
 	hostMethodGroupsList             = "groups.list"
 	hostMethodGatewayForward         = "gateway.forward"
@@ -236,6 +237,12 @@ func (h *HostService) invoke(
 			return nil, err
 		}
 		return h.reportAccountResult(ctx, req)
+	case hostMethodSchedulerBindResponse:
+		var req hostBindResponseAccountRequest
+		if err := decodeHostPayload(payload, &req); err != nil {
+			return nil, err
+		}
+		return h.bindResponseAccount(ctx, req)
 	case hostMethodProbeForward:
 		var req hostProbeForwardRequest
 		if err := decodeHostPayload(payload, &req); err != nil {
@@ -425,6 +432,16 @@ type hostReportAccountResultRequest struct {
 	AccountID int64  `json:"account_id"`
 	Success   bool   `json:"success"`
 	ErrorMsg  string `json:"error_msg"`
+}
+
+// hostBindResponseAccountRequest 插件登记「这条上游 response 由哪个账号产出」。
+//
+// 只收 response_id / account_id / user_id：platform 与 TTL 都由 core 从账号本身取，
+// 插件说了不算——绑定是调度约束，它的 key 必须与 core 查询时用的完全同源。
+type hostBindResponseAccountRequest struct {
+	UserID     int64  `json:"user_id"`
+	AccountID  int64  `json:"account_id"`
+	ResponseID string `json:"response_id"`
 }
 
 type hostProbeForwardRequest struct {
@@ -1143,6 +1160,33 @@ func (h *HostService) reportAccountResult(ctx context.Context, req hostReportAcc
 		Kind:   kind,
 		Reason: req.ErrorMsg,
 	})
+	return map[string]interface{}{"ok": true}, nil
+}
+
+// bindResponseAccount 记录 Responses API 的 response_id → 账号绑定。
+//
+// 上游把会话状态存在自己那边，`previous_response_id` 只有回到同一个账号才认；
+// 而只有插件看得见上游回的 response id（流式请求 core 是直通的）。所以由插件在
+// 拿到 id 后回调这里登记，下一轮 core 据此把请求钉回原账号（见 session_affinity.go）。
+//
+// platform 取账号自己的，不取插件传的：绑定 key 必须与查询侧（按请求平台查）同源，
+// 否则会写进一个永远查不到的 key，退化成「静默丢上下文」——正是本次要根治的问题。
+func (h *HostService) bindResponseAccount(ctx context.Context, req hostBindResponseAccountRequest) (map[string]interface{}, error) {
+	if req.AccountID <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "account_id must be > 0")
+	}
+	if strings.TrimSpace(req.ResponseID) == "" {
+		return nil, status.Error(codes.InvalidArgument, "response_id is required")
+	}
+	if req.UserID <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "user_id must be > 0")
+	}
+	acc, err := h.db.Account.Query().Where(account.IDEQ(int(req.AccountID))).Only(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "account %d not found", req.AccountID)
+	}
+	h.scheduler.BindResponseAffinity(ctx, int(req.UserID), acc.Platform,
+		strings.TrimSpace(req.ResponseID), acc.ID, acc.Extra)
 	return map[string]interface{}{"ok": true}, nil
 }
 

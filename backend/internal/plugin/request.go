@@ -96,6 +96,7 @@ func (f *Forwarder) parseRequest(c *gin.Context) (*forwardState, bool) {
 	state.stream = parsed.Stream
 	state.realtime = parsed.Stream
 	state.sessionID = parsed.SessionID
+	state.previousResponseID = parsed.PreviousResponseID
 	state.reasoningEffort = parsed.ReasoningEffort
 	state.accountReq = accountRequirementsForRequestCached(f.manager, state.requestPath, parsed.Model, &parsed)
 	state.imageToolPayloadValid = parsed.imageToolPayloadValid
@@ -164,10 +165,11 @@ func parseBody(body []byte, contentType string) parsedRequest {
 	if json.Unmarshal(body, &fields) == nil {
 		effort := extractAndNormalizeReasoningEffort(fields)
 		pr := parsedRequest{
-			Model:           fields.Model,
-			Stream:          fields.Stream,
-			SessionID:       fields.Metadata.UserID,
-			ReasoningEffort: effort,
+			Model:              fields.Model,
+			Stream:             fields.Stream,
+			SessionID:          fields.Metadata.UserID,
+			PreviousResponseID: strings.TrimSpace(fields.PreviousResponseID),
+			ReasoningEffort:    effort,
 		}
 		// 一次性提取 image tool 信息，避免后续 requestNeedsImage / accountRequirementsForRequest 重复反序列化 body
 		if payload, ok := parseImageToolPayloadFromFields(body); ok {

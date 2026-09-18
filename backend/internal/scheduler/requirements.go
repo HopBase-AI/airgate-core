@@ -23,10 +23,17 @@ const (
 type AccountRequirements struct {
 	Workload       Workload
 	ImageProtocols []ImageProtocol
+
+	// PinnedAccountID > 0 时本次请求只能落在该账号上（会话亲和硬钉）。
+	//
+	// 与 sticky 的软亲和不同：sticky 命中不了就换号（最多丢缓存），而会话亲和
+	// 钉的是「上游那边存着的会话状态」，换号等于把上下文悄悄丢掉。所以这里直接
+	// 把候选集收敛到一个账号——钉不住就让上层拿不到账号并明确报错，绝不回落。
+	PinnedAccountID int
 }
 
 func filterAccountsByRequirements(candidates []*ent.Account, req AccountRequirements) []*ent.Account {
-	if req.Workload == "" && len(req.ImageProtocols) == 0 {
+	if req.Workload == "" && len(req.ImageProtocols) == 0 && req.PinnedAccountID <= 0 {
 		return candidates
 	}
 	filtered := make([]*ent.Account, 0, len(candidates))
@@ -40,6 +47,9 @@ func filterAccountsByRequirements(candidates []*ent.Account, req AccountRequirem
 
 func accountMatchesRequirements(acc *ent.Account, req AccountRequirements) bool {
 	if acc == nil {
+		return false
+	}
+	if req.PinnedAccountID > 0 && acc.ID != req.PinnedAccountID {
 		return false
 	}
 	if req.Workload != "" && !accountAllowsWorkload(acc, req.Workload) {

@@ -188,6 +188,14 @@ func (f *Forwarder) Forward(c *gin.Context) {
 		return
 	}
 
+	// 会话亲和：带 previous_response_id 的续聊必须回到产出那条 response 的账号
+	// （见 session_affinity.go）。命中后 AccountRequirements 把候选收敛成一个账号，
+	// failover 自然不会换到别人身上；钉不住时走下面的专用报错分支。
+	f.resolveResponseAffinity(c.Request.Context(), state)
+	if state.pinnedAccountID > 0 {
+		logger.Debug("forward_session_affinity_pinned", logSessionAffinityPinned(state)...)
+	}
+
 	hardExclude := make([]int, 0, len(routes))
 	var mwBag map[string]string
 	beginCalled := false
@@ -512,6 +520,19 @@ func (f *Forwarder) Forward(c *gin.Context) {
 			sdk.LogFieldAccountID, lastClientError.account.ID,
 			sdk.LogFieldDurationMs, time.Since(startedAt).Milliseconds(),
 		)
+		return
+	}
+
+	// 会话亲和钉住的账号本轮拿不到：明确告诉客户端会话要重开，而不是让他对着
+	// 「请稍后重试」反复重试——那个账号不回来，这条会话就永远接不上。
+	if state.pinnedAccountID > 0 {
+		logger.Warn("forward_session_affinity_unavailable",
+			append(logSessionAffinityPinned(state),
+				sdk.LogFieldDurationMs, time.Since(startedAt).Milliseconds(),
+				"attempts", totalAttempts,
+			)...)
+		writeSessionAffinityUnavailable(c)
+		f.recordFailureUsage(c, state, sessionAffinityFailureUsage())
 		return
 	}
 
