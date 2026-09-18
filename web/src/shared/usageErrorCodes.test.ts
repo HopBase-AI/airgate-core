@@ -7,6 +7,7 @@ import {
   isFailedUsageRow,
   resolvedUsageModel,
   usageErrorCodeMeta,
+  usageErrorHintKey,
   usageErrorLabel,
 } from './columns/usageColumns';
 import type { UsageRow } from './columns/usageColumns';
@@ -84,6 +85,47 @@ describe('usage 失败记录', () => {
     expect(customerNeutralErrorLabelKey('safety_rejected')).toBeUndefined();
     expect(label('server_error', false)).toBe(en.usage.error_customer_busy);
     expect(label('safety_rejected', false)).toBe(en.usage.error_safety_rejected);
+  });
+
+  // 2026-09-18 客户反馈：使用记录里的失败行只显示一个被截断的英文标识符
+  // （service_gener…），既看不懂也不知道下一步。客户视图不再回落裸 code。
+  it('客户视图不显示裸 error_code，未登记的码回落到中性文案', () => {
+    const enUsage = en.usage as Record<string, string>;
+    const t = ((key: string, fallback?: string) => enUsage[key.replace(/^usage\./, '')] ?? fallback ?? key) as unknown as TFunction;
+    const label = (code: string, adminView: boolean) => usageErrorLabel(usageRow({ error_code: code }), adminView, t);
+
+    expect(label('brand_new_plugin_code', false)).toBe(en.usage.error_customer_unknown);
+    expect(label('brand_new_plugin_code', true)).toBe('brand_new_plugin_code');
+    // 上游判参数非法：与「上游异常」分开，客户看得到是自己该改的
+    expect(label('upstream_invalid_request', false)).toBe(en.usage.error_upstream_invalid_request);
+    expect(customerNeutralErrorLabelKey('upstream_invalid_request')).toBeUndefined();
+  });
+
+  it('每条失败都有「下一步」，且五种语言齐全', () => {
+    expect(usageErrorHintKey('upstream_invalid_request')).toBe('usage.error_hint_params');
+    expect(usageErrorHintKey('reference_image_invalid')).toBe('usage.error_hint_reference');
+    expect(usageErrorHintKey('output_audio_copyright')).toBe('usage.error_hint_content');
+    expect(usageErrorHintKey('insufficient_quota')).toBe('usage.error_hint_balance');
+    // 服务侧故障统一给重试口径
+    expect(usageErrorHintKey('upstream_generation_failed')).toBe('usage.error_hint_service');
+    expect(usageErrorHintKey('http_503')).toBe('usage.error_hint_service');
+    // 没登记的码也必须有下一步
+    expect(usageErrorHintKey('brand_new_plugin_code')).toBe('usage.error_hint_generic');
+    expect(usageErrorHintKey(undefined)).toBe('usage.error_hint_generic');
+
+    const hintKeys = [...new Set([
+      'usage.error_hint',
+      'usage.error_customer_unknown',
+      ...Object.keys(en.usage as Record<string, string>)
+        .filter((key) => key.startsWith('error_hint'))
+        .map((key) => `usage.${key}`),
+    ])];
+    for (const [locale, dict] of Object.entries(LOCALES)) {
+      for (const hintKey of hintKeys) {
+        const key = hintKey.replace(/^usage\./, '');
+        expect(dict.usage[key], `${locale} 缺少 ${hintKey}`).toBeTruthy();
+      }
+    }
   });
 
   it('按 error_code 判定失败，被上游计费的 4xx 同样算失败', () => {

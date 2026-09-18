@@ -504,3 +504,13 @@ func (w *scrubWalk) value(value any) (any, bool) {
 		return value, false
 	}
 }
+
+// ScrubUserFacingText 读取侧的清洗入口：usage_logs 里存的是上游原文（管理员排障要靠它），
+// 任何把它展示给终端用户的地方——使用记录、任务失败卡——都必须先过这一层，
+// 否则同一条上游报错在响应体里被剥干净了，在使用记录里却带着供应商标识露出去。
+//
+// 没有账号上下文，只跑通用规则（中继前缀 / 工单号尾注 / URL / 裸域名 / 服务器指纹 /
+// IP / HTML 错误页）；账号推导 token 属于转发时才有的信息，这里拿不到也不需要。
+func ScrubUserFacingText(text string) string {
+	return (*identityScrubber)(nil).scrubText(text)
+}

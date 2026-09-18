@@ -85,6 +85,62 @@ func ErrorMessageVisibleToUser(code string) bool {
 		ErrorCodeRequestTimeout:
 		return true
 	default:
-		return false
+		// 插件任务的可行动失败码同口径放行（参数非法 / 素材问题 / 内容审核 / 余额）。
+		return PluginClientActionableErrorCode(code)
 	}
+}
+
+// pluginClientActionableErrorCodes 插件（视频/生图类任务）写回的失败码里，属于
+// 「调用方自己能改对」的那一类：参数不被支持、参考素材有问题、提示词为空、内容
+// 审核未过、余额不足、提交被拒。
+//
+// 为什么要单独登记：这些码由插件产生，core 的常量表里没有，于是过去一律落进
+// default 分支 → 用户侧既拿不到原文、前端也只显示一个中性的「服务繁忙,请稍后
+// 重试」。2026-09-18 生产上就有客户连续三次提交同一组非法参数：每次都被上游按
+// InvalidParameter 拒掉，而使用记录只告诉他「服务繁忙」，于是原样重试。
+//
+// 判据是「这条信息能不能指导用户改下一次请求」，不是「谁的锅」。上游账号/调度/
+// 服务故障仍然只给分类，原文不出网（见 ErrorMessageVisibleToUser 的注释）。
+// 新增取值要同步前端 ERROR_CODE_META 与 usage.error_hint_* 文案。
+var pluginClientActionableErrorCodes = map[string]struct{}{
+	// 上游在提交/生成阶段判定请求参数非法
+	"upstream_invalid_request": {},
+	"submission_rejected":      {},
+	"upstream_submit_rejected": {},
+	"bad_request":              {},
+	"invalid_asset_duration":   {},
+	// 内容审核（输入与输出两侧）
+	"safety_rejected":        {},
+	"input_sensitive":        {},
+	"output_video_sensitive": {},
+	"output_video_copyright": {},
+	"output_audio_sensitive": {},
+	"output_audio_copyright": {},
+	// 提示词 / 参考素材
+	"prompt_required":             {},
+	"missing_prompt":              {},
+	"reference_image_invalid":     {},
+	"reference_input_invalid":     {},
+	"reference_image_required":    {},
+	"reference_image_unsupported": {},
+	"reference_media_unsupported": {},
+	"reference_image_too_many":    {},
+	"too_many_images":             {},
+	"mask_unsupported":            {},
+	// 模型 / 任务类型 / 分组选择
+	"unsupported_model":     {},
+	"model_not_in_catalog":  {},
+	"wrong_model_kind":      {},
+	"unsupported_task_type": {},
+	"group_missing":         {},
+	"missing_billing_group": {},
+	// 余额预检与用户主动取消
+	"insufficient_balance": {},
+	"task_canceled":        {},
+}
+
+// PluginClientActionableErrorCode 该失败码是否属于插件侧「调用方可自行改对」的一类。
+func PluginClientActionableErrorCode(code string) bool {
+	_, ok := pluginClientActionableErrorCodes[code]
+	return ok
 }

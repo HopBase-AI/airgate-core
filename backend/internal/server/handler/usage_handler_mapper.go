@@ -2,6 +2,7 @@ package handler
 
 import (
 	appusage "github.com/DouDOU-start/airgate-core/internal/app/usage"
+	"github.com/DouDOU-start/airgate-core/internal/plugin"
 	"github.com/DouDOU-start/airgate-core/internal/server/dto"
 )
 
@@ -15,14 +16,17 @@ func usageStatusOf(record appusage.LogRecord) string {
 
 // userFacingErrorMessage 用户可见的失败原因。
 //
-// 客户端自身的错误（参数非法、模型不支持、余额不足、超并发）本来就会随响应体
-// 原样返回给调用方，展示在使用日志里不增加泄露；上游账号/服务类故障属于内部细节，
-// 用户侧只给分类（前端按 error_code 渲染文案），与转发层的脱敏口径保持一致。
+// 客户端自身的错误（参数非法、模型不支持、余额不足、超并发、内容审核、参考素材）
+// 本来就会随响应体原样返回给调用方，展示在使用日志里不增加泄露；上游账号/服务类
+// 故障属于内部细节，用户侧只给分类（前端按 error_code 渲染文案）。
+//
+// 原文一律再过一遍出网清洗：usage_logs 存的是上游原文，同一条报错在响应体那一路
+// 已被剥掉供应商标识，读取侧不跟上就等于开了第二个出口。
 func userFacingErrorMessage(record appusage.LogRecord) string {
 	if !appusage.ErrorMessageVisibleToUser(record.ErrorCode) {
 		return ""
 	}
-	return record.ErrorMessage
+	return plugin.ScrubUserFacingText(record.ErrorMessage)
 }
 
 // toUsageLogResp 转换为 reseller / admin 视角的完整响应（包含 actual_cost、billed_cost 等所有字段）。

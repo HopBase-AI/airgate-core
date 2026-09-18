@@ -293,7 +293,65 @@ export const ERROR_CODE_META: Record<string, { labelKey: string; tone: 'danger' 
   mask_unsupported: { labelKey: 'usage.error_reference_media_unsupported', tone: 'warning' },
   reference_image_too_many: { labelKey: 'usage.error_reference_media_too_many', tone: 'warning' },
   too_many_images: { labelKey: 'usage.error_reference_media_too_many', tone: 'warning' },
+  // 上游在提交 / 生成阶段判请求参数非法：调用方可自行改对，不能混进「上游异常」。
+  upstream_invalid_request: { labelKey: 'usage.error_upstream_invalid_request', tone: 'warning' },
+  invalid_asset_duration: { labelKey: 'usage.error_reference_media_invalid', tone: 'warning' },
 };
+
+/**
+ * 失败码 → 「下一步怎么办」。只给客户视图渲染：管理端面板已有账号 / 端点 / trace 等
+ * 排障线索，不需要这句话；客户拿到的是一个结果，得知道该改什么。
+ * 未登记的码回落 usage.error_hint_generic，永远不会没有下一步。
+ */
+const ERROR_HINT_KEY: Record<string, string> = {
+  client_error: 'usage.error_hint_params',
+  invalid_request: 'usage.error_hint_params',
+  bad_request: 'usage.error_hint_params',
+  upstream_invalid_request: 'usage.error_hint_params',
+  submission_rejected: 'usage.error_hint_params',
+  upstream_submit_rejected: 'usage.error_hint_params',
+  request_too_large: 'usage.error_hint_too_large',
+  invalid_asset_duration: 'usage.error_hint_reference',
+  reference_image_invalid: 'usage.error_hint_reference',
+  reference_input_invalid: 'usage.error_hint_reference',
+  reference_image_required: 'usage.error_hint_reference',
+  reference_image_unsupported: 'usage.error_hint_reference',
+  reference_media_unsupported: 'usage.error_hint_reference',
+  reference_image_too_many: 'usage.error_hint_reference',
+  too_many_images: 'usage.error_hint_reference',
+  mask_unsupported: 'usage.error_hint_reference',
+  safety_rejected: 'usage.error_hint_content',
+  input_sensitive: 'usage.error_hint_content',
+  output_video_sensitive: 'usage.error_hint_content',
+  output_video_copyright: 'usage.error_hint_content',
+  output_audio_sensitive: 'usage.error_hint_content',
+  output_audio_copyright: 'usage.error_hint_content',
+  prompt_required: 'usage.error_hint_prompt',
+  missing_prompt: 'usage.error_hint_prompt',
+  insufficient_quota: 'usage.error_hint_balance',
+  insufficient_balance: 'usage.error_hint_balance',
+  concurrency_limit: 'usage.error_hint_concurrency',
+  model_not_found: 'usage.error_hint_model',
+  model_not_served: 'usage.error_hint_model',
+  model_not_in_catalog: 'usage.error_hint_model',
+  unsupported_model: 'usage.error_hint_model',
+  wrong_model_kind: 'usage.error_hint_model',
+  unsupported_task_type: 'usage.error_hint_model',
+  capability_denied: 'usage.error_hint_model',
+  group_offline: 'usage.error_hint_group_offline',
+  group_missing: 'usage.error_hint_group_missing',
+  missing_billing_group: 'usage.error_hint_group_missing',
+  route_not_found: 'usage.error_hint_route',
+  client_canceled: 'usage.error_hint_canceled',
+  task_canceled: 'usage.error_hint_canceled',
+};
+
+/** 客户视图的「下一步」：服务侧故障一律给重试口径，其余按码取，兜底给通用建议。 */
+export function usageErrorHintKey(code: string | undefined): string {
+  const normalized = (code ?? '').trim().toLowerCase();
+  if (customerNeutralErrorLabelKey(normalized)) return 'usage.error_hint_service';
+  return ERROR_HINT_KEY[normalized] ?? 'usage.error_hint_generic';
+}
 
 /**
  * 按 error_code 取失败分类元数据：大小写不敏感；图片任务对未归类的上游状态码写
@@ -405,7 +463,10 @@ export function usageErrorLabel(row: UsageRow, adminView: boolean, t: TFunction)
   const neutralKey = adminView ? undefined : customerNeutralErrorLabelKey(code);
   if (neutralKey) return t(neutralKey);
   const meta = usageErrorCodeMeta(code);
-  return meta ? t(meta.labelKey, code) : code;
+  if (meta) return t(meta.labelKey, code);
+  // 客户视图不给裸 code：插件新增的码来不及登记时，用户看到的是被截断的
+  // service_gener… 这种半截英文标识符（2026-09-18 客户反馈）。管理端仍给原样 code。
+  return adminView ? code : t('usage.error_customer_unknown', 'Request failed');
 }
 
 /** 失败原因面板：HTTP 状态码 + 分类 + （可展示时的）原文。 */
@@ -428,6 +489,8 @@ function ErrorDetail({ adminView, row, t }: { adminView: boolean; row: UsageRow;
     : '';
   const model = resolvedUsageModel(row);
 
+  const hint = adminView ? '' : t(usageErrorHintKey(code));
+
   return (
     <TooltipPanel title={t('usage.error_detail', 'Failure details')} subtitle={[row.platform, model].filter(Boolean).join(' / ')}>
       <TooltipRow label={t('usage.error_type', 'Type')} value={label} tone={meta?.tone === 'danger' ? 'warning' : 'accent'} />
@@ -448,6 +511,15 @@ function ErrorDetail({ adminView, row, t }: { adminView: boolean; row: UsageRow;
       {adminRow?.ip_address ? <TooltipRow label={t('usage.ip_address', 'Client IP')} value={adminRow.ip_address} /> : null}
       {adminRow?.user_agent ? <TooltipRow label={t('usage.user_agent', 'Client')} value={adminRow.user_agent} /> : null}
       <TooltipRow label={t('usage.duration', 'Duration')} value={`${row.duration_ms} ms`} />
+      {hint ? (
+        <>
+          <TooltipDivider />
+          <div className="px-2 pt-1 text-xs text-text-tertiary">{t('usage.error_hint', 'What to do')}</div>
+          <div className="select-text whitespace-pre-wrap break-words rounded-[var(--radius)] bg-surface px-2 py-1 text-xs leading-relaxed text-text-secondary">
+            {hint}
+          </div>
+        </>
+      ) : null}
       {message ? (
         <>
           <TooltipDivider />
